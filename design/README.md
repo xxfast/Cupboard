@@ -1,12 +1,12 @@
-# Handoff: slides-kt — Cross-Platform Slides Editor
+# Handoff: Cupboard — Cross-Platform Slides Editor
 
 ## Overview
-Main editor window for **slides-kt**, a Keynote-style presentation editor built with Kotlin Multiplatform for macOS, Windows, and Linux desktop. Core architecture principle: **each platform renders its app chrome (toolbars, inspector, controls) with its native UI toolkit, while the slide canvas in the center is one shared Compose Multiplatform (Skia) surface, pixel-identical on all three platforms.**
+Main editor window for **Cupboard**, a Keynote-style presentation editor built with Kotlin Multiplatform for macOS, Windows, and Linux desktop. Core architecture principle: **each platform renders its app chrome (toolbars, inspector, controls) with its native UI toolkit, while the slide canvas in the center is one shared Compose Multiplatform (Skia) surface, pixel-identical on all three platforms.**
 
 Target repo: `xxfast/slides-kt` (branch `main`). At design time the repo was a fresh KMP template (`shared/src/commonMain/kotlin/io/github/xxfast/slides/` had only Greeting/Platform scaffolding) — these designs are the UI spec to build toward.
 
 ## About the Design Files
-The files in this bundle are **design references created in HTML** — interactive prototypes showing intended look and behavior, **not production code to copy**. The task is to recreate these designs in the slides-kt codebase:
+The files in this bundle are **design references created in HTML** — interactive prototypes showing intended look and behavior, **not production code to copy**. The task is to recreate these designs in the Cupboard codebase:
 - **macOS chrome** → SwiftUI/AppKit (NSToolbar, NSSegmentedControl, NSPopUpButton…)
 - **Windows chrome** → WinUI 3 (CommandBar, ComboBox, NumberBox, Slider…)
 - **Linux chrome** → Compose Multiplatform Material 3 (FilledTonalButton, SegmentedButton, OutlinedTextField…)
@@ -61,7 +61,7 @@ Canvas typography: **Ubuntu** for slide content, **IBM Plex Mono** for chrome me
 
 ### Windows (WinUI 3)
 - Window: 8px radius. Font: Segoe UI Variable.
-- **Title bar (40px):** app icon (17px violet-gradient rounded square "S") + "Rendering Pipeline.slides — slides-kt" (12px); caption buttons ─ ▢ ✕ (46px wide, close hovers `#c42b1c`).
+- **Title bar (40px):** app icon (17px violet-gradient rounded square "S") + "Rendering Pipeline.slides — Cupboard" (12px); caption buttons ─ ▢ ✕ (46px wide, close hovers `#c42b1c`).
 - **CommandBar (48px):** accent-filled Play button (34px h, 4px radius, accent `#8961ff` dark / `#6f42e0` light), 1px divider, then quiet 34px buttons with 14px icons + 13px labels (New slide, Text, Shapes, Media); right: zoom ComboBox (bordered, `ctrlB` border with darker bottom edge `ctrlBB` — the Fluent "underline" affordance) and a "…" overflow button.
 - **Inspector**: text tabs Format/Animate with 2.5px accent underline on the active tab. Fluent controls: 32px ComboBoxes/NumberBox (spinner ⌃⌄ inside right edge), B/I/U as 32px toggle buttons (active = accent fill), 4px-radius fields, slider with ring-style thumb (18px ring, 10px accent dot). Build-order rows: 4px radius with a 3px accent **left** border on the active row.
 
@@ -80,7 +80,7 @@ Accents: mac `#7F52FF` (both modes); win `#8961ff` dark / `#6f42e0` light; linux
 
 ## Interactions & Behavior
 - **Format / Animate switch:** clicking toolbar Format/Animate (mac) or inspector tabs (win/linux) swaps the inspector panel. Entering Animate reveals build-order badges on the canvas; leaving hides them.
-- **Slide selection:** clicking a navigator thumbnail selects it (accent ring moves, status bar count updates). Design shows 8 slides: slides-kt, Agenda, Why KMP, Rendering Pipeline (selected, #4), Scene Graph, Native Interop, Benchmarks, Roadmap.
+- **Slide selection:** clicking a navigator thumbnail selects it (accent ring moves, status bar count updates). Design shows 8 slides: Cupboard, Agenda, Why KMP, Rendering Pipeline (selected, #4), Scene Graph, Native Interop, Benchmarks, Roadmap.
 - **Hover states:** every toolbar/inspector control has one (see per-OS notes: mac rounded `hov` fill; win `hov`/`ctrlHov` fills, red close; linux state-layer `hov`, brightness lift on filled pills).
 - **Selection handles:** 8 handles on the selected canvas element; edge midpoints resize one axis, corners both.
 - **Alignment guides:** appear during drag when element center/edges align with slide center; snap + yellow dashed guide with label chip.

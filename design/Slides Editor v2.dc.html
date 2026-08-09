@@ -28,7 +28,7 @@
           <div style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></div>
           <div style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></div>
         </div>
-        <div style="position: absolute; left: 0; right: 0; top: 6px; text-align: center; pointer-events: none; font-size: 13px; color: {{ t.title }}; font-weight: 600;">Rendering Pipeline <span style="color: {{ t.faint }}; font-weight: 400;">﹀</span></div>
+        <div style="position: absolute; left: 0; right: 0; top: 6px; text-align: center; pointer-events: none; font-size: 13px; color: {{ t.title }}; font-weight: 600;">Lorem Ipsum <span style="color: {{ t.faint }}; font-weight: 400;">﹀</span></div>
         <div style="flex: 1; display: flex; align-items: flex-end; justify-content: space-between; margin-left: 28px; padding-top: 14px;">
           <div style="display: flex; align-items: flex-end; gap: 4px;">
             <div style="display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 5px 10px; border-radius: 7px; cursor: pointer;" style-hover="background: {{ t.hov }};">
@@ -80,8 +80,8 @@
     <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
       <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; background: {{ t.bar }};">
         <div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; flex: 1;">
-          <div style="width: 17px; height: 17px; border-radius: 3px; background: linear-gradient(135deg, #7F52FF, #b078ff); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 700;">S</div>
-          <div style="font-size: 12px; color: {{ t.title }};">Rendering Pipeline.slides — slides-kt</div>
+          <div style="width: 17px; height: 17px; border-radius: 3px; background: linear-gradient(135deg, #7F52FF, #b078ff); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 700;">C</div>
+          <div style="font-size: 12px; color: {{ t.title }};">Lorem Ipsum.slides — Cupboard</div>
         </div>
         <div style="display: flex; height: 100%;">
           <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: {{ t.dim }}; font-size: 13px;" style-hover="background: {{ t.hov }};">─</div>
@@ -121,8 +121,8 @@
     <sc-if value="{{ isLinux }}" hint-placeholder-val="{{ false }}">
       <div style="height: 50px; flex-shrink: 0; display: flex; align-items: center; background: {{ t.bar }}; padding: 0 14px; position: relative;">
         <div style="display: flex; align-items: center; gap: 10px;">
-          <div style="width: 22px; height: 22px; border-radius: 7px; background: {{ t.accent }}; display: flex; align-items: center; justify-content: center; color: {{ t.accentText }}; font-size: 11px; font-weight: 700;">S</div>
-          <div style="font-size: 14px; font-weight: 500; color: {{ t.title }};">Rendering Pipeline.slides</div>
+          <div style="width: 22px; height: 22px; border-radius: 7px; background: {{ t.accent }}; display: flex; align-items: center; justify-content: center; color: {{ t.accentText }}; font-size: 11px; font-weight: 700;">C</div>
+          <div style="font-size: 14px; font-weight: 500; color: {{ t.title }};">Lorem Ipsum.slides</div>
         </div>
         <div style="margin-left: auto; display: flex; gap: 8px;">
           <div style="width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ t.dim }}; font-size: 13px;" style-hover="background: {{ t.hov }};">–</div>
@@ -158,7 +158,8 @@
       <div style="width: 224px; flex-shrink: 0; display: flex; flex-direction: column; background: {{ t.panel }}; border-right: 1px solid {{ t.border }};">
         <div style="flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px;">
           <sc-for list="{{ slides }}" as="s" hint-placeholder-count="6">
-            <div onClick="{{ s.onClick }}" style="display: flex; gap: 8px; cursor: pointer;">
+            <div onClick="{{ s.onClick }}" style="display: flex; gap: 6px; cursor: pointer; margin-left: {{ s.indentPx }};">
+              <div onClick="{{ s.onToggle }}" style="width: 11px; flex-shrink: 0; font-size: 8px; color: {{ t.faint }}; padding-top: 5px; text-align: center;">{{ s.arrow }}</div>
               <div style="width: 16px; font-size: 11px; color: {{ t.faint }}; text-align: right; padding-top: 2px; font-family: 'IBM Plex Mono', monospace;">{{ s.n }}</div>
               <div style="flex: 1; aspect-ratio: 16/9; border-radius: {{ t.thumbR }}; background: linear-gradient(140deg, #2a2452 0%, #1a1c2e 70%); border: 2px solid {{ s.ring }}; box-sizing: border-box; padding: 8px 9px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.3);">
                 <div style="height: 7px; width: 70%; border-radius: 2px; background: rgba(255,255,255,0.75);"></div>
@@ -181,8 +182,8 @@
               <div style="position: absolute; left: 50%; top: -26px; transform: translateX(-50%); background: #f5c518; color: #17181c; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; z-index: 5;">center x</div>
             </sc-if>
             <div style="position: absolute; left: 72px; top: 64px; width: 800px; padding: 10px 14px; border: 1.5px solid #7F52FF; box-sizing: border-box;">
-              <div style="font-size: 46px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; font-family: 'Ubuntu', sans-serif;">Rendering Pipeline</div>
-              <div style="font-size: 19px; color: #a9a0d8; margin-top: 6px; font-family: 'Ubuntu', sans-serif;">From composable tree to native surface in four passes</div>
+              <div style="font-size: 46px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px; font-family: 'Ubuntu', sans-serif;">Lorem ipsum dolor</div>
+              <div style="font-size: 19px; color: #a9a0d8; margin-top: 6px; font-family: 'Ubuntu', sans-serif;">Consectetur adipiscing elit, sed do eiusmod tempor</div>
               <div style="position: absolute; left: -5px; top: -5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
               <div style="position: absolute; left: 50%; top: -5px; margin-left: -4.5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
               <div style="position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
@@ -194,28 +195,28 @@
               <div style="position: absolute; left: -2px; top: -26px; display: {{ badgeDisplay }}; align-items: center; gap: 5px;"><div style="width: 18px; height: 18px; border-radius: 50%; background: #7F52FF; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">1</div><div style="font-size: 11px; color: #a98fff;">Fade Up · 0.4s</div></div>
             </div>
             <div style="position: absolute; left: 72px; top: 250px; display: flex; align-items: center; gap: 14px; font-family: 'Ubuntu', sans-serif;">
-              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Compose</div>
+              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Lorem</div>
               <div style="color: #6f66a8; font-size: 18px;">→</div>
-              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Layout</div>
+              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Ipsum</div>
               <div style="color: #6f66a8; font-size: 18px;">→</div>
-              <div style="position: relative; width: 150px; height: 76px; border-radius: 10px; background: rgba(245,197,24,0.14); border: 1.5px solid rgba(245,197,24,0.6); display: flex; align-items: center; justify-content: center; color: #ffe28a; font-size: 15px; font-weight: 600;">Draw
+              <div style="position: relative; width: 150px; height: 76px; border-radius: 10px; background: rgba(245,197,24,0.14); border: 1.5px solid rgba(245,197,24,0.6); display: flex; align-items: center; justify-content: center; color: #ffe28a; font-size: 15px; font-weight: 600;">Dolor
                 <div style="position: absolute; left: -2px; top: -26px; display: {{ badgeDisplay }}; align-items: center;"><div style="width: 18px; height: 18px; border-radius: 50%; background: #7F52FF; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">2</div></div>
               </div>
               <div style="color: #6f66a8; font-size: 18px;">→</div>
-              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Present</div>
+              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Amet</div>
             </div>
             <div style="position: absolute; left: 72px; top: 372px; width: 380px; height: 110px; border-radius: 10px; border: 1.5px dashed rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; gap: 10px; color: rgba(255,255,255,0.45); font-size: 13px; font-family: 'Ubuntu', sans-serif;">
               <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="1.5"></rect><circle cx="4.5" cy="4.5" r="1.4"></circle><path d="M1 10.5 L5 7 L8 9.5 L10.5 7.5 L13 9.5"></path></svg>
-              Drop frame capture here
+              Drop image here
             </div>
-            <div style="position: absolute; right: 72px; top: 372px; width: 400px; font-size: 15px; line-height: 1.55; color: #b8b3d6; font-family: 'Ubuntu', sans-serif;">Skia-backed <a href="#">CMP canvas</a> renders every slide at native refresh rate — the same scene graph on all three desktops.</div>
+            <div style="position: absolute; right: 72px; top: 372px; width: 400px; font-size: 15px; line-height: 1.55; color: #b8b3d6; font-family: 'Ubuntu', sans-serif;">Lorem ipsum dolor sit amet, <a href="#">consectetur</a> adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore.</div>
           </div>
         </div>
 
         <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
           <div style="flex-shrink: 0; border-top: 1px solid {{ t.border }}; background: {{ t.panel }}; padding: 12px 24px 14px; display: flex; flex-direction: column; gap: 6px;">
             <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: {{ t.faint }};">SPEAKER NOTES</div>
-            <div style="font-size: 13.5px; color: {{ t.dim }}; line-height: 1.5;">Walk through each pass left to right. Pause on Draw — mention Skia and why we skip the platform view hierarchy entirely.</div>
+            <div style="font-size: 13.5px; color: {{ t.dim }}; line-height: 1.5;">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</div>
           </div>
         </sc-if>
 
@@ -313,17 +314,17 @@
                 <div style="font-size: 11px; font-weight: 700; color: {{ t.subtle }};">Build Order</div>
                 <div style="display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; background: rgba(127,82,255,0.22); border: 1px solid #7F52FF; cursor: pointer;">
                   <div style="width: 17px; height: 17px; border-radius: 50%; background: #7F52FF; color: #fff; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">1</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Rendering Pipeline</div><div style="font-size: 10.5px; color: {{ t.subtle }};">Fade Up · 0.4s</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Lorem ipsum dolor</div><div style="font-size: 10.5px; color: {{ t.subtle }};">Fade Up · 0.4s</div></div>
                   <div style="color: {{ t.subtle2 }}; font-size: 11px; cursor: grab;">⠿</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; background: {{ t.rowBg }}; cursor: pointer;" style-hover="background: {{ t.rowHov }};">
                   <div style="width: 17px; height: 17px; border-radius: 50%; background: {{ t.badgeOff }}; color: {{ t.badgeOffText }}; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">2</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Draw</div><div style="font-size: 10.5px; color: {{ t.subtle }};">Pop · 0.3s · after 1</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Dolor</div><div style="font-size: 10.5px; color: {{ t.subtle }};">Pop · 0.3s · after 1</div></div>
                   <div style="color: {{ t.subtle2 }}; font-size: 11px; cursor: grab;">⠿</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 6px; background: {{ t.rowBg }}; cursor: pointer;" style-hover="background: {{ t.rowHov }};">
                   <div style="width: 17px; height: 17px; border-radius: 50%; background: {{ t.badgeOff }}; color: {{ t.badgeOffText }}; font-size: 10.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">3</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — frame capture</div><div style="font-size: 10.5px; color: {{ t.subtle }};">Dissolve · 0.5s · with 2</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — placeholder</div><div style="font-size: 10.5px; color: {{ t.subtle }};">Dissolve · 0.5s · with 2</div></div>
                   <div style="color: {{ t.subtle2 }}; font-size: 11px; cursor: grab;">⠿</div>
                 </div>
                 <div style="align-self: center; margin-top: 4px; height: 22px; padding: 0 14px; display: flex; align-items: center; border-radius: 5px; background: {{ t.btnGrad }}; color: {{ t.ctrlText }}; font-size: 12px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.4); cursor: pointer;" style-hover="filter: brightness(1.06);">Add Build…</div>
@@ -415,17 +416,17 @@
                 <div style="font-size: 12px; color: {{ t.subtle }};">Build order</div>
                 <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 4px; background: {{ t.rowBg }}; border-left: 3px solid {{ t.accent }}; cursor: pointer;">
                   <div style="width: 18px; height: 18px; border-radius: 50%; background: {{ t.accent }}; color: {{ t.accentText }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">1</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Rendering Pipeline</div><div style="font-size: 11px; color: {{ t.subtle2 }};">Fade Up · 0.4s</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Lorem ipsum dolor</div><div style="font-size: 11px; color: {{ t.subtle2 }};">Fade Up · 0.4s</div></div>
                   <div style="color: {{ t.subtle2 }}; font-size: 12px; cursor: grab;">⠿</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 4px; background: {{ t.rowBg }}; border-left: 3px solid transparent; cursor: pointer;" style-hover="background: {{ t.rowHov }};">
                   <div style="width: 18px; height: 18px; border-radius: 50%; background: {{ t.badgeOff }}; color: {{ t.badgeOffText }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">2</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Draw</div><div style="font-size: 11px; color: {{ t.subtle2 }};">Pop · 0.3s · after 1</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Dolor</div><div style="font-size: 11px; color: {{ t.subtle2 }};">Pop · 0.3s · after 1</div></div>
                   <div style="color: {{ t.subtle2 }}; font-size: 12px; cursor: grab;">⠿</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 4px; background: {{ t.rowBg }}; border-left: 3px solid transparent; cursor: pointer;" style-hover="background: {{ t.rowHov }};">
                   <div style="width: 18px; height: 18px; border-radius: 50%; background: {{ t.badgeOff }}; color: {{ t.badgeOffText }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">3</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — frame capture</div><div style="font-size: 11px; color: {{ t.subtle2 }};">Dissolve · 0.5s · with 2</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — placeholder</div><div style="font-size: 11px; color: {{ t.subtle2 }};">Dissolve · 0.5s · with 2</div></div>
                   <div style="color: {{ t.subtle2 }}; font-size: 12px; cursor: grab;">⠿</div>
                 </div>
                 <div style="height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ t.ctrl }}; border: 1px solid {{ t.ctrlB }}; border-bottom-color: {{ t.ctrlBB }}; color: {{ t.text }}; font-size: 12.5px; cursor: pointer; margin-top: 2px; box-sizing: border-box;" style-hover="background: {{ t.ctrlHov }};">Add build</div>
@@ -528,17 +529,17 @@
                 <div style="font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {{ t.subtle }};">BUILD ORDER</div>
                 <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: {{ t.tonal }}; cursor: pointer;">
                   <div style="width: 20px; height: 20px; border-radius: 50%; background: {{ t.accent }}; color: {{ t.accentText }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">1</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 13px; color: {{ t.tonalText }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Rendering Pipeline</div><div style="font-size: 11px; color: {{ t.subtle }};">Fade Up · 0.4s</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 13px; color: {{ t.tonalText }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Lorem ipsum dolor</div><div style="font-size: 11px; color: {{ t.subtle }};">Fade Up · 0.4s</div></div>
                   <div style="color: {{ t.subtle }}; font-size: 12px; cursor: grab;">⠿</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: {{ t.rowBg }}; cursor: pointer;" style-hover="background: {{ t.rowHov }};">
                   <div style="width: 20px; height: 20px; border-radius: 50%; background: {{ t.badgeOff }}; color: {{ t.badgeOffText }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">2</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 13px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Draw</div><div style="font-size: 11px; color: {{ t.subtle }};">Pop · 0.3s · after 1</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 13px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Dolor</div><div style="font-size: 11px; color: {{ t.subtle }};">Pop · 0.3s · after 1</div></div>
                   <div style="color: {{ t.subtle }}; font-size: 12px; cursor: grab;">⠿</div>
                 </div>
                 <div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: {{ t.rowBg }}; cursor: pointer;" style-hover="background: {{ t.rowHov }};">
                   <div style="width: 20px; height: 20px; border-radius: 50%; background: {{ t.badgeOff }}; color: {{ t.badgeOffText }}; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">3</div>
-                  <div style="flex: 1; min-width: 0;"><div style="font-size: 13px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — frame capture</div><div style="font-size: 11px; color: {{ t.subtle }};">Dissolve · 0.5s · with 2</div></div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 13px; color: {{ t.text }}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — placeholder</div><div style="font-size: 11px; color: {{ t.subtle }};">Dissolve · 0.5s · with 2</div></div>
                   <div style="color: {{ t.subtle }}; font-size: 12px; cursor: grab;">⠿</div>
                 </div>
                 <div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 20px; background: {{ t.tonal }}; color: {{ t.tonalText }}; font-size: 13.5px; font-weight: 500; cursor: pointer; margin-top: 4px;" style-hover="filter: brightness(1.06);">+ Add build</div>
@@ -553,7 +554,7 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1680, &quot;height&quot;: 1050}, &quot;os&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;macOS&quot;, &quot;Windows&quot;, &quot;Linux&quot;], &quot;default&quot;: &quot;macOS&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Platform&quot;}, &quot;theme&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;Dark&quot;, &quot;Light&quot;], &quot;default&quot;: &quot;Dark&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Platform&quot;}, &quot;showNotes&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;View&quot;}, &quot;showGuides&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;View&quot;}}">
 class Component extends DCLogic {
-  state = { tab: 'format', selected: 3 };
+  state = { tab: 'format', selected: 3, collapsed: {} };
   renderVals() {
     const os = this.props.os ?? 'macOS';
     const mode = this.props.theme ?? 'Dark';
@@ -634,7 +635,16 @@ class Component extends DCLogic {
     };
     const base = themes[os] ?? themes.macOS;
     const t = Object.assign({ font: base.font, winR: base.winR, thumbR: base.thumbR, uiLabel: base.uiLabel + (dark ? ' · dark' : ' · light') }, dark ? base.dark : base.light);
-    const titles = ['slides-kt', 'Agenda', 'Why KMP', 'Rendering Pipeline', 'Scene Graph', 'Native Interop', 'Benchmarks', 'Roadmap'];
+    const defs = [
+      { title: 'Lorem ipsum' },
+      { title: 'Dolor sit' },
+      { title: 'Amet consectetur', group: true },
+      { title: 'Adipiscing elit', depth: 1 },
+      { title: 'Sed eiusmod', depth: 1 },
+      { title: 'Tempor incididunt', depth: 1 },
+      { title: 'Ut labore' },
+      { title: 'Dolore magna' },
+    ];
     const isFormat = this.state.tab === 'format';
     return {
       t, isMac, isWin, isLinux,
@@ -654,11 +664,26 @@ class Component extends DCLogic {
       setFormat: () => this.setState({ tab: 'format' }),
       setAnimate: () => this.setState({ tab: 'animate' }),
       slideNum: this.state.selected + 1,
-      slides: titles.map((title, i) => ({
-        n: i + 1, title,
-        ring: i === this.state.selected ? t.accent : 'transparent',
-        onClick: () => this.setState({ selected: i }),
-      })),
+      slides: defs.reduce((rows, d, i) => {
+        const depth = d.depth ?? 0;
+        if (depth > 0) {
+          let p = i - 1;
+          while (p >= 0 && (defs[p].depth ?? 0) > 0) p--;
+          if (this.state.collapsed[p]) return rows;
+        }
+        rows.push({
+          n: i + 1, title: d.title,
+          indentPx: (depth * 22) + 'px',
+          arrow: d.group ? (this.state.collapsed[i] ? '▶' : '▼') : '',
+          onToggle: d.group ? ((e) => {
+            e.stopPropagation();
+            this.setState(s => ({ collapsed: Object.assign({}, s.collapsed, { [i]: !s.collapsed[i] }) }));
+          }) : undefined,
+          ring: i === this.state.selected ? t.accent : 'transparent',
+          onClick: () => this.setState({ selected: i }),
+        });
+        return rows;
+      }, []),
     };
   }
 }
