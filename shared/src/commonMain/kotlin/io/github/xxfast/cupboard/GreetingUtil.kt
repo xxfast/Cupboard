@@ -1,4 +1,4 @@
-package io.github.xxfast.slides
+package io.github.xxfast.cupboard
 
 fun sayHello(to: String): String =
     "Hello, $to!"

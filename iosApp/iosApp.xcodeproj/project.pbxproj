@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		0FBCD3FF911417B4A8600D07 /* slides-kt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = slides-kt.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0FBCD3FF911417B4A8600D07 /* Cupboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cupboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -59,7 +59,7 @@
 		55749391DC03117C2A4618E7 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				0FBCD3FF911417B4A8600D07 /* slides-kt.app */,
+				0FBCD3FF911417B4A8600D07 /* Cupboard.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,7 +87,7 @@
 			packageProductDependencies = (
 			);
 			productName = iosApp;
-			productReference = 0FBCD3FF911417B4A8600D07 /* slides-kt.app */;
+			productReference = 0FBCD3FF911417B4A8600D07 /* Cupboard.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */

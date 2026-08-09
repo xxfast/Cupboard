@@ -20,11 +20,11 @@ dependencies {
 }
 
 android {
-    namespace = "io.github.xxfast.slides"
+    namespace = "io.github.xxfast.cupboard"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "io.github.xxfast.slides"
+        applicationId = "io.github.xxfast.cupboard"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1

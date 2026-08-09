@@ -17,11 +17,11 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "io.github.xxfast.slides.MainKt"
+        mainClass = "io.github.xxfast.cupboard.MainKt"
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "io.github.xxfast.slides"
+            packageName = "io.github.xxfast.cupboard"
             packageVersion = "1.0.0"
         }
     }

@@ -1,4 +1,4 @@
-rootProject.name = "slides-kt"
+rootProject.name = "Cupboard"
 
 pluginManagement {
     repositories {

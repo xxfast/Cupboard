@@ -1,4 +1,4 @@
-package io.github.xxfast.slides
+package io.github.xxfast.cupboard
 
 interface Platform {
     val name: String

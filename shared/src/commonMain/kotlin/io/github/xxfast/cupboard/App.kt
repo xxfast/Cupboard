@@ -1,4 +1,4 @@
-package io.github.xxfast.slides
+package io.github.xxfast.cupboard
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
@@ -16,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import org.jetbrains.compose.resources.painterResource
 
-import slides_kt.shared.generated.resources.Res
-import slides_kt.shared.generated.resources.compose_multiplatform
+import cupboard.shared.generated.resources.Res
+import cupboard.shared.generated.resources.compose_multiplatform
 
 @Composable
 @Preview

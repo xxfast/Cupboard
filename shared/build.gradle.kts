@@ -31,7 +31,7 @@ kotlin {
     }
     
     android {
-       namespace = "io.github.xxfast.slides.shared"
+       namespace = "io.github.xxfast.cupboard.shared"
        compileSdk = libs.versions.android.compileSdk.get().toInt()
        minSdk = libs.versions.android.minSdk.get().toInt()
     
