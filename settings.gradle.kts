@@ -34,5 +34,5 @@ plugins {
 include(":androidApp")
 include(":desktopApp")
 include(":macosApp")
-include(":shared")
+include(":cupboard")
 include(":webApp")

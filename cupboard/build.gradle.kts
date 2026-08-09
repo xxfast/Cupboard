@@ -14,7 +14,7 @@ kotlin {
         iosSimulatorArm64()
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
-            baseName = "Shared"
+            baseName = "Cupboard"
             isStatic = true
         }
     }
@@ -33,7 +33,7 @@ kotlin {
     }
     
     android {
-       namespace = "io.github.xxfast.cupboard.shared"
+       namespace = "io.github.xxfast.cupboard.core"
        compileSdk = libs.versions.android.compileSdk.get().toInt()
        minSdk = libs.versions.android.minSdk.get().toInt()
     
@@ -79,4 +79,7 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+}
+compose.resources {
+    packageOfResClass = "io.github.xxfast.cupboard.resources"
 }

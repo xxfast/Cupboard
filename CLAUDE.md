@@ -14,14 +14,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Web: `./gradlew :webApp:wasmJsBrowserDevelopmentRun` (or `jsBrowserDevelopmentRun`)
 - Android: `./gradlew :androidApp:assembleDebug`
 - iOS: open `iosApp/` in Xcode
-- Tests (all targets): `./gradlew :shared:allTests`
-- Tests (JVM only, fastest): `./gradlew :shared:jvmTest`
-- Single test class: `./gradlew :shared:jvmTest --tests "io.github.xxfast.cupboard.SomeTest"`
+- Tests (all targets): `./gradlew :cupboard:allTests`
+- Tests (JVM only, fastest): `./gradlew :cupboard:jvmTest`
+- Single test class: `./gradlew :cupboard:jvmTest --tests "io.github.xxfast.cupboard.SomeTest"`
 - Desktop distributables: `./gradlew :desktopApp:packageDistributionForCurrentOS` (Dmg/Msi/Deb)
 
 ## Module structure
 
-- `shared/` – KMP library, targets: `android`, `iosArm64`/`iosSimulatorArm64` (static framework `Shared`), `jvm`, `js`, `wasmJs`. All product code goes in `commonMain` unless it genuinely needs a platform API.
+- `cupboard/` – KMP library, targets: `android`, `iosArm64`/`iosSimulatorArm64` (static framework `Cupboard`), `jvm`, `js`, `wasmJs`. All product code goes in `commonMain` unless it genuinely needs a platform API.
 - `desktopApp/` – Compose for Desktop (JVM) entry point, `io.github.xxfast.cupboard.MainKt`. This is the Linux app and the fallback shell for all platforms.
 - `androidApp/`, `webApp/`, `iosApp/` – template entry points, not part of the core desktop goal (kept for now).
 - `design/` – HTML design prototypes + handoff spec (`design/README.md`). Reference only, not production code.

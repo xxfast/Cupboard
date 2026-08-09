@@ -15,7 +15,7 @@
 
 ## Architecture
 
-- Document model (slides, elements, builds) is serializable data in `shared`, not compiled-in composables.
+- Document model (slides, elements, builds) is serializable data in `:cupboard`, not compiled-in composables.
 - Editing canvas (selection, handles, alignment guides, drag) is our own Compose code.
 - [CuP](https://github.com/KodeinKoders/CuP) drives the presentation runtime: Play mode, step/build animation, transitions, speaker window, laser, image/PDF export, and `cup-source-code` for highlighted code. Runtime `Slide` instances get built from the document model.
 - CuP stays behind our own interface so it's swappable (it's beta, and not all targets exist yet).
@@ -36,6 +36,6 @@
 ## Build order
 
 1. Shared canvas + document model (pure common code, compiles for `jvm` and `macosArm64`)
-2. Linux app on Compose for Desktop (doubles as the fallback shell for all three platforms)
-3. macOS `NSViewRepresentable` spike, then the SwiftUI app
+2. macOS `NSViewRepresentable` spike, then the SwiftUI app
+3. Linux app on Compose for Desktop (doubles as the fallback shell for all three platforms)
 4. Windows (WinUI 3 chrome, HWND/islands embedding)
