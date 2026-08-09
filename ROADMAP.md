@@ -12,7 +12,7 @@ What we're building and in what order. See `GOALS.md` for the why, `design/READM
 
 ## Phase 1: Shared canvas + document model
 
-- [ ] Serializable document model in `:cupboard`: slides, elements (text box, shape, image, code), builds/animations, speaker notes.
+- [ ] Serializable document model in `:cupboard`: slides (nestable groups per design v2, navigator indents 22px/depth with collapse), elements (text box, shape, image, code), builds/animations, speaker notes. The model is data, not composables: it compiles to CuP `Slide`/`SlideGroup` at runtime for Play mode, and could later export as a CuP Kotlin project.
 - [ ] Element renderers as pure common composables (no JVM-only deps anywhere; must compile for `jvm` and `macosArm64`).
 - [ ] Canvas composable: fixed 944x531 @1x, container scaling, document-dark styling per the design.
 - [ ] Editing layer: selection, 8 resize handles, drag, alignment guides + snap.
