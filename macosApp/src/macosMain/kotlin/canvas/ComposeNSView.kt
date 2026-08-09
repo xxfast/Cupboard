@@ -137,6 +137,13 @@ class ComposeNSView(
         window?.let { scene.density = Density(it.backingScaleFactor.toFloat()) }
     }
 
+    override fun layout() {
+        super.layout()
+        val (w, h) = frame.useContents { size.width to size.height }
+        println("[ComposeNSView] layout frame=${w}x${h}")
+        skiaLayer.needRender()
+    }
+
     override fun viewWillMoveToWindow(newWindow: NSWindow?) {
         super.viewWillMoveToWindow(newWindow)
         updateTrackingAreas()
