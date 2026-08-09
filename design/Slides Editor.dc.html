@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;500;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #101116; }
+  a { color: #a98fff; text-decoration: none; }
+  a:hover { color: #c3b1ff; }
+  ::selection { background: rgba(127,82,255,0.35); }
+</style>
+</helmet>
+<div data-screen-label="Slides Editor" style="width: 1680px; height: 1050px; box-sizing: border-box; padding: 30px; background: radial-gradient(1200px 800px at 30% 20%, #1c1e2b 0%, #101116 60%), #101116; display: flex; align-items: stretch; justify-content: center; font-family: {{ fontFamily }};">
+  <div style="flex: 1; display: flex; flex-direction: column; background: #1d1f24; border-radius: {{ winRadius }}; border: 1px solid #33363d; box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.4); overflow: hidden;">
+
+    <!-- ============ TITLE BAR ============ -->
+    <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
+      <div style="height: 46px; flex-shrink: 0; display: flex; align-items: center; padding: 0 16px; background: linear-gradient(#282a31, #24262c); border-bottom: 1px solid #33363d; position: relative;">
+        <div style="display: flex; gap: 8px;">
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; border: 1px solid rgba(0,0,0,0.2); box-sizing: border-box;"></div>
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e; border: 1px solid rgba(0,0,0,0.2); box-sizing: border-box;"></div>
+          <div style="width: 12px; height: 12px; border-radius: 50%; background: #28c840; border: 1px solid rgba(0,0,0,0.2); box-sizing: border-box;"></div>
+        </div>
+        <div style="position: absolute; left: 0; right: 0; text-align: center; pointer-events: none; font-size: 13px; color: #c6c9d1; font-weight: 500;">Rendering Pipeline.slides <span style="color: #6b6f7a;">— slides-kt</span></div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
+      <div style="height: 42px; flex-shrink: 0; display: flex; align-items: center; background: #24262c; border-bottom: 1px solid #33363d;">
+        <div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; flex: 1;">
+          <div style="width: 18px; height: 18px; border-radius: 4px; background: linear-gradient(135deg, #7F52FF, #b078ff); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 10px; font-weight: 700;">S</div>
+          <div style="font-size: 12.5px; color: #c6c9d1;">Rendering Pipeline.slides — slides-kt</div>
+        </div>
+        <div style="display: flex; height: 100%;">
+          <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; font-size: 13px;" style-hover="background: #33363d;">─</div>
+          <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; font-size: 11px;" style-hover="background: #33363d;">▢</div>
+          <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; font-size: 13px;" style-hover="background: #e81123; color: #fff;">✕</div>
+        </div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ isLinux }}" hint-placeholder-val="{{ false }}">
+      <div style="height: 46px; flex-shrink: 0; display: flex; align-items: center; background: linear-gradient(#2b2d34, #24262c); border-bottom: 1px solid #33363d; padding: 0 12px; position: relative;">
+        <div style="position: absolute; left: 0; right: 0; text-align: center; pointer-events: none; font-size: 13px; font-weight: 700; color: #c6c9d1;">Rendering Pipeline.slides</div>
+        <div style="margin-left: auto; display: flex; gap: 12px;">
+          <div style="width: 24px; height: 24px; border-radius: 50%; background: #33363d; display: flex; align-items: center; justify-content: center; color: #c6c9d1; font-size: 11px;" style-hover="background: #40434c;">–</div>
+          <div style="width: 24px; height: 24px; border-radius: 50%; background: #33363d; display: flex; align-items: center; justify-content: center; color: #c6c9d1; font-size: 10px;" style-hover="background: #40434c;">▢</div>
+          <div style="width: 24px; height: 24px; border-radius: 50%; background: #33363d; display: flex; align-items: center; justify-content: center; color: #c6c9d1; font-size: 11px;" style-hover="background: #e01b24; color: #fff;">✕</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ============ TOOLBAR ============ -->
+    <div style="height: 54px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: #22242a; border-bottom: 1px solid #33363d;">
+      <div style="display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; border-radius: 7px; background: linear-gradient(135deg, #7F52FF, #9a6bff); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 4px rgba(127,82,255,0.4);" style-hover="filter: brightness(1.1);">
+        <svg width="11" height="12" viewBox="0 0 11 12" fill="currentColor"><path d="M0 0 L11 6 L0 12 Z"></path></svg>
+        Play
+      </div>
+      <div style="width: 1px; height: 24px; background: #33363d; margin: 0 4px;"></div>
+      <div style="display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 7px; color: #c6c9d1; font-size: 13px; cursor: pointer;" style-hover="background: #2c2f36;">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="2.2" width="12.6" height="9.6" rx="1.5"></rect><path d="M7 5.5 V9 M5.25 7.25 H8.75"></path></svg>
+        Add Slide
+      </div>
+      <div style="width: 1px; height: 24px; background: #33363d; margin: 0 4px;"></div>
+      <div style="display: flex; gap: 2px;">
+        <div title="Text" style="width: 34px; height: 32px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #c6c9d1; cursor: pointer;" style-hover="background: #2c2f36;"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 3 V1 H11.5 V3 M6.5 1 V12 M4.5 12 H8.5"></path></svg></div>
+        <div title="Shape" style="width: 34px; height: 32px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #c6c9d1; cursor: pointer;" style-hover="background: #2c2f36;"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="4.7" width="8" height="8" rx="1.2"></rect><circle cx="9.5" cy="4.2" r="3.5"></circle></svg></div>
+        <div title="Image" style="width: 34px; height: 32px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #c6c9d1; cursor: pointer;" style-hover="background: #2c2f36;"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="1.5"></rect><circle cx="4.5" cy="4.5" r="1.4"></circle><path d="M1 10.5 L5 7 L8 9.5 L10.5 7.5 L13 9.5"></path></svg></div>
+        <div title="Media" style="width: 34px; height: 32px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #c6c9d1; cursor: pointer;" style-hover="background: #2c2f36;"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="1.7" width="12.6" height="10.6" rx="1.5"></rect><path d="M5.5 4.8 L9.2 7 L5.5 9.2 Z" fill="currentColor" stroke="none"></path></svg></div>
+      </div>
+      <div style="width: 1px; height: 24px; background: #33363d; margin: 0 4px;"></div>
+      <div style="display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 7px; color: #c6c9d1; font-size: 13px; cursor: pointer;" style-hover="background: #2c2f36;">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.5 0.7 V12.3 M2 3.5 H11 M0.7 6.5 H12.3 M2 9.5 H11"></path></svg>
+        Arrange
+      </div>
+      <div style="flex: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid #33363d; color: #9a9ea8; font-size: 12.5px; cursor: pointer;" style-hover="background: #2c2f36;">100% <span style="font-size: 9px;">▾</span></div>
+      <div style="display: flex; border: 1px solid #33363d; border-radius: 7px; overflow: hidden;">
+        <div title="Navigator" style="width: 34px; height: 30px; display: flex; align-items: center; justify-content: center; background: #2c2f36; color: #e8e9ec; cursor: pointer;"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="0.7" y="0.7" width="4.6" height="3.6" rx="0.8"></rect><rect x="0.7" y="6.7" width="4.6" height="3.6" rx="0.8"></rect><path d="M8 2.5 H12.3 M8 8.5 H12.3"></path></svg></div>
+        <div title="Inspector" style="width: 34px; height: 30px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; cursor: pointer;" style-hover="background: #2c2f36;"><svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="0.7" y="0.7" width="11.6" height="11.6" rx="1.5"></rect><path d="M8.5 0.7 V12.3"></path></svg></div>
+      </div>
+    </div>
+
+    <!-- ============ MAIN ============ -->
+    <div style="flex: 1; display: flex; min-height: 0;">
+
+      <!-- Navigator -->
+      <div style="width: 224px; flex-shrink: 0; display: flex; flex-direction: column; background: #202228; border-right: 1px solid #33363d;">
+        <div style="flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px;">
+          <sc-for list="{{ slides }}" as="s" hint-placeholder-count="6">
+            <div onClick="{{ s.onClick }}" style="display: flex; gap: 8px; cursor: pointer;">
+              <div style="width: 16px; font-size: 11px; color: #6b6f7a; text-align: right; padding-top: 2px; font-family: 'IBM Plex Mono', monospace;">{{ s.n }}</div>
+              <div style="flex: 1; aspect-ratio: 16/9; border-radius: 6px; background: linear-gradient(140deg, #2a2452 0%, #1a1c2e 70%); border: 2px solid {{ s.ring }}; box-sizing: border-box; padding: 8px 9px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 1px 4px rgba(0,0,0,0.3);">
+                <div style="height: 7px; width: 70%; border-radius: 2px; background: rgba(255,255,255,0.75);"></div>
+                <div style="height: 4px; width: 88%; border-radius: 2px; background: rgba(255,255,255,0.22);"></div>
+                <div style="height: 4px; width: 60%; border-radius: 2px; background: rgba(255,255,255,0.22);"></div>
+                <div style="margin-top: auto; font-size: 7.5px; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ s.title }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- Canvas column -->
+      <div style="flex: 1; display: flex; flex-direction: column; min-width: 0; background: #17181c;">
+        <div style="flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; position: relative; padding: 28px;">
+          <!-- Slide -->
+          <div style="width: 944px; height: 531px; position: relative; border-radius: 4px; background: linear-gradient(140deg, #2a2452 0%, #171930 55%, #101223 100%); box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 0 1px #33363d; overflow: visible;">
+            <!-- vertical center guide -->
+            <sc-if value="{{ showGuides }}" hint-placeholder-val="{{ true }}">
+              <div style="position: absolute; left: 50%; top: -12px; bottom: -12px; width: 0; border-left: 1px dashed #f5c518; opacity: 0.9; z-index: 5;"></div>
+              <div style="position: absolute; left: 50%; top: -26px; transform: translateX(-50%); background: #f5c518; color: #17181c; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; z-index: 5;">center x</div>
+            </sc-if>
+            <!-- Selected title text box -->
+            <div style="position: absolute; left: 72px; top: 64px; width: 800px; padding: 10px 14px; border: 1.5px solid #7F52FF; box-sizing: border-box;">
+              <div style="font-size: 46px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">Rendering Pipeline</div>
+              <div style="font-size: 19px; color: #a9a0d8; margin-top: 6px;">From composable tree to native surface in four passes</div>
+              <!-- handles -->
+              <div style="position: absolute; left: -5px; top: -5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; left: 50%; top: -5px; margin-left: -4.5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; right: -5px; top: -5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; left: -5px; top: 50%; margin-top: -4.5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; right: -5px; top: 50%; margin-top: -4.5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; left: -5px; bottom: -5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; left: 50%; bottom: -5px; margin-left: -4.5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; right: -5px; bottom: -5px; width: 9px; height: 9px; background: #fff; border: 1.5px solid #7F52FF; border-radius: 2px;"></div>
+              <div style="position: absolute; left: -2px; top: -26px; display: {{ badgeDisplay }}; align-items: center; gap: 5px;"><div style="width: 18px; height: 18px; border-radius: 50%; background: #7F52FF; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">1</div><div style="font-size: 11px; color: #a98fff;">Fade Up · 0.4s</div></div>
+            </div>
+            <!-- Pipeline shape row -->
+            <div style="position: absolute; left: 72px; top: 250px; display: flex; align-items: center; gap: 14px;">
+              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Compose</div>
+              <div style="color: #6f66a8; font-size: 18px;">→</div>
+              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Layout</div>
+              <div style="color: #6f66a8; font-size: 18px;">→</div>
+              <div style="position: relative; width: 150px; height: 76px; border-radius: 10px; background: rgba(245,197,24,0.14); border: 1.5px solid rgba(245,197,24,0.6); display: flex; align-items: center; justify-content: center; color: #ffe28a; font-size: 15px; font-weight: 600;">Draw
+                <div style="position: absolute; left: -2px; top: -26px; display: {{ badgeDisplay }}; align-items: center;"><div style="width: 18px; height: 18px; border-radius: 50%; background: #7F52FF; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center;">2</div></div>
+              </div>
+              <div style="color: #6f66a8; font-size: 18px;">→</div>
+              <div style="width: 150px; height: 76px; border-radius: 10px; background: rgba(127,82,255,0.22); border: 1.5px solid rgba(169,143,255,0.7); display: flex; align-items: center; justify-content: center; color: #d9cfff; font-size: 15px; font-weight: 600;">Present</div>
+            </div>
+            <!-- Image placeholder -->
+            <div style="position: absolute; left: 72px; top: 372px; width: 380px; height: 110px; border-radius: 10px; border: 1.5px dashed rgba(255,255,255,0.3); display: flex; align-items: center; justify-content: center; gap: 10px; color: rgba(255,255,255,0.45); font-size: 13px;">
+              <svg width="18" height="18" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="1.5"></rect><circle cx="4.5" cy="4.5" r="1.4"></circle><path d="M1 10.5 L5 7 L8 9.5 L10.5 7.5 L13 9.5"></path></svg>
+              Drop frame capture here
+            </div>
+            <!-- caption text -->
+            <div style="position: absolute; right: 72px; top: 372px; width: 400px; font-size: 15px; line-height: 1.55; color: #b8b3d6;">Skia-backed <a href="#">CMP canvas</a> renders every slide at native refresh rate — the same scene graph on all three desktops.</div>
+          </div>
+        </div>
+
+        <!-- Speaker notes -->
+        <sc-if value="{{ showNotes }}" hint-placeholder-val="{{ true }}">
+          <div style="flex-shrink: 0; border-top: 1px solid #33363d; background: #1b1d22; padding: 12px 24px 14px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: #6b6f7a;">SPEAKER NOTES</div>
+            <div style="font-size: 13.5px; color: #9a9ea8; line-height: 1.5;">Walk through each pass left to right. Pause on Draw — mention Skia and why we skip the platform view hierarchy entirely.</div>
+          </div>
+        </sc-if>
+
+        <!-- Status bar -->
+        <div style="height: 30px; flex-shrink: 0; display: flex; align-items: center; padding: 0 16px; gap: 16px; background: #202228; border-top: 1px solid #33363d; font-size: 11.5px; color: #6b6f7a; font-family: 'IBM Plex Mono', monospace;">
+          <div>slide {{ slideNum }} / 8</div>
+          <div>944 × 531 @ 1x</div>
+          <div style="flex: 1;"></div>
+          <div style="color: #4caf7d;">● synced</div>
+        </div>
+      </div>
+
+      <!-- Inspector -->
+      <div style="width: 282px; flex-shrink: 0; display: flex; flex-direction: column; background: #202228; border-left: 1px solid #33363d;">
+        <div style="display: flex; padding: 10px 12px 0; gap: 4px; border-bottom: 1px solid #33363d;">
+          <div onClick="{{ setFormat }}" style="flex: 1; text-align: center; padding: 8px 0 10px; font-size: 13px; font-weight: 600; color: {{ formatTabColor }}; border-bottom: 2px solid {{ formatTabLine }}; cursor: pointer;">Format</div>
+          <div onClick="{{ setAnimate }}" style="flex: 1; text-align: center; padding: 8px 0 10px; font-size: 13px; font-weight: 600; color: {{ animateTabColor }}; border-bottom: 2px solid {{ animateTabLine }}; cursor: pointer;">Animate</div>
+        </div>
+
+        <sc-if value="{{ isFormat }}" hint-placeholder-val="{{ true }}">
+          <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: #6b6f7a;">TEXT</div>
+              <div style="display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 10px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; color: #e8e9ec; font-size: 13px; cursor: pointer;">SF Pro Display <span style="color: #6b6f7a; font-size: 9px;">▾</span></div>
+              <div style="display: flex; gap: 8px;">
+                <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; height: 30px; padding: 0 10px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; color: #e8e9ec; font-size: 13px;">Bold <span style="color: #6b6f7a; font-size: 9px;">▾</span></div>
+                <div style="width: 76px; display: flex; align-items: center; border-radius: 7px; border: 1px solid #33363d; background: #24262c; overflow: hidden;">
+                  <div style="flex: 1; text-align: center; color: #e8e9ec; font-size: 13px;">46</div>
+                  <div style="display: flex; flex-direction: column; border-left: 1px solid #33363d;">
+                    <div style="width: 20px; height: 14px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; font-size: 8px; cursor: pointer;" style-hover="background: #2c2f36;">▲</div>
+                    <div style="width: 20px; height: 14px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; font-size: 8px; cursor: pointer; border-top: 1px solid #33363d;" style-hover="background: #2c2f36;">▼</div>
+                  </div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <div style="flex: 1; display: flex; border: 1px solid #33363d; border-radius: 7px; overflow: hidden;">
+                  <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; background: #2c2f36; color: #e8e9ec; font-weight: 700; font-size: 13px; cursor: pointer;">B</div>
+                  <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; font-style: italic; font-size: 13px; cursor: pointer; border-left: 1px solid #33363d;" style-hover="background: #2c2f36;">I</div>
+                  <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; text-decoration: underline; font-size: 13px; cursor: pointer; border-left: 1px solid #33363d;" style-hover="background: #2c2f36;">U</div>
+                </div>
+                <div style="width: 42px; height: 30px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; display: flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer;">
+                  <div style="width: 16px; height: 16px; border-radius: 4px; background: #ffffff; border: 1px solid #33363d;"></div>
+                  <span style="color: #6b6f7a; font-size: 9px;">▾</span>
+                </div>
+              </div>
+              <div style="display: flex; border: 1px solid #33363d; border-radius: 7px; overflow: hidden;">
+                <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; background: #2c2f36; color: #e8e9ec; cursor: pointer;"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H8 M0 7 H12 M0 10 H8"></path></svg></div>
+                <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; cursor: pointer; border-left: 1px solid #33363d;" style-hover="background: #2c2f36;"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M2 4 H10 M0 7 H12 M2 10 H10"></path></svg></div>
+                <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; cursor: pointer; border-left: 1px solid #33363d;" style-hover="background: #2c2f36;"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M4 4 H12 M0 7 H12 M4 10 H12"></path></svg></div>
+                <div style="flex: 1; height: 30px; display: flex; align-items: center; justify-content: center; color: #9a9ea8; cursor: pointer; border-left: 1px solid #33363d;" style-hover="background: #2c2f36;"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H12 M0 7 H12 M0 10 H12"></path></svg></div>
+              </div>
+            </div>
+            <div style="height: 1px; background: #33363d;"></div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: #6b6f7a;">POSITION &amp; SIZE</div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <div style="display: flex; align-items: center; height: 30px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; padding: 0 10px; gap: 8px;"><span style="color: #6b6f7a; font-size: 11px;">X</span><span style="color: #e8e9ec; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">72</span></div>
+                <div style="display: flex; align-items: center; height: 30px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; padding: 0 10px; gap: 8px;"><span style="color: #6b6f7a; font-size: 11px;">Y</span><span style="color: #e8e9ec; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">64</span></div>
+                <div style="display: flex; align-items: center; height: 30px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; padding: 0 10px; gap: 8px;"><span style="color: #6b6f7a; font-size: 11px;">W</span><span style="color: #e8e9ec; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">800</span></div>
+                <div style="display: flex; align-items: center; height: 30px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; padding: 0 10px; gap: 8px;"><span style="color: #6b6f7a; font-size: 11px;">H</span><span style="color: #e8e9ec; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">118</span></div>
+              </div>
+            </div>
+            <div style="height: 1px; background: #33363d;"></div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: #6b6f7a;">OPACITY</div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <div style="flex: 1; height: 4px; border-radius: 2px; background: #33363d; position: relative;">
+                  <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 2px; background: #7F52FF;"></div>
+                  <div style="position: absolute; right: -7px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer;"></div>
+                </div>
+                <div style="width: 40px; text-align: right; color: #e8e9ec; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;">100%</div>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isAnimate }}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: #6b6f7a;">BUILD IN</div>
+              <div style="display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 10px; border-radius: 7px; border: 1px solid #33363d; background: #24262c; color: #e8e9ec; font-size: 13px; cursor: pointer;">Fade Up <span style="color: #6b6f7a; font-size: 9px;">▾</span></div>
+              <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                <span style="font-size: 12px; color: #6b6f7a; width: 62px;">Duration</span>
+                <div style="flex: 1; height: 4px; border-radius: 2px; background: #33363d; position: relative;">
+                  <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 30%; border-radius: 2px; background: #7F52FF;"></div>
+                  <div style="position: absolute; left: 30%; top: 50%; transform: translate(-50%,-50%); width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer;"></div>
+                </div>
+                <div style="width: 36px; text-align: right; color: #e8e9ec; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;">0.4s</div>
+              </div>
+            </div>
+            <div style="height: 1px; background: #33363d;"></div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: #6b6f7a;">BUILD ORDER</div>
+              <div style="display: flex; flex-direction: column; gap: 6px;">
+                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; background: #2c2f36; border: 1px solid #7F52FF; cursor: pointer;">
+                  <div style="width: 18px; height: 18px; border-radius: 50%; background: #7F52FF; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">1</div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Title — Rendering Pipeline</div><div style="font-size: 11px; color: #6b6f7a;">Fade Up · 0.4s</div></div>
+                  <div style="color: #6b6f7a; font-size: 12px; cursor: grab;">⠿</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; background: #24262c; border: 1px solid #33363d; cursor: pointer;" style-hover="background: #2c2f36;">
+                  <div style="width: 18px; height: 18px; border-radius: 50%; background: #40434c; color: #c6c9d1; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">2</div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shape — Draw</div><div style="font-size: 11px; color: #6b6f7a;">Pop · 0.3s · after 1</div></div>
+                  <div style="color: #6b6f7a; font-size: 12px; cursor: grab;">⠿</div>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 7px; background: #24262c; border: 1px solid #33363d; cursor: pointer;" style-hover="background: #2c2f36;">
+                  <div style="width: 18px; height: 18px; border-radius: 50%; background: #40434c; color: #c6c9d1; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">3</div>
+                  <div style="flex: 1; min-width: 0;"><div style="font-size: 12.5px; color: #e8e9ec; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Image — frame capture</div><div style="font-size: 11px; color: #6b6f7a;">Dissolve · 0.5s · with 2</div></div>
+                  <div style="color: #6b6f7a; font-size: 12px; cursor: grab;">⠿</div>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: 7px; border: 1px dashed #40434c; color: #9a9ea8; font-size: 12.5px; cursor: pointer; margin-top: 2px;" style-hover="background: #24262c;">+ Add build</div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1680, &quot;height&quot;: 1050}, &quot;os&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;macOS&quot;, &quot;Windows&quot;, &quot;Linux&quot;], &quot;default&quot;: &quot;macOS&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Platform&quot;}, &quot;showNotes&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;View&quot;}, &quot;showGuides&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;View&quot;}}">
+class Component extends DCLogic {
+  state = { tab: 'format', selected: 3 };
+  renderVals() {
+    const os = this.props.os ?? 'macOS';
+    const isMac = os === 'macOS', isWin = os === 'Windows', isLinux = os === 'Linux';
+    const accent = '#7F52FF', dim = '#9a9ea8';
+    const titles = ['slides-kt', 'Agenda', 'Why KMP', 'Rendering Pipeline', 'Scene Graph', 'Native Interop', 'Benchmarks', 'Roadmap'];
+    const isFormat = this.state.tab === 'format';
+    return {
+      isMac, isWin, isLinux,
+      fontFamily: isWin ? "'Segoe UI', 'Ubuntu', sans-serif" : isLinux ? "'Ubuntu', 'Cantarell', sans-serif" : "-apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif",
+      winRadius: isWin ? '8px' : '12px',
+      showNotes: this.props.showNotes ?? true,
+      showGuides: this.props.showGuides ?? true,
+      isFormat, isAnimate: !isFormat,
+      badgeDisplay: isFormat ? 'none' : 'flex',
+      formatTabColor: isFormat ? '#e8e9ec' : dim,
+      animateTabColor: isFormat ? dim : '#e8e9ec',
+      formatTabLine: isFormat ? accent : 'transparent',
+      animateTabLine: isFormat ? 'transparent' : accent,
+      setFormat: () => this.setState({ tab: 'format' }),
+      setAnimate: () => this.setState({ tab: 'animate' }),
+      slideNum: this.state.selected + 1,
+      slides: titles.map((title, i) => ({
+        n: i + 1, title,
+        ring: i === this.state.selected ? accent : 'transparent',
+        onClick: () => this.setState({ selected: i }),
+      })),
+    };
+  }
+}
+</script>
+</body>
+</html>
