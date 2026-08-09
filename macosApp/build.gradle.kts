@@ -9,6 +9,9 @@ kotlin {
         binaries.executable {
             entryPoint = "main"
         }
+        binaries.framework {
+            baseName = "CupboardCanvas"
+        }
     }
 
     sourceSets {
@@ -16,6 +19,7 @@ kotlin {
             implementation(project(":cupboard"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
+            implementation(libs.compose.material3)
             implementation(libs.compose.ui)
         }
     }
