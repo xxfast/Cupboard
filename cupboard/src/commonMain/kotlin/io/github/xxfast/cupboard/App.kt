@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,9 +43,12 @@ import io.github.xxfast.cupboard.editor.EditorCanvas
 /**
  * Phase 1 demo shell: navigator (flat outline, thumbnails) + editable canvas.
  * Real per-OS chrome replaces this in later phases.
+ *
+ * [onPlay] non-null shows a Play button that receives the current document and
+ * selected slide index; null hides play entirely (android/web shells).
  */
 @Composable
-fun App() {
+fun App(onPlay: ((Document, Int) -> Unit)? = null) {
     MaterialTheme(colorScheme = darkColorScheme()) {
         var document by remember { mutableStateOf(sampleDocument()) }
         val slides = document.allSlides()
@@ -61,17 +65,36 @@ fun App() {
                 onSelectSlide = { selectedSlideId = it; selectedElementId = null },
                 onToggleCollapsed = { document = document.toggleCollapsed(it) },
             )
-            Box(
-                modifier = Modifier.weight(1f).fillMaxHeight().padding(28.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                EditorCanvas(
-                    slide = selectedSlide,
-                    selectedElementId = selectedElementId,
-                    onSelectElement = { selectedElementId = it },
-                    onSlideChange = { document = document.updateSlide(it) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+            Column(Modifier.weight(1f).fillMaxHeight().padding(28.dp)) {
+                if (onPlay != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val index = document.slides
+                                    .indexOfFirst { it.id == selectedSlide.id }
+                                    .coerceAtLeast(0)
+                                onPlay(document, index)
+                            },
+                        ) {
+                            Text("▶ Play", color = Color(0xFFD9CFFF), fontSize = 13.sp)
+                        }
+                    }
+                }
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    EditorCanvas(
+                        slide = selectedSlide,
+                        selectedElementId = selectedElementId,
+                        onSelectElement = { selectedElementId = it },
+                        onSlideChange = { document = document.updateSlide(it) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
