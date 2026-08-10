@@ -13,15 +13,16 @@ import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
 
-/** Miniature of a slide via the same renderers, per the navigator design. */
+/**
+ * Miniature of a slide via the same renderers, per the navigator design.
+ * Pure render: selection chrome is the host's business.
+ */
 @Composable
 fun SlideThumbnail(
     slide: Slide,
     modifier: Modifier = Modifier,
     width: Dp = 150.dp,
     cornerRadius: Dp = 5.dp,
-    selected: Boolean = false,
-    accent: Color = Color(0xFF7F52FF),
 ) {
     SlideView(
         slide = slide,
@@ -29,10 +30,6 @@ fun SlideThumbnail(
             .width(width)
             .aspectRatio(Document.SLIDE_WIDTH / Document.SLIDE_HEIGHT)
             .clip(RoundedCornerShape(cornerRadius))
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) accent else Color(0xFF33363D),
-                shape = RoundedCornerShape(cornerRadius),
-            ),
+            .border(1.dp, Color(0xFF33363D), RoundedCornerShape(cornerRadius)),
     )
 }
