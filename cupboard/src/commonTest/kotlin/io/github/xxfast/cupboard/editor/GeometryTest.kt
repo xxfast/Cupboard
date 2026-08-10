@@ -31,7 +31,7 @@ class GeometryTest {
     @Test
     fun resizeClampsToMinSize() {
         val resized = resizeFrame(frame, Handle.Right, dx = -500f, dy = 0f)
-        assertEquals(20f, resized.width)
+        assertEquals(40f, resized.width)
     }
 
     @Test
@@ -43,19 +43,19 @@ class GeometryTest {
 
     @Test
     fun snapsCenterWithinThreshold() {
-        // slide center x = 472; frame width 200 → centered x = 372
-        val near = frame.copy(x = 375f)
+        // slide center x = 960; frame width 200 → centered x = 860
+        val near = frame.copy(x = 866f)
         val snapped = snapToSlideCenter(near)
         assertTrue(snapped.snappedX)
-        assertEquals(372f, snapped.frame.x)
+        assertEquals(860f, snapped.frame.x)
         assertFalse(snapped.snappedY)
     }
 
     @Test
     fun noSnapOutsideThreshold() {
-        val far = frame.copy(x = 340f)
+        val far = frame.copy(x = 845f)
         val result = snapToSlideCenter(far)
         assertFalse(result.snappedX)
-        assertEquals(340f, result.frame.x)
+        assertEquals(845f, result.frame.x)
     }
 }

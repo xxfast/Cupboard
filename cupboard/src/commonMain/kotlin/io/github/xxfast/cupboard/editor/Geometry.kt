@@ -35,7 +35,7 @@ fun hitTestHandle(frame: Frame, x: Float, y: Float, tolerance: Float = 8f): Hand
 fun Frame.contains(x: Float, y: Float): Boolean =
     x in this.x..(this.x + width) && y in this.y..(this.y + height)
 
-fun resizeFrame(frame: Frame, handle: Handle, dx: Float, dy: Float, minSize: Float = 20f): Frame {
+fun resizeFrame(frame: Frame, handle: Handle, dx: Float, dy: Float, minSize: Float = 40f): Frame {
     var left = frame.x
     var top = frame.y
     var right = frame.x + frame.width
@@ -63,7 +63,7 @@ fun snapToSlideCenter(
     frame: Frame,
     slideWidth: Float = Document.SLIDE_WIDTH,
     slideHeight: Float = Document.SLIDE_HEIGHT,
-    threshold: Float = 5f,
+    threshold: Float = 10f,
 ): SnapResult {
     var result = frame
     var snappedX = false

@@ -2,7 +2,6 @@
 
 package io.github.xxfast.cupboard.document
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -10,8 +9,12 @@ import kotlin.uuid.Uuid
 fun newId(): String = Uuid.random().toString()
 
 /**
- * All geometry is in document units: points at 1x on the fixed 944x531 slide.
+ * All geometry is in document units: points at 1x on the fixed 1920x1080 slide.
  * Colors are packed ARGB (0xAARRGGBB).
+ *
+ * Slides are a flat ordered list, Keynote-style: nesting is expressed with
+ * [Slide.depth], and a slide with deeper slides beneath it can collapse them.
+ * Numbering is always the absolute index + 1, collapse never renumbers.
  */
 @Serializable
 data class Document(
@@ -19,57 +22,51 @@ data class Document(
     val name: String = "Untitled",
     val slideWidth: Float = SLIDE_WIDTH,
     val slideHeight: Float = SLIDE_HEIGHT,
-    val nodes: List<SlideNode> = emptyList(),
+    val slides: List<Slide> = emptyList(),
 ) {
     companion object {
-        const val SLIDE_WIDTH: Float = 944f
-        const val SLIDE_HEIGHT: Float = 531f
+        const val SLIDE_WIDTH: Float = 1920f
+        const val SLIDE_HEIGHT: Float = 1080f
     }
 }
 
-/** Navigator tree: a node is either a slide or a collapsible group of nodes. */
 @Serializable
-sealed interface SlideNode {
-    val id: String
-    val title: String
-}
-
-@Serializable
-@SerialName("slide")
 data class Slide(
-    override val id: String = newId(),
-    override val title: String = "Untitled slide",
+    val id: String = newId(),
+    val title: String = "Untitled slide",
     val elements: List<Element> = emptyList(),
     val builds: List<Build> = emptyList(),
     val notes: String = "",
-) : SlideNode
-
-@Serializable
-@SerialName("group")
-data class SlideGroup(
-    override val id: String = newId(),
-    override val title: String = "Untitled group",
-    val children: List<SlideNode> = emptyList(),
+    val depth: Int = 0,
     val collapsed: Boolean = false,
-) : SlideNode
+)
 
-/** Depth-first slides in presentation order. */
-fun Document.allSlides(): List<Slide> {
-    fun walk(nodes: List<SlideNode>): List<Slide> = nodes.flatMap { node ->
-        when (node) {
-            is Slide -> listOf(node)
-            is SlideGroup -> walk(node.children)
-        }
+/** Slides in presentation order. Kept for call-site symmetry with the old tree model. */
+fun Document.allSlides(): List<Slide> = slides
+
+fun Document.updateSlide(updated: Slide): Document =
+    copy(slides = slides.map { if (it.id == updated.id) updated else it })
+
+/** True when the next slide exists and sits deeper, i.e. this slide owns children. */
+fun Document.hasChildren(index: Int): Boolean =
+    slides.getOrNull(index + 1)?.let { it.depth > slides[index].depth } == true
+
+/**
+ * Indices visible under collapse rules: a collapsed slide hides the following
+ * contiguous run of slides deeper than it.
+ */
+fun Document.visibleIndices(): List<Int> {
+    val visible = mutableListOf<Int>()
+    var hiddenBelow: Int? = null
+    for ((index, slide) in slides.withIndex()) {
+        val threshold = hiddenBelow
+        if (threshold != null && slide.depth > threshold) continue
+        hiddenBelow = null
+        visible += index
+        if (slide.collapsed) hiddenBelow = slide.depth
     }
-    return walk(nodes)
+    return visible
 }
 
-fun Document.updateSlide(updated: Slide): Document {
-    fun walk(nodes: List<SlideNode>): List<SlideNode> = nodes.map { node ->
-        when (node) {
-            is Slide -> if (node.id == updated.id) updated else node
-            is SlideGroup -> node.copy(children = walk(node.children))
-        }
-    }
-    return copy(nodes = walk(nodes))
-}
+fun Document.toggleCollapsed(id: String): Document =
+    copy(slides = slides.map { if (it.id == id) it.copy(collapsed = !it.collapsed) else it })

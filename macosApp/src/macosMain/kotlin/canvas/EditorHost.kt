@@ -13,11 +13,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
 import io.github.xxfast.cupboard.document.Document
-import io.github.xxfast.cupboard.document.Slide
-import io.github.xxfast.cupboard.document.SlideGroup
-import io.github.xxfast.cupboard.document.SlideNode
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -34,8 +33,9 @@ import platform.Foundation.dataWithBytes
 class OutlineRow(
     val title: String,
     val depth: Int,
-    /** Index into the flat slide order, or -1 for a group header. */
     val slideIndex: Int,
+    val hasChildren: Boolean,
+    val collapsed: Boolean,
 )
 
 /**
@@ -65,20 +65,19 @@ class EditorHost {
         }
     })
 
-    fun outline(): List<OutlineRow> {
-        val slideIndices = document.allSlides().withIndex().associate { (i, s) -> s.id to i }
-        val rows = mutableListOf<OutlineRow>()
-        fun walk(nodes: List<SlideNode>, depth: Int) {
-            for (node in nodes) when (node) {
-                is Slide -> rows += OutlineRow(node.title, depth, slideIndices.getValue(node.id))
-                is SlideGroup -> {
-                    rows += OutlineRow(node.title, depth, -1)
-                    walk(node.children, depth + 1)
-                }
-            }
-        }
-        walk(document.nodes, 0)
-        return rows
+    fun outline(): List<OutlineRow> = document.slides.mapIndexed { index, slide ->
+        OutlineRow(
+            title = slide.title,
+            depth = slide.depth,
+            slideIndex = index,
+            hasChildren = document.hasChildren(index),
+            collapsed = slide.collapsed,
+        )
+    }
+
+    fun toggleCollapsed(index: Int) {
+        val slide = document.slides.getOrNull(index) ?: return
+        document = document.toggleCollapsed(slide.id)
     }
 
     fun selectedSlideIndex(): Int =

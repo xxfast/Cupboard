@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,16 +31,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
 import io.github.xxfast.cupboard.document.Document
-import io.github.xxfast.cupboard.document.Slide
-import io.github.xxfast.cupboard.document.SlideGroup
-import io.github.xxfast.cupboard.document.SlideNode
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.EditorCanvas
 
 /**
- * Phase 1 demo shell: navigator (nested, thumbnails) + editable canvas.
+ * Phase 1 demo shell: navigator (flat outline, thumbnails) + editable canvas.
  * Real per-OS chrome replaces this in later phases.
  */
 @Composable
@@ -57,6 +59,7 @@ fun App() {
                 document = document,
                 selectedSlideId = selectedSlide.id,
                 onSelectSlide = { selectedSlideId = it; selectedElementId = null },
+                onToggleCollapsed = { document = document.toggleCollapsed(it) },
             )
             Box(
                 modifier = Modifier.weight(1f).fillMaxHeight().padding(28.dp),
@@ -79,8 +82,8 @@ private fun Navigator(
     document: Document,
     selectedSlideId: String,
     onSelectSlide: (String) -> Unit,
+    onToggleCollapsed: (String) -> Unit,
 ) {
-    val slideNumbers = document.allSlides().withIndex().associate { (i, slide) -> slide.id to i + 1 }
     Column(
         modifier = Modifier
             .width(224.dp)
@@ -90,49 +93,40 @@ private fun Navigator(
             .padding(horizontal = 12.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        NavigatorNodes(document.nodes, depth = 0, slideNumbers, selectedSlideId, onSelectSlide)
-    }
-}
-
-@Composable
-private fun NavigatorNodes(
-    nodes: List<SlideNode>,
-    depth: Int,
-    slideNumbers: Map<String, Int>,
-    selectedSlideId: String,
-    onSelectSlide: (String) -> Unit,
-) {
-    for (node in nodes) {
-        when (node) {
-            is Slide -> Row(
+        for (index in document.visibleIndices()) {
+            val slide = document.slides[index]
+            val selected = slide.id == selectedSlideId
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = (depth * 22).dp)
-                    .clickable { onSelectSlide(node.id) },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(start = (slide.depth * 18).dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
+                Box(Modifier.width(14.dp), contentAlignment = Alignment.Center) {
+                    if (document.hasChildren(index)) Text(
+                        text = if (slide.collapsed) "▸" else "▾",
+                        color = Color(0xFF8A8B94),
+                        fontSize = 11.sp,
+                        modifier = Modifier.clickable { onToggleCollapsed(slide.id) },
+                    )
+                }
                 Text(
-                    text = "${slideNumbers[node.id]}",
+                    text = "${index + 1}",
                     color = Color(0xFF8A8B94),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier.width(16.dp),
                 )
                 SlideThumbnail(
-                    slide = node,
-                    selected = node.id == selectedSlideId,
-                    width = (160 - depth * 22).dp,
+                    slide = slide,
+                    width = (150 - slide.depth * 18).dp,
+                    modifier = Modifier
+                        .clickable { onSelectSlide(slide.id) }
+                        .let {
+                            if (selected) it.border(2.dp, Color(0xFF7F52FF), RoundedCornerShape(5.dp))
+                            else it
+                        },
                 )
-            }
-
-            is SlideGroup -> {
-                Text(
-                    text = "▾ ${node.title}",
-                    color = Color(0xFF8A8B94),
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(start = (depth * 22).dp),
-                )
-                NavigatorNodes(node.children, depth + 1, slideNumbers, selectedSlideId, onSelectSlide)
             }
         }
     }

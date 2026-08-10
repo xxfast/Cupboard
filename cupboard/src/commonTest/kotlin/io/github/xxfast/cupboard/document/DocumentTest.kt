@@ -14,7 +14,21 @@ class DocumentTest {
     }
 
     @Test
-    fun allSlidesWalksGroupsDepthFirst() {
+    fun serializationRoundTripsDepthAndCollapsed() {
+        val document = Document(
+            slides = listOf(
+                Slide(title = "Parent", collapsed = true),
+                Slide(title = "Child", depth = 1),
+            ),
+        )
+        val decoded = decodeDocument(document.encodeToString())
+        assertEquals(document, decoded)
+        assertTrue(decoded.slides[0].collapsed)
+        assertEquals(1, decoded.slides[1].depth)
+    }
+
+    @Test
+    fun allSlidesIsTheFlatPresentationOrder() {
         val document = sampleDocument()
         assertEquals(
             listOf("Cupboard", "Agenda", "Why KMP", "Rendering Pipeline", "Scene Graph", "Native Interop", "Benchmarks", "Roadmap"),
@@ -23,13 +37,56 @@ class DocumentTest {
     }
 
     @Test
-    fun updateSlideReplacesNestedSlide() {
+    fun updateSlideReplacesById() {
         val document = sampleDocument()
         val target = document.allSlides().first { it.title == "Rendering Pipeline" }
         val renamed = target.copy(title = "Pipeline, Renamed")
         val updated = document.updateSlide(renamed)
         assertTrue(updated.allSlides().any { it.title == "Pipeline, Renamed" })
         assertFalse(updated.allSlides().any { it.title == "Rendering Pipeline" })
+    }
+
+    @Test
+    fun hasChildrenLooksAtTheNextSlideDepth() {
+        val document = sampleDocument()
+        val whyKmp = document.slides.indexOfFirst { it.title == "Why KMP" }
+        assertTrue(document.hasChildren(whyKmp))
+        assertFalse(document.hasChildren(0))
+        assertFalse(document.hasChildren(document.slides.lastIndex))
+    }
+
+    @Test
+    fun collapsingHidesTheDeeperRunButNeverRenumbers() {
+        val document = sampleDocument()
+        assertEquals(document.slides.indices.toList(), document.visibleIndices())
+
+        val whyKmp = document.slides.first { it.title == "Why KMP" }
+        val collapsed = document.toggleCollapsed(whyKmp.id)
+        // Indices 3 (Rendering Pipeline) and 4 (Scene Graph) hidden; the rest keep
+        // their absolute indices, so numbering (index + 1) is unchanged.
+        assertEquals(listOf(0, 1, 2, 5, 6, 7), collapsed.visibleIndices())
+
+        val expanded = collapsed.toggleCollapsed(whyKmp.id)
+        assertEquals(document.slides.indices.toList(), expanded.visibleIndices())
+    }
+
+    @Test
+    fun nestedCollapseStaysHiddenInsideACollapsedParent() {
+        val document = Document(
+            slides = listOf(
+                Slide(title = "A", collapsed = true),
+                Slide(title = "A.1", depth = 1, collapsed = true),
+                Slide(title = "A.1.a", depth = 2),
+                Slide(title = "A.2", depth = 1),
+                Slide(title = "B"),
+            ),
+        )
+        // A collapsed hides its whole deeper run, including the collapsed A.1.
+        assertEquals(listOf(0, 4), document.visibleIndices())
+
+        // Expanding A reveals A.1 and A.2, but A.1 keeps its own children hidden.
+        val expanded = document.toggleCollapsed(document.slides[0].id)
+        assertEquals(listOf(0, 1, 3, 4), expanded.visibleIndices())
     }
 
     @Test

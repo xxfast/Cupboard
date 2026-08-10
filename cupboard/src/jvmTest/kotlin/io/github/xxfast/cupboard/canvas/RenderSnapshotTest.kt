@@ -12,8 +12,8 @@ class RenderSnapshotTest {
     @OptIn(ExperimentalComposeUiApi::class)
     @Test
     fun renderSampleSlideToPng() {
-        val slide = sampleDocument().allSlides().first { it.elements.isNotEmpty() }
-        val image = renderComposeScene(1888, 1062) {
+        val slide = sampleDocument().allSlides().first { it.builds.isNotEmpty() }
+        val image = renderComposeScene(1920, 1080) {
             SlideView(slide)
         }
         val png = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
