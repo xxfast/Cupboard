@@ -12,18 +12,18 @@ What we're building and in what order. See `GOALS.md` for the why, `design/READM
 
 ## Phase 1: Shared canvas + document model
 
-- [ ] Serializable document model in `:cupboard`: slides (nestable groups per design v2, navigator indents 22px/depth with collapse), elements (text box, shape, image, code), builds/animations, speaker notes. The model is data, not composables: it compiles to CuP `Slide`/`SlideGroup` at runtime for Play mode, and could later export as a CuP Kotlin project.
-- [ ] Element renderers as pure common composables (no JVM-only deps anywhere; must compile for `jvm` and `macosArm64`).
-- [ ] Canvas composable: fixed 944x531 @1x, container scaling, document-dark styling per the design.
-- [ ] Editing layer: selection, 8 resize handles, drag, alignment guides + snap.
-- [ ] Thumbnails reuse the same renderers at miniature scale.
+- [x] Serializable document model in `:cupboard`: slides (nestable groups per design v2, navigator indents 22px/depth with collapse), elements (text box, shape, image, code), builds/animations, speaker notes. The model is data, not composables: it compiles to CuP `Slide`/`SlideGroup` at runtime for Play mode, and could later export as a CuP Kotlin project.
+- [x] Element renderers as pure common composables (no JVM-only deps anywhere; must compile for `jvm` and `macosArm64`).
+- [x] Canvas composable: fixed 944x531 @1x, container scaling, document-dark styling per the design.
+- [x] Editing layer: selection, 8 resize handles, drag, alignment guides + snap.
+- [x] Thumbnails reuse the same renderers at miniature scale.
 
 ## Phase 2: macOS app (SwiftUI)
 
 Dependency chain: Emoji.kt macOS PR → CuP fork with `macosArm64` → `ComposeNSView`.
 
-- [ ] Fork CuP as a git submodule, wire with Gradle `includeBuild` + dependency substitution. Keep the diff to target additions + `actual`s so it stays mergeable upstream.
-- [ ] PR macOS targets to kosi-libs/Emoji.kt (blocks CuP core's `macosArm64`: it's an `api` dep). Coordinate on Kotlin Slack `#cup-presentations` first.
+- [x] Fork CuP as a git submodule (`cup/`, branch `ir/macos-targets`), wire with Gradle `includeBuild` + dependency substitution. The fork adds `macosArm64` to all modules except `cup-widgets-source-code` (no native hljs) and bumps to Kotlin 2.4.10 / Compose 1.11.1; upstream draft PR: KodeinKoders/CuP#12.
+- [x] PR macOS targets to kosi-libs/Emoji.kt (blocks CuP core's `macosArm64`: it's an `api` dep). Fork submodule at `emoji-kt/`, upstream draft PR: kosi-libs/Emoji.kt#19. Still to do: coordinate on Kotlin Slack `#cup-presentations` and promote both drafts.
 - [ ] SwiftUI chrome: unified NSToolbar, native inspector, navigator per the design.
 - [ ] Embed the canvas via `ComposeNSView` + `NSViewRepresentable`.
 - [ ] `.app` packaging with `compose-resources` in `Contents/Resources`.
