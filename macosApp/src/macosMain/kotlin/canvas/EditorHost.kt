@@ -50,7 +50,7 @@ class EditorHost {
     )
     private var selectedElementId by mutableStateOf<String?>(null)
 
-    val view: NSView = ComposeNSView {
+    val view: NSView = ComposeHostView(ComposeNSView {
         val slides = document.allSlides()
         val slide = slides.firstOrNull { it.id == selectedSlideId } ?: slides.first()
         // Paint the canvas well ourselves: unpainted scene regions are undefined
@@ -63,7 +63,7 @@ class EditorHost {
                 onSlideChange = { document = document.updateSlide(it) },
             )
         }
-    }
+    })
 
     fun outline(): List<OutlineRow> {
         val slideIndices = document.allSlides().withIndex().associate { (i, s) -> s.id to i }

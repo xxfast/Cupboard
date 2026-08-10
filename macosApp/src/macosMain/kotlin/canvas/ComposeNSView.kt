@@ -48,9 +48,27 @@ import platform.AppKit.NSTrackingInVisibleRect
 import platform.AppKit.NSTrackingMouseEnteredAndExited
 import platform.AppKit.NSTrackingMouseMoved
 import platform.AppKit.NSView
+import platform.AppKit.NSViewHeightSizable
+import platform.AppKit.NSViewWidthSizable
 import platform.AppKit.NSWindow
 import platform.Foundation.NSMakeRect
 import platform.Foundation.NSRect
+
+/**
+ * Hosting wrapper for [ComposeNSView]. Skiko's MacOsMetalRedrawer.syncBounds() sets
+ * the metal layer's frame to the view's frame verbatim, origin included, which is
+ * only correct when the view sits at (0,0) in its superview (true for a window
+ * contentView, false inside a SwiftUI layout). Keeping the compose view as a
+ * full-size subview of this container pins its origin to (0,0), so the layer
+ * geometry stays in sync no matter where the host places us.
+ */
+class ComposeHostView(private val composeView: ComposeNSView) : NSView(composeView.frame) {
+    init {
+        composeView.setFrame(bounds)
+        composeView.autoresizingMask = NSViewWidthSizable or NSViewHeightSizable
+        addSubview(composeView)
+    }
+}
 
 // Same stub as compose's internal MacosTextInputService: enough for plain key-event
 // typing, no NSTextInputClient/IME integration.
@@ -133,8 +151,9 @@ class ComposeNSView(
 
     override fun layout() {
         super.layout()
-        val (w, h) = frame.useContents { size.width to size.height }
-        println("[ComposeNSView] layout frame=${w}x${h}")
+        val f = frame.useContents { "(${origin.x}, ${origin.y}) ${size.width}x${size.height}" }
+        val l = layer?.frame?.useContents { "(${origin.x}, ${origin.y}) ${size.width}x${size.height}" }
+        println("[ComposeNSView] layout frame=$f metalLayer=$l")
         skiaLayer.needRender()
     }
 
