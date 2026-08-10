@@ -1,35 +1,30 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM).
+# Cupboard
 
-* [/iosApp](./iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+[![Stability](https://kotl.in/badges/experimental.svg)](https://kotlinlang.org/docs/components-stability.html#stability-of-subcomponents)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.4.10-blue.svg?logo=kotlin)](http://kotlinlang.org)
 
-* [/cupboard](./cupboard/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./cupboard/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./cupboard/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./cupboard/src/jvmMain/kotlin)
-    folder is the appropriate location.
+A Keynote-style presentation editor for developers who present code. Cross-platform desktop: macOS, Windows, Linux.
 
-### Running the apps
+Each platform renders its own chrome with its native UI toolkit (SwiftUI on macOS, WinUI 3 on Windows, Compose Desktop Material on Linux). The slide canvas in the middle is one shared Compose Multiplatform surface, so slides render the same everywhere. Slides live in a serializable document model, and play mode (steps, builds, speaker window, export) is driven by [CuP](https://github.com/KodeinKoders/CuP).
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
+> [!WARNING]
+> 🚧 Early work in progress!
 
-- Android app: `./gradlew :androidApp:assembleDebug`
-- Desktop app:
-  - Hot reload: `./gradlew :desktopApp:hotRun --auto`
-  - Standard run: `./gradlew :desktopApp:run`
-- Web app:
-  - Wasm target (faster, modern browsers): `./gradlew :webApp:wasmJsBrowserDevelopmentRun`
-  - JS target (slower, supports older browsers): `./gradlew :webApp:jsBrowserDevelopmentRun`
-- iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+## Layout
 
----
+- [`cupboard/`](./cupboard) is the KMP library where the bulk of the app lives: document model, slide renderers, editor canvas
+- [`desktopApp/`](./desktopApp) is the Compose for Desktop shell, which is the Linux app and the fallback shell everywhere else
+- [`macosApp/`](./macosApp) builds `CupboardCanvas.framework` for the SwiftUI host in [`macosApp/swift-host`](./macosApp/swift-host)
+- [`cup/`](https://github.com/xxfast/CuP) and [`emoji-kt/`](https://github.com/xxfast/Emoji.kt) are fork submodules of CuP and Emoji.kt
+- [`design/`](./design) holds the HTML design prototypes and the UI spec
+- `androidApp/`, `webApp/`, `iosApp/` are template leftovers, fate undecided
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+See [`GOALS.md`](./GOALS.md) for what we're building and why, [`ROADMAP.md`](./ROADMAP.md) for the order we're building it in.
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+## Running
+
+Clone with submodules: `git clone --recursive`, or `git submodule update --init` after a plain clone.
+
+- Desktop, hot reload: `./gradlew :desktopApp:hotRun --auto`
+- macOS SwiftUI host: `./macosApp/swift-host/run.sh`
+- Tests: `./gradlew :cupboard:allTests`, or `:cupboard:jvmTest` for the quick loop
