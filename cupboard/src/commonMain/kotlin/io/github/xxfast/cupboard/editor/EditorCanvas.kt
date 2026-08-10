@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import io.github.xxfast.cupboard.canvas.ElementView
+import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideSurface
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
@@ -64,6 +65,9 @@ fun EditorCanvas(
     SlideSurface(modifier) {
         for (element in slide.elements) ElementView(element)
 
+        // Editing affordances hold constant screen size at any zoom: authored
+        // sizes are divided by the canvas scale, positions stay in doc units.
+        val canvasScale = LocalCanvasScale.current
         val docDensity = LocalDensity.current.density
         fun toDoc(position: Offset) = Offset(position.x / docDensity, position.y / docDensity)
 
@@ -95,9 +99,11 @@ fun EditorCanvas(
                         onDragStart = { position ->
                             val p = toDoc(position)
                             val selected = currentSlide.elements.firstOrNull { it.id == currentSelection }
-                            val handle = selected?.let { hitTestHandle(it.frame, p.x, p.y) }
+                            val handle = selected?.let {
+                                hitTestHandle(it.frame, p.x, p.y, tolerance = 8f / canvasScale)
+                            }
                             target = when {
-                                handle != null && selected != null -> DragTarget.Resize(selected.id, handle)
+                                selected != null && handle != null -> DragTarget.Resize(selected.id, handle)
                                 else -> elementAt(p)?.also { onSelectElement(it.id) }?.let { DragTarget.Move(it.id) }
                             }
                         },
@@ -132,73 +138,74 @@ fun EditorCanvas(
 
         // Selection ring + handles
         slide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
-            SelectionOverlay(selected.frame)
+            SelectionOverlay(selected.frame, canvasScale)
         }
 
         // Alignment guides
-        if (guideX) VerticalCenterGuide()
-        if (guideY) HorizontalCenterGuide()
+        if (guideX) VerticalCenterGuide(canvasScale)
+        if (guideY) HorizontalCenterGuide(canvasScale)
     }
 }
 
 @Composable
-private fun SelectionOverlay(frame: Frame) {
+private fun SelectionOverlay(frame: Frame, scale: Float) {
     Box(
         Modifier
             .offset(frame.x.dp, frame.y.dp)
             .size(frame.width.dp, frame.height.dp)
-            .border(1.5.dp, Accent)
+            .border((1.5f / scale).dp, Accent)
     )
+    val handleSize = 9f / scale
     for ((_, position) in handlePositions(frame)) {
         val (hx, hy) = position
         Box(
             Modifier
-                .offset((hx - 4.5f).dp, (hy - 4.5f).dp)
-                .size(9.dp)
-                .background(Color.White, RoundedCornerShape(2.dp))
-                .border(1.5.dp, Accent, RoundedCornerShape(2.dp))
+                .offset((hx - handleSize / 2).dp, (hy - handleSize / 2).dp)
+                .size(handleSize.dp)
+                .background(Color.White, RoundedCornerShape((2f / scale).dp))
+                .border((1.5f / scale).dp, Accent, RoundedCornerShape((2f / scale).dp))
         )
     }
 }
 
 @Composable
-private fun VerticalCenterGuide() {
+private fun VerticalCenterGuide(scale: Float) {
     Canvas(Modifier.fillMaxSize()) {
         val x = size.width / 2
         drawLine(
             color = GuideYellow,
-            start = Offset(x, -12.dp.toPx()),
-            end = Offset(x, size.height + 12.dp.toPx()),
-            strokeWidth = 1.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())),
+            start = Offset(x, -(12f / scale).dp.toPx()),
+            end = Offset(x, size.height + (12f / scale).dp.toPx()),
+            strokeWidth = (1f / scale).dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf((5f / scale).dp.toPx(), (4f / scale).dp.toPx())),
         )
     }
     Box(
-        Modifier.offset((Document.SLIDE_WIDTH / 2 - 24).dp, 8.dp)
-            .background(GuideYellow, RoundedCornerShape(3.dp))
-            .padding(horizontal = 6.dp, vertical = 1.dp)
+        Modifier.offset((Document.SLIDE_WIDTH / 2 - 24f / scale).dp, (8f / scale).dp)
+            .background(GuideYellow, RoundedCornerShape((3f / scale).dp))
+            .padding(horizontal = (6f / scale).dp, vertical = (1f / scale).dp)
     ) {
-        Text("center x", color = Color(0xFF17181C), fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("center x", color = Color(0xFF17181C), fontSize = (10f / scale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
 }
 
 @Composable
-private fun HorizontalCenterGuide() {
+private fun HorizontalCenterGuide(scale: Float) {
     Canvas(Modifier.fillMaxSize()) {
         val y = size.height / 2
         drawLine(
             color = GuideYellow,
-            start = Offset(-12.dp.toPx(), y),
-            end = Offset(size.width + 12.dp.toPx(), y),
-            strokeWidth = 1.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx())),
+            start = Offset(-(12f / scale).dp.toPx(), y),
+            end = Offset(size.width + (12f / scale).dp.toPx(), y),
+            strokeWidth = (1f / scale).dp.toPx(),
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf((5f / scale).dp.toPx(), (4f / scale).dp.toPx())),
         )
     }
     Box(
-        Modifier.offset(8.dp, (Document.SLIDE_HEIGHT / 2 - 18).dp)
-            .background(GuideYellow, RoundedCornerShape(3.dp))
-            .padding(horizontal = 6.dp, vertical = 1.dp)
+        Modifier.offset((8f / scale).dp, (Document.SLIDE_HEIGHT / 2 - 18f / scale).dp)
+            .background(GuideYellow, RoundedCornerShape((3f / scale).dp))
+            .padding(horizontal = (6f / scale).dp, vertical = (1f / scale).dp)
     ) {
-        Text("center y", color = Color(0xFF17181C), fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text("center y", color = Color(0xFF17181C), fontSize = (10f / scale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
 }
