@@ -18,14 +18,26 @@ What we're building and in what order. See `GOALS.md` for the why, `design/READM
 - [x] Editing layer: selection, 8 resize handles, drag, alignment guides + snap.
 - [x] Thumbnails reuse the same renderers at miniature scale.
 
+## Phase 1.5: Design v3 alignment (shared)
+
+The 2026-08 design revision (`design/HANDOFF.md`) reshapes the shared layer; these supersede parts of Phase 1.
+
+- [x] Flat Keynote-style nesting: no `SlideGroup` nodes or header rows; every navigator row is a slide with `depth` + `collapsed`, chevron in a 14px gutter, absolute numbering that survives collapse. (`f6e823b`)
+- [x] Native slide space 1920x1080 (zoom is a percentage of native, like Keynote); sample deck and geometry rescaled. (`f6e823b`, same commit: both rewrite the sample deck)
+- [x] Zoom-aware `SlideSurface` (Fit / 25-200%) with clipping past Fit, no reflow. (`d8664e8`; the zoom menu UI itself is chrome, tracked under each platform phase)
+- [x] Editing overlays (handles, guides, chips, build badges) hold constant screen size at every zoom: drawn in screen space, not slide space. (`ce58f56`; build badges land with Animate mode)
+- [x] Thumbnails become pure renders (no baked-in selection ring); selection chrome belongs to each host shell. (`287c8d6`)
+
 ## Phase 2: macOS app (SwiftUI)
 
 Dependency chain: Emoji.kt macOS PR → CuP fork with `macosArm64` → `ComposeNSView`.
 
 - [x] Fork CuP as a git submodule (`cup/`, branch `ir/macos-targets`), wire with Gradle `includeBuild` + dependency substitution. The fork adds `macosArm64` to all modules except `cup-widgets-source-code` (no native hljs) and bumps to Kotlin 2.4.10 / Compose 1.11.1; upstream draft PR: KodeinKoders/CuP#12.
 - [x] PR macOS targets to kosi-libs/Emoji.kt (blocks CuP core's `macosArm64`: it's an `api` dep). Fork submodule at `emoji-kt/`, upstream draft PR: kosi-libs/Emoji.kt#19. Still to do: coordinate on Kotlin Slack `#cup-presentations` and promote both drafts.
-- [ ] SwiftUI chrome: unified NSToolbar, native inspector, navigator per the design.
-- [ ] Embed the canvas via `ComposeNSView` + `NSViewRepresentable`.
+- [ ] SwiftUI chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); Format/Animate lives in the inspector, no status bar on macOS.
+- [ ] Navigator rows per the Keynote 26 spec: capsule selection (no thumbnail ring), number outside the thumbnail, 14px chevron gutter, 20px/level indent.
+- [ ] Embed the canvas full-bleed via `ComposeNSView` + `NSViewRepresentable` (as the window content layer at origin 0,0 this also retires the skiko Metal-layer offset band seen in the spike).
+- [ ] Native inspector: Format + Animate panels with AppKit-style small controls, `BuildOrderRow` list with drag reorder.
 - [ ] `.app` packaging with `compose-resources` in `Contents/Resources`.
 - [ ] Play mode via CuP behind our own interface: document compiled to runtime `Slide`s, `PresentationState` driven by our UI.
 - [ ] Code highlighting on native: JavaScriptCore-backed hljs actual, or precompute highlighting into the document model.
