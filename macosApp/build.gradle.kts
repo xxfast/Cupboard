@@ -6,9 +6,6 @@ plugins {
 
 kotlin {
     macosArm64 {
-        binaries.executable {
-            entryPoint = "main"
-        }
         binaries.framework {
             baseName = "CupboardCanvas"
         }

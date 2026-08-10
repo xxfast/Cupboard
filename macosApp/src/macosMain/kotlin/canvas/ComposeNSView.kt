@@ -52,12 +52,6 @@ import platform.AppKit.NSWindow
 import platform.Foundation.NSMakeRect
 import platform.Foundation.NSRect
 
-/**
- * Entry point for Swift: returns an NSView rendering [CanvasDemo], suitable for
- * NSViewRepresentable.makeNSView.
- */
-fun createCanvasView(): NSView = ComposeNSView { CanvasDemo() }
-
 // Same stub as compose's internal MacosTextInputService: enough for plain key-event
 // typing, no NSTextInputClient/IME integration.
 private class StubTextInputService : androidx.compose.ui.text.input.PlatformTextInputService {
