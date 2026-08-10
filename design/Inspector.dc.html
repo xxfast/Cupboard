@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: {{ panelBg }}; backdrop-filter: {{ panelBlur }}; border-left: 1px solid {{ borderColor }}; box-shadow: {{ panelInner }};">
+
+  <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
+    <div style="height: 52px; flex-shrink: 0; display: flex; align-items: center; padding: 0 14px; gap: 8px;">
+      <div title="Share" style="width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov }};">
+        <svg width="15" height="16" viewBox="0 0 14 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7 10 V1 M3.7 4.3 L7 1 L10.3 4.3"></path><path d="M1 8.5 V13.3 H13 V8.5"></path></svg>
+      </div>
+      <div style="flex: 1;"></div>
+      <div style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: {{ theme.segBg }};">
+        <div onClick="{{ onFormat }}" title="Format" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: {{ formatPillBg }}; color: {{ formatPillIcon }}; cursor: pointer;">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9.5 1.5 L12.5 4.5 L5 12 L1.5 12.5 L2 9 Z"></path></svg>
+        </div>
+        <div onClick="{{ onAnimate }}" title="Animate" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: {{ animatePillBg }}; color: {{ animatePillIcon }}; cursor: pointer;">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="8" height="8" rx="1.5" transform="rotate(45 7 7)"></rect></svg>
+        </div>
+      </div>
+    </div>
+    <div style="flex-shrink: 0; padding: 0 16px 12px; text-align: center; font-size: 13px; color: {{ theme.subtle }};">{{ macTitle }}</div>
+  </sc-if>
+  <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; gap: 18px; padding: 12px 16px 0; border-bottom: 1px solid {{ theme.div }};">
+      <div onClick="{{ onFormat }}" style="padding-bottom: 9px; font-size: 13.5px; font-weight: 600; color: {{ formatTabColor }}; border-bottom: 2.5px solid {{ formatTabLine }}; cursor: pointer;">Format</div>
+      <div onClick="{{ onAnimate }}" style="padding-bottom: 9px; font-size: 13.5px; font-weight: 600; color: {{ animateTabColor }}; border-bottom: 2.5px solid {{ animateTabLine }}; cursor: pointer;">Animate</div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isLinux }}" hint-placeholder-val="{{ false }}">
+    <div style="display: flex; border-bottom: 1px solid {{ theme.div }};">
+      <div onClick="{{ onFormat }}" style="flex: 1; display: flex; flex-direction: column; align-items: center; padding: 13px 0 0; cursor: pointer; color: {{ formatTabColor }};" style-hover="background: {{ theme.hov }};">
+        <div style="font-size: 13.5px; font-weight: 600; padding-bottom: 11px;">Format</div>
+        <div style="width: 52px; height: 3px; border-radius: 3px 3px 0 0; background: {{ formatTabLine }};"></div>
+      </div>
+      <div onClick="{{ onAnimate }}" style="flex: 1; display: flex; flex-direction: column; align-items: center; padding: 13px 0 0; cursor: pointer; color: {{ animateTabColor }};" style-hover="background: {{ theme.hov }};">
+        <div style="font-size: 13.5px; font-weight: 600; padding-bottom: 11px;">Animate</div>
+        <div style="width: 52px; height: 3px; border-radius: 3px 3px 0 0; background: {{ animateTabLine }};"></div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== macOS body ===== -->
+  <sc-if value="{{ macFormat }}" hint-placeholder-val="{{ true }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Font</div>
+        <div style="display: flex; height: 24px; border-radius: 5px; background: {{ theme.ctrl }}; overflow: hidden; cursor: pointer; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);">
+          <div style="flex: 1; display: flex; align-items: center; padding: 0 9px; color: {{ theme.ctrlText }}; font-size: 12.5px;">Ubuntu</div>
+          <div style="width: 17px; background: #7F52FF; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; font-size: 6px; line-height: 1.3;"><span>▲</span><span>▼</span></div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <div style="flex: 1; display: flex; height: 24px; border-radius: 5px; background: {{ theme.ctrl }}; overflow: hidden; cursor: pointer; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);">
+            <div style="flex: 1; display: flex; align-items: center; padding: 0 9px; color: {{ theme.ctrlText }}; font-size: 12.5px;">Bold</div>
+            <div style="width: 17px; background: #7F52FF; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; font-size: 6px; line-height: 1.3;"><span>▲</span><span>▼</span></div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <div style="width: 42px; height: 24px; border-radius: 5px; background: {{ theme.ctrl }}; display: flex; align-items: center; justify-content: center; color: {{ theme.ctrlText }}; font-size: 12.5px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);">46 pt</div>
+            <div style="display: flex; flex-direction: column; border-radius: 4px; background: {{ theme.ctrl }}; overflow: hidden; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);">
+              <div style="width: 16px; height: 12px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; font-size: 6px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">▲</div>
+              <div style="width: 16px; height: 12px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; font-size: 6px; cursor: pointer; border-top: 1px solid {{ theme.div }};" style-hover="background: {{ theme.ctrlHov }};">▼</div>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <div style="flex: 1; display: flex; background: {{ theme.segBg }}; border-radius: 6px; padding: 1.5px; box-shadow: inset 0 0.5px 2px rgba(0,0,0,0.25);">
+            <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; background: {{ theme.segOn }}; border-radius: 4.5px; color: {{ theme.segOnText }}; font-weight: 700; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.25); cursor: pointer;">B</div>
+            <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; font-style: italic; font-size: 12px; cursor: pointer;">I</div>
+            <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; text-decoration: underline; font-size: 12px; cursor: pointer;">U</div>
+          </div>
+          <div style="width: 34px; height: 22px; border-radius: 5px; background: {{ theme.ctrl }}; padding: 3px; box-sizing: border-box; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35); cursor: pointer;"><div style="width: 100%; height: 100%; border-radius: 2.5px; background: #ffffff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);"></div></div>
+        </div>
+        <div style="display: flex; background: {{ theme.segBg }}; border-radius: 6px; padding: 1.5px; box-shadow: inset 0 0.5px 2px rgba(0,0,0,0.25);">
+          <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; background: {{ theme.segOn }}; border-radius: 4.5px; color: {{ theme.segOnText }}; box-shadow: 0 1px 2px rgba(0,0,0,0.25); cursor: pointer;"><svg width="11" height="9" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H8 M0 7 H12 M0 10 H8"></path></svg></div>
+          <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; cursor: pointer;"><svg width="11" height="9" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M2 4 H10 M0 7 H12 M2 10 H10"></path></svg></div>
+          <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; cursor: pointer;"><svg width="11" height="9" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M4 4 H12 M0 7 H12 M4 10 H12"></path></svg></div>
+          <div style="flex: 1; height: 21px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; cursor: pointer;"><svg width="11" height="9" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H12 M0 7 H12 M0 10 H12"></path></svg></div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Position &amp; Size</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 7px;">
+          <div style="display: flex; align-items: center; height: 23px; border-radius: 5px; background: {{ theme.ctrl }}; padding: 0 8px; gap: 7px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);"><span style="color: {{ theme.subtle2 }}; font-size: 10.5px;">X</span><span style="color: {{ theme.ctrlText }}; font-size: 12px; font-family: 'IBM Plex Mono', monospace;">72</span></div>
+          <div style="display: flex; align-items: center; height: 23px; border-radius: 5px; background: {{ theme.ctrl }}; padding: 0 8px; gap: 7px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);"><span style="color: {{ theme.subtle2 }}; font-size: 10.5px;">Y</span><span style="color: {{ theme.ctrlText }}; font-size: 12px; font-family: 'IBM Plex Mono', monospace;">64</span></div>
+          <div style="display: flex; align-items: center; height: 23px; border-radius: 5px; background: {{ theme.ctrl }}; padding: 0 8px; gap: 7px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);"><span style="color: {{ theme.subtle2 }}; font-size: 10.5px;">W</span><span style="color: {{ theme.ctrlText }}; font-size: 12px; font-family: 'IBM Plex Mono', monospace;">800</span></div>
+          <div style="display: flex; align-items: center; height: 23px; border-radius: 5px; background: {{ theme.ctrl }}; padding: 0 8px; gap: 7px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);"><span style="color: {{ theme.subtle2 }}; font-size: 10.5px;">H</span><span style="color: {{ theme.ctrlText }}; font-size: 12px; font-family: 'IBM Plex Mono', monospace;">118</span></div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Opacity</div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1; height: 3px; border-radius: 2px; background: {{ theme.track }}; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 2px; background: #7F52FF;"></div>
+            <div style="position: absolute; right: -8px; top: 50%; transform: translateY(-50%); width: 15px; height: 15px; border-radius: 50%; background: {{ theme.knob }}; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer;"></div>
+          </div>
+          <div style="width: 44px; height: 22px; border-radius: 5px; background: {{ theme.ctrl }}; display: flex; align-items: center; justify-content: center; color: {{ theme.ctrlText }}; font-size: 12px; font-family: 'IBM Plex Mono', monospace; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);">100%</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ macAnimate }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Build In</div>
+        <div style="display: flex; height: 24px; border-radius: 5px; background: {{ theme.ctrl }}; overflow: hidden; cursor: pointer; box-shadow: 0 0.5px 1px rgba(0,0,0,0.35);">
+          <div style="flex: 1; display: flex; align-items: center; padding: 0 9px; color: {{ theme.ctrlText }}; font-size: 12.5px;">Fade Up</div>
+          <div style="width: 17px; background: #7F52FF; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; font-size: 6px; line-height: 1.3;"><span>▲</span><span>▼</span></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 2px;">
+          <span style="font-size: 11.5px; color: {{ theme.subtle }}; width: 54px;">Duration</span>
+          <div style="flex: 1; height: 3px; border-radius: 2px; background: {{ theme.track }}; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 30%; border-radius: 2px; background: #7F52FF;"></div>
+            <div style="position: absolute; left: 30%; top: 50%; transform: translate(-50%,-50%); width: 15px; height: 15px; border-radius: 50%; background: {{ theme.knob }}; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer;"></div>
+          </div>
+          <div style="width: 36px; text-align: right; color: {{ theme.ctrlText }}; font-size: 12px; font-family: 'IBM Plex Mono', monospace;">0.4s</div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 7px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Build Order</div>
+        <dc-import name="BuildOrderRow" os="macOS" theme="{{ theme }}" n="{{ 1 }}" label="Title — Lorem ipsum dolor" meta="Fade Up · 0.4s" active="{{ true }}" hint-size="100%,46px"></dc-import>
+        <dc-import name="BuildOrderRow" os="macOS" theme="{{ theme }}" n="{{ 2 }}" label="Shape — Dolor" meta="Pop · 0.3s · after 1" hint-size="100%,46px"></dc-import>
+        <dc-import name="BuildOrderRow" os="macOS" theme="{{ theme }}" n="{{ 3 }}" label="Image — placeholder" meta="Dissolve · 0.5s · with 2" hint-size="100%,46px"></dc-import>
+        <div style="align-self: center; margin-top: 4px; height: 22px; padding: 0 14px; display: flex; align-items: center; border-radius: 5px; background: {{ theme.btnGrad }}; color: {{ theme.ctrlText }}; font-size: 12px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.4); cursor: pointer;" style-hover="filter: brightness(1.06);">Add Build…</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== Windows body ===== -->
+  <sc-if value="{{ winFormat }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 12px; color: {{ theme.subtle }};">Font</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 12px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">Ubuntu <span style="color: {{ theme.subtle }}; font-size: 8px;">⌄</span></div>
+        <div style="display: flex; gap: 8px;">
+          <div style="flex: 1; display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 12px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">Bold <span style="color: {{ theme.subtle }}; font-size: 8px;">⌄</span></div>
+          <div style="width: 80px; display: flex; align-items: center; height: 32px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; box-sizing: border-box;">
+            <div style="flex: 1; text-align: center; color: {{ theme.text }}; font-size: 13px;">46</div>
+            <div style="display: flex; flex-direction: column; padding-right: 4px;">
+              <div style="width: 18px; height: 13px; display: flex; align-items: center; justify-content: center; color: {{ theme.subtle }}; font-size: 7px; border-radius: 3px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">⌃</div>
+              <div style="width: 18px; height: 13px; display: flex; align-items: center; justify-content: center; color: {{ theme.subtle }}; font-size: 7px; border-radius: 3px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">⌄</div>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <div style="display: flex; gap: 4px; flex: 1;">
+            <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.accent }}; color: {{ theme.accentText }}; font-weight: 700; font-size: 13px; cursor: pointer;">B</div>
+            <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; color: {{ theme.subtle }}; font-style: italic; font-size: 13px; cursor: pointer; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};">I</div>
+            <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; color: {{ theme.subtle }}; text-decoration: underline; font-size: 13px; cursor: pointer; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};">U</div>
+          </div>
+          <div style="width: 44px; height: 32px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; display: flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};">
+            <div style="width: 16px; height: 16px; border-radius: 3px; background: #ffffff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);"></div>
+            <span style="color: {{ theme.subtle }}; font-size: 8px;">⌄</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.accent }}; color: {{ theme.accentText }}; cursor: pointer;"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H8 M0 7 H12 M0 10 H8"></path></svg></div>
+          <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; color: {{ theme.subtle }}; cursor: pointer; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M2 4 H10 M0 7 H12 M2 10 H10"></path></svg></div>
+          <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; color: {{ theme.subtle }}; cursor: pointer; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M4 4 H12 M0 7 H12 M4 10 H12"></path></svg></div>
+          <div style="flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; color: {{ theme.subtle }}; cursor: pointer; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H12 M0 7 H12 M0 10 H12"></path></svg></div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 12px; color: {{ theme.subtle }};">Position &amp; size</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div style="display: flex; align-items: center; height: 32px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; padding: 0 10px; gap: 8px; box-sizing: border-box;"><span style="color: {{ theme.subtle2 }}; font-size: 11px;">X</span><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">72</span></div>
+          <div style="display: flex; align-items: center; height: 32px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; padding: 0 10px; gap: 8px; box-sizing: border-box;"><span style="color: {{ theme.subtle2 }}; font-size: 11px;">Y</span><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">64</span></div>
+          <div style="display: flex; align-items: center; height: 32px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; padding: 0 10px; gap: 8px; box-sizing: border-box;"><span style="color: {{ theme.subtle2 }}; font-size: 11px;">W</span><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">800</span></div>
+          <div style="display: flex; align-items: center; height: 32px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; padding: 0 10px; gap: 8px; box-sizing: border-box;"><span style="color: {{ theme.subtle2 }}; font-size: 11px;">H</span><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">118</span></div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 12px; color: {{ theme.subtle }};">Opacity</div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ theme.track }}; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 2px; background: {{ theme.accent }};"></div>
+            <div style="position: absolute; right: -9px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; border-radius: 50%; background: {{ theme.track }}; display: flex; align-items: center; justify-content: center; cursor: pointer;"><div style="width: 10px; height: 10px; border-radius: 50%; background: {{ theme.accent }};"></div></div>
+          </div>
+          <div style="width: 40px; text-align: right; color: {{ theme.text }}; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;">100%</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ winAnimate }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 12px; color: {{ theme.subtle }};">Build in</div>
+        <div style="display: flex; align-items: center; justify-content: space-between; height: 32px; padding: 0 12px; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">Fade Up <span style="color: {{ theme.subtle }}; font-size: 8px;">⌄</span></div>
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+          <span style="font-size: 12px; color: {{ theme.subtle }}; width: 58px;">Duration</span>
+          <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ theme.track }}; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 30%; border-radius: 2px; background: {{ theme.accent }};"></div>
+            <div style="position: absolute; left: 30%; top: 50%; transform: translate(-50%,-50%); width: 18px; height: 18px; border-radius: 50%; background: {{ theme.track }}; display: flex; align-items: center; justify-content: center; cursor: pointer;"><div style="width: 10px; height: 10px; border-radius: 50%; background: {{ theme.accent }};"></div></div>
+          </div>
+          <div style="width: 34px; text-align: right; color: {{ theme.text }}; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;">0.4s</div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 7px;">
+        <div style="font-size: 12px; color: {{ theme.subtle }};">Build order</div>
+        <dc-import name="BuildOrderRow" os="Windows" theme="{{ theme }}" n="{{ 1 }}" label="Title — Lorem ipsum dolor" meta="Fade Up · 0.4s" active="{{ true }}" hint-size="100%,48px"></dc-import>
+        <dc-import name="BuildOrderRow" os="Windows" theme="{{ theme }}" n="{{ 2 }}" label="Shape — Dolor" meta="Pop · 0.3s · after 1" hint-size="100%,48px"></dc-import>
+        <dc-import name="BuildOrderRow" os="Windows" theme="{{ theme }}" n="{{ 3 }}" label="Image — placeholder" meta="Dissolve · 0.5s · with 2" hint-size="100%,48px"></dc-import>
+        <div style="height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: {{ theme.ctrl }}; border: 1px solid {{ theme.ctrlB }}; border-bottom-color: {{ theme.ctrlBB }}; color: {{ theme.text }}; font-size: 12.5px; cursor: pointer; margin-top: 2px; box-sizing: border-box;" style-hover="background: {{ theme.ctrlHov }};">Add build</div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===== Linux body ===== -->
+  <sc-if value="{{ linuxFormat }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {{ theme.subtle }};">TEXT</div>
+        <div style="position: relative; display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 14px; border-radius: 4px; border: 1px solid {{ theme.outline }}; color: {{ theme.text }}; font-size: 14px; cursor: pointer;" style-hover="border-color: {{ theme.accent }};">
+          <div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">Font</div>
+          Ubuntu <span style="color: {{ theme.dim }}; font-size: 10px;">▾</span>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <div style="position: relative; flex: 1; display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 14px; border-radius: 4px; border: 1px solid {{ theme.outline }}; color: {{ theme.text }}; font-size: 14px; cursor: pointer;" style-hover="border-color: {{ theme.accent }};">
+            <div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">Weight</div>
+            Bold <span style="color: {{ theme.dim }}; font-size: 10px;">▾</span>
+          </div>
+          <div style="position: relative; width: 74px; display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 4px; border: 1px solid {{ theme.outline }}; color: {{ theme.text }}; font-size: 14px; box-sizing: border-box;">
+            <div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">Size</div>
+            46
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <div style="flex: 1; display: flex; border: 1px solid {{ theme.outline }}; border-radius: 20px; overflow: hidden;">
+            <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; gap: 5px; background: {{ theme.segOn }}; color: {{ theme.segOnText }}; font-weight: 700; font-size: 13px; cursor: pointer;"><span style="font-size: 11px;">✓</span>B</div>
+            <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; font-style: italic; font-size: 13px; cursor: pointer; border-left: 1px solid {{ theme.outline }};" style-hover="background: {{ theme.hov }};">I</div>
+            <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; text-decoration: underline; font-size: 13px; cursor: pointer; border-left: 1px solid {{ theme.outline }};" style-hover="background: {{ theme.hov }};">U</div>
+          </div>
+          <div style="width: 38px; height: 38px; border-radius: 50%; border: 1px solid {{ theme.outline }}; display: flex; align-items: center; justify-content: center; cursor: pointer;" style-hover="background: {{ theme.hov }};">
+            <div style="width: 18px; height: 18px; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);"></div>
+          </div>
+        </div>
+        <div style="display: flex; border: 1px solid {{ theme.outline }}; border-radius: 20px; overflow: hidden;">
+          <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; background: {{ theme.segOn }}; color: {{ theme.segOnText }}; cursor: pointer;"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H8 M0 7 H12 M0 10 H8"></path></svg></div>
+          <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; cursor: pointer; border-left: 1px solid {{ theme.outline }};" style-hover="background: {{ theme.hov }};"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M2 4 H10 M0 7 H12 M2 10 H10"></path></svg></div>
+          <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; cursor: pointer; border-left: 1px solid {{ theme.outline }};" style-hover="background: {{ theme.hov }};"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M4 4 H12 M0 7 H12 M4 10 H12"></path></svg></div>
+          <div style="flex: 1; height: 38px; display: flex; align-items: center; justify-content: center; color: {{ theme.segOff }}; cursor: pointer; border-left: 1px solid {{ theme.outline }};" style-hover="background: {{ theme.hov }};"><svg width="12" height="10" viewBox="0 0 12 10" stroke="currentColor" stroke-width="1.3" fill="none"><path d="M0 1 H12 M0 4 H12 M0 7 H12 M0 10 H12"></path></svg></div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {{ theme.subtle }};">POSITION &amp; SIZE</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div style="position: relative; display: flex; align-items: center; height: 40px; border-radius: 4px; border: 1px solid {{ theme.outline }}; padding: 0 12px;"><div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">X</div><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">72</span></div>
+          <div style="position: relative; display: flex; align-items: center; height: 40px; border-radius: 4px; border: 1px solid {{ theme.outline }}; padding: 0 12px;"><div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">Y</div><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">64</span></div>
+          <div style="position: relative; display: flex; align-items: center; height: 40px; border-radius: 4px; border: 1px solid {{ theme.outline }}; padding: 0 12px;"><div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">W</div><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">800</span></div>
+          <div style="position: relative; display: flex; align-items: center; height: 40px; border-radius: 4px; border: 1px solid {{ theme.outline }}; padding: 0 12px;"><div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">H</div><span style="color: {{ theme.text }}; font-size: 13px; font-family: 'IBM Plex Mono', monospace;">118</span></div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {{ theme.subtle }};">OPACITY</div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ theme.track }}; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 100%; border-radius: 2px; background: {{ theme.accent }};"></div>
+            <div style="position: absolute; right: -10px; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; border-radius: 50%; background: {{ theme.accent }}; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer;"></div>
+          </div>
+          <div style="width: 40px; text-align: right; color: {{ theme.text }}; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;">100%</div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ linuxAnimate }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {{ theme.subtle }};">BUILD IN</div>
+        <div style="position: relative; display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 14px; border-radius: 4px; border: 1px solid {{ theme.outline }}; color: {{ theme.text }}; font-size: 14px; cursor: pointer;" style-hover="border-color: {{ theme.accent }};">
+          <div style="position: absolute; top: -7px; left: 10px; padding: 0 5px; background: {{ theme.insBg }}; font-size: 10.5px; color: {{ theme.subtle }};">Effect</div>
+          Fade Up <span style="color: {{ theme.dim }}; font-size: 10px;">▾</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 12px; color: {{ theme.subtle }}; width: 56px;">Duration</span>
+          <div style="flex: 1; height: 4px; border-radius: 2px; background: {{ theme.track }}; position: relative;">
+            <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 30%; border-radius: 2px; background: {{ theme.accent }};"></div>
+            <div style="position: absolute; left: 30%; top: 50%; transform: translate(-50%,-50%); width: 20px; height: 20px; border-radius: 50%; background: {{ theme.accent }}; box-shadow: 0 1px 3px rgba(0,0,0,0.4); cursor: pointer;"></div>
+          </div>
+          <div style="width: 34px; text-align: right; color: {{ theme.text }}; font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;">0.4s</div>
+        </div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="font-size: 11px; font-weight: 700; letter-spacing: 1px; color: {{ theme.subtle }};">BUILD ORDER</div>
+        <dc-import name="BuildOrderRow" os="Linux" theme="{{ theme }}" n="{{ 1 }}" label="Title — Lorem ipsum dolor" meta="Fade Up · 0.4s" active="{{ true }}" hint-size="100%,56px"></dc-import>
+        <dc-import name="BuildOrderRow" os="Linux" theme="{{ theme }}" n="{{ 2 }}" label="Shape — Dolor" meta="Pop · 0.3s · after 1" hint-size="100%,56px"></dc-import>
+        <dc-import name="BuildOrderRow" os="Linux" theme="{{ theme }}" n="{{ 3 }}" label="Image — placeholder" meta="Dissolve · 0.5s · with 2" hint-size="100%,56px"></dc-import>
+        <div style="align-self: flex-start; display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 20px; background: {{ theme.tonal }}; color: {{ theme.tonalText }}; font-size: 13.5px; font-weight: 500; cursor: pointer; margin-top: 4px;" style-hover="filter: brightness(1.06);">+ Add build</div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 282, &quot;height&quot;: 620}, &quot;os&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;macOS&quot;, &quot;Windows&quot;, &quot;Linux&quot;], &quot;default&quot;: &quot;macOS&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;theme&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;object&quot;}, &quot;tab&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;format&quot;, &quot;animate&quot;], &quot;default&quot;: &quot;format&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;onFormat&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onAnimate&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const t = this.props.theme || {};
+    const os = this.props.os || 'macOS';
+    const isMac = os === 'macOS', isWin = os === 'Windows', isLinux = os === 'Linux';
+    const isFormat = (this.props.tab || 'format') === 'format';
+    return {
+      theme: t, isMac, isWin, isLinux,
+      borderColor: isMac ? (t.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)') : t.div,
+      panelBg: isMac ? (t.dark ? 'linear-gradient(rgba(44,44,50,0.56), rgba(32,32,38,0.48))' : 'linear-gradient(rgba(252,251,249,0.64), rgba(244,243,241,0.54))') : t.insBg,
+      panelBlur: isMac ? 'blur(34px) saturate(190%)' : 'none',
+      panelInner: isMac ? (t.dark ? 'inset 1px 0 0 rgba(255,255,255,0.05)' : 'inset 1px 0 0 rgba(255,255,255,0.7)') : 'none',
+      macTitle: isFormat ? 'Text' : 'Build',
+      formatPillBg: isFormat ? t.segOn : 'transparent',
+      animatePillBg: isFormat ? 'transparent' : t.segOn,
+      formatPillIcon: isFormat ? t.segOnText : t.segOff,
+      animatePillIcon: isFormat ? t.segOff : t.segOnText,
+      macFormat: isMac && isFormat, macAnimate: isMac && !isFormat,
+      winFormat: isWin && isFormat, winAnimate: isWin && !isFormat,
+      linuxFormat: isLinux && isFormat, linuxAnimate: isLinux && !isFormat,
+      onFormat: this.props.onFormat,
+      onAnimate: this.props.onAnimate,
+      formatTabColor: isFormat ? t.text : t.dim,
+      animateTabColor: isFormat ? t.dim : t.text,
+      formatTabLine: isFormat ? t.accent : 'transparent',
+      animateTabLine: isFormat ? 'transparent' : t.accent,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -5,7 +5,14 @@
 
 A Keynote-style presentation editor for developers who present code. Cross-platform desktop: macOS, Windows, Linux.
 
-Each platform renders its own chrome with its native UI toolkit (SwiftUI on macOS, WinUI 3 on Windows, Compose Desktop Material on Linux). The slide canvas in the middle is one shared Compose Multiplatform surface, so slides render the same everywhere. Slides live in a serializable document model, and play mode (steps, builds, speaker window, export) is driven by [CuP](https://github.com/KodeinKoders/CuP).
+- Slides are a serializable document; play mode (steps, builds, speaker window, export) is driven by [CuP](https://github.com/KodeinKoders/CuP)
+- Native app per platform (SwiftUI, WinUI 3, Compose Desktop), one shared Compose slide canvas, is the [board](https://github.com/xxfast/Cupboard) 
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="design/mockups/macos-fit.dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="design/mockups/macos-fit.light.png">
+  <img src="design/mockups/macos-fit.light.png" alt="Cupboard slides editor design mockup" width="100%"/>
+</picture>
 
 > [!WARNING]
 > 🚧 Early work in progress!

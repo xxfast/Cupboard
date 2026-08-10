@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<div style="flex-shrink: 0; display: flex; flex-direction: column; position: relative;">
+  <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
+    <div style="height: 52px; box-sizing: border-box; flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 18px; background: {{ macBarBg }}; backdrop-filter: {{ macBlur }}; border-bottom: 1px solid {{ macEdge }}; box-shadow: inset 0 1px 0 {{ macTopLight }};">
+      <div style="display: flex; flex-direction: column; justify-content: center; flex-shrink: 0;">
+        <div style="font-size: 13px; font-weight: 700; color: {{ theme.title }}; line-height: 1.2;">Lorem Ipsum</div>
+        <div style="font-size: 11px; color: {{ theme.faint }}; line-height: 1.2;">Edited</div>
+      </div>
+      <div style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <div title="Play" style="width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="11" height="12" viewBox="0 0 11 12" fill="currentColor"><path d="M0 0 L11 6 L0 12 Z"></path></svg></div>
+        <div title="Add slide" style="width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="3.2"></rect><path d="M7 3.9 V10.1 M3.9 7 H10.1"></path></svg></div>
+        <div style="display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: {{ theme.segBg }}; box-shadow: inset 0 0.5px 1.5px rgba(0,0,0,0.22);">
+          <div title="Add slide from layout" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
+          <div title="Add section" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><path d="M0.7 7 H11.3"></path><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
+          <div title="Add text slide" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><path d="M3.2 4.6 H8.8 M6 4.6 V7.9"></path><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
+          <div title="Add image slide" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><circle cx="3.6" cy="4.6" r="1"></circle><path d="M1 9 L4 6.6 L6.4 8.4 L8.4 7 L11.3 9.2"></path><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
+          <div title="Light table" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="2.5" cy="2.5" r="1.05"></circle><circle cx="7" cy="2.5" r="1.05"></circle><circle cx="11.5" cy="2.5" r="1.05"></circle><circle cx="2.5" cy="7" r="1.05"></circle><circle cx="7" cy="7" r="1.05"></circle><circle cx="11.5" cy="7" r="1.05"></circle><circle cx="2.5" cy="11.5" r="1.05"></circle><circle cx="7" cy="11.5" r="1.05"></circle><circle cx="11.5" cy="11.5" r="1.05"></circle></svg></div>
+        </div>
+        <div style="display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: {{ theme.segBg }}; box-shadow: inset 0 0.5px 1.5px rgba(0,0,0,0.22);">
+          <div title="Table" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="13.6" height="10.6" rx="1.6"></rect><path d="M0.7 5.2 H14.3 M5.4 5.2 V12.3 M9.8 5.2 V12.3"></path></svg></div>
+          <div title="Chart" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="7" cy="7" r="6.3"></circle><path d="M7 0.7 V7 L12.4 9.9"></path></svg></div>
+          <div title="Text" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="2.7" width="12.6" height="8.6" rx="1.6"></rect><path d="M4.4 5.6 H9.6 M7 5.6 V8.7"></path></svg></div>
+          <div title="Shape" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="4.7" width="8" height="8" rx="1.2"></rect><circle cx="9.5" cy="4.2" r="3.5"></circle></svg></div>
+          <div title="Attach" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9.6 4 L4.9 8.7 a1.9 1.9 0 0 0 2.7 2.7 L12.3 6.8 a3.5 3.5 0 0 0 -5 -5 L2.6 6.5 a5 5 0 0 0 7.1 7.1"></path></svg></div>
+        </div>
+        <div title="Comment" style="width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M0.7 3.3 a2.6 2.6 0 0 1 2.6 -2.6 H11.4 a2.6 2.6 0 0 1 2.6 2.6 V8 a2.6 2.6 0 0 1 -2.6 2.6 H6.2 L2.9 13.3 V10.6 a2.6 2.6 0 0 1 -2.2 -2.6 Z"></path></svg></div>
+      </div>
+      <div onClick="{{ onZoomToggle }}" style="flex-shrink: 0; display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); color: {{ theme.ctrlText }}; font-size: 12.5px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">{{ zoomLabel }} <span style="font-size: 8px; color: {{ theme.faint }};">⌄</span></div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
+    <div style="height: 40px; flex-shrink: 0; display: flex; align-items: center; background: {{ theme.bar }};">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 0 14px; flex: 1;">
+        <div style="width: 17px; height: 17px; border-radius: 3px; background: linear-gradient(135deg, #7F52FF, #b078ff); display: flex; align-items: center; justify-content: center; color: #fff; font-size: 9px; font-weight: 700;">C</div>
+        <div style="font-size: 12px; color: {{ theme.title }};">Lorem Ipsum.slides — Cupboard</div>
+      </div>
+      <div style="display: flex; height: 100%;">
+        <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 13px;" style-hover="background: {{ theme.hov }};">─</div>
+        <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 11px;" style-hover="background: {{ theme.hov }};">▢</div>
+        <div style="width: 46px; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 13px;" style-hover="background: #c42b1c; color: #fff;">✕</div>
+      </div>
+    </div>
+    <div style="height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 4px; padding: 0 10px; background: {{ theme.bar }}; border-bottom: 1px solid {{ theme.div }};">
+      <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 4px; background: {{ theme.accent }}; color: {{ theme.accentText }}; font-size: 13px; cursor: pointer;" style-hover="filter: brightness(1.12);">
+        <svg width="10" height="11" viewBox="0 0 11 12" fill="currentColor"><path d="M0 0 L11 6 L0 12 Z"></path></svg>
+        Play
+      </div>
+      <div style="width: 1px; height: 22px; background: {{ theme.div }}; margin: 0 6px;"></div>
+      <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 4px; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.hov }};">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="0.7" y="2.2" width="12.6" height="9.6" rx="1.5"></rect><path d="M7 5.5 V9 M5.25 7.25 H8.75"></path></svg>
+        New slide
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 4px; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.hov }};">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.5 3 V1 H11.5 V3 M6.5 1 V12 M4.5 12 H8.5"></path></svg>
+        Text
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 4px; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.hov }};">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="0.7" y="4.7" width="8" height="8" rx="1.2"></rect><circle cx="9.5" cy="4.2" r="3.5"></circle></svg>
+        Shapes
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 4px; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.hov }};">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="1.5"></rect><circle cx="4.5" cy="4.5" r="1.4"></circle><path d="M1 10.5 L5 7 L8 9.5 L10.5 7.5 L13 9.5"></path></svg>
+        Media
+      </div>
+      <div style="flex: 1;"></div>
+      <div onClick="{{ onZoomToggle }}" style="display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 4px; border: 1px solid {{ theme.ctrlB }}; background: {{ theme.ctrl }}; color: {{ theme.text }}; font-size: 12.5px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">{{ zoomLabel }} <span style="color: {{ theme.dim }}; font-size: 8px;">⌄</span></div>
+      <div style="width: 38px; height: 34px; display: flex; align-items: center; justify-content: center; border-radius: 4px; color: {{ theme.text }}; cursor: pointer;" style-hover="background: {{ theme.hov }};">…</div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isLinux }}" hint-placeholder-val="{{ false }}">
+    <div style="height: 50px; flex-shrink: 0; display: flex; align-items: center; background: {{ theme.bar }}; padding: 0 14px; position: relative;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="width: 22px; height: 22px; border-radius: 7px; background: {{ theme.accent }}; display: flex; align-items: center; justify-content: center; color: {{ theme.accentText }}; font-size: 11px; font-weight: 700;">C</div>
+        <div style="font-size: 14px; font-weight: 500; color: {{ theme.title }};">Lorem Ipsum.slides</div>
+      </div>
+      <div style="margin-left: auto; display: flex; gap: 8px;">
+        <div style="width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 13px;" style-hover="background: {{ theme.hov }};">–</div>
+        <div style="width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 11px;" style-hover="background: {{ theme.hov }};">▢</div>
+        <div style="width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 12px;" style-hover="background: #b3261e; color: #fff;">✕</div>
+      </div>
+    </div>
+    <div style="height: 60px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 16px; background: {{ theme.bar }}; border-bottom: 1px solid {{ theme.div }};">
+      <div style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 20px; border-radius: 20px; background: {{ theme.accent }}; color: {{ theme.accentText }}; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 3px rgba(0,0,0,0.3);" style-hover="filter: brightness(1.08);">
+        <svg width="12" height="13" viewBox="0 0 11 12" fill="currentColor"><path d="M0 0 L11 6 L0 12 Z"></path></svg>
+        Play
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 20px; background: {{ theme.tonal }}; color: {{ theme.tonalText }}; font-size: 14px; font-weight: 500; cursor: pointer;" style-hover="filter: brightness(1.06);">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M7 2 V12 M2 7 H12"></path></svg>
+        Add slide
+      </div>
+      <div style="width: 1px; height: 28px; background: {{ theme.div }}; margin: 0 6px;"></div>
+      <div style="display: flex; gap: 4px;">
+        <div title="Text" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov }};"><svg width="14" height="14" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 3 V1 H11.5 V3 M6.5 1 V12 M4.5 12 H8.5"></path></svg></div>
+        <div title="Shape" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov }};"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="4.7" width="8" height="8" rx="1.2"></rect><circle cx="9.5" cy="4.2" r="3.5"></circle></svg></div>
+        <div title="Image" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov }};"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="1.5"></rect><circle cx="4.5" cy="4.5" r="1.4"></circle><path d="M1 10.5 L5 7 L8 9.5 L10.5 7.5 L13 9.5"></path></svg></div>
+        <div title="Media" style="width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov }};"><svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="1.7" width="12.6" height="10.6" rx="1.5"></rect><path d="M5.5 4.8 L9.2 7 L5.5 9.2 Z" fill="currentColor" stroke="none"></path></svg></div>
+      </div>
+      <div style="flex: 1;"></div>
+      <div onClick="{{ onZoomToggle }}" style="display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 20px; border: 1px solid {{ theme.outline }}; color: {{ theme.text }}; font-size: 13px; cursor: pointer;" style-hover="background: {{ theme.hov }};">{{ zoomLabel }} <span style="font-size: 9px; color: {{ theme.dim }};">▾</span></div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ zoomOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; top: {{ menuTop }}; right: {{ menuRight }}; z-index: 30; min-width: 148px; padding: 5px; box-sizing: border-box; border-radius: {{ menuRadius }}; background: {{ menuBg }}; backdrop-filter: {{ menuBlur }}; border: 1px solid {{ menuBorder }}; box-shadow: 0 14px 36px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 1px;">
+      <sc-for list="{{ zoomOptions }}" as="z" hint-placeholder-count="8">
+        <div onClick="{{ z.onPick }}" style="display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 9px; border-radius: 6px; cursor: pointer; color: {{ menuText }}; font-size: 13px;" style-hover="background: {{ menuHover }};">
+          <div style="width: 11px; flex-shrink: 0; font-size: 10px; color: {{ menuCheck }};">{{ z.check }}</div>
+          <div style="flex: 1;">{{ z.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1280, &quot;height&quot;: 100}, &quot;os&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;macOS&quot;, &quot;Windows&quot;, &quot;Linux&quot;], &quot;default&quot;: &quot;macOS&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;theme&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;object&quot;}, &quot;tab&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;format&quot;, &quot;animate&quot;], &quot;default&quot;: &quot;format&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;zoomLabel&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;84%&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;zoomOpen&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;}, &quot;zoomOptions&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;Array&lt;{label: string, check: string, onPick: () =&gt; void}&gt;&quot;}, &quot;onZoomToggle&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onFormat&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onAnimate&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const t = this.props.theme || {};
+    const os = this.props.os || 'macOS';
+    const isFormat = (this.props.tab || 'format') === 'format';
+    const isMac = os === 'macOS', isWin = os === 'Windows';
+    return {
+      theme: t,
+      isMac, isWin, isLinux: os === 'Linux',
+      macBarBg: t.dark ? 'linear-gradient(rgba(44,44,50,0.56), rgba(32,32,38,0.48))' : 'linear-gradient(rgba(252,251,249,0.64), rgba(244,243,241,0.54))',
+      macBlur: 'blur(34px) saturate(190%)',
+      macEdge: t.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
+      macTopLight: t.dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.8)',
+      zoomLabel: this.props.zoomLabel ?? '100%',
+      zoomOpen: !!this.props.zoomOpen,
+      zoomOptions: this.props.zoomOptions || [],
+      onZoomToggle: this.props.onZoomToggle,
+      menuTop: isMac ? '58px' : (isWin ? '82px' : '104px'),
+      menuRight: isMac ? '14px' : (isWin ? '54px' : '16px'),
+      menuRadius: isMac ? '10px' : (isWin ? '7px' : '12px'),
+      menuBg: t.dark ? 'linear-gradient(rgba(44,44,50,0.56), rgba(32,32,38,0.48))' : 'linear-gradient(rgba(252,251,249,0.64), rgba(244,243,241,0.54))',
+      menuBlur: 'blur(34px) saturate(190%)',
+      menuBorder: t.dark ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.12)',
+      menuText: t.text,
+      menuCheck: t.accentSoft,
+      menuHover: t.hov2,
+      onFormat: this.props.onFormat,
+      onAnimate: this.props.onAnimate,
+      formatBg: isFormat ? t.hov2 : 'transparent',
+      animateBg: isFormat ? 'transparent' : t.hov2,
+      formatIcon: isFormat ? t.accentSoft : t.label,
+      animateIcon: isFormat ? t.label : t.accentSoft,
+    };
+  }
+}
+</script>
+</body>
+</html>
