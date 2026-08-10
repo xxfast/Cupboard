@@ -1,0 +1,6 @@
+[submodule "cup"]
+	path = cup
+	url = https://github.com/xxfast/CuP.git
+[submodule "emoji-kt"]
+	path = emoji-kt
+	url = https://github.com/xxfast/Emoji.kt.git
