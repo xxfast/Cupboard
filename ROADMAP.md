@@ -38,7 +38,7 @@ Dependency chain: Emoji.kt macOS PR → CuP fork with `macosArm64` → `ComposeN
 - [ ] Navigator rows per the Keynote 26 spec: capsule selection (no thumbnail ring), number outside the thumbnail, 14px chevron gutter, 20px/level indent.
 - [ ] Embed the canvas full-bleed via `ComposeNSView` + `NSViewRepresentable` (as the window content layer at origin 0,0 this also retires the skiko Metal-layer offset band seen in the spike).
 - [ ] Native inspector: Format + Animate panels with AppKit-style small controls, `BuildOrderRow` list with drag reorder.
-- [ ] `.app` packaging with `compose-resources` in `Contents/Resources`.
+- [x] `.app` packaging with `compose-resources` in `Contents/Resources`. (`06dd768`, `./macosApp/package.sh`; retires the cwd-relative resource hack and the bare-binary activation-policy need)
 - [x] Play mode via CuP behind our own interface: document compiled to runtime `Slide`s, `PresentationState` driven by our UI. (`6e09398`; adapter + desktopApp wiring done and tested, needs a visual pass on the play window)
 - [ ] Code highlighting on native: JavaScriptCore-backed hljs actual, or precompute highlighting into the document model.
 - [ ] Fallback if the native route stalls: pull the Compose for Desktop shell (Phase 3) forward and ship it with mac-styled tokens.
