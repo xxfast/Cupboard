@@ -8,6 +8,7 @@ import CupboardCanvas
 
 // Running as a bare executable (no .app bundle) defaults to an accessory
 // activation policy: windows can't become key and typing goes elsewhere.
+// The packaged .app (package.sh) doesn't need this; kept for the bare run.sh path.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)

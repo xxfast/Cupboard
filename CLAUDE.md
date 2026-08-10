@@ -18,6 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Tests (JVM only, fastest): `./gradlew :cupboard:jvmTest`
 - Single test class: `./gradlew :cupboard:jvmTest --tests "io.github.xxfast.cupboard.SomeTest"`
 - Desktop distributables: `./gradlew :desktopApp:packageDistributionForCurrentOS` (Dmg/Msi/Deb)
+- macOS app bundle: `./macosApp/package.sh` (outputs `macosApp/build/Cupboard.app`)
 
 ## Module structure
 
