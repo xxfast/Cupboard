@@ -1,0 +1,16 @@
+# .NET build outputs (Shared, WinUiApp)
+**/[Bb]in/
+**/[Oo]bj/
+
+# Local NuGet package cache (RestorePackagesPath under each project)
+**/obj/packages/
+**/packages/
+
+# NuGet artifacts
+*.nupkg
+*.snupkg
+
+# Visual Studio / Rider
+.vs/
+*.user
+*.suo

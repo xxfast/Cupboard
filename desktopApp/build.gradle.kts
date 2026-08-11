@@ -7,7 +7,8 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":cupboard"))
+    // api-exposes the :cupboard core, so the document model comes along.
+    implementation(project(":cupboard:ui"))
 
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)

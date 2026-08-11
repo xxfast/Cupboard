@@ -1,0 +1,37 @@
+<Project>
+  <PropertyGroup>
+    <CupboardGradleExecutable Condition="$([MSBuild]::IsOSPlatform('windows'))">.\gradlew.bat</CupboardGradleExecutable>
+    <CupboardGradleExecutable Condition="!$([MSBuild]::IsOSPlatform('windows'))">./gradlew</CupboardGradleExecutable>
+    <CupboardKotlinPackageCache>$([System.IO.Path]::Combine('$(RestorePackagesPath)', 'cupboard.kotlin', '0.1.0'))</CupboardKotlinPackageCache>
+    <CupboardProjectAssetsFile Condition="'$(ProjectAssetsFile)' != ''">$(ProjectAssetsFile)</CupboardProjectAssetsFile>
+    <CupboardProjectAssetsFile Condition="'$(ProjectAssetsFile)' == ''">$(MSBuildProjectExtensionsPath)project.assets.json</CupboardProjectAssetsFile>
+  </PropertyGroup>
+
+  <!--
+    NuGet reuses an extracted fixed-version package across restores, so a freshly
+    packed Cupboard.Kotlin would be ignored. Drop the extracted copy while the
+    restore graph is collected.
+  -->
+  <Target
+    Name="InvalidateCupboardKotlinNuGet"
+    BeforeTargets="CollectPackageReferences"
+    Condition="'$(MSBuildIsRestoring)' == 'true' and '$(SkipCupboardKotlinNuGetPack)' != 'true'">
+    <RemoveDir
+      Directories="$(CupboardKotlinPackageCache)"
+      Condition="Exists('$(CupboardKotlinPackageCache)')" />
+    <Delete
+      Files="$(CupboardProjectAssetsFile)"
+      Condition="Exists('$(CupboardProjectAssetsFile)')" />
+  </Target>
+
+  <!-- The package must exist before NuGet resolves PackageReference. -->
+  <Target
+    Name="PackCupboardKotlinNuGet"
+    BeforeTargets="Restore"
+    Condition="'$(SkipCupboardKotlinNuGetPack)' != 'true'">
+    <Message Importance="high" Text="Packing the shared Kotlin core as Cupboard.Kotlin..." />
+    <Exec
+      Command="&quot;$(CupboardGradleExecutable)&quot; :winuiApp:packNuget"
+      WorkingDirectory="$(MSBuildThisFileDirectory).." />
+  </Target>
+</Project>

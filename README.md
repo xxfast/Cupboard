@@ -20,9 +20,11 @@ A Keynote-style presentation editor for developers who present code. Cross-platf
 
 ## Layout
 
-- [`cupboard/`](./cupboard) is the KMP library where the bulk of the app lives: document model, slide renderers, editor canvas
+- [`cupboard/`](./cupboard) is the UI-free KMP core: document model, editor presenters and view models
+- [`cupboard/ui/`](./cupboard/ui) is the Compose Multiplatform half: slide renderers, editor canvas, the play layer
 - [`desktopApp/`](./desktopApp) is the Compose for Desktop shell, which is the Linux app and the fallback shell everywhere else
 - [`macosApp/`](./macosApp) builds `CupboardCanvas.framework` and the SwiftUI host that embeds it ([`Cupboard.xcodeproj`](./macosApp/Cupboard.xcodeproj))
+- [`winuiApp/`](./winuiApp) packs the core as a NuGet package and holds the WinUI 3 shell skeleton (Windows only)
 - [`cup/`](https://github.com/xxfast/CuP) and [`emoji-kt/`](https://github.com/xxfast/Emoji.kt) are fork submodules of CuP and Emoji.kt
 - [`design/`](./design) holds the HTML design prototypes and the UI spec
 

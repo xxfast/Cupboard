@@ -1,0 +1,8 @@
+<Project>
+  <!-- Shared NuGet feed for the locally packed Cupboard.Kotlin package. -->
+  <PropertyGroup>
+    <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)build\nuget</RestoreAdditionalProjectSources>
+    <!-- Allow Rider and dotnet to restore Windows projects from a non-Windows host. -->
+    <EnableWindowsTargeting Condition="!$([MSBuild]::IsOSPlatform('windows'))">true</EnableWindowsTargeting>
+  </PropertyGroup>
+</Project>

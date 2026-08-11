@@ -9,35 +9,35 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
+// The UI-free core: document model, presenters, view models. Compose *runtime*
+// only (molecule runs the presenters as flows), never foundation/material3/ui.
+// That is what lets this module carry mingwX64 for the WinUI shell, which no
+// Compose UI artifact publishes. Anything that touches a pixel goes in :cupboard:ui.
 kotlin {
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "Cupboard"
-            isStatic = true
-        }
-    }
-    
+    iosArm64()
+    iosSimulatorArm64()
+
     jvm()
 
     macosArm64()
 
+    // The .NET/WinUI shell links this module through :winuiApp.
+    mingwX64()
+
     js {
         browser()
     }
-    
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
     }
-    
+
     android {
        namespace = "io.github.xxfast.cupboard.core"
        compileSdk = libs.versions.android.compileSdk.get().toInt()
        minSdk = libs.versions.android.minSdk.get().toInt()
-    
+
        compilerOptions {
            jvmTarget = JvmTarget.JVM_11
        }
@@ -53,45 +53,13 @@ kotlin {
            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
        }
     }
-    
-    // Default hierarchy plus a "cup" group shared across CuP's targets only
-    // (jvm, js, wasmJs, macosArm64). android and iOS must never see CuP.
-    @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
-    applyDefaultHierarchyTemplate {
-        common {
-            group("cup") {
-                withJvm()
-                withJs()
-                withWasmJs()
-                withMacosArm64()
-            }
-        }
-    }
 
     sourceSets {
-        val cupMain by getting {
-            dependencies {
-                // Substituted to the cup/Compose-Ur-Pres included build.
-                implementation("net.kodein.cup:cup:1.0.0-Beta-17")
-            }
-        }
-
-        androidMain.dependencies {
-            implementation(libs.compose.uiToolingPreview)
-            implementation(libs.compose.uiTooling)
-        }
         commonMain.dependencies {
+            // Runtime only: @Composable presenters, no UI toolkit. See the module comment.
             implementation(libs.compose.runtime)
-            implementation(libs.compose.foundation)
-            implementation(libs.compose.material3)
-            implementation(libs.compose.ui)
-            implementation(libs.compose.components.resources)
-            implementation(libs.compose.uiToolingPreview)
-            implementation(libs.androidx.lifecycle.viewmodelCompose)
-            implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutinesCore)
-            implementation(libs.highlights)
             // Runs the composable presenters as plain state flows, off any UI.
             implementation(libs.molecule.runtime)
             // `api`: EditorViewModel takes a KStore<Document>, so shells that
@@ -104,16 +72,7 @@ kotlin {
             implementation(libs.kotlinx.coroutinesTest)
         }
         jvmTest.dependencies {
-            // skiko natives for offscreen render tests
-            implementation(compose.desktop.currentOs)
             implementation(libs.kstore.file)
         }
     }
-}
-
-dependencies {
-    androidRuntimeClasspath(libs.compose.uiTooling)
-}
-compose.resources {
-    packageOfResClass = "io.github.xxfast.cupboard.resources"
 }

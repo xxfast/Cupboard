@@ -26,7 +26,7 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       - name: Shared tests + web targets + desktop shell
-        run: ./gradlew :cupboard:jvmTest :cupboard:wasmJsMainClasses :cupboard:jsMainClasses :desktopApp:compileKotlin
+        run: ./gradlew :cupboard:jvmTest :cupboard:ui:jvmTest :cupboard:ui:wasmJsMainClasses :cupboard:ui:jsMainClasses :desktopApp:compileKotlin :cupboard:compileKotlinMingwX64 :winuiApp:linkDebugSharedMingwX64
 
   macos-app:
     runs-on: macos-latest
@@ -65,3 +65,38 @@ jobs:
             exit 1
           fi
           kill "$SMOKE_PID"
+
+  # Provisional: the C# half has never been compiled anywhere, so this job is
+  # allowed to fail rather than block. Flip continue-on-error off once it has
+  # been proven green at least once.
+  windows-app:
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native compiler
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+      - name: Pack the Kotlin core as Cupboard.Kotlin
+        # Release shared lib + the NuGet package the C# projects restore from
+        # winuiApp/build/nuget (wired up in winuiApp/Directory.Build.props).
+        # bash so `./gradlew` works: the default shell here is pwsh.
+        shell: bash
+        run: ./gradlew :winuiApp:linkReleaseSharedMingwX64 :winuiApp:packNuget
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build the WinUI shell
+        # The package is already packed, so skip the pack-before-restore hook
+        # in winuiApp/Directory.Build.targets and reuse what Gradle produced.
+        run: dotnet build winuiApp/WinUiApp/WinUiApp.csproj -c Release -r win-x64 -p:SkipCupboardKotlinNuGetPack=true
