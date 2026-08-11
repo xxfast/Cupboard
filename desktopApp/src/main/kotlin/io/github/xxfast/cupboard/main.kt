@@ -27,6 +27,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -55,7 +56,8 @@ fun main() {
     val initial: Document = runBlocking { documentStore.get() } ?: sampleDocument()
     // One view model for the whole app: the editor window and the play window are
     // two views onto it, not two editors. Autosave lives inside it.
-    val viewModel = EditorViewModel(initial, documentStore)
+    // Serialized main dispatcher, never Unconfined: see EditorViewModel's scope note.
+    val viewModel = EditorViewModel(initial, documentStore, Dispatchers.Main)
 
     application {
         var playing by remember { mutableStateOf<PlayRequest?>(null) }

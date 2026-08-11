@@ -12,6 +12,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,15 +40,27 @@ import kotlinx.coroutines.launch
 class EditorViewModel(
     private val initialState: EditorState,
     private val documentStore: KStore<Document>,
+    dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
 ) {
     /** Opens [initialDocument] on its first slide with content. */
-    constructor(initialDocument: Document, documentStore: KStore<Document>) :
-        this(EditorState.opening(initialDocument), documentStore)
+    constructor(
+        initialDocument: Document,
+        documentStore: KStore<Document>,
+        dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
+    ) : this(EditorState.opening(initialDocument), documentStore, dispatcher)
 
     // Private: this class is exported to ObjC (and later to .NET), and a
     // CoroutineScope on the public surface is a Kotlin type those hosts have no
     // business seeing. They get `states` and the on-methods, nothing else.
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Unconfined + SupervisorJob())
+    //
+    // Shells must pass their serialized main dispatcher, not keep the Unconfined
+    // default. Molecule's snapshot notifier schedules Snapshot.sendApplyNotifications
+    // on this context; under Unconfined that runs synchronously inside the global
+    // write observer, which intermittently starves recomposition: the presenter
+    // sits on a pending invalidation until some unrelated snapshot write (a window
+    // resize) flushes it, which reads as the editor freezing and magically reviving.
+    // Unconfined stays as the default for tests, which pump the loop themselves.
+    private val scope: CoroutineScope = CoroutineScope(dispatcher + SupervisorJob())
 
     // Bigger than a screen that only refreshes: an editor emits bursts (a slide
     // select that clears a selection, keystrokes) and none of them may be lost.

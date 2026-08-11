@@ -51,8 +51,11 @@ class WinEditorState(
  * The .NET-facing face of the shared [EditorViewModel].
  *
  * A thin wrapper rather than exporting [EditorViewModel] straight, for three
- * reasons. Its constructor takes a `KStore<Document>`, which no C# caller can
- * build, so the store stays behind [WindowsApp.bootstrap]. Its event methods take
+ * reasons. Exporting it would pull its constructor's `KStore<Document>` (and
+ * through [Document], the sealed element hierarchy the interop generator cannot
+ * project) into the .NET surface; the store is built Kotlin-side behind
+ * [WindowsApp.bootstrap] so the exported surface stays limited to projectable
+ * types: strings, ints, the `Win*` projections, `StateFlow`. Its event methods take
  * domain types (`Slide`); the ones here take ids and indices, which is what a
  * XAML binding actually has to hand. And its state needs the projection above.
  *
@@ -68,9 +71,14 @@ class WinEditorViewModel {
     // loads, and the host constructs this before its first frame. Same call the
     // macOS and desktop shells make.
     private val documentStore = requireDocumentStore()
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val viewModel = EditorViewModel(
         initialDocument = runBlocking { documentStore.get() } ?: sampleDocument(),
         documentStore = documentStore,
+        // Serialized, never Unconfined (see EditorViewModel's scope note). There is
+        // no Kotlin main loop in the .NET process, so a single-parallelism worker
+        // stands in for one; the C# adapter already marshals onto the UI thread.
+        dispatcher = Dispatchers.Default.limitedParallelism(1),
     )
 
     /**

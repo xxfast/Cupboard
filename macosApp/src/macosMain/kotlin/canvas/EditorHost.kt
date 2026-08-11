@@ -95,6 +95,8 @@ class EditorHost {
     private val viewModel = EditorViewModel(
         initialDocument = runBlocking { documentStore.get() } ?: sampleDocument(),
         documentStore = documentStore,
+        // Serialized main dispatcher, never Unconfined: see EditorViewModel's scope note.
+        dispatcher = Dispatchers.Main,
     )
 
     /** The state the sidebar reads right now. Never stale: the canvas and this
