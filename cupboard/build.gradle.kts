@@ -90,6 +90,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.highlights)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

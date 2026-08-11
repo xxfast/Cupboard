@@ -16,6 +16,48 @@ private fun titleSlide(title: String, depth: Int = 0): Slide = Slide(
     ),
 )
 
+/** Shows off the highlighted code element: the deck's own document model, as a snippet. */
+private fun codeSlide(): Slide = Slide(
+    title = "Slides as Data",
+    depth = 1,
+    elements = listOf(
+        TextElement(
+            frame = Frame(146f, 130f, 1627f, 142f),
+            text = "Slides as Data",
+            fontSize = 94f,
+            fontWeight = 700,
+            letterSpacing = -1f,
+            color = 0xFFFFFFFF,
+        ),
+        TextElement(
+            frame = Frame(146f, 281f, 1627f, 61f),
+            text = "The document model, not compiled-in composables",
+            fontSize = 39f,
+            color = 0xFFA9A0D8,
+        ),
+        CodeElement(
+            frame = Frame(146f, 390f, 1627f, 560f),
+            language = "kotlin",
+            fontSize = 28f,
+            code = """
+                // Slides are data, so one deck renders on every platform
+                @Serializable
+                data class Slide(
+                    val title: String = "Untitled",
+                    val depth: Int = 0,
+                    val elements: List<Element> = emptyList(),
+                )
+
+                fun Slide.aspect(): Float = 1920f / 1080f
+
+                val opening = Slide(title = "Cupboard", depth = 1)
+            """.trimIndent(),
+        ),
+    ),
+    notes = "The canvas never compiles a slide. It reads one. That is what keeps the " +
+        "editor, the thumbnails, and play mode pixel-identical.",
+)
+
 /** The "Rendering Pipeline" slide from the design mock, as document data. */
 fun sampleDocument(): Document {
     val title = TextElement(
@@ -89,6 +131,7 @@ fun sampleDocument(): Document {
             titleSlide("Why KMP"),
             pipeline,
             titleSlide("Scene Graph", depth = 1),
+            codeSlide(),
             titleSlide("Native Interop"),
             titleSlide("Benchmarks"),
             titleSlide("Roadmap"),

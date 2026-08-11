@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -135,8 +136,11 @@ private fun CodeElementView(element: CodeElement) {
             .border(1.dp, Color(0xFF33363D), RoundedCornerShape(8.dp))
             .padding(12.dp),
     ) {
+        val highlighted = remember(element.code, element.language) {
+            highlightCode(element.code, element.language)
+        }
         Text(
-            text = element.code,
+            text = highlighted,
             color = Color(0xFFD9CFFF),
             fontSize = element.fontSize.sp,
             fontFamily = FontFamily.Monospace,
