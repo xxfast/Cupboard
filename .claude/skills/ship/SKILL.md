@@ -30,7 +30,7 @@ Do not delegate ambiguity; sharpen first, then delegate the mechanical part.
 
 ## 3. Delegate the common core
 
-One subagent (`subagent_type: "claude"`, `model: "opus"`), background. The brief must be self-contained; the subagent has no memory of the conversation. Include, in this order:
+One subagent (`subagent_type: "claude"`, `model: "opus"`), background. Exception: when the locked design is one or two files of mechanical output (a CI workflow, a config), write it directly in the main context; the delegation overhead only pays for itself on multi-file work. The brief must be self-contained; the subagent has no memory of the conversation. Include, in this order:
 
 1. Goal in one sentence, repo root path.
 2. Files to read first (absolute paths): the four-file screen anatomy under `cupboard/src/commonMain/kotlin/io/github/xxfast/cupboard/screens/editor/` is both the likely edit target and the pattern to mirror for new screens. Point at reference files, don't re-describe patterns in prose.
