@@ -40,7 +40,7 @@ Dependency chain: Emoji.kt macOS PR → CuP fork with `macosArm64` → `ComposeN
 - [ ] Native inspector: Format + Animate panels with AppKit-style small controls, `BuildOrderRow` list with drag reorder.
 - [x] `.app` packaging with `compose-resources` in `Contents/Resources`. (`06dd768`, `./macosApp/package.sh`; retires the cwd-relative resource hack and the bare-binary activation-policy need)
 - [x] Real Xcode project: `macosApp/Cupboard.xcodeproj` replaces the swiftc/run.sh harness. Gradle script phase runs `embedAndSignAppleFrameworkForXcode` (same pattern as `iosApp`), a second phase stages compose resources into the bundle, ad-hoc signing, shared scheme for headless `xcodebuild`. `run.sh` and `package.sh` are thin wrappers now; `xcodebuild archive` is available for real distribution later. (`9bb7b03`)
-- [x] Play mode via CuP behind our own interface: document compiled to runtime `Slide`s, `PresentationState` driven by our UI. (`6e09398`; adapter + desktopApp wiring done and tested, needs a visual pass on the play window)
+- [x] Play mode via CuP behind our own interface: document compiled to runtime `Slide`s, `PresentationState` driven by our UI. (`6e09398`; adapter + desktopApp wiring done and tested. SwiftUI host wired via `EditorHost.startPlay` + toolbar Play button in `2284b2c`. Needs a visual pass on both play surfaces)
 - [ ] Code highlighting on native: JavaScriptCore-backed hljs actual, or precompute highlighting into the document model.
 - [ ] Fallback if the native route stalls: pull the Compose for Desktop shell (Phase 3) forward and ship it with mac-styled tokens.
 
