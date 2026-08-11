@@ -64,20 +64,24 @@ fun EditorCanvas(
     onSlideChange: (Slide) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // The slide as the pointer has it right now, null when no gesture is running.
-    // Keyed by slide id so switching slides can never show a stale preview.
+    // The canvas trusts its own hands first: gestures render from local state
+    // immediately and [onSlideChange] is write-behind (persistence, undo), so
+    // no visual behavior ever waits on the state roundtrip. An incoming slide
+    // only takes over when it differs from what we last sent (undo, external
+    // edits), which keeps the canvas correct without being dependent.
     var preview: Slide? by remember(slide.id) { mutableStateOf(null) }
+    var committed: Slide? by remember(slide.id) { mutableStateOf(null) }
+    var lastSent: Slide? by remember(slide.id) { mutableStateOf(null) }
+    remember(slide) {
+        if (lastSent != null && slide != lastSent) {
+            committed = null
+            lastSent = null
+        }
+    }
 
     // Everything below draws and hit-tests against this, so the gesture and what
     // you see stay the same thing.
-    val shownSlide: Slide = preview ?: slide
-
-    // Hold the preview until the committed slide comes back round through the
-    // state flow. Dropping it on release instead would render one frame of the
-    // pre-drag position, which reads as the element snapping back.
-    LaunchedEffect(slide) {
-        if (slide == preview) preview = null
-    }
+    val shownSlide: Slide = preview ?: committed ?: slide
 
     val currentSlide by rememberUpdatedState(shownSlide)
     val currentSelection by rememberUpdatedState(selectedElementId)
@@ -106,7 +110,12 @@ fun EditorCanvas(
         }
 
         fun commit() {
-            preview?.let(onSlideChange)
+            preview?.let { done ->
+                committed = done
+                lastSent = done
+                onSlideChange(done)
+            }
+            preview = null
             guideX = false
             guideY = false
         }
@@ -157,7 +166,13 @@ fun EditorCanvas(
                                 }
                             }
                         },
-                        onDragEnd = { target = null; commit() },
+                        // Publish only when this gesture had a target: an empty
+                        // drag must never commit a leftover preview.
+                        onDragEnd = {
+                            val hadTarget = target != null
+                            target = null
+                            if (hadTarget) commit() else preview = null
+                        },
                         // A cancelled gesture never happened: drop the preview
                         // and let the element fall back to the committed slide.
                         onDragCancel = { target = null; preview = null; guideX = false; guideY = false },
