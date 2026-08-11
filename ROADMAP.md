@@ -12,7 +12,7 @@ What we're building and in what order. See `GOALS.md` for the why, `design/READM
 - [x] Template app modules removed; `:cupboard` keeps its android/ios/web targets because iPad, Android tablet, and web apps are planned later.
 - [x] macOS shell scaffolding: `macosApp/Cupboard.xcodeproj` (Gradle framework phase + compose-resources staging), `.app` packaging, IDE run config through the KMP plugin.
 - [x] Play mode wired in both shells. Needs a visual pass.
-- [ ] Build CI via GitHub Actions: jobs mirroring the local verify battery (`:cupboard:jvmTest` + js/wasmJs compiles + `:desktopApp:compileKotlin` on ubuntu; `xcodebuild` + the 5s smoke run on macos). Recursive submodule checkout for the forks; no aggregate `./gradlew build` (known-broken by design).
+- [x] Build CI via GitHub Actions: jobs mirroring the local verify battery (`:cupboard:jvmTest` + js/wasmJs compiles + `:desktopApp:compileKotlin` on ubuntu; `xcodebuild` + the 5s smoke run on macos). Recursive submodule checkout for the forks; no aggregate `./gradlew build` (known-broken by design). (`f051f70`, first run green incl. the smoke test on the CI VM)
 - [ ] Follow-through: promote the upstream fork PRs (KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19), coordinate on Kotlin Slack `#cup-presentations`.
 
 ## Phase 1: App shells (all desktop platforms, in parallel)
