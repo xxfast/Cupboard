@@ -99,6 +99,8 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 ## Open questions
 
+- The drag-freeze bug (`6ea6a03` works around it): editing worked but the canvas stopped repainting until a resize/sidebar toggle forced a frame. Suspected skiko vsync/displaylink stall (classic trigger: window on an external monitor). Two untried experiments: move the window between displays while frozen, and `JAVA_TOOL_OPTIONS="-Dskiko.vsync.enabled=false" ./gradlew :desktopApp:run`. If confirmed, the real fix is a jvmArg in desktopApp plus an upstream skiko issue, and the canvas could go back to trusting the state roundtrip.
+
 - Collaboration/sync (`● synced` in the design status bar): real-time co-editing implies a backend and CRDT-shaped document work; comments/highlights ride the same infrastructure. Out of scope until the editor core is done.
 - Speaker-notes authoring UX: strip (per design) vs panel; and whether notes join the presenter-display Phase 7 work or land earlier with the shared model.
 
