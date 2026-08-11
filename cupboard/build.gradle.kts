@@ -90,7 +90,12 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.kotlinx.serialization.json)
+            implementation(libs.kotlinx.coroutinesCore)
             implementation(libs.highlights)
+            // `api`: the autosaver takes a KStore<Document>, so shells that build
+            // one need the type. Only the core artifact is target-clean here,
+            // kstore-file has no wasmJs variant, so each shell adds it itself.
+            api(libs.kstore)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -98,6 +103,7 @@ kotlin {
         jvmTest.dependencies {
             // skiko natives for offscreen render tests
             implementation(compose.desktop.currentOs)
+            implementation(libs.kstore.file)
         }
         jsMain.dependencies {
             implementation(libs.wrappers.browser)

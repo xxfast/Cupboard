@@ -11,6 +11,8 @@ dependencies {
 
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)
+    // Per-shell: kstore-file has no wasmJs variant, so :cupboard only carries the core.
+    implementation(libs.kstore.file)
 
     implementation(libs.compose.uiToolingPreview)
 }

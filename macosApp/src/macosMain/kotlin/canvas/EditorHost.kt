@@ -14,14 +14,24 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.editor.EditorStore
+import io.github.xxfast.cupboard.editor.autosaveTo
 import io.github.xxfast.cupboard.play.PresentationPlayer
+import io.github.xxfast.kstore.KStore
+import io.github.xxfast.kstore.file.storeOf
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
 import org.jetbrains.skia.EncodedImageFormat
 import platform.AppKit.NSImage
 import platform.AppKit.NSView
 import platform.Foundation.NSData
+import platform.Foundation.NSHomeDirectory
 import platform.Foundation.NSMakeSize
 import platform.Foundation.dataWithBytes
 
@@ -68,9 +78,21 @@ class PlaySession internal constructor(
  * No state lives here, it all belongs to [store].
  */
 class EditorHost {
+    // Deliberately the same path the Compose Desktop shell uses: the two shells
+    // are front ends onto one document on this machine, not two apps.
+    private val documentStore: KStore<Document> = run {
+        val file = Path(NSHomeDirectory(), ".cupboard", "document.json")
+        file.parent?.let { SystemFileSystem.createDirectories(it) }
+        storeOf(file = file, default = sampleDocument())
+    }
+
     // Private: the framework only exports this file's types, so the store stays
     // a Kotlin-side detail. Swift talks to it through the methods below.
-    private val store = EditorStore(sampleDocument())
+    // Blocking is right here: there is no editor to show until the document loads.
+    private val store = EditorStore(runBlocking { documentStore.get() } ?: sampleDocument())
+
+    private val scope = CoroutineScope(Dispatchers.Main)
+    private val stopAutosave: () -> Unit = store.autosaveTo(documentStore, scope)
 
     val view: NSView = ComposeHostView(ComposeNSView {
         // Paint the canvas well ourselves: unpainted scene regions are undefined
@@ -138,5 +160,15 @@ class EditorHost {
         return NSImage(data = nsData)?.apply {
             setSize(NSMakeSize(width.toDouble(), height.toDouble()))
         }
+    }
+
+    /**
+     * Stops autosaving and tears the scope down. Optional: a document app keeps
+     * one editor for its whole life, so a host that never closes the editor can
+     * leave this alone and let the process exit do it.
+     */
+    fun close() {
+        stopAutosave()
+        scope.cancel()
     }
 }
