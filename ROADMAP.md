@@ -12,11 +12,11 @@ Research, shared foundations, architecture. The short version:
 - [x] Screen architecture per CLAUDE.md constraint 6: NYTimes-KMP-shaped MVI in `screens/<name>/` (serializable state + events, composable presenter run by Molecule, plain view model exposing `StateFlow`, stateless views), thin shell adapters, navigation per platform. Gestures commit once on release. Undo/redo: bounded document history in the presenter, Cmd+Z in both shells' real menus; revisit when deletion lands (selection can dangle) and when text editing needs burst coalescing.
 - [x] Interim persistence: KStore autosaves `~/.cupboard/document.json` (debounced, both shells share the file) until the `.cupboard` bundle format exists.
 - [x] Template app modules removed; `:cupboard` keeps its android/ios/web targets because iPad, Android tablet, and web apps are planned later.
+- [x] macOS shell scaffolding: `macosApp/Cupboard.xcodeproj` (Gradle `embedAndSignAppleFrameworkForXcode` phase + compose-resources staging, ad-hoc signing), `.app` packaging via `./macosApp/package.sh`, IDE run config through the KMP plugin.
+- [x] Play mode wired in both shells (`EditorHost.startPlay` + toolbar Play button on macOS; Play window on desktop). Needs a visual pass.
 
 ## Phase 1: macOS app (SwiftUI)
 
-- [x] Native shell scaffolding: `macosApp/Cupboard.xcodeproj` (Gradle `embedAndSignAppleFrameworkForXcode` phase + compose-resources staging, ad-hoc signing), `.app` packaging via `./macosApp/package.sh`, IDE run config through the KMP plugin.
-- [x] Play mode wired in both shells (`EditorHost.startPlay` + toolbar Play button on macOS; Play window on desktop). Needs a visual pass.
 - [ ] Promote the upstream fork PRs: mark KodeinKoders/CuP#12 and kosi-libs/Emoji.kt#19 ready, coordinate on Kotlin Slack `#cup-presentations`.
 - [ ] SwiftUI chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); Format/Animate lives in the inspector, no status bar on macOS.
 - [ ] Navigator rows per the Keynote 26 spec: capsule selection (no thumbnail ring), number outside the thumbnail, 14px chevron gutter, 20px/level indent.
