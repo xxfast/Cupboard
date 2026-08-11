@@ -40,8 +40,6 @@ plugins {
 includeBuild("emoji-kt")
 includeBuild("cup/Compose-Ur-Pres")
 
-include(":androidApp")
 include(":desktopApp")
 include(":macosApp")
 include(":cupboard")
-include(":webApp")

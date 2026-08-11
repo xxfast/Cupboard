@@ -59,6 +59,6 @@ Dependency chain: Emoji.kt macOS PR → CuP fork with `macosArm64` → `ComposeN
 
 ## Open questions
 
-- Do we keep the template `androidApp` / `webApp` / `iosApp` targets? Web could become CuP's web export as a share feature later.
+- Template `androidApp` / `webApp` / `iosApp` modules are deleted. `:cupboard` keeps its android, ios and web targets: iPad, Android tablet and web apps are all planned later (web possibly via CuP's export, as a share feature). Not a priority now.
 - File format: single-file document vs bundle (embedded images argue for a bundle or zip). Interim: plain JSON via KStore; the plan is a `.cupboard` folder holding the JSON plus assets and whatever else a document grows.
 - Sync (`● synced` in the design status bar) implies a backend at some point; out of scope for now.

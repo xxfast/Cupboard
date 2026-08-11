@@ -105,9 +105,6 @@ kotlin {
             implementation(compose.desktop.currentOs)
             implementation(libs.kstore.file)
         }
-        jsMain.dependencies {
-            implementation(libs.wrappers.browser)
-        }
     }
 }
 

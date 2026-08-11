@@ -11,9 +11,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Build everything: `./gradlew build`
 - Desktop app (hot reload): `./gradlew :desktopApp:hotRun --auto`
 - Desktop app (standard): `./gradlew :desktopApp:run`
-- Web: `./gradlew :webApp:wasmJsBrowserDevelopmentRun` (or `jsBrowserDevelopmentRun`)
-- Android: `./gradlew :androidApp:assembleDebug`
-- iOS: open `iosApp/` in Xcode
 - Tests (all targets): `./gradlew :cupboard:allTests`
 - Tests (JVM only, fastest): `./gradlew :cupboard:jvmTest`
 - Single test class: `./gradlew :cupboard:jvmTest --tests "io.github.xxfast.cupboard.SomeTest"`
@@ -23,9 +20,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Module structure
 
-- `cupboard/` – KMP library, targets: `android`, `iosArm64`/`iosSimulatorArm64` (static framework `Cupboard`), `jvm`, `js`, `wasmJs`. All product code goes in `commonMain` unless it genuinely needs a platform API.
+- `cupboard/` – KMP library, targets: `android`, `iosArm64`/`iosSimulatorArm64` (static framework `Cupboard`), `jvm`, `macosArm64`, `js`, `wasmJs`. All product code goes in `commonMain` unless it genuinely needs a platform API. The android/ios/web targets have no app module yet; iPad, Android tablet and web apps are planned later.
 - `desktopApp/` – Compose for Desktop (JVM) entry point, `io.github.xxfast.cupboard.MainKt`. This is the Linux app and the fallback shell for all platforms.
-- `androidApp/`, `webApp/`, `iosApp/` – template entry points, not part of the core desktop goal (kept for now).
+- `macosApp/` – SwiftUI host + `CupboardCanvas.framework` (`macosArm64`), built via `Cupboard.xcodeproj`.
 - `design/` – HTML design prototypes + handoff spec (`design/README.md`). Reference only, not production code.
 
 Versions live in `gradle/libs.versions.toml` (Kotlin 2.4.x, Compose Multiplatform 1.11.x, AGP 9.x).

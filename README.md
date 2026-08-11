@@ -24,7 +24,6 @@ A Keynote-style presentation editor for developers who present code. Cross-platf
 - [`macosApp/`](./macosApp) builds `CupboardCanvas.framework` and the SwiftUI host that embeds it ([`Cupboard.xcodeproj`](./macosApp/Cupboard.xcodeproj))
 - [`cup/`](https://github.com/xxfast/CuP) and [`emoji-kt/`](https://github.com/xxfast/Emoji.kt) are fork submodules of CuP and Emoji.kt
 - [`design/`](./design) holds the HTML design prototypes and the UI spec
-- `androidApp/`, `webApp/`, `iosApp/` are template leftovers, fate undecided
 
 See [`GOALS.md`](./GOALS.md) for what we're building and why, [`ROADMAP.md`](./ROADMAP.md) for the order we're building it in.
 
