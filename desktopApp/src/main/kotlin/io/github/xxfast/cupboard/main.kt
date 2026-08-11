@@ -1,11 +1,9 @@
 package io.github.xxfast.cupboard
 
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -19,10 +17,10 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.sampleDocument
-import io.github.xxfast.cupboard.editor.EditorStore
-import io.github.xxfast.cupboard.editor.autosaveTo
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
+import io.github.xxfast.cupboard.screens.editor.EditorScreen
+import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
 import kotlinx.coroutines.runBlocking
@@ -42,26 +40,22 @@ fun main() {
     val documentStore: KStore<Document> = storeOf(file = documentFile, default = sampleDocument())
     // Blocking is right here: there is no editor to show until the document loads.
     val initial: Document = runBlocking { documentStore.get() } ?: sampleDocument()
-    val editorStore = EditorStore(initial)
+    // One view model for the whole app: the editor window and the play window are
+    // two views onto it, not two editors. Autosave lives inside it.
+    val viewModel = EditorViewModel(initial, documentStore)
 
     application {
         var playing by remember { mutableStateOf<PlayRequest?>(null) }
 
-        // The scope is the application composition's, so autosave runs for as
-        // long as the app does and stops when it exits.
-        val scope = rememberCoroutineScope()
-        DisposableEffect(Unit) {
-            val stopAutosave = editorStore.autosaveTo(documentStore, scope)
-            onDispose { stopAutosave() }
-        }
-
         Window(
-            onCloseRequest = ::exitApplication,
+            onCloseRequest = { viewModel.close(); exitApplication() },
             title = "Cupboard",
         ) {
-            App(
+            EditorScreen(
+                viewModel = viewModel,
+                // The document and index the editor has right now: play is a
+                // snapshot, later edits don't reach the running presentation.
                 onPlay = { document, index -> playing = PlayRequest(document, index) },
-                store = editorStore,
             )
         }
 

@@ -92,13 +92,16 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutinesCore)
             implementation(libs.highlights)
-            // `api`: the autosaver takes a KStore<Document>, so shells that build
-            // one need the type. Only the core artifact is target-clean here,
-            // kstore-file has no wasmJs variant, so each shell adds it itself.
+            // Runs the composable presenters as plain state flows, off any UI.
+            implementation(libs.molecule.runtime)
+            // `api`: EditorViewModel takes a KStore<Document>, so shells that
+            // build one need the type. Only the core artifact is target-clean
+            // here, kstore-file has no wasmJs variant, so each shell adds it.
             api(libs.kstore)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutinesTest)
         }
         jvmTest.dependencies {
             // skiko natives for offscreen render tests

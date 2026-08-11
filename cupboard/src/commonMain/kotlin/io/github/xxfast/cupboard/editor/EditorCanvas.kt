@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,12 @@ private sealed interface DragTarget {
  * The editable slide canvas: renders the slide plus selection ring, 8 resize
  * handles, drag-to-move/resize, and center alignment guides with snapping.
  * All hit-testing happens in doc units (1dp == 1 unit inside [SlideSurface]).
+ *
+ * A drag in progress is this composable's own business: the moving element is
+ * rendered from a local [preview] slide and [onSlideChange] fires exactly once,
+ * on release, with the final slide. The event stream upstream then carries
+ * intent-sized facts (one edit per gesture), which is also one autosave write
+ * and, later, one undo entry per gesture instead of one per pointer sample.
  */
 @Composable
 fun EditorCanvas(
@@ -57,13 +64,28 @@ fun EditorCanvas(
     onSlideChange: (Slide) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val currentSlide by rememberUpdatedState(slide)
+    // The slide as the pointer has it right now, null when no gesture is running.
+    // Keyed by slide id so switching slides can never show a stale preview.
+    var preview: Slide? by remember(slide.id) { mutableStateOf(null) }
+
+    // Everything below draws and hit-tests against this, so the gesture and what
+    // you see stay the same thing.
+    val shownSlide: Slide = preview ?: slide
+
+    // Hold the preview until the committed slide comes back round through the
+    // state flow. Dropping it on release instead would render one frame of the
+    // pre-drag position, which reads as the element snapping back.
+    LaunchedEffect(slide) {
+        if (slide == preview) preview = null
+    }
+
+    val currentSlide by rememberUpdatedState(shownSlide)
     val currentSelection by rememberUpdatedState(selectedElementId)
     var guideX by remember { mutableStateOf(false) }
     var guideY by remember { mutableStateOf(false) }
 
     SlideSurface(modifier) {
-        for (element in slide.elements) ElementView(element)
+        for (element in shownSlide.elements) ElementView(element)
 
         // Editing affordances hold constant screen size at any zoom: authored
         // sizes are divided by the canvas scale, positions stay in doc units.
@@ -74,14 +96,19 @@ fun EditorCanvas(
         fun elementAt(p: Offset): Element? =
             currentSlide.elements.lastOrNull { it.frame.contains(p.x, p.y) }
 
-        fun update(element: Element, frame: Frame) {
-            onSlideChange(
-                currentSlide.copy(
-                    elements = currentSlide.elements.map {
-                        if (it.id == element.id) it.withFrame(frame) else it
-                    }
-                )
+        // Local only: the gesture edits the preview, release publishes it.
+        fun previewUpdate(element: Element, frame: Frame) {
+            preview = currentSlide.copy(
+                elements = currentSlide.elements.map {
+                    if (it.id == element.id) it.withFrame(frame) else it
+                }
             )
+        }
+
+        fun commit() {
+            preview?.let(onSlideChange)
+            guideX = false
+            guideY = false
         }
 
         // Input overlay covering the whole slide
@@ -123,21 +150,23 @@ fun EditorCanvas(
                                     val snapped = snapToSlideCenter(moved)
                                     guideX = snapped.snappedX
                                     guideY = snapped.snappedY
-                                    update(element, snapped.frame)
+                                    previewUpdate(element, snapped.frame)
                                 }
                                 is DragTarget.Resize -> {
-                                    update(element, resizeFrame(element.frame, t.handle, delta.x, delta.y))
+                                    previewUpdate(element, resizeFrame(element.frame, t.handle, delta.x, delta.y))
                                 }
                             }
                         },
-                        onDragEnd = { target = null; guideX = false; guideY = false },
-                        onDragCancel = { target = null; guideX = false; guideY = false },
+                        onDragEnd = { target = null; commit() },
+                        // A cancelled gesture never happened: drop the preview
+                        // and let the element fall back to the committed slide.
+                        onDragCancel = { target = null; preview = null; guideX = false; guideY = false },
                     )
                 }
         )
 
         // Selection ring + handles
-        slide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
+        shownSlide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
             SelectionOverlay(selected.frame, canvasScale)
         }
 

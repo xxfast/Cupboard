@@ -5,6 +5,8 @@ package io.github.xxfast.cupboard.canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -13,9 +15,9 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.editor.EditorCanvas
-import io.github.xxfast.cupboard.editor.EditorStore
-import io.github.xxfast.cupboard.editor.autosaveTo
 import io.github.xxfast.cupboard.play.PresentationPlayer
+import io.github.xxfast.cupboard.screens.editor.EditorState
+import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -24,6 +26,7 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -71,11 +74,11 @@ class PlaySession internal constructor(
 }
 
 /**
- * Adapter between a native macOS shell and the shared [EditorStore]: exposes the
- * Compose canvas as an NSView, and gives the SwiftUI sidebar its outline,
+ * Adapter between a native macOS shell and the shared [EditorViewModel]: exposes
+ * the Compose canvas as an NSView, and gives the SwiftUI sidebar its outline,
  * selection and change-notification API in ObjC-friendly shapes.
  * Only the canvas is Compose; the chrome around it is the host's business.
- * No state lives here, it all belongs to [store].
+ * No state lives here, it all belongs to the view model.
  */
 class EditorHost {
     // Deliberately the same path the Compose Desktop shell uses: the two shells
@@ -86,28 +89,36 @@ class EditorHost {
         storeOf(file = file, default = sampleDocument())
     }
 
-    // Private: the framework only exports this file's types, so the store stays
-    // a Kotlin-side detail. Swift talks to it through the methods below.
+    // Private: the framework only exports this file's types, so the view model
+    // stays a Kotlin-side detail. Swift talks to it through the methods below.
     // Blocking is right here: there is no editor to show until the document loads.
-    private val store = EditorStore(runBlocking { documentStore.get() } ?: sampleDocument())
+    private val viewModel = EditorViewModel(
+        initialDocument = runBlocking { documentStore.get() } ?: sampleDocument(),
+        documentStore = documentStore,
+    )
+
+    /** The state the sidebar reads right now. Never stale: the canvas and this
+     * are the same flow, so an edit made in Compose shows up here too. */
+    private val state: EditorState get() = viewModel.states.value
 
     private val scope = CoroutineScope(Dispatchers.Main)
-    private val stopAutosave: () -> Unit = store.autosaveTo(documentStore, scope)
 
     val view: NSView = ComposeHostView(ComposeNSView {
+        val state: EditorState by viewModel.states.collectAsState()
+
         // Paint the canvas well ourselves: unpainted scene regions are undefined
         // (white) instead of showing the SwiftUI background through.
         Box(Modifier.fillMaxSize().background(Color(0xFF17181C))) {
             EditorCanvas(
-                slide = store.selectedSlide,
-                selectedElementId = store.selectedElementId,
-                onSelectElement = { store.selectElement(it) },
-                onSlideChange = { store.updateSlide(it) },
+                slide = state.selectedSlide,
+                selectedElementId = state.selectedElementId,
+                onSelectElement = viewModel::onSelectElement,
+                onSlideChange = viewModel::onUpdateSlide,
             )
         }
     })
 
-    fun outline(): List<OutlineRow> = store.outline().map { entry ->
+    fun outline(): List<OutlineRow> = state.outline().map { entry ->
         OutlineRow(
             title = entry.title,
             depth = entry.depth,
@@ -118,37 +129,43 @@ class EditorHost {
     }
 
     fun toggleCollapsed(index: Int) {
-        val slide = store.document.slides.getOrNull(index) ?: return
-        store.toggleCollapsed(slide.id)
+        val slide = state.document.slides.getOrNull(index) ?: return
+        viewModel.onToggleCollapsed(slide.id)
     }
 
-    fun selectedSlideIndex(): Int = store.selectedSlideIndex()
+    fun selectedSlideIndex(): Int = state.selectedSlideIndex()
 
     fun selectSlide(index: Int) {
-        store.selectSlideAt(index)
+        viewModel.onSelectSlideAt(index)
     }
 
     /**
-     * Registers [callback], fired on every store change (including edits made
-     * inside the Compose canvas), and returns the unsubscribe for the host to
-     * call when it goes away. Swift can't observe snapshot state, so this is how
-     * the sidebar learns to re-pull its outline and thumbnails.
+     * Registers [callback], fired whenever the editor state changes (including
+     * edits made inside the Compose canvas), and returns the unsubscribe for the
+     * host to call when it goes away. Swift can't observe a Kotlin StateFlow, so
+     * this is how the sidebar learns to re-pull its outline and thumbnails.
+     *
+     * Collecting is also what starts the presenter: the state flow is lazily
+     * shared, so the host subscribing at launch is what gets the editor running.
      */
-    fun onChange(callback: () -> Unit): () -> Unit = store.subscribe(callback)
+    fun onChange(callback: () -> Unit): () -> Unit {
+        val job = scope.launch { viewModel.states.collect { callback() } }
+        return { job.cancel() }
+    }
 
     /**
      * Starts playing the document as it stands, from the selected slide.
      * [onExit] fires on the main thread when the player asks to stop (Escape).
      */
     fun startPlay(onExit: () -> Unit): PlaySession =
-        PlaySession(store.document, store.selectedSlideIndex().coerceAtLeast(0), onExit)
+        PlaySession(state.document, state.selectedSlideIndex().coerceAtLeast(0), onExit)
 
     /**
      * Rasterizes a slide with the shared Compose renderer for native chrome to
      * display (navigator thumbs). Rendered at 2x for retina, sized in points.
      */
     fun thumbnail(index: Int, width: Int): NSImage? {
-        val slide = store.document.allSlides().getOrNull(index) ?: return null
+        val slide = state.document.allSlides().getOrNull(index) ?: return null
         val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
             SlideView(slide)
@@ -163,12 +180,12 @@ class EditorHost {
     }
 
     /**
-     * Stops autosaving and tears the scope down. Optional: a document app keeps
-     * one editor for its whole life, so a host that never closes the editor can
-     * leave this alone and let the process exit do it.
+     * Stops the editor (autosave included) and tears the scope down. Optional: a
+     * document app keeps one editor for its whole life, so a host that never
+     * closes the editor can leave this alone and let process exit do it.
      */
     fun close() {
-        stopAutosave()
         scope.cancel()
+        viewModel.close()
     }
 }

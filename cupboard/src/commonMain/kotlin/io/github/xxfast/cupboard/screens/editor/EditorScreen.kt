@@ -1,4 +1,4 @@
-package io.github.xxfast.cupboard
+package io.github.xxfast.cupboard.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,7 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,36 +30,53 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
 import io.github.xxfast.cupboard.document.Document
-import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.editor.EditorCanvas
-import io.github.xxfast.cupboard.editor.EditorStore
-import io.github.xxfast.cupboard.editor.OutlineEntry
 
 /**
  * Phase 1 demo shell: navigator (flat outline, thumbnails) + editable canvas.
  * Real per-OS chrome replaces this in later phases.
  *
- * State lives in [store] so other windows (the desktop play window) can share
- * the same instance; screen logic is common, this is only the Compose shell.
- *
  * [onPlay] non-null shows a Play button that receives the current document and
  * selected slide index; null hides play entirely (android/web shells).
  */
 @Composable
-fun App(
+fun EditorScreen(
+    viewModel: EditorViewModel,
     onPlay: ((Document, Int) -> Unit)? = null,
-    store: EditorStore = remember { EditorStore(sampleDocument()) },
+) {
+    val state: EditorState by viewModel.states.collectAsState()
+
+    EditorView(
+        state = state,
+        onSelectSlide = viewModel::onSelectSlide,
+        onToggleCollapsed = viewModel::onToggleCollapsed,
+        onSelectElement = viewModel::onSelectElement,
+        onUpdateSlide = viewModel::onUpdateSlide,
+        onPlay = onPlay,
+    )
+}
+
+@Composable
+fun EditorView(
+    state: EditorState,
+    onSelectSlide: (String) -> Unit,
+    onToggleCollapsed: (String) -> Unit,
+    onSelectElement: (String?) -> Unit,
+    onUpdateSlide: (Slide) -> Unit,
+    onPlay: ((Document, Int) -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     MaterialTheme(colorScheme = darkColorScheme()) {
-        val selectedSlide = store.selectedSlide
+        val selectedSlide: Slide = state.selectedSlide
 
-        Row(Modifier.fillMaxSize().background(Color(0xFF17181C))) {
+        Row(modifier.fillMaxSize().background(Color(0xFF17181C))) {
             Navigator(
-                document = store.document,
-                entries = store.outline(),
+                document = state.document,
+                entries = state.outline(),
                 selectedSlideId = selectedSlide.id,
-                onSelectSlide = { store.selectSlide(it) },
-                onToggleCollapsed = { store.toggleCollapsed(it) },
+                onSelectSlide = onSelectSlide,
+                onToggleCollapsed = onToggleCollapsed,
             )
             Column(Modifier.weight(1f).fillMaxHeight().padding(28.dp)) {
                 if (onPlay != null) {
@@ -68,7 +86,7 @@ fun App(
                     ) {
                         TextButton(
                             onClick = {
-                                onPlay(store.document, store.selectedSlideIndex().coerceAtLeast(0))
+                                onPlay(state.document, state.selectedSlideIndex().coerceAtLeast(0))
                             },
                         ) {
                             Text("▶ Play", color = Color(0xFFD9CFFF), fontSize = 13.sp)
@@ -81,9 +99,9 @@ fun App(
                 ) {
                     EditorCanvas(
                         slide = selectedSlide,
-                        selectedElementId = store.selectedElementId,
-                        onSelectElement = { store.selectElement(it) },
-                        onSlideChange = { store.updateSlide(it) },
+                        selectedElementId = state.selectedElementId,
+                        onSelectElement = onSelectElement,
+                        onSlideChange = onUpdateSlide,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
