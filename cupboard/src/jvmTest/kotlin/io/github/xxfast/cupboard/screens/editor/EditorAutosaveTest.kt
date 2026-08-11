@@ -42,6 +42,30 @@ class EditorAutosaveTest {
         viewModel.close()
     }
 
+    /**
+     * Undoing back to the document as it was opened still has to be written: the
+     * edit it takes back is already on disk, so skipping it would leave the file
+     * holding a version the editor no longer shows.
+     */
+    @Test
+    fun undoingTheOnlyEditReachesTheFileToo() = runBlocking {
+        val file = tempFile()
+        val opened = sampleDocument()
+        val viewModel = EditorViewModel(opened, storeOf(file = file))
+        val shell = collect(viewModel)
+
+        viewModel.onUpdateSlide(viewModel.states.value.selectedSlide.copy(title = "Persisted"))
+        assertNotNull(awaitDocument(file) { document -> document.allSlides().any { it.title == "Persisted" } })
+
+        viewModel.onUndo()
+        val restored = awaitDocument(file) { document -> document.allSlides().none { it.title == "Persisted" } }
+        assertNotNull(restored, "the undo never reached $file")
+        assertEquals(opened, restored)
+
+        shell.cancel()
+        viewModel.close()
+    }
+
     @Test
     fun openingADocumentDoesNotRewriteIt() = runBlocking {
         val file = tempFile()

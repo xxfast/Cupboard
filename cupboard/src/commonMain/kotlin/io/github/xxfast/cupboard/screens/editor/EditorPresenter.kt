@@ -10,10 +10,12 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.delay
@@ -22,6 +24,18 @@ import kotlin.time.Duration.Companion.milliseconds
 
 /** How long the editor sits still before the document is written out. */
 private val AutosaveDebounce = 500.milliseconds
+
+/**
+ * How far back undo reaches. Whole documents, so this is a memory bound as much
+ * as a policy one; the oldest entry falls off the bottom when it's reached.
+ */
+private const val HistoryLimit = 100
+
+/** Pushes [document], dropping the oldest entry once [HistoryLimit] is reached. */
+private fun ArrayDeque<Document>.push(document: Document) {
+    addLast(document)
+    if (size > HistoryLimit) removeFirst()
+}
 
 /**
  * The editor screen's logic, once, for every shell.
@@ -42,6 +56,11 @@ fun EditorPresenter(
 ): EditorState {
     var state: EditorState by remember { mutableStateOf(initialState) }
 
+    // History is the presenter's, not the state's: past documents are what undo
+    // needs, and nothing downstream (persistence, shells, restoration) wants them.
+    val undone: ArrayDeque<Document> = remember { ArrayDeque() }
+    val redone: ArrayDeque<Document> = remember { ArrayDeque() }
+
     LaunchedEffect(Unit) {
         events.collect { event ->
             state = when (event) {
@@ -54,9 +73,35 @@ fun EditorPresenter(
                     ?: state
 
                 is SelectElement -> state.copy(selectedElementId = event.id)
-                is UpdateSlide -> state.copy(document = state.document.updateSlide(event.slide))
+
+                is UpdateSlide -> {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.updateSlide(event.slide))
+                }
+
+                // Disclosure is not an edit, so it makes no history entry, the
+                // same way Keynote won't undo a twisty. The document still
+                // changes: collapsed state is stored on the slide.
                 is ToggleCollapsed -> state.copy(document = state.document.toggleCollapsed(event.slideId))
-            }
+
+                // Selection is left alone across both. Nothing can delete a
+                // slide or an element yet, so the selected ids still resolve in
+                // the restored document; deletion has to revisit this.
+                Undo -> undone.removeLastOrNull()
+                    ?.let { previous ->
+                        redone.push(state.document)
+                        state.copy(document = previous)
+                    }
+                    ?: state
+
+                Redo -> redone.removeLastOrNull()
+                    ?.let { next ->
+                        undone.push(state.document)
+                        state.copy(document = next)
+                    }
+                    ?: state
+            }.copy(canUndo = undone.isNotEmpty(), canRedo = redone.isNotEmpty())
         }
     }
 
@@ -74,7 +119,11 @@ fun EditorPresenter(
      * the pending delay, so a run of edits costs one write.
      */
     LaunchedEffect(state.document) {
-        if (state.document === opened) return@LaunchedEffect
+        // Only a plain open is exempt. Undoing all the way back lands on the very
+        // document we opened, and that has to be written: the edit it undoes is
+        // already on disk. History being non-empty is what tells the two apart.
+        val untouched = undone.isEmpty() && redone.isEmpty()
+        if (state.document === opened && untouched) return@LaunchedEffect
         delay(AutosaveDebounce)
         documentStore.set(state.document)
     }

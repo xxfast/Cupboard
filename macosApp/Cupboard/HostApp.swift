@@ -79,6 +79,20 @@ struct CupboardHostApp: App {
                 editor
             }
         }
+        .commands {
+            // Ours, not AppKit's: the history lives in Kotlin, so the system
+            // undo manager has nothing to say about it.
+            CommandGroup(replacing: .undoRedo) {
+                // Reading generation is what keeps these enabled states fresh.
+                let _ = model.generation
+                Button("Undo") { host.undo() }
+                    .keyboardShortcut("z", modifiers: .command)
+                    .disabled(!host.canUndo())
+                Button("Redo") { host.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(!host.canRedo())
+            }
+        }
     }
 
     private var editor: some View {

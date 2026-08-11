@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -8,9 +9,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
@@ -20,6 +23,7 @@ import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
+import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
@@ -28,6 +32,15 @@ import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
 private data class PlayRequest(val document: Document, val slideIndex: Int)
+
+/**
+ * This shell is the Linux app but runs everywhere, so the Edit menu takes the
+ * accelerator of whatever it's running on: Cmd on a mac, Ctrl elsewhere.
+ */
+private val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac")
+
+private fun editShortcut(shift: Boolean = false): KeyShortcut =
+    KeyShortcut(Key.Z, shift = shift, meta = isMacOs, ctrl = !isMacOs)
 
 /**
  * Every shell on this machine points at the same file on purpose: the macOS
@@ -51,6 +64,25 @@ fun main() {
             onCloseRequest = { viewModel.close(); exitApplication() },
             title = "Cupboard",
         ) {
+            val state: EditorState by viewModel.states.collectAsState()
+
+            MenuBar {
+                Menu("Edit", mnemonic = 'E') {
+                    Item(
+                        text = "Undo",
+                        shortcut = editShortcut(),
+                        enabled = state.canUndo,
+                        onClick = viewModel::onUndo,
+                    )
+                    Item(
+                        text = "Redo",
+                        shortcut = editShortcut(shift = true),
+                        enabled = state.canRedo,
+                        onClick = viewModel::onRedo,
+                    )
+                }
+            }
+
             EditorScreen(
                 viewModel = viewModel,
                 // The document and index the editor has right now: play is a

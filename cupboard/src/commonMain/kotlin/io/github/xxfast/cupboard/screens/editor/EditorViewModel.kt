@@ -4,10 +4,12 @@ import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +62,8 @@ class EditorViewModel(
     fun onSelectElement(id: String?) { scope.launch { events.emit(SelectElement(id)) } }
     fun onUpdateSlide(slide: Slide) { scope.launch { events.emit(UpdateSlide(slide)) } }
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
+    fun onUndo() { scope.launch { events.emit(Undo) } }
+    fun onRedo() { scope.launch { events.emit(Redo) } }
 
     fun close() {
         scope.cancel()

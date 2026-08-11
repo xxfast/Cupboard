@@ -133,6 +133,19 @@ class EditorHost {
         viewModel.onToggleCollapsed(slide.id)
     }
 
+    fun undo() {
+        viewModel.onUndo()
+    }
+
+    fun redo() {
+        viewModel.onRedo()
+    }
+
+    /** What the Edit menu greys out. Fresh whenever [onChange] has just fired. */
+    fun canUndo(): Boolean = state.canUndo
+
+    fun canRedo(): Boolean = state.canRedo
+
     fun selectedSlideIndex(): Int = state.selectedSlideIndex()
 
     fun selectSlide(index: Int) {

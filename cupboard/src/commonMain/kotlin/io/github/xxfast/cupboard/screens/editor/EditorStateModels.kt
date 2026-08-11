@@ -33,6 +33,11 @@ data class EditorState(
     val document: Document,
     val selectedSlideId: String,
     val selectedElementId: String? = null,
+    /** Whether Edit > Undo / Redo are live. The history itself stays in the
+     * presenter: shells only need to know what to grey out, and a state that
+     * carried its own past would serialize every version of the document. */
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false,
 ) {
     /** The selected slide, falling back to the first one if the id went stale. */
     val selectedSlide: Slide
@@ -80,4 +85,6 @@ sealed interface EditorEvent {
     data class SelectElement(val id: String?) : EditorEvent
     data class UpdateSlide(val slide: Slide) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
+    data object Undo : EditorEvent
+    data object Redo : EditorEvent
 }
