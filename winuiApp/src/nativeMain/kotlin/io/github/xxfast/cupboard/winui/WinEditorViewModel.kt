@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.winui
 
+import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
@@ -36,6 +37,9 @@ class WinOutlineRow(
  */
 class WinEditorState(
     val outline: List<WinOutlineRow>,
+    /** Slides in the whole deck, collapsed ones included: the status bar counts
+     * the deck, not the rows currently on screen. */
+    val slideCount: Int,
     val selectedSlideId: String,
     val selectedSlideIndex: Int,
     val selectedSlideTitle: String,
@@ -111,6 +115,7 @@ private fun EditorState.toWin(): WinEditorState = WinEditorState(
             collapsed = entry.collapsed,
         )
     },
+    slideCount = document.allSlides().size,
     selectedSlideId = selectedSlideId,
     selectedSlideIndex = selectedSlideIndex(),
     selectedSlideTitle = selectedSlide.title,

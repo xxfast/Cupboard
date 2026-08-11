@@ -3,7 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
-using Kotlin = Cupboard.Kotlin.Winui;
+using KotlinApp = Cupboard.Kotlin.Winui;
 
 namespace Cupboard.Windows;
 
@@ -19,13 +19,19 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly SynchronizationContext _ui;
     private readonly CancellationTokenSource _cancellation = new();
-    private readonly Kotlin.WinEditorViewModel _kotlinViewModel;
+    private readonly KotlinApp.WinEditorViewModel _kotlinViewModel;
     private readonly Task _observation;
+    private readonly Action<string> _toggleCollapsed;
     private OutlineRowViewModel? _selectedRow;
     private string _selectedSlideTitle = string.Empty;
+    private string _slidePosition = string.Empty;
+    private string _toggleCollapsedLabel = CollapseLabel;
     private bool _canUndo;
     private bool _canRedo;
     private int _disposed;
+
+    private const string CollapseLabel = "Collapse Slide";
+    private const string ExpandLabel = "Expand Slide";
 
     /// <param name="uiContext">
     /// UI synchronization context. Defaults to <see cref="SynchronizationContext.Current"/>,
@@ -42,14 +48,22 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Cupboard");
         Directory.CreateDirectory(storage);
-        Kotlin.WindowsApp.Bootstrap(storage);
+        KotlinApp.WindowsApp.Bootstrap(storage);
 
-        _kotlinViewModel = new Kotlin.WinEditorViewModel();
+        _kotlinViewModel = new KotlinApp.WinEditorViewModel();
+        _toggleCollapsed = id => _kotlinViewModel.OnToggleCollapsed(id);
 
         UndoCommand = new RelayCommand(_kotlinViewModel.OnUndo, () => CanUndo);
         RedoCommand = new RelayCommand(_kotlinViewModel.OnRedo, () => CanRedo);
-        ToggleCollapsedCommand = new RelayCommand<OutlineRowViewModel>(
-            row => _kotlinViewModel.OnToggleCollapsed(row.SlideId));
+        // Menu-facing twin of the per-row chevron command: the Slide menu acts on
+        // whatever is selected, so it takes no parameter and greys out when the
+        // selection has nothing to fold.
+        ToggleSelectedCollapsedCommand = new RelayCommand(
+            () =>
+            {
+                if (SelectedRow is { HasChildren: true } row) _toggleCollapsed(row.SlideId);
+            },
+            () => SelectedRow?.HasChildren == true);
 
         // Enumerating is also what starts the shared presenter: its state flow is
         // lazily shared, so nothing runs until this subscribes.
@@ -60,12 +74,26 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public ICommand UndoCommand { get; }
     public ICommand RedoCommand { get; }
-    public ICommand ToggleCollapsedCommand { get; }
+    public ICommand ToggleSelectedCollapsedCommand { get; }
 
     public string SelectedSlideTitle
     {
         get => _selectedSlideTitle;
         private set => SetField(ref _selectedSlideTitle, value);
+    }
+
+    /// <summary>Status bar position, e.g. "slide 4 of 8". Counts the whole deck.</summary>
+    public string SlidePosition
+    {
+        get => _slidePosition;
+        private set => SetField(ref _slidePosition, value);
+    }
+
+    /// <summary>Label for the Slide menu item, which folds or unfolds the selection.</summary>
+    public string ToggleCollapsedLabel
+    {
+        get => _toggleCollapsedLabel;
+        private set => SetField(ref _toggleCollapsedLabel, value);
     }
 
     public bool CanUndo
@@ -88,15 +116,18 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    /// <summary>Row selected in the navigator. Setting it drives the shared editor.</summary>
+    /// <summary>
+    /// Row selected in the navigator. Setting it drives the shared editor; the
+    /// shared editor moving the selection raises <see cref="PropertyChanged"/> for
+    /// it, so the round trip works in both directions.
+    /// </summary>
     public OutlineRowViewModel? SelectedRow
     {
         get => _selectedRow;
         set
         {
             if (ReferenceEquals(_selectedRow, value)) return;
-            _selectedRow = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRow)));
+            SetSelectedRow(value);
             if (value is not null) _kotlinViewModel.OnSelectSlide(value.SlideId);
         }
     }
@@ -121,11 +152,14 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private void Apply(Kotlin.WinEditorState state)
+    private void Apply(KotlinApp.WinEditorState state)
     {
         SelectedSlideTitle = state.SelectedSlideTitle;
         CanUndo = state.CanUndo;
         CanRedo = state.CanRedo;
+        SlidePosition = state.SlideCount > 0 && state.SelectedSlideIndex >= 0
+            ? $"slide {state.SelectedSlideIndex + 1} of {state.SlideCount}"
+            : "no slides";
 
         // Rebuilt wholesale: the outline is short and collapsing reshapes it, so
         // diffing would cost more than it saves.
@@ -141,20 +175,31 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
                     row.Depth,
                     row.SlideIndex,
                     row.HasChildren,
-                    row.Collapsed);
+                    row.Collapsed,
+                    _toggleCollapsed);
                 projected.IsSelected = projected.SlideId == state.SelectedSlideId;
                 Outline.Add(projected);
                 if (projected.IsSelected) selected = projected;
             }
         }
 
-        // Assign the field, not the property: this is the shared state telling us
-        // what is selected, so echoing it back as an event would be a loop.
-        if (!ReferenceEquals(_selectedRow, selected))
-        {
-            _selectedRow = selected;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRow)));
-        }
+        // Go through the field, not the property: this is the shared state telling
+        // us what is selected, so echoing it back at Kotlin would be a loop.
+        if (!ReferenceEquals(_selectedRow, selected)) SetSelectedRow(selected);
+    }
+
+    /// <summary>
+    /// Moves the selection without touching the shared editor, and refreshes
+    /// everything derived from it: the Slide menu's label and its enablement.
+    /// </summary>
+    private void SetSelectedRow(OutlineRowViewModel? row)
+    {
+        _selectedRow = row;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedRow)));
+        ToggleCollapsedLabel = row is { HasChildren: true, Collapsed: true }
+            ? ExpandLabel
+            : CollapseLabel;
+        ((RelayCommand)ToggleSelectedCollapsedCommand).RaiseCanExecuteChanged();
     }
 
     public async ValueTask DisposeAsync()

@@ -18,15 +18,3 @@ public sealed class RelayCommand(Action action, Func<bool>? canExecute = null) :
     public void RaiseCanExecuteChanged() =>
         CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
-
-public sealed class RelayCommand<T>(Action<T> action) : ICommand
-{
-    public event EventHandler? CanExecuteChanged { add { } remove { } }
-
-    public bool CanExecute(object? parameter) => parameter is T;
-
-    public void Execute(object? parameter)
-    {
-        if (parameter is T value) action(value);
-    }
-}

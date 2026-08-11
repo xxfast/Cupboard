@@ -9,6 +9,47 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Windows palette from design/platform-theme.js. "Default" is the dark
+                 set; Fluent looks these up before the merged dictionaries, so the
+                 few WinUI keys overridden here win over XamlControlsResources. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="CupboardChromeBrush" Color="#202020" />
+                    <SolidColorBrush x:Key="CupboardPanelBrush" Color="#272727" />
+                    <SolidColorBrush x:Key="CupboardBorderBrush" Color="#383838" />
+                    <SolidColorBrush x:Key="CupboardDimBrush" Color="#9D9D9D" />
+                    <SolidColorBrush x:Key="CupboardFaintBrush" Color="#717171" />
+                    <SolidColorBrush x:Key="CupboardAccentBrush" Color="#8961FF" />
+                    <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="#8961FF" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="CupboardChromeBrush" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="CupboardPanelBrush" Color="#F9F9F9" />
+                    <SolidColorBrush x:Key="CupboardBorderBrush" Color="#E0E0E0" />
+                    <SolidColorBrush x:Key="CupboardDimBrush" Color="#5F5F5F" />
+                    <SolidColorBrush x:Key="CupboardFaintBrush" Color="#8A8A8A" />
+                    <SolidColorBrush x:Key="CupboardAccentBrush" Color="#6F42E0" />
+                    <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="#6F42E0" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- The document accent is the same violet in both themes and on every
+                 platform: it belongs to the slide, not to the app chrome. -->
+            <SolidColorBrush x:Key="CupboardDocumentAccentBrush" Color="#7F52FF" />
+
+            <!-- The canvas well stays dark whichever theme the chrome is in, because
+                 the slide it stands in for is always dark. -->
+            <SolidColorBrush x:Key="CupboardCanvasWellBrush" Color="#17181C" />
+
+            <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+            <Style x:Key="StatusBarTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="FontFamily" Value="Consolas" />
+                <Setter Property="FontSize" Value="11.5" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource CupboardFaintBrush}" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

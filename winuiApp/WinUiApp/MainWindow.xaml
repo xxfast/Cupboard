@@ -8,75 +8,159 @@
     mc:Ignorable="d"
     Title="Cupboard">
 
-    <Grid Padding="16" ColumnSpacing="12">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280" MinWidth="220" />
-            <ColumnDefinition Width="*" MinWidth="320" />
-        </Grid.ColumnDefinitions>
+    <!-- Windows chrome is stacked: menu bar across the top, columns below it, a
+         status bar along the bottom. See design/HANDOFF.md. -->
+    <Grid Background="{ThemeResource CupboardChromeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="30" />
+        </Grid.RowDefinitions>
 
-        <!-- Navigator: the shared outline, collapse rules already applied. -->
-        <Grid Grid.Column="0" RowSpacing="8">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+        <MenuBar Grid.Row="0">
+            <MenuBarItem Title="File">
+                <MenuFlyoutItem Text="Exit" Click="ExitMenuItem_Click" />
+            </MenuBarItem>
 
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <Button Content="Undo" Command="{x:Bind ViewModel.UndoCommand}" />
-                <Button Content="Redo" Command="{x:Bind ViewModel.RedoCommand}" />
-            </StackPanel>
+            <MenuBarItem Title="Edit">
+                <MenuFlyoutItem Text="Undo" Command="{x:Bind ViewModel.UndoCommand}">
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="Z" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+                <!-- Both redo bindings people arrive with; the first one is the
+                     shortcut the menu prints. -->
+                <MenuFlyoutItem Text="Redo" Command="{x:Bind ViewModel.RedoCommand}">
+                    <MenuFlyoutItem.KeyboardAccelerators>
+                        <KeyboardAccelerator Modifiers="Control" Key="Y" />
+                        <KeyboardAccelerator Modifiers="Control,Shift" Key="Z" />
+                    </MenuFlyoutItem.KeyboardAccelerators>
+                </MenuFlyoutItem>
+            </MenuBarItem>
 
-            <ListView x:Name="OutlineList"
-                      Grid.Row="1"
-                      ItemsSource="{x:Bind ViewModel.Outline}"
-                      SelectionMode="Single"
-                      SelectionChanged="OutlineList_SelectionChanged"
-                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListView.ItemContainerStyle>
-                    <Style TargetType="ListViewItem">
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                        <Setter Property="Padding" Value="12,8" />
-                        <Setter Property="MinHeight" Value="0" />
-                        <Setter Property="CornerRadius" Value="6" />
-                    </Style>
-                </ListView.ItemContainerStyle>
-                <ListView.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <!-- Nesting shown as a spacer: Indent is a double, and
-                                 Margin would need a Thickness converter. -->
-                            <Border Width="{Binding Indent}" />
-                            <TextBlock Text="{Binding SlideNumber}"
-                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                       VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Title}"
-                                       TextWrapping="NoWrap"
-                                       TextTrimming="CharacterEllipsis"
-                                       Style="{StaticResource BodyTextBlockStyle}" />
-                        </StackPanel>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+            <MenuBarItem Title="Slide">
+                <MenuFlyoutItem Text="{x:Bind ViewModel.ToggleCollapsedLabel, Mode=OneWay}"
+                                Command="{x:Bind ViewModel.ToggleSelectedCollapsedCommand}" />
+            </MenuBarItem>
+        </MenuBar>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="224" />
+                <ColumnDefinition Width="*" MinWidth="320" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Navigator: the shared outline, collapse rules already applied. -->
+            <Border Grid.Column="0"
+                    Background="{ThemeResource CupboardPanelBrush}"
+                    BorderBrush="{ThemeResource CupboardBorderBrush}"
+                    BorderThickness="0,0,1,0">
+                <ListView x:Name="OutlineList"
+                          Padding="6,10,6,14"
+                          Background="Transparent"
+                          BorderThickness="0"
+                          ItemsSource="{x:Bind ViewModel.Outline}"
+                          SelectionMode="Single"
+                          SelectionChanged="OutlineList_SelectionChanged"
+                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="6,6" />
+                            <Setter Property="Margin" Value="0,3" />
+                            <Setter Property="MinHeight" Value="0" />
+                            <Setter Property="CornerRadius" Value="4" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <!-- {Binding} throughout: the row objects are the item
+                                 DataContext, and this template needs no reach into
+                                 the window's namescope. -->
+                            <Grid ColumnSpacing="6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="14" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Nesting shown as a spacer: Indent is a double, and
+                                     Margin would need a Thickness converter. -->
+                                <Border Grid.Column="0" Width="{Binding Indent}" />
+
+                                <!-- Fixed gutter, so titles line up whether or not a
+                                     row has a chevron. Styled inline rather than
+                                     through a Style: an explicit Style with no
+                                     BasedOn would drop the Button's own template. -->
+                                <Button Grid.Column="1"
+                                        Width="14"
+                                        Height="14"
+                                        MinWidth="0"
+                                        MinHeight="0"
+                                        Padding="0"
+                                        CornerRadius="3"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Foreground="{ThemeResource CupboardDimBrush}"
+                                        Command="{Binding ToggleCollapsedCommand}"
+                                        Visibility="{Binding HasChildren, Converter={StaticResource BoolToVisibilityConverter}}"
+                                        ToolTipService.ToolTip="Collapse or expand this group">
+                                    <FontIcon Glyph="{Binding ChevronGlyph}" FontSize="10" />
+                                </Button>
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding SlideNumber}"
+                                           MinWidth="16"
+                                           TextAlignment="Right"
+                                           FontFamily="Consolas"
+                                           Foreground="{ThemeResource CupboardFaintBrush}"
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding Title}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"
+                                           Style="{StaticResource BodyTextBlockStyle}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Border>
+
+            <!-- Canvas placeholder. The slide surface is not ported to WinUI yet: the
+                 Kotlin core carries no renderer for this platform, by design. It stays
+                 dark in both themes, like the slide it stands in for. -->
+            <Border Grid.Column="1"
+                    Background="{ThemeResource CupboardCanvasWellBrush}">
+                <StackPanel HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Spacing="8">
+                    <TextBlock Text="{x:Bind ViewModel.SelectedSlideTitle, Mode=OneWay}"
+                               HorizontalAlignment="Center"
+                               Foreground="White"
+                               Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Text="Canvas not implemented on Windows yet"
+                               HorizontalAlignment="Center"
+                               Foreground="#8A8F98"
+                               Style="{StaticResource CaptionTextBlockStyle}" />
+                </StackPanel>
+            </Border>
         </Grid>
 
-        <!-- Canvas placeholder. The slide surface is not ported to WinUI yet: the
-             Kotlin core carries no renderer for this platform, by design. -->
-        <Border Grid.Column="1"
-                Background="#17181C"
-                CornerRadius="8">
-            <StackPanel HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="8">
-                <TextBlock Text="{x:Bind ViewModel.SelectedSlideTitle, Mode=OneWay}"
-                           HorizontalAlignment="Center"
-                           Foreground="White"
-                           Style="{StaticResource SubtitleTextBlockStyle}" />
-                <TextBlock Text="Canvas not implemented on Windows yet"
-                           HorizontalAlignment="Center"
-                           Foreground="#8A8F98"
-                           Style="{StaticResource CaptionTextBlockStyle}" />
-            </StackPanel>
+        <!-- Status bar. Only what the shell actually knows: no sync or zoom
+             indicators until there is something behind them. -->
+        <Border Grid.Row="2"
+                Background="{ThemeResource CupboardPanelBrush}"
+                BorderBrush="{ThemeResource CupboardBorderBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,0">
+            <TextBlock Text="{x:Bind ViewModel.SlidePosition, Mode=OneWay}"
+                       HorizontalAlignment="Left"
+                       Style="{StaticResource StatusBarTextStyle}" />
         </Border>
     </Grid>
 </Window>

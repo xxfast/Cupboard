@@ -45,4 +45,7 @@ public sealed partial class MainWindow : Window
         if (OutlineList.SelectedItem is OutlineRowViewModel row)
             ViewModel.SelectedRow = row;
     }
+
+    // Closing the window is the window's business, not the shared editor's.
+    private void ExitMenuItem_Click(object sender, RoutedEventArgs e) => Close();
 }
