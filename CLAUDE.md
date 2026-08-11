@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- Build everything: `./gradlew build`
+- There is no aggregate build: each shell builds with its own toolchain (Gradle for desktop, `xcodebuild` for macOS with a build phase linking Kotlin via Gradle, `dotnet build` for Windows later). `./gradlew build` is known-broken (composite-build quirk in the CuP fork's JS tooling) and not worth fixing; verify with the per-target tasks below.
 - Desktop app (hot reload): `./gradlew :desktopApp:hotRun --auto`
 - Desktop app (standard): `./gradlew :desktopApp:run`
 - Tests (all targets): `./gradlew :cupboard:allTests`
