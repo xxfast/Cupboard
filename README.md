@@ -21,7 +21,7 @@ A Keynote-style presentation editor for developers who present code. Cross-platf
 
 - [`cupboard/`](./cupboard) is the KMP library where the bulk of the app lives: document model, slide renderers, editor canvas
 - [`desktopApp/`](./desktopApp) is the Compose for Desktop shell, which is the Linux app and the fallback shell everywhere else
-- [`macosApp/`](./macosApp) builds `CupboardCanvas.framework` for the SwiftUI host in [`macosApp/swift-host`](./macosApp/swift-host)
+- [`macosApp/`](./macosApp) builds `CupboardCanvas.framework` and the SwiftUI host that embeds it ([`Cupboard.xcodeproj`](./macosApp/Cupboard.xcodeproj))
 - [`cup/`](https://github.com/xxfast/CuP) and [`emoji-kt/`](https://github.com/xxfast/Emoji.kt) are fork submodules of CuP and Emoji.kt
 - [`design/`](./design) holds the HTML design prototypes and the UI spec
 - `androidApp/`, `webApp/`, `iosApp/` are template leftovers, fate undecided
@@ -33,5 +33,5 @@ See [`GOALS.md`](./GOALS.md) for what we're building and why, [`ROADMAP.md`](./R
 Clone with submodules: `git clone --recursive`, or `git submodule update --init` after a plain clone.
 
 - Desktop, hot reload: `./gradlew :desktopApp:hotRun --auto`
-- macOS SwiftUI host: `./macosApp/swift-host/run.sh`
+- macOS SwiftUI host: `./macosApp/run.sh`
 - Tests: `./gradlew :cupboard:allTests`, or `:cupboard:jvmTest` for the quick loop

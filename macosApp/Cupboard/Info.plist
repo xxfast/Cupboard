@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Xcode 26 drops INFOPLIST_KEY_NSHighResolutionCapable from the generated
+	     plist (it is implied YES on modern deployment targets), so declare it
+	     here. GENERATE_INFOPLIST_FILE merges its keys on top of this file. -->
+	<key>NSHighResolutionCapable</key>
+	<true/>
+</dict>
+</plist>

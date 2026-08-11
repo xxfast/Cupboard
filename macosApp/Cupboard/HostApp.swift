@@ -1,20 +1,10 @@
 // Spike: Keynote-shaped SwiftUI shell around the Compose canvas.
 // Sidebar (navigator) is pure SwiftUI; only the canvas well is Compose,
 // bridged through EditorHost from the CupboardCanvas Kotlin framework.
-// Build/run: ./macosApp/swift-host/run.sh
+// Build/run: ./macosApp/run.sh
 import SwiftUI
 import AppKit
 import CupboardCanvas
-
-// Running as a bare executable (no .app bundle) defaults to an accessory
-// activation policy: windows can't become key and typing goes elsewhere.
-// The packaged .app (package.sh) doesn't need this; kept for the bare run.sh path.
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}
 
 struct ComposeCanvas: NSViewRepresentable {
     let host: EditorHost
