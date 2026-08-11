@@ -1,27 +1,111 @@
 # Roadmap
 
-What we're building and in what order. See `GOALS.md` for the why, `design/README.md` for the UI spec. Detail on finished work lives in git history; this file stays forward-looking.
+What we're building and in what order. See `GOALS.md` for the why, `design/README.md` for the UI spec. Detail on finished work lives in git history; this file stays forward-looking. Parity target: Keynote 15.3 for Mac (feature surface audited 2026-08 from the app's menu tree + the user guide), minus everything listed under Not planned.
 
-## Phase 0
+## Phase 0: Scaffolding
 
 - [x] CuP adopted as the presentation runtime behind our own interface (play mode, steps/builds; swappable). Forked as submodules `cup/` + `emoji-kt/` (branch `ir/macos-targets` in each, composite-built) to add `macosArm64`. Upstream drafts: KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19.
-- [x] Compose runs natively on macOS without a JVM; `ComposeNSView` embeds the shared canvas in SwiftUI via `NSViewRepresentable`. Known edge: no IME on native text input (`NSTextInputClient` in `ComposeNSView` eventually).
+- [x] Compose runs natively on macOS without a JVM; `ComposeNSView` embeds the shared canvas in SwiftUI via `NSViewRepresentable`. Known edge: no IME on native text input (picked up in Phase 2).
 - [x] Serializable document model: flat Keynote-style nesting (depth + collapse, absolute numbering), native 1920x1080 slide space, rendered by pure common composables. Editor canvas with selection, 8 resize handles, guides + snap, zoom (Fit / 25-200%), screen-space overlays; pure-render thumbnails; syntax-highlighted code elements (`dev.snipme:highlights`, every target, no JS bridge).
-- [x] Screen architecture per CLAUDE.md constraint 6: NYTimes-KMP-shaped MVI in `screens/<name>/` (serializable state + events, composable presenter run by Molecule, plain view model exposing `StateFlow`, stateless views), thin shell adapters, navigation per platform. Gestures commit once on release. Undo/redo: bounded document history in the presenter, Cmd+Z in both shells' real menus; revisit when deletion lands (selection can dangle) and when text editing needs burst coalescing.
+- [x] Screen architecture per CLAUDE.md constraint 6: NYTimes-KMP-shaped MVI in `screens/<name>/`, thin shell adapters, navigation per platform. Gestures commit once on release. Undo/redo: bounded document history in the presenter, Cmd+Z in both shells' menus.
 - [x] Interim persistence: KStore autosaves `~/.cupboard/document.json` (debounced, both shells share the file) until the `.cupboard` bundle format exists.
 - [x] Template app modules removed; `:cupboard` keeps its android/ios/web targets because iPad, Android tablet, and web apps are planned later.
-- [x] macOS shell scaffolding: `macosApp/Cupboard.xcodeproj` (Gradle `embedAndSignAppleFrameworkForXcode` phase + compose-resources staging, ad-hoc signing), `.app` packaging via `./macosApp/package.sh`, IDE run config through the KMP plugin.
-- [x] Play mode wired in both shells (`EditorHost.startPlay` + toolbar Play button on macOS; Play window on desktop). Needs a visual pass.
-- [ ] Promote the upstream fork PRs: mark KodeinKoders/CuP#12 and kosi-libs/Emoji.kt#19 ready, coordinate on Kotlin Slack `#cup-presentations`.
-- [ ] SwiftUI chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); Format/Animate lives in the inspector, no status bar on macOS.
+- [x] macOS shell scaffolding: `macosApp/Cupboard.xcodeproj` (Gradle framework phase + compose-resources staging), `.app` packaging, IDE run config through the KMP plugin.
+- [x] Play mode wired in both shells. Needs a visual pass.
+- [ ] Follow-through: promote the upstream fork PRs (KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19), coordinate on Kotlin Slack `#cup-presentations`.
+
+## Phase 1: macOS shell (design v3)
+
+- [ ] SwiftUI chrome per the layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); no status bar on macOS.
 - [ ] Navigator rows per the Keynote 26 spec: capsule selection (no thumbnail ring), number outside the thumbnail, 14px chevron gutter, 20px/level indent.
-- [ ] Embed the canvas full-bleed via `ComposeNSView` + `NSViewRepresentable` (as the window content layer at origin 0,0 this also retires the skiko Metal-layer offset band seen in the spike).
-- [ ] Native inspector: Format + Animate panels with AppKit-style small controls, `BuildOrderRow` list with drag reorder.
-- [ ] Fallback if the macOS native route stalls: pull the Compose for Desktop shell forward and ship it with mac-styled tokens.
-- [ ] Full editor chrome in Material 3 per the design (the Linux app, Compose for Desktop): navigator, toolbar, inspector (Format/Animate), speaker notes strip, status bar.
-- [ ] The Compose Desktop app doubles as the fallback shell for macOS and Windows, so keep OS-specific styling tokenized (`design/platform-theme.js` is the token source).
-- [ ] CuP on JVM comes for free in the Compose Desktop app: full plugin set (speaker window, export) plus `cup-source-code` (highlight.js via GraalVM).
-- [ ] Windows app: WinUI 3 chrome, embedded Compose canvas (HWND/islands embedding, better supported than the macOS direction), view models consumed via kotlin-native-nuget.
-- [ ] Windows fallback: Compose for Desktop shell with Fluent-styled tokens.
-- File format: single-file document vs bundle (embedded images argue for a bundle or zip). Interim is plain JSON via KStore; the plan is a `.cupboard` folder holding the JSON plus assets and whatever else a document grows.
-- Sync (`● synced` in the design status bar) implies a backend at some point; out of scope for now.
+- [ ] Embed the canvas full-bleed via `ComposeNSView` (window content layer at origin 0,0; retires the skiko Metal-layer offset band).
+- [ ] Native inspector chrome: Format/Animate tabs with AppKit-style small controls (panels fill in as their features land in later phases).
+- [ ] Fallback if the native route stalls: pull the Compose Desktop shell forward with mac-styled tokens.
+
+## Phase 2: Editing foundations (shared)
+
+The parity core every later phase builds on. All of it is `screens/editor/` events + reductions first, shell surfaces second.
+
+- [ ] Element property events: position/size (numeric entry), opacity, z-order (forward/back/front/back), lock/unlock, flip/rotate.
+- [ ] Multi-select: marquee + shift-click, group/ungroup, align/distribute, batch property edits.
+- [ ] Clipboard: cut/copy/paste/duplicate for elements and slides, paste style / copy style.
+- [ ] Deletion: elements and slides (revisit undo's selection-dangle assumption), Clear All.
+- [ ] Slide management: add/duplicate/delete/reorder (navigator drag), skip slide, slide numbers, per-slide background (color/gradient/image).
+- [ ] On-canvas text editing: caret/selection in text elements, then a real `NSTextInputClient` in `ComposeNSView` for IME (dead keys, CJK).
+- [ ] Text formatting: font family/size/weight, bold/italic/underline/strikethrough, color, alignment, line spacing, lists (bullet/numbered, nested), links.
+- [ ] Shape catalog: the basic dozen (rect, rounded, oval, triangle, arrow, diamond, star, polygon, quote bubble, callout), lines with arrowheads, fills (solid/gradient/image), borders, shadow, corner radius.
+- [ ] Rulers + user guides (draggable), layout guides, snap settings.
+
+## Phase 3: Developer content (the differentiator)
+
+Where we beat Keynote for our audience; worth shipping before broad parity.
+
+- [ ] Code element parity+: language picker, theme choice (tokenized to app theme), line numbers, font size/wrap controls.
+- [ ] Code steps: per-build line/range highlighting and progressive reveal (CuP's `cup-source-code` model, but document-owned and native-safe).
+- [ ] Code diffing between steps (Magic Move for code: matched lines animate, added/removed lines fade/slide).
+- [ ] Terminal/output element: monospace block styled as a terminal with prompt/output styling, typewriter build.
+- [ ] Diagram element: text-defined diagrams (mermaid-class syntax) rendered to the canvas; steps reveal nodes/edges.
+- [ ] Equations: LaTeX subset rendered natively (KaTeX-class layout in Kotlin, or precomputed at edit time; no webview).
+- [ ] Export a deck as a CuP Kotlin project (the document model was designed for this).
+
+## Phase 4: Compose Desktop shell (Linux + universal fallback)
+
+- [ ] Full editor chrome in Material 3 per the design: navigator, toolbar, inspector (Format/Animate), speaker notes strip, status bar.
+- [ ] OS-specific styling tokenized (`design/platform-theme.js` is the token source) so this shell doubles as the macOS/Windows fallback.
+- [ ] CuP JVM extras: speaker window, export plugin, `cup-source-code` (GraalVM hljs) where it beats our native highlighting.
+
+## Phase 5: Layouts and themes
+
+- [ ] Slide layouts (masters): layout editing view, text/media placeholders, apply/reapply layout, layout inheritance (layout edits propagate; layout objects background-locked on slides).
+- [ ] Themes: save-as-theme, change theme, theme-defined defaults for new elements; ships with a small set of developer-taste themes (dark-first).
+- [ ] Document setup: slide size presets (16:9, 4:3) + custom dimensions; the 1920x1080 native space becomes per-document.
+- [ ] Object styles: save/apply fill+border+shadow combos; default text box appearance.
+
+## Phase 6: Animation
+
+- [ ] Transition catalog per slide: dissolve/push/move-in/wipe + a Magic Move analog (matched elements animate between slides); duration, on-click vs auto with delay.
+- [ ] Builds in/out per element: appear/dissolve/move/scale/wipe; text delivery by paragraph/word/character; code delivery by line (meets Phase 3's code steps).
+- [ ] Action builds: move along path, opacity, rotate, scale; chainable.
+- [ ] Build order panel: cross-element reordering, timing modes (on click / with / after previous, per-build delay); this is the Animate inspector's content.
+- [ ] Play-mode fidelity: the CuP adapter (or its successor) honors all of the above; transition/build settings become part of the document model.
+
+## Phase 7: Presenting
+
+- [ ] Presenter display: current + next slide, notes, elapsed timer, clock; customizable layout; notes editable mid-show.
+- [ ] Multi-display: slideshow on one display, presenter display on another, swap live.
+- [ ] Rehearse mode (presenter display without an external display).
+- [ ] Playback types: normal, self-playing (auto-advance, loop, restart after idle), links-only (kiosk); slide/element links (go to slide, next/previous, URLs).
+- [ ] In-show controls: keyboard navigation, number+enter jump, slide switcher overlay, shortcut overlay ("?"), pointer show/hide.
+
+## Phase 8: Media and data
+
+- [ ] Images: insert (file/drag/paste), non-destructive masking (rect + shape), instant-alpha background removal, adjust panel (exposure/saturation/contrast), captions.
+- [ ] Image galleries (carousel object, per-image captions, cycled during a show).
+- [ ] Video/audio: embedded playback, trim, poster frame, loop, volume; web video embeds.
+- [ ] Tables: rows/columns/headers/footers, merged cells, cell styling, sort; cell formats (number/currency/date/percent); conditional highlighting. Formula engine only if demand proves out (it's Numbers-in-Keynote; developers mostly paste results).
+- [ ] Charts: 2D set (column/bar/line/area/pie/donut/scatter) with a data editor; interactive/animated data sets later; 3D never.
+
+## Phase 9: Documents and interop
+
+- [ ] `.cupboard` bundle format: folder/zip with document JSON + assets; replaces the interim single-JSON KStore file; document versioning for forward compat.
+- [ ] Real document lifecycle: open/save/save-as, recents, multiple windows/documents, dirty state, file association.
+- [ ] Export: PDF (with per-build pages option), PNG/JPEG per slide, movie of a played deck, animated GIF, HTML player; PPTX export (best-effort mapping); print with grid/handout layouts.
+- [ ] Import: PPTX and Keynote best-effort (shapes/text/images land editable; unsupported effects degrade gracefully).
+- [ ] Password-protected documents.
+
+## Phase 10: More platforms
+
+- [ ] Windows app: WinUI 3 chrome, embedded Compose canvas (HWND/islands), view models via kotlin-native-nuget; Fluent-tokenized Compose Desktop fallback.
+- [ ] iPad app (SwiftUI shell over the same canvas/view models) and Android tablet app.
+- [ ] Web app (wasmJs shell; possibly the CuP web export doubling as a share/view surface first).
+
+## Open questions
+
+- Collaboration/sync (`● synced` in the design status bar): real-time co-editing implies a backend and CRDT-shaped document work; comments/highlights ride the same infrastructure. Out of scope until the editor core is done.
+- Speaker-notes authoring UX: strip (per design) vs panel; and whether notes join the presenter-display Phase 7 work or land earlier with the shared model.
+
+## Not planned
+
+- All generative/AI features (image/shape generation, slide generation, auto notes, writing tools, super resolution, auto crop): explicitly cut.
+- 3D objects (USDZ), live camera-on-slide video, multi-presenter shows, FaceTime/Messages integration, iPhone/Watch remotes, Apple Pencil/touch input: not our audience's stage setup; revisit only on demand.
+- Keynote '09 compat, Box/iCloud storage integrations, Touch Bar.
