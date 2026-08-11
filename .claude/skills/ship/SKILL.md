@@ -11,7 +11,12 @@ One item in, one delivery out: design inspected, shared core landed with tests, 
 
 - Take the item from the arguments, or if ambiguous, list the unticked `- [ ]` lines from ROADMAP.md and let the user pick. If the request is roadmap-shaped but not listed, add it to the right phase first (standing grant covers roadmap upkeep).
 - Read the item's line *and its phase header*; phase notes carry constraints (dependency chains, "needs a visual pass" annotations).
-- Read the design spec for this item: `design/HANDOFF.md` for measurements and behavior, `design/README.md` for the token/theme source, mockups under `design/mockups/` when judging visual intent. Never edit anything under `design/`.
+- Read the design spec for this item. `design/` is the source of truth for most shipped features:
+  - `design/HANDOFF.md` is the written spec (measurements, behavior, platform differences).
+  - `design/platform-theme.js` is the token source: complete per-OS palettes (macOS, Windows, ...) in dark and light, fonts, radii, as one `window.SlidesTheme` object. Take exact values from here, never eyeball colors off screenshots.
+  - The `.dc.html` files are per-component prototypes (`Slides Editor` is the full window; `SlideNavigator`, `Inspector`, `EditorToolbar`, `SlideCanvas`, `Slide`, `BuildOrderRow` render standalone). They are *state mocks*, not working apps: they show designed states (selection, guides, hover), while behavior lives in HANDOFF.md prose.
+  - To actually look at one: `python3 -m http.server <port>` from `design/` in the background, then open `http://localhost:<port>/<file>` with the Chrome tools and screenshot (the extension refuses `file://`). Flip platform/theme by driving `window.SlidesTheme` with the javascript tool and re-screenshot to compare variants; query the live DOM for computed colors and geometry instead of guessing. Kill the server when done.
+  - Never edit anything under `design/`.
 - Re-read CLAUDE.md constraints. Constraint 1 (target-clean canvas) and constraint 6 (MVI screen anatomy) shape almost every design decision here.
 
 ## 2. Lock the design in the main context
