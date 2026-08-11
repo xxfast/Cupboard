@@ -66,12 +66,8 @@ jobs:
           fi
           kill "$SMOKE_PID"
 
-  # Provisional: the C# half has never been compiled anywhere, so this job is
-  # allowed to fail rather than block. Flip continue-on-error off once it has
-  # been proven green at least once.
   windows-app:
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
