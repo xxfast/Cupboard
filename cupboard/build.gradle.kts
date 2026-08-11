@@ -63,9 +63,17 @@ kotlin {
             // Runs the composable presenters as plain state flows, off any UI.
             implementation(libs.molecule.runtime)
             // `api`: EditorViewModel takes a KStore<Document>, so shells that
-            // build one need the type. Only the core artifact is target-clean
-            // here, kstore-file has no wasmJs variant, so each shell adds it.
+            // build one need the type. Core only up here: kstore-file has no
+            // wasmJs variant, so the file-backed factories live in the source
+            // sets below and web keeps compiling.
             api(libs.kstore)
+        }
+        // Where Cupboard.editor() builds the store, so no shell has to.
+        jvmMain.dependencies {
+            implementation(libs.kstore.file)
+        }
+        nativeMain.dependencies {
+            implementation(libs.kstore.file)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)

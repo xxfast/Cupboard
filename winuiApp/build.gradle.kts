@@ -32,7 +32,6 @@ kotlin {
                 implementation(project(":cupboard"))
                 implementation(libs.molecule.runtime)
                 implementation(libs.kotlinx.coroutinesCore)
-                implementation(libs.kstore.file)
             }
         }
     }

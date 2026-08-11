@@ -1,7 +1,8 @@
 package io.github.xxfast.cupboard.winui
 
+import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.allSlides
-import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -12,7 +13,6 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.runBlocking
 
 /** One navigator row, flattened for XAML. The C# side projects this into an ObservableCollection. */
 class WinOutlineRow(
@@ -53,8 +53,9 @@ class WinEditorState(
  * A thin wrapper rather than exporting [EditorViewModel] straight, for three
  * reasons. Exporting it would pull its constructor's `KStore<Document>` (and
  * through [Document], the sealed element hierarchy the interop generator cannot
- * project) into the .NET surface; the store is built Kotlin-side behind
- * [WindowsApp.bootstrap] so the exported surface stays limited to projectable
+ * project) into the .NET surface; the store is built Kotlin-side by
+ * `Cupboard.editor`, over the directory [WindowsApp.bootstrap] stashed, so the
+ * exported surface stays limited to projectable
  * types: strings, ints, the `Win*` projections, `StateFlow`. Its event methods take
  * domain types (`Slide`); the ones here take ids and indices, which is what a
  * XAML binding actually has to hand. And its state needs the projection above.
@@ -67,14 +68,13 @@ class WinEditorViewModel {
     // Private so CoroutineScope is not part of the NuGet export surface.
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // Blocking is right here: there is no editor to show until the document
-    // loads, and the host constructs this before its first frame. Same call the
-    // macOS and desktop shells make.
-    private val documentStore = requireDocumentStore()
+    // Same factory the macOS and desktop shells call, over the directory the
+    // host bootstrapped. It blocks on the initial load, which is right: there is
+    // no editor to show until the document loads, and the host constructs this
+    // before its first frame.
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val viewModel = EditorViewModel(
-        initialDocument = runBlocking { documentStore.get() } ?: sampleDocument(),
-        documentStore = documentStore,
+    private val viewModel = Cupboard.editor(
+        directory = requireDocumentDirectory(),
         // Serialized, never Unconfined (see EditorViewModel's scope note). There is
         // no Kotlin main loop in the .NET process, so a single-parallelism worker
         // stands in for one; the C# adapter already marshals onto the UI thread.

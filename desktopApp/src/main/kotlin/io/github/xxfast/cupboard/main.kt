@@ -19,18 +19,10 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
-import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
-import io.github.xxfast.cupboard.screens.editor.EditorViewModel
-import io.github.xxfast.kstore.KStore
-import io.github.xxfast.kstore.file.storeOf
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 
 private data class PlayRequest(val document: Document, val slideIndex: Int)
 
@@ -43,21 +35,11 @@ private val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWit
 private fun editShortcut(shift: Boolean = false): KeyShortcut =
     KeyShortcut(Key.Z, shift = shift, meta = isMacOs, ctrl = !isMacOs)
 
-/**
- * Every shell on this machine points at the same file on purpose: the macOS
- * SwiftUI host and this one are two front ends onto one document, not two apps.
- */
-private val documentFile: Path = Path(System.getProperty("user.home"), ".cupboard", "document.json")
-
 fun main() {
-    documentFile.parent?.let { SystemFileSystem.createDirectories(it) }
-    val documentStore: KStore<Document> = storeOf(file = documentFile, default = sampleDocument())
-    // Blocking is right here: there is no editor to show until the document loads.
-    val initial: Document = runBlocking { documentStore.get() } ?: sampleDocument()
     // One view model for the whole app: the editor window and the play window are
-    // two views onto it, not two editors. Autosave lives inside it.
-    // Serialized main dispatcher, never Unconfined: see EditorViewModel's scope note.
-    val viewModel = EditorViewModel(initial, documentStore, Dispatchers.Main)
+    // two views onto it, not two editors. Autosave lives inside it. Where the
+    // document lives and how it loads is the factory's business, not this shell's.
+    val viewModel = Cupboard.editor()
 
     application {
         var playing by remember { mutableStateOf<PlayRequest?>(null) }

@@ -11,15 +11,14 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
+import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.allSlides
-import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.editor.EditorCanvas
+import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
-import io.github.xxfast.kstore.KStore
-import io.github.xxfast.kstore.file.storeOf
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -27,14 +26,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 import org.jetbrains.skia.EncodedImageFormat
 import platform.AppKit.NSImage
 import platform.AppKit.NSView
 import platform.Foundation.NSData
-import platform.Foundation.NSHomeDirectory
 import platform.Foundation.NSMakeSize
 import platform.Foundation.dataWithBytes
 
@@ -81,23 +76,11 @@ class PlaySession internal constructor(
  * No state lives here, it all belongs to the view model.
  */
 class EditorHost {
-    // Deliberately the same path the Compose Desktop shell uses: the two shells
-    // are front ends onto one document on this machine, not two apps.
-    private val documentStore: KStore<Document> = run {
-        val file = Path(NSHomeDirectory(), ".cupboard", "document.json")
-        file.parent?.let { SystemFileSystem.createDirectories(it) }
-        storeOf(file = file, default = sampleDocument())
-    }
-
     // Private: the framework only exports this file's types, so the view model
     // stays a Kotlin-side detail. Swift talks to it through the methods below.
-    // Blocking is right here: there is no editor to show until the document loads.
-    private val viewModel = EditorViewModel(
-        initialDocument = runBlocking { documentStore.get() } ?: sampleDocument(),
-        documentStore = documentStore,
-        // Serialized main dispatcher, never Unconfined: see EditorViewModel's scope note.
-        dispatcher = Dispatchers.Main,
-    )
+    // The factory owns the store and the path, which is deliberately the one the
+    // Compose Desktop shell uses: two front ends onto one document, not two apps.
+    private val viewModel = Cupboard.editor()
 
     /** The state the sidebar reads right now. Never stale: the canvas and this
      * are the same flow, so an edit made in Compose shows up here too. */
