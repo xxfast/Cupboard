@@ -27,6 +27,7 @@ The 2026-08 design revision (`design/HANDOFF.md`) reshapes the shared layer; the
 - [x] Zoom-aware `SlideSurface` (Fit / 25-200%) with clipping past Fit, no reflow. (`d8664e8`; the zoom menu UI itself is chrome, tracked under each platform phase)
 - [x] Editing overlays (handles, guides, chips, build badges) hold constant screen size at every zoom: drawn in screen space, not slide space. (`ce58f56`; build badges land with Animate mode)
 - [x] Thumbnails become pure renders (no baked-in selection ring); selection chrome belongs to each host shell. (`287c8d6`)
+- [x] Shared screen stores: editor state + mutations live once in `:cupboard` (`EditorStore`, CLAUDE.md constraint 6); shells are thin adapters (Compose reads snapshot state, SwiftUI bridges via subscribe callback + `@Observable`). Navigation stays per platform by design; WinUI 3 will consume the same stores via kotlin-native-nuget. (`01d76a1`)
 
 ## Phase 2: macOS app (SwiftUI)
 
