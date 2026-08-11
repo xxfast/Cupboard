@@ -4,6 +4,7 @@
 // Build/run: ./macosApp/run.sh
 import SwiftUI
 import AppKit
+import Observation
 import CupboardCanvas
 
 struct ComposeCanvas: NSViewRepresentable {
@@ -32,11 +33,41 @@ struct PlayCanvas: NSViewRepresentable {
     }
 }
 
+/// Observation bridge over the Kotlin store. Compose state is invisible to
+/// SwiftUI, so the host tells us when anything changed and we bump [generation];
+/// views that read it re-pull the outline and thumbnails. This is what makes
+/// canvas-side edits show up in the sidebar, not just the other way around.
+@Observable
+final class EditorModel {
+    let host = EditorHost()
+    private(set) var generation: Int = 0
+    @ObservationIgnored private var unsubscribe: (() -> Void)?
+
+    init() {
+        // Kotlin notifies synchronously on whichever thread mutated, which is
+        // always the main thread here (SwiftUI calls, or Compose input).
+        unsubscribe = host.onChange { [weak self] in self?.generation += 1 }
+    }
+
+    deinit {
+        unsubscribe?()
+    }
+}
+
 @main
 struct CupboardHostApp: App {
-    private let host = EditorHost()
-    @State private var selection: Int = 0
+    @State private var model = EditorModel()
     @State private var playSession: PlaySession?
+
+    private var host: EditorHost { model.host }
+
+    /// Selection lives in the store; this is a window onto it, no mirror to sync.
+    private var selection: Binding<Int> {
+        Binding(
+            get: { Int(host.selectedSlideIndex()) },
+            set: { host.selectSlide(index: Int32($0)) }
+        )
+    }
 
     var body: some Scene {
         WindowGroup("Cupboard") {
@@ -52,7 +83,9 @@ struct CupboardHostApp: App {
 
     private var editor: some View {
         NavigationSplitView {
-            List(selection: $selection) {
+            List(selection: selection) {
+                // Reading generation is what subscribes this list to store changes.
+                let _ = model.generation
                 ForEach(Array(host.outline().enumerated()), id: \.offset) { _, row in
                     if row.slideIndex < 0 {
                         Text(row.title)
@@ -60,7 +93,7 @@ struct CupboardHostApp: App {
                             .foregroundStyle(.secondary)
                             .padding(.leading, CGFloat(row.depth) * 14)
                     } else {
-                        let selected = Int(row.slideIndex) == selection
+                        let selected = Int(row.slideIndex) == selection.wrappedValue
                         HStack(alignment: .top, spacing: 8) {
                             Text("\(row.slideIndex + 1)")
                                 .font(.system(size: 11, design: .monospaced))
@@ -89,10 +122,6 @@ struct CupboardHostApp: App {
                 }
             }
             .navigationSplitViewColumnWidth(min: 180, ideal: 224)
-            .onAppear { selection = Int(host.selectedSlideIndex()) }
-            .onChange(of: selection) { _, index in
-                host.selectSlide(index: Int32(index))
-            }
         } detail: {
             ComposeCanvas(host: host)
                 .padding(28)
