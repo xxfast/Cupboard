@@ -1,0 +1,67 @@
+# Mirrors the local verify battery (CLAUDE.md Commands): per-target tasks only,
+# there is deliberately no aggregate `./gradlew build` (broken composite-build
+# interaction between the CuP fork's JS tooling and the emoji-kt included build).
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-and-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Shared tests + web targets + desktop shell
+        run: ./gradlew :cupboard:jvmTest :cupboard:wasmJsMainClasses :cupboard:jsMainClasses :desktopApp:compileKotlin
+
+  macos-app:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Cache Kotlin/Native compiler
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+      - name: Build Cupboard.app (runs Gradle via the Xcode script phase)
+        run: >
+          xcodebuild -project macosApp/Cupboard.xcodeproj -scheme Cupboard
+          -configuration Debug -derivedDataPath macosApp/build/DerivedData build
+      - name: Smoke test
+        # Launch from outside the repo: the bundle must not rely on cwd-relative
+        # resource fallbacks. If Metal proves flaky on CI VMs, degrade this step
+        # to `codesign --verify` + a binary-exists check.
+        run: |
+          APP="$PWD/macosApp/build/DerivedData/Build/Products/Debug/Cupboard.app"
+          codesign --verify --deep --strict "$APP"
+          cd /tmp
+          "$APP/Contents/MacOS/Cupboard" &
+          SMOKE_PID=$!
+          sleep 5
+          if ! kill -0 "$SMOKE_PID" 2>/dev/null; then
+            echo "Smoke test FAILED: app exited within 5 seconds" >&2
+            exit 1
+          fi
+          kill "$SMOKE_PID"

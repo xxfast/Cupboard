@@ -2,6 +2,7 @@
 
 [![Stability](https://kotl.in/badges/experimental.svg)](https://kotlinlang.org/docs/components-stability.html#stability-of-subcomponents)
 [![Kotlin](https://img.shields.io/badge/kotlin-2.4.10-blue.svg?logo=kotlin)](http://kotlinlang.org)
+[![Build](https://github.com/xxfast/Cupboard/actions/workflows/build.yml/badge.svg)](https://github.com/xxfast/Cupboard/actions/workflows/build.yml)
 
 A Keynote-style presentation editor for developers who present code. Cross-platform desktop: macOS, Windows, Linux.
 
