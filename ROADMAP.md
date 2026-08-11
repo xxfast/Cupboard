@@ -24,7 +24,7 @@ macOS, Windows, and Linux are built side by side; there is no dedicated desktop 
 - [ ] macOS full-bleed canvas embed via `ComposeNSView` (window content layer at origin 0,0; retires the skiko Metal-layer offset band).
 - [ ] Inspector chrome on every shell: Format/Animate tabs (AppKit-style on macOS, M3 on Compose, Fluent on WinUI); panels fill in as their features land in later phases.
 - [ ] Linux chrome in Material 3 per the design: navigator, toolbar, inspector, speaker notes strip, status bar; OS styling tokenized (`design/platform-theme.js` is the source) so this shell doubles as the universal fallback.
-- [ ] Windows chrome in WinUI 3: embedded Compose canvas (HWND/islands), view models consumed via kotlin-native-nuget.
+- [ ] Windows chrome in WinUI 3: embedded Compose canvas (HWND/islands). View-model sharing already landed (`6cec865`): `:cupboard` split UI-free and packs as the `Cupboard.Kotlin` NuGet from `winuiApp/` (kotlin-native-nuget), C# adapters + WinUI skeleton scaffolded, CI builds it provisionally on windows-latest; the C# half awaits its first build on a real Windows machine.
 - [ ] Fallback rule: if a native route stalls, that platform ships the tokenized Compose shell instead (mac or Fluent tokens) without blocking the others.
 
 ## Phase 2: Editing foundations (shared)
