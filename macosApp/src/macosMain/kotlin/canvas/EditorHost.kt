@@ -19,6 +19,7 @@ import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.editor.EditorCanvas
+import io.github.xxfast.cupboard.play.PresentationPlayer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -37,6 +38,32 @@ class OutlineRow(
     val hasChildren: Boolean,
     val collapsed: Boolean,
 )
+
+/**
+ * A running presentation: a Compose view playing a snapshot of the document.
+ * The host shows [view] full screen and calls [dispose] when it tears it down.
+ * Playback keys are the player's own business; it only calls back on exit.
+ */
+class PlaySession internal constructor(
+    document: Document,
+    startIndex: Int,
+    onExit: () -> Unit,
+) {
+    private val composeView = ComposeNSView {
+        PresentationPlayer(
+            document = document,
+            startIndex = startIndex,
+            modifier = Modifier.fillMaxSize(),
+            onExit = onExit,
+        )
+    }
+
+    val view: NSView = ComposeHostView(composeView)
+
+    fun dispose() {
+        composeView.dispose()
+    }
+}
 
 /**
  * Bridge for a native macOS shell: owns the document state, exposes the Compose
@@ -88,6 +115,13 @@ class EditorHost {
         selectedSlideId = slide.id
         selectedElementId = null
     }
+
+    /**
+     * Starts playing the document as it stands, from the selected slide.
+     * [onExit] fires on the main thread when the player asks to stop (Escape).
+     */
+    fun startPlay(onExit: () -> Unit): PlaySession =
+        PlaySession(document, selectedSlideIndex().coerceAtLeast(0), onExit)
 
     /**
      * Rasterizes a slide with the shared Compose renderer for native chrome to
