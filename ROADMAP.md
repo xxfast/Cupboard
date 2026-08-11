@@ -28,6 +28,7 @@ The 2026-08 design revision (`design/HANDOFF.md`) reshapes the shared layer; the
 - [x] Editing overlays (handles, guides, chips, build badges) hold constant screen size at every zoom: drawn in screen space, not slide space. (`ce58f56`; build badges land with Animate mode)
 - [x] Thumbnails become pure renders (no baked-in selection ring); selection chrome belongs to each host shell. (`287c8d6`)
 - [x] Shared screen stores: editor state + mutations live once in `:cupboard` (`EditorStore`, CLAUDE.md constraint 6); shells are thin adapters (Compose reads snapshot state, SwiftUI bridges via subscribe callback + `@Observable`). Navigation stays per platform by design; WinUI 3 will consume the same stores via kotlin-native-nuget. (`01d76a1`)
+- [x] Document persistence (interim): KStore autosaves the document as JSON to `~/.cupboard/document.json`, debounced, riding the store's change signal; both shells load it on startup and share the file. Supersedes nothing; the `.cupboard` bundle format replaces it later. (`d2ddcfa`)
 
 ## Phase 2: macOS app (SwiftUI)
 
@@ -59,5 +60,5 @@ Dependency chain: Emoji.kt macOS PR → CuP fork with `macosArm64` → `ComposeN
 ## Open questions
 
 - Do we keep the template `androidApp` / `webApp` / `iosApp` targets? Web could become CuP's web export as a share feature later.
-- File format: single-file document vs bundle (embedded images argue for a bundle or zip).
+- File format: single-file document vs bundle (embedded images argue for a bundle or zip). Interim: plain JSON via KStore; the plan is a `.cupboard` folder holding the JSON plus assets and whatever else a document grows.
 - Sync (`● synced` in the design status bar) implies a backend at some point; out of scope for now.
