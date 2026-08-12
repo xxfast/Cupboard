@@ -19,7 +19,7 @@ What we're building and in what order. See `GOALS.md` for the why, `design/READM
 
 macOS, Windows, and Linux are built side by side; there is no dedicated desktop client. Every later phase lands shared core first, then its UI on each shell in parallel (the `/ship` flow).
 
-- [ ] macOS chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); no status bar on macOS.
+- [x] macOS chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); no status bar on macOS. Live zoom pill (Fit + 25-200%); insert clusters and inspector body are placeholders until their phases. (`dc8f842`, needs a visual pass)
 - [ ] macOS navigator rows per the Keynote 26 spec: capsule selection (no thumbnail ring), number outside the thumbnail, 14px chevron gutter, 20px/level indent.
 - [ ] macOS full-bleed canvas embed via `ComposeNSView` (window content layer at origin 0,0; retires the skiko Metal-layer offset band).
 - [ ] Inspector chrome on every shell: Format/Animate tabs (AppKit-style on macOS, M3 on Compose, Fluent on WinUI); panels fill in as their features land in later phases.
