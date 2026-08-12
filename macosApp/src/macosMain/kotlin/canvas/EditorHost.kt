@@ -14,6 +14,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.editor
@@ -89,18 +90,27 @@ class EditorHost {
      * are the same flow, so an edit made in Compose shows up here too. */
     private val state: EditorState get() = viewModel.states.value
 
+    private class Thumbnail(val slide: Slide, val width: Int, val image: NSImage)
+
+    private val thumbnails = mutableMapOf<String, Thumbnail>()
+
     private val scope = CoroutineScope(Dispatchers.Main)
 
     /** View-local, not document state: null is Fit, otherwise a scale factor. */
     private val zoom = MutableStateFlow<Float?>(null)
 
+    /** The well follows the host's appearance; slide content never does. */
+    private val darkChrome = MutableStateFlow(true)
+
     val view: NSView = ComposeHostView(ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
         val scale: Float? by zoom.collectAsState()
+        val dark: Boolean by darkChrome.collectAsState()
 
         // Paint the canvas well ourselves: unpainted scene regions are undefined
         // (white) instead of showing the SwiftUI background through.
-        Box(Modifier.fillMaxSize().background(Color(0xFF17181C)), contentAlignment = Alignment.Center) {
+        val well = if (dark) Color(0xFF17181C) else Color(0xFFDCDCDA)
+        Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
             EditorCanvas(
                 slide = state.selectedSlide,
                 selectedElementId = state.selectedElementId,
@@ -121,6 +131,11 @@ class EditorHost {
 
     fun setZoomPercent(percent: Int) {
         zoom.value = if (percent <= 0) null else percent / 100f
+    }
+
+    /** Follows the host's appearance. Chrome only: slide content stays dark. */
+    fun setDarkChrome(dark: Boolean) {
+        darkChrome.value = dark
     }
 
     fun outline(): List<OutlineRow> = state.outline().map { entry ->
@@ -181,9 +196,17 @@ class EditorHost {
     /**
      * Rasterizes a slide with the shared Compose renderer for native chrome to
      * display (navigator thumbs). Rendered at 2x for retina, sized in points.
+     *
+     * Cached by slide value: the host re-pulls every row on every state
+     * emission, and a drag emits one per pointer sample, so rendering each row
+     * every time starved the main thread. Only the slide that actually changed
+     * misses the cache.
      */
     fun thumbnail(index: Int, width: Int): NSImage? {
         val slide = state.document.allSlides().getOrNull(index) ?: return null
+        val cached = thumbnails[slide.id]
+        if (cached != null && cached.width == width && cached.slide == slide) return cached.image
+
         val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
             SlideView(slide)
@@ -192,9 +215,12 @@ class EditorHost {
         val nsData = png.usePinned { pinned ->
             NSData.dataWithBytes(pinned.addressOf(0), png.size.toULong())
         }
-        return NSImage(data = nsData)?.apply {
+        val image = NSImage(data = nsData)?.apply {
             setSize(NSMakeSize(width.toDouble(), height.toDouble()))
-        }
+        } ?: return null
+
+        thumbnails[slide.id] = Thumbnail(slide, width, image)
+        return image
     }
 
     /**
