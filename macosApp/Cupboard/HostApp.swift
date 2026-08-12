@@ -9,37 +9,88 @@ import CupboardCanvas
 
 // MARK: - Chrome tokens
 
-/// macOS dark chrome, transcribed from design/platform-theme.js. The app chrome
-/// is dark-only for now, so there is no light branch here yet.
-private enum Chrome {
-    static let text = Color(rgb: 0xE8E8EA)
-    static let title = Color(rgb: 0xD8D8DC)
-    static let label = Color(rgb: 0xB8B8BE)
-    static let icon = Color(rgb: 0xD0D0D5)
-    static let subtle = Color(rgb: 0x98989F)
-    static let faint = Color(rgb: 0x6E6E76)
-    static let ctrl = Color(rgb: 0x414147)
-    static let ctrlText = Color(rgb: 0xECECEE)
-    static let segBg = Color(rgb: 0x313136)
-    static let segOn = Color(rgb: 0x5C5C64)
-    static let segOff = Color(rgb: 0xC8C8CC)
-    static let accent = Color(rgb: 0x7F52FF)
-    static let accentSoft = Color(rgb: 0xB9A3FF)
-    static let hover = Color.white.opacity(0.07)
-    static let hover2 = Color.white.opacity(0.14)
+/// macOS chrome, transcribed from design/platform-theme.js. Chrome follows the
+/// system appearance; slide content and thumbnails stay document-dark in both.
+private struct Palette {
+    let text: Color
+    let title: Color
+    let label: Color
+    let icon: Color
+    let subtle: Color
+    let faint: Color
+    let ctrl: Color
+    let ctrlText: Color
+    let segBg: Color
+    let segOn: Color
+    let segOnText: Color
+    let segOff: Color
+    let accent: Color
+    let accentSoft: Color
+    let hover: Color
+    let hover2: Color
+    /// The glass fill painted over the blur.
+    let glassFill: LinearGradient
+    let hairline: Color
+    let innerHighlight: Color
+    let topHighlight: Color
 
-    /// The glass fill painted over the blur: rgba(44,44,50,0.56) → rgba(32,32,38,0.48).
-    static let glassFill = LinearGradient(
-        colors: [
-            Color(rgb: 0x2C2C32).opacity(0.56),
-            Color(rgb: 0x202026).opacity(0.48),
-        ],
-        startPoint: .top,
-        endPoint: .bottom
+    static let dark = Palette(
+        text: Color(rgb: 0xE8E8EA),
+        title: Color(rgb: 0xD8D8DC),
+        label: Color(rgb: 0xB8B8BE),
+        icon: Color(rgb: 0xD0D0D5),
+        subtle: Color(rgb: 0x98989F),
+        faint: Color(rgb: 0x6E6E76),
+        ctrl: Color(rgb: 0x414147),
+        ctrlText: Color(rgb: 0xECECEE),
+        segBg: Color(rgb: 0x313136),
+        segOn: Color(rgb: 0x5C5C64),
+        segOnText: .white,
+        segOff: Color(rgb: 0xC8C8CC),
+        accent: Color(rgb: 0x7F52FF),
+        accentSoft: Color(rgb: 0xB9A3FF),
+        hover: Color.white.opacity(0.07),
+        hover2: Color.white.opacity(0.14),
+        // rgba(44,44,50,0.56) to rgba(32,32,38,0.48)
+        glassFill: LinearGradient(
+            colors: [Color(rgb: 0x2C2C32).opacity(0.56), Color(rgb: 0x202026).opacity(0.48)],
+            startPoint: .top,
+            endPoint: .bottom
+        ),
+        hairline: Color.white.opacity(0.10),
+        innerHighlight: Color.white.opacity(0.05),
+        topHighlight: Color.white.opacity(0.06)
     )
-    static let hairline = Color.white.opacity(0.10)
-    static let innerHighlight = Color.white.opacity(0.05)
-    static let topHighlight = Color.white.opacity(0.06)
+
+    static let light = Palette(
+        text: Color(rgb: 0x2A2A2C),
+        title: Color(rgb: 0x3A3A3C),
+        label: Color(rgb: 0x5C5C5E),
+        icon: Color(rgb: 0x4A4A4C),
+        subtle: Color(rgb: 0x7A7A7E),
+        faint: Color(rgb: 0x9A9A9E),
+        ctrl: .white,
+        ctrlText: Color(rgb: 0x2A2A2C),
+        segBg: Color(rgb: 0xE1E0DE),
+        segOn: .white,
+        segOnText: Color(rgb: 0x1D1D1F),
+        segOff: Color(rgb: 0x5A5A5C),
+        accent: Color(rgb: 0x7F52FF),
+        accentSoft: Color(rgb: 0x6F42E0),
+        hover: Color.black.opacity(0.06),
+        hover2: Color.black.opacity(0.1),
+        // rgba(252,251,249,0.64) to rgba(244,243,241,0.54)
+        glassFill: LinearGradient(
+            colors: [Color(rgb: 0xFCFBF9).opacity(0.64), Color(rgb: 0xF4F3F1).opacity(0.54)],
+            startPoint: .top,
+            endPoint: .bottom
+        ),
+        hairline: Color.black.opacity(0.10),
+        innerHighlight: Color.white.opacity(0.7),
+        topHighlight: Color.white.opacity(0.8)
+    )
+
+    static func of(_ scheme: ColorScheme) -> Palette { scheme == .dark ? .dark : .light }
 }
 
 private enum Layout {
@@ -86,11 +137,12 @@ private enum GlassEdge { case leading, trailing, bottom }
 private struct Glass: ViewModifier {
     let material: NSVisualEffectView.Material
     let edge: GlassEdge
+    let palette: Palette
 
     func body(content: Content) -> some View {
         content
             .background(GlassBackdrop(material: material))
-            .background(Chrome.glassFill)
+            .background(palette.glassFill)
             .overlay(alignment: alignment) { hairline }
             .overlay(alignment: .top) { topHighlight }
     }
@@ -109,27 +161,27 @@ private struct Glass: ViewModifier {
         switch edge {
         case .leading:
             HStack(spacing: 0) {
-                Chrome.hairline.frame(width: 1)
-                Chrome.innerHighlight.frame(width: 1)
+                palette.hairline.frame(width: 1)
+                palette.innerHighlight.frame(width: 1)
             }
         case .trailing:
             HStack(spacing: 0) {
-                Chrome.innerHighlight.frame(width: 1)
-                Chrome.hairline.frame(width: 1)
+                palette.innerHighlight.frame(width: 1)
+                palette.hairline.frame(width: 1)
             }
         case .bottom:
-            Chrome.hairline.frame(height: 1)
+            palette.hairline.frame(height: 1)
         }
     }
 
     @ViewBuilder private var topHighlight: some View {
-        if edge == .bottom { Chrome.topHighlight.frame(height: 1) }
+        if edge == .bottom { palette.topHighlight.frame(height: 1) }
     }
 }
 
 private extension View {
-    func glass(_ material: NSVisualEffectView.Material, edge: GlassEdge) -> some View {
-        modifier(Glass(material: material, edge: edge))
+    func glass(_ material: NSVisualEffectView.Material, edge: GlassEdge, palette: Palette) -> some View {
+        modifier(Glass(material: material, edge: edge, palette: palette))
     }
 }
 
@@ -145,7 +197,6 @@ private struct WindowConfigurator: NSViewRepresentable {
             window.titlebarAppearsTransparent = true
             window.titleVisibility = .hidden
             window.styleMask.insert(.fullSizeContentView)
-            window.backgroundColor = .black
         }
         return view
     }
@@ -208,11 +259,6 @@ final class EditorModel {
 struct CupboardHostApp: App {
     @State private var model = EditorModel()
     @State private var playSession: PlaySession?
-    @State private var sidebarVisible = true
-    @State private var inspectorTab = InspectorTab.format
-    /// Zoom is view-local in the Kotlin host, outside `states`, so the label
-    /// reads from this mirror rather than waiting on a generation bump.
-    @State private var zoomPercent: Int = 0
 
     private var host: EditorHost { model.host }
 
@@ -223,12 +269,11 @@ struct CupboardHostApp: App {
                     PlayCanvas(session: session)
                         .background(Color.black)
                 } else {
-                    editor
+                    EditorView(model: model, playSession: $playSession)
                 }
             }
             .ignoresSafeArea()
             .background(WindowConfigurator().frame(width: 0, height: 0))
-            .preferredColorScheme(.dark)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -246,10 +291,29 @@ struct CupboardHostApp: App {
             }
         }
     }
+}
+
+// MARK: - Editor
+
+private enum InspectorTab { case format, animate }
+
+private struct EditorView: View {
+    let model: EditorModel
+    @Binding var playSession: PlaySession?
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var sidebarVisible = true
+    @State private var inspectorTab = InspectorTab.format
+    /// Zoom is view-local in the Kotlin host, outside `states`, so the label
+    /// reads from this mirror rather than waiting on a generation bump.
+    @State private var zoomPercent: Int = 0
+
+    private var host: EditorHost { model.host }
+    private var palette: Palette { Palette.of(colorScheme) }
 
     /// Canvas at the back, edge to edge; the three glass surfaces over it. The
     /// toolbar spans exactly the gap the two full-height panels leave.
-    private var editor: some View {
+    var body: some View {
         ZStack {
             ComposeCanvas(host: host)
 
@@ -262,6 +326,9 @@ struct CupboardHostApp: App {
             }
         }
         .frame(minWidth: 1100, minHeight: 640)
+        // The well is painted Kotlin-side, so the appearance has to be pushed in.
+        .onAppear { host.setDarkChrome(dark: colorScheme == .dark) }
+        .onChange(of: colorScheme) { _, scheme in host.setDarkChrome(dark: scheme == .dark) }
     }
 
     // MARK: Sidebar
@@ -281,7 +348,7 @@ struct CupboardHostApp: App {
         }
         .frame(width: Layout.sidebar)
         .frame(maxHeight: .infinity)
-        .glass(.sidebar, edge: .trailing)
+        .glass(.sidebar, edge: .trailing, palette: palette)
     }
 
     private var sidebarToggle: some View {
@@ -290,7 +357,7 @@ struct CupboardHostApp: App {
         } label: {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(Chrome.icon)
+                .foregroundStyle(palette.icon)
                 .frame(width: 26, height: 24)
         }
         .buttonStyle(.plain)
@@ -307,7 +374,7 @@ struct CupboardHostApp: App {
                     if row.slideIndex < 0 {
                         Text(row.title)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Chrome.subtle)
+                            .foregroundStyle(palette.subtle)
                             .padding(.leading, CGFloat(row.depth) * 14)
                     } else {
                         navigatorRow(row, selected: row.slideIndex == selected)
@@ -323,7 +390,7 @@ struct CupboardHostApp: App {
         HStack(alignment: .top, spacing: 8) {
             Text("\(row.slideIndex + 1)")
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(Chrome.faint)
+                .foregroundStyle(palette.faint)
                 .frame(width: 16, alignment: .trailing)
             // Thumbnail rendered by the shared Compose renderer
             if let thumb = host.thumbnail(index: row.slideIndex, width: 140) {
@@ -334,14 +401,14 @@ struct CupboardHostApp: App {
                     .overlay(
                         RoundedRectangle(cornerRadius: 5)
                             .stroke(
-                                selected ? Chrome.accent : Color.gray.opacity(0.4),
+                                selected ? palette.accent : Color.gray.opacity(0.4),
                                 lineWidth: selected ? 2 : 1
                             )
                     )
             } else {
                 Text(row.title)
                     .font(.system(size: 13))
-                    .foregroundStyle(Chrome.text)
+                    .foregroundStyle(palette.text)
             }
         }
         .padding(.leading, CGFloat(row.depth) * 14)
@@ -365,17 +432,17 @@ struct CupboardHostApp: App {
         .padding(.trailing, 14)
         .frame(maxWidth: .infinity)
         .frame(height: Layout.header)
-        .glass(.headerView, edge: .bottom)
+        .glass(.headerView, edge: .bottom, palette: palette)
     }
 
     private var documentName: some View {
         HStack(spacing: 5) {
             Text("Untitled")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Chrome.title)
+                .foregroundStyle(palette.title)
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(Chrome.faint)
+                .foregroundStyle(palette.faint)
         }
         .fixedSize()
     }
@@ -392,7 +459,7 @@ struct CupboardHostApp: App {
             placeholderPill("plus.rectangle", help: "Add slide")
 
             // Insert group: recessed and accent-tinted, per the mock.
-            recessedGroup(tint: Chrome.accentSoft, symbols: [
+            recessedGroup(tint: palette.accentSoft, symbols: [
                 ("rectangle.badge.plus", "Add slide from layout"),
                 ("rectangle.split.1x2", "Add section"),
                 ("character.textbox", "Add text slide"),
@@ -400,7 +467,7 @@ struct CupboardHostApp: App {
                 ("square.grid.3x3.fill", "Light table"),
             ])
 
-            recessedGroup(tint: Chrome.icon, symbols: [
+            recessedGroup(tint: palette.icon, symbols: [
                 ("tablecells", "Table"),
                 ("chart.pie", "Chart"),
                 ("textformat", "Text"),
@@ -415,9 +482,9 @@ struct CupboardHostApp: App {
 
     private func pill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
-            .foregroundStyle(Chrome.icon)
+            .foregroundStyle(palette.icon)
             .frame(width: 36, height: 30)
-            .background(Chrome.ctrl, in: Capsule())
+            .background(palette.ctrl, in: Capsule())
     }
 
     private func placeholderPill(_ symbol: String, help: String) -> some View {
@@ -446,7 +513,7 @@ struct CupboardHostApp: App {
             }
         }
         .padding(3)
-        .background(Chrome.segBg, in: RoundedRectangle(cornerRadius: 10))
+        .background(palette.segBg, in: RoundedRectangle(cornerRadius: 10))
         .opacity(0.45)
     }
 
@@ -463,14 +530,14 @@ struct CupboardHostApp: App {
             HStack(spacing: 5) {
                 Text(zoomPercent == 0 ? "Fit" : "\(zoomPercent)%")
                     .font(.system(size: 12.5))
-                    .foregroundStyle(Chrome.ctrlText)
+                    .foregroundStyle(palette.ctrlText)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(Chrome.faint)
+                    .foregroundStyle(palette.faint)
             }
             .padding(.horizontal, 12)
             .frame(height: 30)
-            .background(Chrome.ctrl, in: Capsule())
+            .background(palette.ctrl, in: Capsule())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -492,15 +559,13 @@ struct CupboardHostApp: App {
 
     // MARK: Inspector
 
-    private enum InspectorTab { case format, animate }
-
     private var inspector: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 Button {} label: {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 14))
-                        .foregroundStyle(Chrome.icon)
+                        .foregroundStyle(palette.icon)
                         .frame(width: 28, height: 26)
                 }
                 .buttonStyle(.plain)
@@ -519,7 +584,7 @@ struct CupboardHostApp: App {
         }
         .frame(width: Layout.inspector)
         .frame(maxHeight: .infinity)
-        .glass(.sidebar, edge: .leading)
+        .glass(.sidebar, edge: .leading, palette: palette)
     }
 
     private var inspectorTabs: some View {
@@ -528,7 +593,7 @@ struct CupboardHostApp: App {
             inspectorTabButton("diamond", tab: .animate, help: "Animate")
         }
         .padding(2)
-        .background(Chrome.segBg, in: RoundedRectangle(cornerRadius: 8))
+        .background(palette.segBg, in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func inspectorTabButton(_ symbol: String, tab: InspectorTab, help: String) -> some View {
@@ -536,9 +601,9 @@ struct CupboardHostApp: App {
         return Button { inspectorTab = tab } label: {
             Image(systemName: symbol)
                 .font(.system(size: 13))
-                .foregroundStyle(on ? Color.white : Chrome.segOff)
+                .foregroundStyle(on ? palette.segOnText : palette.segOff)
                 .frame(width: 30, height: 24)
-                .background(on ? Chrome.segOn : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .background(on ? palette.segOn : .clear, in: RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .help(help)
