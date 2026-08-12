@@ -48,4 +48,6 @@ Versions live in `gradle/libs.versions.toml` (Kotlin 2.4.x, Compose Multiplatfor
 
    Events carry intent-sized facts, one per completed user action. Continuous gestures stream transient preview events through the loop and commit one event on release, so one gesture is still one undo entry and one autosave write (see the editor's `PreviewSlide`/`UpdateSlide`/`CancelPreview`).
 
-   Lessons from the drag-freeze bug (`9bc97ce`, resolved note in ROADMAP.md): anything a gesture shows must come back through `states`, never from local snapshot state written in pointer handlers (those writes can silently skip repaint on desktop). And when the loop looks broken, root-cause it; bypassing it only masks the symptom.
+### Troubleshooting
+
+- Lessons from the drag-freeze bug (`9bc97ce`, resolved note in ROADMAP.md): anything a gesture shows must come back through `states`, never from local snapshot state written in pointer handlers (those writes can silently skip repaint on desktop). And when the loop looks broken, root-cause it; bypassing it only masks the symptom.
