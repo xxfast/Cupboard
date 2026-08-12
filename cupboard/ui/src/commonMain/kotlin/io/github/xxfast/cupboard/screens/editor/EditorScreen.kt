@@ -53,6 +53,8 @@ fun EditorScreen(
         onToggleCollapsed = viewModel::onToggleCollapsed,
         onSelectElement = viewModel::onSelectElement,
         onUpdateSlide = viewModel::onUpdateSlide,
+        onPreviewSlide = viewModel::onPreviewSlide,
+        onCancelPreview = viewModel::onCancelPreview,
         onPlay = onPlay,
     )
 }
@@ -64,6 +66,8 @@ fun EditorView(
     onToggleCollapsed: (String) -> Unit,
     onSelectElement: (String?) -> Unit,
     onUpdateSlide: (Slide) -> Unit,
+    onPreviewSlide: (Slide) -> Unit,
+    onCancelPreview: () -> Unit,
     onPlay: ((Document, Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -102,6 +106,8 @@ fun EditorView(
                         selectedElementId = state.selectedElementId,
                         onSelectElement = onSelectElement,
                         onSlideChange = onUpdateSlide,
+                        onSlidePreview = onPreviewSlide,
+                        onPreviewCancel = onCancelPreview,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

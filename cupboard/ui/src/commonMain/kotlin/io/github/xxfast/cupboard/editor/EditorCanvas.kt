@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,11 +49,11 @@ private sealed interface DragTarget {
  * handles, drag-to-move/resize, and center alignment guides with snapping.
  * All hit-testing happens in doc units (1dp == 1 unit inside [SlideSurface]).
  *
- * A drag in progress is this composable's own business: the moving element is
- * rendered from a local [preview] slide and [onSlideChange] fires exactly once,
- * on release, with the final slide. The event stream upstream then carries
- * intent-sized facts (one edit per gesture), which is also one autosave write
- * and, later, one undo entry per gesture instead of one per pointer sample.
+ * The canvas renders purely from [slide]: a drag streams [onSlidePreview] per
+ * pointer sample through the state loop and draws whatever comes back. It never
+ * renders from local gesture state, because snapshot writes from pointer
+ * handlers proved unreliable for repaint on desktop. [onSlideChange] fires
+ * exactly once, on release: that's the undo and autosave boundary.
  */
 @Composable
 fun EditorCanvas(
@@ -62,34 +61,17 @@ fun EditorCanvas(
     selectedElementId: String?,
     onSelectElement: (String?) -> Unit,
     onSlideChange: (Slide) -> Unit,
+    onSlidePreview: (Slide) -> Unit,
+    onPreviewCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // The canvas trusts its own hands first: gestures render from local state
-    // immediately and [onSlideChange] is write-behind (persistence, undo), so
-    // no visual behavior ever waits on the state roundtrip. An incoming slide
-    // only takes over when it differs from what we last sent (undo, external
-    // edits), which keeps the canvas correct without being dependent.
-    var preview: Slide? by remember(slide.id) { mutableStateOf(null) }
-    var committed: Slide? by remember(slide.id) { mutableStateOf(null) }
-    var lastSent: Slide? by remember(slide.id) { mutableStateOf(null) }
-    remember(slide) {
-        if (lastSent != null && slide != lastSent) {
-            committed = null
-            lastSent = null
-        }
-    }
-
-    // Everything below draws and hit-tests against this, so the gesture and what
-    // you see stay the same thing.
-    val shownSlide: Slide = preview ?: committed ?: slide
-
-    val currentSlide by rememberUpdatedState(shownSlide)
+    val currentSlide by rememberUpdatedState(slide)
     val currentSelection by rememberUpdatedState(selectedElementId)
     var guideX by remember { mutableStateOf(false) }
     var guideY by remember { mutableStateOf(false) }
 
     SlideSurface(modifier) {
-        for (element in shownSlide.elements) ElementView(element)
+        for (element in slide.elements) ElementView(element)
 
         // Editing affordances hold constant screen size at any zoom: authored
         // sizes are divided by the canvas scale, positions stay in doc units.
@@ -100,25 +82,11 @@ fun EditorCanvas(
         fun elementAt(p: Offset): Element? =
             currentSlide.elements.lastOrNull { it.frame.contains(p.x, p.y) }
 
-        // Local only: the gesture edits the preview, release publishes it.
-        fun previewUpdate(element: Element, frame: Frame) {
-            preview = currentSlide.copy(
-                elements = currentSlide.elements.map {
-                    if (it.id == element.id) it.withFrame(frame) else it
-                }
-            )
-        }
-
-        fun commit() {
-            preview?.let { done ->
-                committed = done
-                lastSent = done
-                onSlideChange(done)
+        fun placed(elementId: String, frame: Frame): Slide = currentSlide.copy(
+            elements = currentSlide.elements.map {
+                if (it.id == elementId) it.withFrame(frame) else it
             }
-            preview = null
-            guideX = false
-            guideY = false
-        }
+        )
 
         // Input overlay covering the whole slide
         Box(
@@ -130,7 +98,24 @@ fun EditorCanvas(
                     }
                 }
                 .pointerInput(Unit) {
+                    // Plain vars, not snapshot state: each sample accumulates
+                    // into an absolute frame, so every emission carries the
+                    // whole gesture and a slow roundtrip can delay a repaint
+                    // but never lose movement.
                     var target: DragTarget? = null
+                    var draggedFrame: Frame? = null
+                    var startFrame: Frame? = null
+                    var totalDx = 0f
+                    var totalDy = 0f
+                    fun reset() {
+                        target = null
+                        draggedFrame = null
+                        startFrame = null
+                        totalDx = 0f
+                        totalDy = 0f
+                        guideX = false
+                        guideY = false
+                    }
                     detectDragGestures(
                         onDragStart = { position ->
                             val p = toDoc(position)
@@ -142,46 +127,68 @@ fun EditorCanvas(
                                 selected != null && handle != null -> DragTarget.Resize(selected.id, handle)
                                 else -> elementAt(p)?.also { onSelectElement(it.id) }?.let { DragTarget.Move(it.id) }
                             }
+                            val targetId = when (val t = target) {
+                                is DragTarget.Move -> t.elementId
+                                is DragTarget.Resize -> t.elementId
+                                null -> null
+                            }
+                            val frame = currentSlide.elements.firstOrNull { it.id == targetId }?.frame
+                            draggedFrame = frame
+                            startFrame = frame
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            val t = target ?: return@detectDragGestures
                             val delta = Offset(dragAmount.x / docDensity, dragAmount.y / docDensity)
-                            val targetId = when (t) {
-                                is DragTarget.Move -> t.elementId
-                                is DragTarget.Resize -> t.elementId
-                            }
-                            val element = currentSlide.elements.firstOrNull { it.id == targetId }
-                                ?: return@detectDragGestures
-                            when (t) {
+                            when (val t = target) {
                                 is DragTarget.Move -> {
-                                    val moved = element.frame.translate(delta.x, delta.y)
+                                    // The raw frame accumulates, the snapped one
+                                    // is emitted: snapping must not compound.
+                                    val moved = draggedFrame?.translate(delta.x, delta.y)
+                                        ?: return@detectDragGestures
+                                    draggedFrame = moved
                                     val snapped = snapToSlideCenter(moved)
                                     guideX = snapped.snappedX
                                     guideY = snapped.snappedY
-                                    previewUpdate(element, snapped.frame)
+                                    onSlidePreview(placed(t.elementId, snapped.frame))
                                 }
                                 is DragTarget.Resize -> {
-                                    previewUpdate(element, resizeFrame(element.frame, t.handle, delta.x, delta.y))
+                                    val start = startFrame ?: return@detectDragGestures
+                                    totalDx += delta.x
+                                    totalDy += delta.y
+                                    // Always from the start frame with running
+                                    // totals: same math as iterating, and the
+                                    // min-size clamp holds across the gesture.
+                                    onSlidePreview(placed(t.elementId, resizeFrame(start, t.handle, totalDx, totalDy)))
                                 }
+                                null -> {}
                             }
                         },
-                        // Publish only when this gesture had a target: an empty
-                        // drag must never commit a leftover preview.
+                        // Commit only when this gesture had a target: an empty
+                        // drag must never publish anything.
                         onDragEnd = {
-                            val hadTarget = target != null
-                            target = null
-                            if (hadTarget) commit() else preview = null
+                            when (val t = target) {
+                                is DragTarget.Move -> draggedFrame?.let { frame ->
+                                    onSlideChange(placed(t.elementId, snapToSlideCenter(frame).frame))
+                                }
+                                is DragTarget.Resize -> startFrame?.let { start ->
+                                    onSlideChange(placed(t.elementId, resizeFrame(start, t.handle, totalDx, totalDy)))
+                                }
+                                null -> {}
+                            }
+                            reset()
                         },
-                        // A cancelled gesture never happened: drop the preview
-                        // and let the element fall back to the committed slide.
-                        onDragCancel = { target = null; preview = null; guideX = false; guideY = false },
+                        // A cancelled gesture never happened: the presenter
+                        // rolls the document back to its pre-gesture state.
+                        onDragCancel = {
+                            if (target != null) onPreviewCancel()
+                            reset()
+                        },
                     )
                 }
         )
 
         // Selection ring + handles
-        shownSlide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
+        slide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
             SelectionOverlay(selected.frame, canvasScale)
         }
 

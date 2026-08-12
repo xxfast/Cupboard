@@ -99,6 +99,8 @@ class EditorHost {
                 selectedElementId = state.selectedElementId,
                 onSelectElement = viewModel::onSelectElement,
                 onSlideChange = viewModel::onUpdateSlide,
+                onSlidePreview = viewModel::onPreviewSlide,
+                onPreviewCancel = viewModel::onCancelPreview,
             )
         }
     })

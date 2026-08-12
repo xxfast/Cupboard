@@ -10,6 +10,8 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
@@ -62,6 +64,11 @@ fun EditorPresenter(
     val redone: ArrayDeque<Document> = remember { ArrayDeque() }
 
     LaunchedEffect(Unit) {
+        // The document as it stood before the gesture in flight; null when no
+        // gesture is running. Undo wants the pre-gesture document, and by
+        // commit time the previews have already folded into state.
+        var gestureBase: Document? = null
+
         events.collect { event ->
             state = when (event) {
                 // Selecting a slide drops the element selection: the handles
@@ -74,11 +81,27 @@ fun EditorPresenter(
 
                 is SelectElement -> state.copy(selectedElementId = event.id)
 
+                // Previews fold into the document (the canvas renders from
+                // state, nothing else shows them) but leave history alone: the
+                // gesture is one edit, and it isn't done yet.
+                is PreviewSlide -> {
+                    if (gestureBase == null) gestureBase = state.document
+                    state.copy(document = state.document.updateSlide(event.slide))
+                }
+
                 is UpdateSlide -> {
-                    undone.push(state.document)
+                    undone.push(gestureBase ?: state.document)
+                    gestureBase = null
                     redone.clear()
                     state.copy(document = state.document.updateSlide(event.slide))
                 }
+
+                CancelPreview -> gestureBase
+                    ?.let { base ->
+                        gestureBase = null
+                        state.copy(document = base)
+                    }
+                    ?: state
 
                 // Disclosure is not an edit, so it makes no history entry, the
                 // same way Keynote won't undo a twisty. The document still

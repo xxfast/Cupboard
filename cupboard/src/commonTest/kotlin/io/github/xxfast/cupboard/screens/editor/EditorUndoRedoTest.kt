@@ -94,6 +94,53 @@ class EditorUndoRedoTest {
     }
 
     @Test
+    fun previewsFoldIntoTheDocumentButMakeNoHistory() = runTest {
+        val viewModel = editor()
+        val slide = viewModel.states.value.selectedSlide
+
+        viewModel.onPreviewSlide(slide.copy(title = "One"))
+        viewModel.onPreviewSlide(slide.copy(title = "Two"))
+        viewModel.onPreviewSlide(slide.copy(title = "Three"))
+        val previewed = viewModel.await { it.selectedSlide.title == "Three" }
+        assertEquals("Three", previewed.selectedSlide.title)
+        assertFalse(previewed.canUndo)
+    }
+
+    @Test
+    fun aGestureOfPreviewsUndoesAsOneEdit() = runTest {
+        val viewModel = editor()
+        val before = viewModel.states.value.document
+        val slide = viewModel.states.value.selectedSlide
+
+        viewModel.onPreviewSlide(slide.copy(title = "One"))
+        viewModel.onPreviewSlide(slide.copy(title = "Two"))
+        viewModel.onUpdateSlide(slide.copy(title = "Final"))
+        val committed = viewModel.await { it.selectedSlide.title == "Final" }
+        assertTrue(committed.canUndo)
+
+        // One undo lands on the pre-gesture document, not a mid-drag frame.
+        viewModel.onUndo()
+        val undone = viewModel.await { it.document == before }
+        assertFalse(undone.canUndo)
+    }
+
+    @Test
+    fun aCancelledGestureRestoresThePreGestureDocument() = runTest {
+        val viewModel = editor()
+        val before = viewModel.states.value.document
+        val slide = viewModel.states.value.selectedSlide
+
+        viewModel.onPreviewSlide(slide.copy(title = "One"))
+        viewModel.onPreviewSlide(slide.copy(title = "Two"))
+        viewModel.await { it.selectedSlide.title == "Two" }
+
+        viewModel.onCancelPreview()
+        val restored = viewModel.await { it.document == before }
+        assertFalse(restored.canUndo)
+        assertFalse(restored.canRedo)
+    }
+
+    @Test
     fun collapsingASlideIsNotUndoable() = runTest {
         val viewModel = editor()
         val whyKmp = viewModel.states.value.document.slides.first { it.title == "Why KMP" }

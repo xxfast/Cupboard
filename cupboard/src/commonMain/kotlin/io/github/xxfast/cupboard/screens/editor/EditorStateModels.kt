@@ -84,6 +84,12 @@ sealed interface EditorEvent {
     data class SelectSlideAt(val index: Int) : EditorEvent
     data class SelectElement(val id: String?) : EditorEvent
     data class UpdateSlide(val slide: Slide) : EditorEvent
+    /** An in-flight gesture sample: folds into the document so the canvas can
+     * render it, but makes no history entry and clears no redo stack. */
+    data class PreviewSlide(val slide: Slide) : EditorEvent
+    /** A cancelled gesture never happened: restores the document from before
+     * the gesture's first preview. */
+    data object CancelPreview : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent

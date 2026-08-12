@@ -4,6 +4,8 @@ import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
@@ -74,6 +76,8 @@ class EditorViewModel(
     fun onSelectSlideAt(index: Int) { scope.launch { events.emit(SelectSlideAt(index)) } }
     fun onSelectElement(id: String?) { scope.launch { events.emit(SelectElement(id)) } }
     fun onUpdateSlide(slide: Slide) { scope.launch { events.emit(UpdateSlide(slide)) } }
+    fun onPreviewSlide(slide: Slide) { scope.launch { events.emit(PreviewSlide(slide)) } }
+    fun onCancelPreview() { scope.launch { events.emit(CancelPreview) } }
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
