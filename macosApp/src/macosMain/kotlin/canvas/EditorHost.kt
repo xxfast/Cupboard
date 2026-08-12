@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -25,7 +26,9 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import org.jetbrains.skia.EncodedImageFormat
 import platform.AppKit.NSImage
 import platform.AppKit.NSView
@@ -88,12 +91,16 @@ class EditorHost {
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
+    /** View-local, not document state: null is Fit, otherwise a scale factor. */
+    private val zoom = MutableStateFlow<Float?>(null)
+
     val view: NSView = ComposeHostView(ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
+        val scale: Float? by zoom.collectAsState()
 
         // Paint the canvas well ourselves: unpainted scene regions are undefined
         // (white) instead of showing the SwiftUI background through.
-        Box(Modifier.fillMaxSize().background(Color(0xFF17181C))) {
+        Box(Modifier.fillMaxSize().background(Color(0xFF17181C)), contentAlignment = Alignment.Center) {
             EditorCanvas(
                 slide = state.selectedSlide,
                 selectedElementId = state.selectedElementId,
@@ -101,9 +108,20 @@ class EditorHost {
                 onSlideChange = viewModel::onUpdateSlide,
                 onSlidePreview = viewModel::onPreviewSlide,
                 onPreviewCancel = viewModel::onCancelPreview,
+                // Fit is 84% of the window on macOS: the canvas layer is the whole
+                // window, so at Fit the slide runs under both glass panels.
+                modifier = if (scale == null) Modifier.fillMaxSize(0.84f) else Modifier.fillMaxSize(),
+                zoom = scale,
             )
         }
     })
+
+    /** Zoom as a whole percentage, 0 meaning Fit. Kept ObjC-friendly on purpose. */
+    fun zoomPercent(): Int = zoom.value?.let { (it * 100).roundToInt() } ?: 0
+
+    fun setZoomPercent(percent: Int) {
+        zoom.value = if (percent <= 0) null else percent / 100f
+    }
 
     fun outline(): List<OutlineRow> = state.outline().map { entry ->
         OutlineRow(

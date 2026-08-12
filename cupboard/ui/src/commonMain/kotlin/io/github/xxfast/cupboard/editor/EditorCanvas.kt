@@ -64,13 +64,14 @@ fun EditorCanvas(
     onSlidePreview: (Slide) -> Unit,
     onPreviewCancel: () -> Unit,
     modifier: Modifier = Modifier,
+    zoom: Float? = null,
 ) {
     val currentSlide by rememberUpdatedState(slide)
     val currentSelection by rememberUpdatedState(selectedElementId)
     var guideX by remember { mutableStateOf(false) }
     var guideY by remember { mutableStateOf(false) }
 
-    SlideSurface(modifier) {
+    SlideSurface(modifier, zoom = zoom) {
         for (element in slide.elements) ElementView(element)
 
         // Editing affordances hold constant screen size at any zoom: authored
