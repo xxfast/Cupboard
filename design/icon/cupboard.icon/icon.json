@@ -1,0 +1,12 @@
+{
+  "fill" : "automatic",
+  "groups" : [
+
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
