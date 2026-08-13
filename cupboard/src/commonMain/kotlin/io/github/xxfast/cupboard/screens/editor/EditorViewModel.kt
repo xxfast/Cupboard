@@ -5,12 +5,16 @@ import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
@@ -81,6 +85,10 @@ class EditorViewModel(
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
+    fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }
+    fun onToggleNotes() { scope.launch { events.emit(ToggleNotes) } }
+    fun onSelectInspectorTab(tab: InspectorTab) { scope.launch { events.emit(SelectInspectorTab(tab)) } }
+    fun onCloseInspector() { scope.launch { events.emit(CloseInspector) } }
 
     fun close() {
         scope.cancel()

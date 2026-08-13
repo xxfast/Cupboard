@@ -39,6 +39,13 @@ data class EditorState(
      * carried its own past would serialize every version of the document. */
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
+    /** Whether the navigator is showing. Chrome visibility is view state, but it
+     * is the editor's view state: every shell has the same three panels, and a
+     * shell that kept its own copy would lose it on the next window it opens. */
+    val sidebarOpen: Boolean = true,
+    val inspectorOpen: Boolean = true,
+    val inspectorTab: InspectorTab = InspectorTab.Format,
+    val showNotes: Boolean = true,
     /**
      * True between the first preview of a gesture and its commit, so a shell can
      * tell a mid-drag document from a settled one. Anything expensive that only
@@ -88,6 +95,10 @@ data class EditorState(
     }
 }
 
+/** Which pane of the inspector is showing. */
+@Serializable
+enum class InspectorTab { Format, Animate, Document }
+
 sealed interface EditorEvent {
     data class SelectSlide(val id: String) : EditorEvent
     /** Selects by index in presentation order; out of range indices are ignored. */
@@ -103,4 +114,9 @@ sealed interface EditorEvent {
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent
+    data object ToggleSidebar : EditorEvent
+    data object ToggleNotes : EditorEvent
+    /** Picking a tab shows the inspector: a tab you can't see is not a choice. */
+    data class SelectInspectorTab(val tab: InspectorTab) : EditorEvent
+    data object CloseInspector : EditorEvent
 }

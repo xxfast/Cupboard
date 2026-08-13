@@ -11,12 +11,16 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
@@ -130,6 +134,17 @@ fun EditorPresenter(
                         state.copy(document = next)
                     }
                     ?: state
+
+                ToggleSidebar -> state.copy(sidebarOpen = !state.sidebarOpen)
+
+                ToggleNotes -> state.copy(showNotes = !state.showNotes)
+
+                // A tab always opens the inspector. Whether clicking the tab
+                // that's already showing closes it is the shell's call: it
+                // sends CloseInspector when that's what it means.
+                is SelectInspectorTab -> state.copy(inspectorTab = event.tab, inspectorOpen = true)
+
+                CloseInspector -> state.copy(inspectorOpen = false)
             }.copy(canUndo = undone.isNotEmpty(), canRedo = redone.isNotEmpty())
         }
     }

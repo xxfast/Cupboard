@@ -98,6 +98,66 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun theChromeStartsFullyOpen() = runTest {
+        val state = editor().states.value
+        assertTrue(state.sidebarOpen)
+        assertTrue(state.inspectorOpen)
+        assertTrue(state.showNotes)
+        assertEquals(InspectorTab.Format, state.inspectorTab)
+    }
+
+    @Test
+    fun togglingTheSidebarAndNotesFlipsThemBackAndForth() = runTest {
+        val viewModel = editor()
+
+        viewModel.onToggleSidebar()
+        viewModel.onToggleNotes()
+        val hidden = viewModel.await { !it.sidebarOpen && !it.showNotes }
+        // The other panels are left alone.
+        assertTrue(hidden.inspectorOpen)
+
+        viewModel.onToggleSidebar()
+        viewModel.onToggleNotes()
+        viewModel.await { it.sidebarOpen && it.showNotes }
+    }
+
+    @Test
+    fun pickingATabOpensTheInspectorOnIt() = runTest {
+        val viewModel = editor()
+        viewModel.onCloseInspector()
+        val closed = viewModel.await { !it.inspectorOpen }
+        // Closing leaves the tab where it was, so reopening lands on it again.
+        assertEquals(InspectorTab.Format, closed.inspectorTab)
+
+        viewModel.onSelectInspectorTab(InspectorTab.Animate)
+        val opened = viewModel.await { it.inspectorTab == InspectorTab.Animate }
+        assertTrue(opened.inspectorOpen)
+
+        // Picking the tab that's already showing keeps it open: closing on a
+        // second click is the shell's policy, and it sends CloseInspector for it.
+        viewModel.onSelectInspectorTab(InspectorTab.Animate)
+        viewModel.onSelectSlideAt(2)
+        val again = viewModel.await { it.selectedSlideIndex() == 2 }
+        assertTrue(again.inspectorOpen)
+        assertEquals(InspectorTab.Animate, again.inspectorTab)
+    }
+
+    @Test
+    fun chromeEventsLeaveTheDocumentAndHistoryAlone() = runTest {
+        val viewModel = editor()
+        val opened = viewModel.states.value.document
+
+        viewModel.onToggleSidebar()
+        viewModel.onToggleNotes()
+        viewModel.onSelectInspectorTab(InspectorTab.Document)
+        viewModel.onCloseInspector()
+        val after = viewModel.await { !it.inspectorOpen }
+        assertEquals(opened, after.document)
+        assertFalse(after.canUndo)
+        assertFalse(after.canRedo)
+    }
+
+    @Test
     fun outlineCarriesDepthAndTitle() {
         val state = EditorState.opening(
             Document(slides = listOf(Slide(title = "A"), Slide(title = "A.1", depth = 1))),
