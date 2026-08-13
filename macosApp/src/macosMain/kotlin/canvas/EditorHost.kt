@@ -4,7 +4,9 @@ package io.github.xxfast.cupboard.canvas
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -12,6 +14,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
+import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
@@ -21,6 +24,7 @@ import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
+import io.github.xxfast.cupboard.screens.editor.InspectorTab
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -36,6 +40,15 @@ import platform.AppKit.NSView
 import platform.Foundation.NSData
 import platform.Foundation.NSMakeSize
 import platform.Foundation.dataWithBytes
+
+/**
+ * The chrome the shell floats over the canvas, in canvas coordinates. Fit has to
+ * agree with the shell about them, so they are stated once, here.
+ */
+private val SIDEBAR = 212.dp
+private val INSPECTOR = 282.dp
+private val TOOLBAR = 52.dp
+private val NOTES = 122.dp
 
 /** One row of the navigator outline, for the native (SwiftUI) sidebar. */
 class OutlineRow(
@@ -111,6 +124,16 @@ class EditorHost {
         // Paint the canvas well ourselves: unpainted scene regions are undefined
         // (white) instead of showing the SwiftUI background through.
         val well = if (dark) Color(0xFF17181C) else Color(0xFFDCDCDA)
+        // Fit measures against the space the slide may actually occupy, so the
+        // gutters are the panels that are open right now, not a constant. The
+        // canvas layer is still the whole window: at any fixed zoom the slide is
+        // window-centred and runs under the glass, which is what sells it.
+        val gutters = PaddingValues(
+            start = if (state.sidebarOpen) SIDEBAR else 0.dp,
+            top = TOOLBAR,
+            end = if (state.inspectorOpen) INSPECTOR else 0.dp,
+            bottom = if (state.showNotes) NOTES else 0.dp,
+        )
         Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
             EditorCanvas(
                 slide = state.selectedSlide,
@@ -119,9 +142,8 @@ class EditorHost {
                 onSlideChange = viewModel::onUpdateSlide,
                 onSlidePreview = viewModel::onPreviewSlide,
                 onPreviewCancel = viewModel::onCancelPreview,
-                // Fit is 84% of the window on macOS: the canvas layer is the whole
-                // window, so at Fit the slide runs under both glass panels.
-                modifier = if (scale == null) Modifier.fillMaxSize(0.84f) else Modifier.fillMaxSize(),
+                modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
+                else Modifier.fillMaxSize(),
                 zoom = scale,
             )
         }
@@ -171,6 +193,38 @@ class EditorHost {
 
     fun selectSlide(index: Int) {
         viewModel.onSelectSlideAt(index)
+    }
+
+    /**
+     * Panel visibility, straight off the shared state. The shell reads these
+     * rather than keeping its own copies: chrome that a menu item, a click and
+     * the canvas can all move needs one owner, and it is the view model.
+     */
+    fun sidebarOpen(): Boolean = state.sidebarOpen
+
+    fun inspectorOpen(): Boolean = state.inspectorOpen
+
+    fun inspectorTab(): InspectorTab = state.inspectorTab
+
+    fun showNotes(): Boolean = state.showNotes
+
+    /** Notes for the selected slide, what the speaker-notes strip shows. */
+    fun slideNotes(): String = state.selectedSlide.notes
+
+    fun toggleSidebar() {
+        viewModel.onToggleSidebar()
+    }
+
+    fun toggleNotes() {
+        viewModel.onToggleNotes()
+    }
+
+    fun selectInspectorTab(tab: InspectorTab) {
+        viewModel.onSelectInspectorTab(tab)
+    }
+
+    fun closeInspector() {
+        viewModel.onCloseInspector()
     }
 
     /**

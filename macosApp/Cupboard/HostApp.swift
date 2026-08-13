@@ -1,5 +1,6 @@
 // Design v3 layered window: the Compose canvas is full-bleed edge to edge and
-// the sidebar, toolbar and inspector float over it as translucent glass.
+// the navigator card, notes strip, inspector and toolbar float over it. Layer
+// order back to front: canvas, speaker notes, panels, toolbar, collapsed chrome.
 // Only the canvas is Compose, bridged through EditorHost from CupboardCanvas.
 // Build/run: ./macosApp/run.sh
 import SwiftUI
@@ -17,6 +18,7 @@ private struct Palette {
     let label: Color
     let icon: Color
     let subtle: Color
+    let dim: Color
     let faint: Color
     let ctrl: Color
     let ctrlText: Color
@@ -24,15 +26,28 @@ private struct Palette {
     let segOn: Color
     let segOnText: Color
     let segOff: Color
+    let track: Color
+    let panel: Color
+    let divider: Color
     let accent: Color
+    let accentText: Color
     let accentSoft: Color
     let hover: Color
     let hover2: Color
     /// The glass fill painted over the blur.
     let glassFill: LinearGradient
+    /// The raised-button fill, for the one button that is not a capsule.
+    let buttonFill: LinearGradient
     let hairline: Color
     let innerHighlight: Color
-    let topHighlight: Color
+    /// Active inspector tab: a grey pill, not a raised white one.
+    let tabOn: Color
+    let tabDivider: Color
+    /// Navigator selection capsule and its specular top edge.
+    let selection: Color
+    let selectionEdge: Color
+    /// The hairline around a thumbnail, identical selected or not.
+    let thumbEdge: Color
 
     static let dark = Palette(
         text: Color(rgb: 0xE8E8EA),
@@ -40,6 +55,7 @@ private struct Palette {
         label: Color(rgb: 0xB8B8BE),
         icon: Color(rgb: 0xD0D0D5),
         subtle: Color(rgb: 0x98989F),
+        dim: Color(rgb: 0xA0A0A8),
         faint: Color(rgb: 0x6E6E76),
         ctrl: Color(rgb: 0x414147),
         ctrlText: Color(rgb: 0xECECEE),
@@ -47,7 +63,11 @@ private struct Palette {
         segOn: Color(rgb: 0x5C5C64),
         segOnText: .white,
         segOff: Color(rgb: 0xC8C8CC),
+        track: Color(rgb: 0x4A4A50),
+        panel: Color(rgb: 0x28282C),
+        divider: Color(rgb: 0x3A3A3E),
         accent: Color(rgb: 0x7F52FF),
+        accentText: .white,
         accentSoft: Color(rgb: 0xB9A3FF),
         hover: Color.white.opacity(0.07),
         hover2: Color.white.opacity(0.14),
@@ -57,9 +77,18 @@ private struct Palette {
             startPoint: .top,
             endPoint: .bottom
         ),
+        buttonFill: LinearGradient(
+            colors: [Color(rgb: 0x525259), Color(rgb: 0x47474D)],
+            startPoint: .top,
+            endPoint: .bottom
+        ),
         hairline: Color.white.opacity(0.10),
         innerHighlight: Color.white.opacity(0.05),
-        topHighlight: Color.white.opacity(0.06)
+        tabOn: Color.white.opacity(0.16),
+        tabDivider: Color.white.opacity(0.18),
+        selection: Color.white.opacity(0.17),
+        selectionEdge: Color.white.opacity(0.30),
+        thumbEdge: Color.white.opacity(0.16)
     )
 
     static let light = Palette(
@@ -68,6 +97,7 @@ private struct Palette {
         label: Color(rgb: 0x5C5C5E),
         icon: Color(rgb: 0x4A4A4C),
         subtle: Color(rgb: 0x7A7A7E),
+        dim: Color(rgb: 0x6A6A6E),
         faint: Color(rgb: 0x9A9A9E),
         ctrl: .white,
         ctrlText: Color(rgb: 0x2A2A2C),
@@ -75,7 +105,11 @@ private struct Palette {
         segOn: .white,
         segOnText: Color(rgb: 0x1D1D1F),
         segOff: Color(rgb: 0x5A5A5C),
+        track: Color(rgb: 0xCFCECC),
+        panel: Color(rgb: 0xF1F0EE),
+        divider: Color(rgb: 0xD8D7D5),
         accent: Color(rgb: 0x7F52FF),
+        accentText: .white,
         accentSoft: Color(rgb: 0x6F42E0),
         hover: Color.black.opacity(0.06),
         hover2: Color.black.opacity(0.1),
@@ -85,9 +119,18 @@ private struct Palette {
             startPoint: .top,
             endPoint: .bottom
         ),
+        buttonFill: LinearGradient(
+            colors: [.white, Color(rgb: 0xF1F1F1)],
+            startPoint: .top,
+            endPoint: .bottom
+        ),
         hairline: Color.black.opacity(0.10),
         innerHighlight: Color.white.opacity(0.7),
-        topHighlight: Color.white.opacity(0.8)
+        tabOn: Color.black.opacity(0.10),
+        tabDivider: Color.black.opacity(0.14),
+        selection: Color.white.opacity(0.68),
+        selectionEdge: Color.white.opacity(0.95),
+        thumbEdge: Color.black.opacity(0.14)
     )
 
     static func of(_ scheme: ColorScheme) -> Palette { scheme == .dark ? .dark : .light }
@@ -97,8 +140,27 @@ private enum Layout {
     static let sidebar: CGFloat = 212
     static let inspector: CGFloat = 282
     static let header: CGFloat = 52
-    /// Kept clear of the traffic lights when the sidebar is hidden.
-    static let trafficLights: CGFloat = 86
+    /// The navigator is a floating card, so it is inset from the window edges.
+    static let cardLeading: CGFloat = 10
+    static let cardTop: CGFloat = 8
+    static let cardBottom: CGFloat = 10
+    static let cardRadius: CGFloat = 14
+    /// Left edge of the toolbar strip: clear of the card, or of the traffic
+    /// lights and the collapsed toggle alone.
+    static let toolbarOpen: CGFloat = 232
+    static let toolbarClosed: CGFloat = 112
+    /// Traffic lights own 18 to 70; the collapsed toggle follows them.
+    static let collapsedToggle: CGFloat = 84
+    static let notes: CGFloat = 122
+    static let notesLeading: CGFloat = 256
+    static let notesTrailing: CGFloat = 314
+    static let notesInset: CGFloat = 48
+    static let thumbnail: CGFloat = 150
+    /// Share and the tab group ride over the inspector glass in a fixed region.
+    static let tabRegion: CGFloat = 254
+    static let edge: CGFloat = 14
+    static let inset: CGFloat = 18
+    static let panelPadding: CGFloat = 16
 }
 
 private extension Color {
@@ -132,7 +194,7 @@ private struct GlassBackdrop: NSViewRepresentable {
     }
 }
 
-private enum GlassEdge { case leading, trailing, bottom }
+private enum GlassEdge { case leading, trailing }
 
 private struct Glass: ViewModifier {
     let material: NSVisualEffectView.Material
@@ -143,16 +205,7 @@ private struct Glass: ViewModifier {
         content
             .background(GlassBackdrop(material: material))
             .background(palette.glassFill)
-            .overlay(alignment: alignment) { hairline }
-            .overlay(alignment: .top) { topHighlight }
-    }
-
-    private var alignment: Alignment {
-        switch edge {
-        case .leading: return .leading
-        case .trailing: return .trailing
-        case .bottom: return .bottom
-        }
+            .overlay(alignment: edge == .leading ? .leading : .trailing) { hairline }
     }
 
     /// The inner edge carries the 1px hairline with a fainter highlight just
@@ -169,19 +222,36 @@ private struct Glass: ViewModifier {
                 palette.innerHighlight.frame(width: 1)
                 palette.hairline.frame(width: 1)
             }
-        case .bottom:
-            palette.hairline.frame(height: 1)
         }
     }
+}
 
-    @ViewBuilder private var topHighlight: some View {
-        if edge == .bottom { palette.topHighlight.frame(height: 1) }
+/// The navigator's surface: the same glass, but as a rounded floating card with
+/// a hairline all the way round and a soft shadow onto the canvas.
+private struct GlassCard: ViewModifier {
+    let palette: Palette
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Layout.cardRadius, style: .continuous)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .background(GlassBackdrop(material: .sidebar))
+            .background(palette.glassFill)
+            .clipShape(shape)
+            .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+            .shadow(color: .black.opacity(0.18), radius: 13, x: 0, y: 8)
     }
 }
 
 private extension View {
     func glass(_ material: NSVisualEffectView.Material, edge: GlassEdge, palette: Palette) -> some View {
         modifier(Glass(material: material, edge: edge, palette: palette))
+    }
+
+    func glassCard(palette: Palette) -> some View {
+        modifier(GlassCard(palette: palette))
     }
 }
 
@@ -289,21 +359,24 @@ struct CupboardHostApp: App {
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!host.canRedo())
             }
+            CommandGroup(after: .sidebar) {
+                let _ = model.generation
+                Toggle("Show Speaker Notes", isOn: Binding(
+                    get: { host.showNotes() },
+                    set: { _ in host.toggleNotes() }
+                ))
+            }
         }
     }
 }
 
 // MARK: - Editor
 
-private enum InspectorTab { case format, animate }
-
 private struct EditorView: View {
     let model: EditorModel
     @Binding var playSession: PlaySession?
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var sidebarVisible = true
-    @State private var inspectorTab = InspectorTab.format
     /// Zoom is view-local in the Kotlin host, outside `states`, so the label
     /// reads from this mirror rather than waiting on a generation bump.
     @State private var zoomPercent: Int = 0
@@ -311,57 +384,107 @@ private struct EditorView: View {
     private var host: EditorHost { model.host }
     private var palette: Palette { Palette.of(colorScheme) }
 
-    /// Canvas at the back, edge to edge; the three glass surfaces over it. The
-    /// toolbar spans exactly the gap the two full-height panels leave.
+    /// One read of the shared chrome state per body pass. Everything a click
+    /// shows comes back through here, never from a local copy.
+    private struct Chrome {
+        let sidebarOpen: Bool
+        let inspectorOpen: Bool
+        let tab: InspectorTab
+        let showNotes: Bool
+        let notes: String
+    }
+
+    /// Touching `generation` is what subscribes this view to store changes.
+    private var chrome: Chrome {
+        let _ = model.generation
+        return Chrome(
+            sidebarOpen: host.sidebarOpen(),
+            inspectorOpen: host.inspectorOpen(),
+            tab: host.inspectorTab(),
+            showNotes: host.showNotes(),
+            notes: host.slideNotes()
+        )
+    }
+
+    /// Canvas at the back, edge to edge; the notes strip over it; the two panels
+    /// over that (the notes pass visibly behind the navigator card); the toolbar
+    /// over the panels, so its right-hand controls float on the inspector glass.
     var body: some View {
-        ZStack {
+        let ui = chrome
+        return ZStack {
             ComposeCanvas(host: host)
 
-            HStack(alignment: .top, spacing: 0) {
-                if sidebarVisible {
-                    sidebar.transition(.move(edge: .leading))
-                }
-                toolbar
-                inspector
+            if ui.showNotes {
+                notesStrip(ui)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom))
+            }
+
+            panels(ui)
+
+            toolbar(ui)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+            if !ui.sidebarOpen {
+                collapsedChrome
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .frame(minWidth: 1100, minHeight: 640)
+        .animation(.easeInOut(duration: 0.2), value: ui.sidebarOpen)
+        .animation(.easeInOut(duration: 0.2), value: ui.inspectorOpen)
+        .animation(.easeInOut(duration: 0.2), value: ui.showNotes)
         // The well is painted Kotlin-side, so the appearance has to be pushed in.
         .onAppear { host.setDarkChrome(dark: colorScheme == .dark) }
         .onChange(of: colorScheme) { _, scheme in host.setDarkChrome(dark: scheme == .dark) }
     }
 
-    // MARK: Sidebar
+    private func panels(_ ui: Chrome) -> some View {
+        HStack(spacing: 0) {
+            if ui.sidebarOpen {
+                navigatorCard
+                    .frame(width: Layout.sidebar)
+                    .padding(.leading, Layout.cardLeading)
+                    .padding(.top, Layout.cardTop)
+                    .padding(.bottom, Layout.cardBottom)
+                    .transition(.move(edge: .leading))
+            }
+            Spacer(minLength: 0)
+            if ui.inspectorOpen {
+                inspector(ui).transition(.move(edge: .trailing))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 
-    private var sidebar: some View {
+    // MARK: Navigator
+
+    private var navigatorCard: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 // The traffic lights live here, drawn by the window itself.
-                Spacer(minLength: 80)
+                Spacer(minLength: 62)
                 sidebarToggle
             }
-            .padding(.leading, 18)
-            .padding(.trailing, 14)
+            .padding(.trailing, Layout.edge)
             .frame(height: Layout.header)
 
             navigator
         }
-        .frame(width: Layout.sidebar)
         .frame(maxHeight: .infinity)
-        .glass(.sidebar, edge: .trailing, palette: palette)
+        .glassCard(palette: palette)
     }
 
     private var sidebarToggle: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) { sidebarVisible.toggle() }
-        } label: {
+        Button { host.toggleSidebar() } label: {
             Image(systemName: "sidebar.left")
                 .font(.system(size: 15, weight: .regular))
                 .foregroundStyle(palette.icon)
                 .frame(width: 26, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-        .help(sidebarVisible ? "Hide sidebar" : "Show sidebar")
+        .help("Hide sidebar")
     }
 
     private var navigator: some View {
@@ -369,70 +492,133 @@ private struct EditorView: View {
         let _ = model.generation
         let selected = host.selectedSlideIndex()
         return ScrollView {
-            LazyVStack(alignment: .leading, spacing: 6) {
+            LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(host.outline().enumerated()), id: \.offset) { _, row in
-                    if row.slideIndex < 0 {
-                        Text(row.title)
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(palette.subtle)
-                            .padding(.leading, CGFloat(row.depth) * 14)
-                    } else {
-                        navigatorRow(row, selected: row.slideIndex == selected)
-                    }
+                    navigatorRow(row, selected: row.slideIndex == selected)
                 }
             }
-            .padding(EdgeInsets(top: 2, leading: 6, bottom: 16, trailing: 10))
+            .padding(EdgeInsets(top: 2, leading: 8, bottom: 16, trailing: 8))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
     }
 
+    /// Keynote's row: number outside the thumbnail, bottom-aligned to it, both
+    /// inside a selection capsule that hugs them. A slide with children carries
+    /// its disclosure chevron on a strip under the row, not in a leading gutter,
+    /// which is what keeps every thumbnail flush to the card's left edge.
     private func navigatorRow(_ row: OutlineRow, selected: Bool) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text("\(row.slideIndex + 1)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(palette.faint)
-                .frame(width: 16, alignment: .trailing)
-            // Thumbnail rendered by the shared Compose renderer
-            if let thumb = host.thumbnail(index: row.slideIndex, width: 140) {
-                Image(nsImage: thumb)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 5)
-                            .stroke(
-                                selected ? palette.accent : Color.gray.opacity(0.4),
-                                lineWidth: selected ? 2 : 1
-                            )
-                    )
-            } else {
-                Text(row.title)
-                    .font(.system(size: 13))
-                    .foregroundStyle(palette.text)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .bottom, spacing: 5) {
+                Text("\(row.slideIndex + 1)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.faint)
+                    .frame(width: 12, alignment: .trailing)
+                    .padding(.bottom, 2)
+                thumbnail(row)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 6)
+            .background { selectionCapsule(selected) }
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .onTapGesture { host.selectSlide(index: row.slideIndex) }
+            .padding(.leading, CGFloat(row.depth) * 16)
+
+            if row.hasChildren {
+                Button { host.toggleCollapsed(index: row.slideIndex) } label: {
+                    Text(row.collapsed ? "\u{203A}" : "\u{2304}")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.dim)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 22)
+                        .contentShape(RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+                .help(row.collapsed ? "Expand" : "Collapse")
             }
         }
-        .padding(.leading, CGFloat(row.depth) * 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture { host.selectSlide(index: row.slideIndex) }
+    }
+
+    @ViewBuilder private func selectionCapsule(_ selected: Bool) -> some View {
+        if selected {
+            let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+            shape
+                .fill(palette.selection)
+                .overlay {
+                    shape
+                        .inset(by: 0.5)
+                        .stroke(palette.selectionEdge, lineWidth: 1)
+                        .mask(
+                            LinearGradient(
+                                colors: [.white, .clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                }
+        }
+    }
+
+    /// Rendered by the shared Compose renderer, so a thumbnail is the slide.
+    /// No accent ring and no shadow: the capsule alone marks selection.
+    @ViewBuilder private func thumbnail(_ row: OutlineRow) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        if let image = host.thumbnail(index: row.slideIndex, width: Int32(Layout.thumbnail)) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: Layout.thumbnail)
+                .clipShape(shape)
+                .overlay { shape.inset(by: 0.5).stroke(palette.thumbEdge, lineWidth: 1) }
+        } else {
+            shape
+                .fill(Color.black.opacity(0.2))
+                .frame(width: Layout.thumbnail, height: Layout.thumbnail * 9 / 16)
+        }
+    }
+
+    // MARK: Collapsed chrome
+
+    private var collapsedChrome: some View {
+        Button { host.toggleSidebar() } label: {
+            pill { Image(systemName: "sidebar.left").font(.system(size: 15)) }
+        }
+        .buttonStyle(.plain)
+        .help("Show sidebar")
+        .padding(.leading, Layout.collapsedToggle)
+        .frame(height: Layout.header)
     }
 
     // MARK: Toolbar
 
-    private var toolbar: some View {
-        HStack(spacing: 14) {
-            if !sidebarVisible { sidebarToggle }
+    /// No bar of its own: no fill, no blur, no hairline. Only the capsules are
+    /// opaque, and they float straight over the canvas and the inspector glass.
+    private func toolbar(_ ui: Chrome) -> some View {
+        HStack(spacing: Layout.edge) {
             documentName
             Spacer(minLength: 8)
             toolbarCluster
             Spacer(minLength: 8)
             zoomPill
+            if ui.inspectorOpen {
+                // Fixed 254pt region over the inspector, laid out space-between:
+                // Share 14 inside the panel's left edge, tabs 14 from the window.
+                HStack(spacing: Layout.edge) {
+                    shareButton
+                    Spacer(minLength: 0)
+                    tabGroup(ui)
+                }
+                .frame(width: Layout.tabRegion)
+                .padding(.leading, Layout.edge)
+            } else {
+                shareButton
+                tabGroup(ui)
+            }
         }
-        .padding(.leading, sidebarVisible ? 18 : Layout.trafficLights)
-        .padding(.trailing, 14)
-        .frame(maxWidth: .infinity)
+        .padding(.leading, (ui.sidebarOpen ? Layout.toolbarOpen : Layout.toolbarClosed) + Layout.inset)
+        .padding(.trailing, Layout.edge)
         .frame(height: Layout.header)
-        .glass(.headerView, edge: .bottom, palette: palette)
     }
 
     private var documentName: some View {
@@ -458,26 +644,15 @@ private struct EditorView: View {
 
             placeholderPill("plus.rectangle", help: "Add slide")
 
-            // Insert group: recessed and accent-tinted, per the mock.
-            recessedGroup(tint: palette.accentSoft, symbols: [
-                ("rectangle.badge.plus", "Add slide from layout"),
-                ("rectangle.split.1x2", "Add section"),
-                ("character.textbox", "Add text slide"),
-                ("photo.badge.plus", "Add image slide"),
-                ("square.grid.3x3.fill", "Light table"),
-            ])
-
-            recessedGroup(tint: palette.icon, symbols: [
-                ("tablecells", "Table"),
-                ("chart.pie", "Chart"),
-                ("textformat", "Text"),
-                ("square.on.circle", "Shape"),
-                ("paperclip", "Attach"),
-            ])
+            insertCapsule
 
             placeholderPill("bubble.left", help: "Comment")
         }
         .fixedSize()
+    }
+
+    private var shareButton: some View {
+        placeholderPill("square.and.arrow.up", help: "Share")
     }
 
     private func pill<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -489,21 +664,29 @@ private struct EditorView: View {
 
     private func placeholderPill(_ symbol: String, help: String) -> some View {
         Button {} label: {
-            pill { Image(systemName: symbol).font(.system(size: 13)) }
+            pill { Image(systemName: symbol).font(.system(size: 13)).opacity(0.45) }
         }
         .buttonStyle(.plain)
         .disabled(true)
-        .opacity(0.45)
         .help(help)
     }
 
-    private func recessedGroup(tint: Color, symbols: [(String, String)]) -> some View {
+    /// The one insert cluster: raised capsule, 30x24 items. Placeholders until
+    /// the element library lands.
+    private var insertCapsule: some View {
         HStack(spacing: 2) {
-            ForEach(symbols, id: \.0) { symbol, help in
+            let items = [
+                ("tablecells", "Table"),
+                ("chart.pie", "Chart"),
+                ("textformat", "Text"),
+                ("square.on.circle", "Shape"),
+                ("paperclip", "Media"),
+            ]
+            ForEach(items, id: \.0) { symbol, help in
                 Button {} label: {
                     Image(systemName: symbol)
                         .font(.system(size: 13))
-                        .foregroundStyle(tint)
+                        .foregroundStyle(palette.icon.opacity(0.45))
                         .frame(width: 30, height: 24)
                         .contentShape(RoundedRectangle(cornerRadius: 7))
                 }
@@ -513,8 +696,50 @@ private struct EditorView: View {
             }
         }
         .padding(3)
-        .background(palette.segBg, in: RoundedRectangle(cornerRadius: 10))
-        .opacity(0.45)
+        .background(palette.ctrl, in: Capsule())
+    }
+
+    // MARK: Inspector tabs
+
+    /// Three tabs in one raised capsule. The active one is a grey pill; all
+    /// three icons keep the same ink, and the divider next to the active tab
+    /// hides so the pill reads as one shape.
+    private func tabGroup(_ ui: Chrome) -> some View {
+        HStack(spacing: 0) {
+            tabButton(InspectorTab.format, symbol: "paintbrush", help: "Format", ui: ui)
+            tabDivider(InspectorTab.format, InspectorTab.animate, ui: ui)
+            tabButton(InspectorTab.animate, symbol: "diamond", help: "Animate", ui: ui)
+            tabDivider(InspectorTab.animate, InspectorTab.document, ui: ui)
+            tabButton(InspectorTab.document, symbol: "rectangle.fill", help: "Document", ui: ui)
+        }
+        .padding(2)
+        .background(palette.ctrl, in: Capsule())
+    }
+
+    private func tabButton(_ tab: InspectorTab, symbol: String, help: String, ui: Chrome) -> some View {
+        let on = ui.inspectorOpen && ui.tab == tab
+        return Button {
+            // Clicking the tab you are already on closes the inspector.
+            if on { host.closeInspector() } else { host.selectInspectorTab(tab: tab) }
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.ctrlText)
+                .frame(width: 34, height: 26)
+                .background(
+                    on ? palette.tabOn : .clear,
+                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func tabDivider(_ before: InspectorTab, _ after: InspectorTab, ui: Chrome) -> some View {
+        let active = ui.inspectorOpen ? ui.tab : nil
+        let hidden = active == before || active == after
+        return (hidden ? Color.clear : palette.tabDivider).frame(width: 1, height: 16)
     }
 
     // MARK: Zoom
@@ -559,54 +784,229 @@ private struct EditorView: View {
 
     // MARK: Inspector
 
-    private var inspector: some View {
+    /// Header is bare: Share and the tabs moved to the toolbar, which floats
+    /// over this glass, so the panel only owns the title under them.
+    private func inspector(_ ui: Chrome) -> some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button {} label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 14))
-                        .foregroundStyle(palette.icon)
-                        .frame(width: 28, height: 26)
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
-                .opacity(0.45)
-                .help("Share")
+            Color.clear.frame(height: Layout.header)
 
+            Text(inspectorTitle(ui.tab))
+                .font(.system(size: 13))
+                .foregroundStyle(palette.subtle)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
+                .padding(.horizontal, Layout.panelPadding)
+                .padding(.bottom, 12)
+
+            if ui.tab == InspectorTab.document {
+                documentPanel
+            } else {
+                // Format and Animate bodies land in a later pass.
                 Spacer(minLength: 0)
-                inspectorTabs
             }
-            .padding(.horizontal, 14)
-            .frame(height: Layout.header)
-
-            // Panel body lands in a later pass.
-            Spacer(minLength: 0)
         }
         .frame(width: Layout.inspector)
         .frame(maxHeight: .infinity)
         .glass(.sidebar, edge: .leading, palette: palette)
     }
 
-    private var inspectorTabs: some View {
-        HStack(spacing: 2) {
-            inspectorTabButton("paintbrush", tab: .format, help: "Format")
-            inspectorTabButton("diamond", tab: .animate, help: "Animate")
-        }
-        .padding(2)
-        .background(palette.segBg, in: RoundedRectangle(cornerRadius: 8))
+    private func inspectorTitle(_ tab: InspectorTab) -> String {
+        if tab == InspectorTab.animate { return "Build" }
+        if tab == InspectorTab.document { return "Slide" }
+        return "Text"
     }
 
-    private func inspectorTabButton(_ symbol: String, tab: InspectorTab, help: String) -> some View {
-        let on = inspectorTab == tab
-        return Button { inspectorTab = tab } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 13))
-                .foregroundStyle(on ? palette.segOnText : palette.segOff)
-                .frame(width: 30, height: 24)
-                .background(on ? palette.segOn : .clear, in: RoundedRectangle(cornerRadius: 6))
+    // MARK: Document panel
+
+    /// Static for now: the slide's layout, appearance and background are not in
+    /// the document model yet, so every control here is inert.
+    private var documentPanel: some View {
+        VStack(alignment: .leading, spacing: Layout.panelPadding) {
+            slideLayoutCard
+            appearanceSection
+            palette.divider.frame(height: 1)
+            backgroundSection
+            Spacer(minLength: 0)
+            editLayoutButton
         }
-        .buttonStyle(.plain)
-        .help(help)
+        .padding(Layout.panelPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var slideLayoutCard: some View {
+        HStack(spacing: 12) {
+            layoutPreview
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Slide Layout")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.subtle)
+                Text("Title")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.text)
+            }
+            Spacer(minLength: 0)
+            Text("\u{2304}")
+                .font(.system(size: 10))
+                .foregroundStyle(palette.subtle)
+        }
+        .padding(10)
+        .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    /// A slide the way a layout picker draws one: white paper, three grey bars.
+    private var layoutPreview: some View {
+        let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
+        return VStack(alignment: .leading, spacing: 0) {
+            previewBar(width: 34, height: 4, color: Color(rgb: 0x2A2630))
+            previewBar(width: 23, height: 3, color: Color(rgb: 0x9A958D))
+                .padding(.top, 3)
+            previewBar(width: 17, height: 2.5, color: Color(rgb: 0xC9C4BD))
+                .padding(.top, 10)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
+        .frame(width: 62, height: 35, alignment: .topLeading)
+        .background(Color.white, in: shape)
+        .overlay { shape.inset(by: 0.5).stroke(Color.black.opacity(0.12), lineWidth: 1) }
+    }
+
+    private func previewBar(width: CGFloat, height: CGFloat, color: Color) -> some View {
+        RoundedRectangle(cornerRadius: 1).fill(color).frame(width: width, height: height)
+    }
+
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Appearance")
+            checkRow("Title", on: true)
+            checkRow("Body", on: true)
+            checkRow("Slide Number", on: false)
+        }
+    }
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .bold))
+            .foregroundStyle(palette.subtle)
+    }
+
+    private func checkRow(_ label: String, on: Bool) -> some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(on ? palette.accent : palette.track)
+                .frame(width: 15, height: 15)
+                .overlay {
+                    if on {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(palette.accentText)
+                    }
+                }
+            Text(label)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.text)
+        }
+    }
+
+    private var backgroundSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Background")
+
+            HStack(spacing: 2) {
+                segment("Standard", on: true)
+                segment("Dynamic", on: false)
+            }
+            .padding(2)
+            .frame(height: 26)
+            .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            HStack(spacing: 0) {
+                Text("Colour Fill")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(palette.ctrlText)
+                Spacer(minLength: 0)
+                Text("\u{2304}")
+                    .font(.system(size: 9))
+                    .foregroundStyle(palette.subtle)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 24)
+            .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.white)
+                    .frame(height: 24)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .inset(by: 0.5)
+                            .stroke(Color.black.opacity(0.14), lineWidth: 1)
+                    }
+                colourWheel
+            }
+        }
+    }
+
+    private func segment(_ label: String, on: Bool) -> some View {
+        Text(label)
+            .font(.system(size: 12, weight: on ? .semibold : .regular))
+            .foregroundStyle(on ? palette.accentText : palette.subtle)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(
+                on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
+                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+            )
+    }
+
+    private var colourWheel: some View {
+        Circle()
+            .fill(
+                AngularGradient(
+                    colors: [
+                        Color(rgb: 0xF0357B), Color(rgb: 0xFFC24B), Color(rgb: 0x43C57E),
+                        Color(rgb: 0x3FA9F5), Color(rgb: 0x7F52FF), Color(rgb: 0xF0357B),
+                    ],
+                    center: .center
+                )
+            )
+            .frame(width: 22, height: 22)
+            .overlay { Circle().inset(by: 0.5).stroke(Color.black.opacity(0.14), lineWidth: 1) }
+    }
+
+    private var editLayoutButton: some View {
+        Text("Edit Slide Layout")
+            .font(.system(size: 12.5))
+            .foregroundStyle(palette.ctrlText)
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(palette.buttonFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    // MARK: Speaker notes
+
+    /// Full window width and pinned to the bottom, so it passes behind the
+    /// navigator card. Its text insets clear whichever panel is open.
+    private func notesStrip(_ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SPEAKER NOTES")
+                .font(.system(size: 10.5, weight: .bold))
+                .tracking(1.2)
+                .foregroundStyle(palette.faint)
+            Text(ui.notes)
+                .font(.system(size: 13.5))
+                .foregroundStyle(palette.dim)
+                .lineSpacing(6.75)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 18)
+        .padding(.bottom, 20)
+        .padding(.leading, ui.sidebarOpen ? Layout.notesLeading : Layout.notesInset)
+        .padding(.trailing, ui.inspectorOpen ? Layout.notesTrailing : Layout.notesInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Layout.notes)
+        .background(palette.panel)
+        .overlay(alignment: .top) { palette.divider.frame(height: 1) }
     }
 
     private func startPlay() {
