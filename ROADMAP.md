@@ -20,9 +20,9 @@ What we're building and in what order. See `GOALS.md` for the why, `design/READM
 macOS, Windows, and Linux are built side by side; there is no dedicated desktop client. Every later phase lands shared core first, then its UI on each shell in parallel (the `/ship` flow).
 
 - [x] macOS chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); no status bar on macOS. Live zoom pill (Fit + 25-200%); insert clusters and inspector body are placeholders until their phases. (`dc8f842`, needs a visual pass)
-- [ ] macOS navigator rows per the Keynote 26 spec: capsule selection (no thumbnail ring), number outside the thumbnail, 14px chevron gutter, 20px/level indent.
+- [x] macOS navigator rows per the Keynote 26 spec (design v4): floating card, capsule selection hugging number + thumbnail (no ring), disclosure strip under the parent row, 16px/level indent. (`4b4bb12`, needs a visual pass)
 - [x] macOS full-bleed canvas embed via `ComposeNSView` (window content layer at origin 0,0; retires the skiko Metal-layer offset band). (`f386691`, needs a visual pass)
-- [ ] Inspector chrome on every shell: Format/Animate tabs (AppKit-style on macOS, M3 on Compose, Fluent on WinUI); panels fill in as their features land in later phases.
+- [ ] Inspector chrome on every shell: macOS landed per design v4 (Format/Animate/Document tabs live in the toolbar over the inspector glass, active tab closes the panel, Text/Build/Slide placeholder bodies incl. the static Document panel; `4b4bb12`, needs a visual pass). Still owed: M3 tabs on Compose and Fluent on WinUI (three tabs there too: Format/Animate/Slide); panels fill in as their features land in later phases.
 - [ ] Linux chrome in Material 3 per the design: navigator, toolbar, inspector, speaker notes strip, status bar; OS styling tokenized (`design/platform-theme.js` is the source) so this shell doubles as the universal fallback.
 - [ ] Windows: embed the Compose canvas per `winuiApp/CANVAS.md` (child JVM process reparented via `SetParent`, JVM owns the one `EditorViewModel`, native lib becomes an IPC proxy; keyboard-focus risk timeboxed, Compose fallback on kill criteria). Chrome parity already landed (`6cec865`, `30bb632`): view models shared via the `Cupboard.Kotlin` NuGet, MenuBar/navigator/status bar in Fluent, CI's windows job blocking and green. Needs a visual pass on a Windows machine.
 - [ ] Fallback rule: if a native route stalls, that platform ships the tokenized Compose shell instead (mac or Fluent tokens) without blocking the others.
@@ -102,7 +102,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 - ~~The drag-freeze bug~~ Resolved: bisected to `9bc97ce`, and the vsync suspicion was wrong. Snapshot writes to canvas-local state from pointer handlers intermittently never reach the recomposer (input, frame clock and draw all traced healthy while frozen); state that roundtrips through the view model always renders. Fixed by streaming transient `PreviewSlide` events through the loop, one `UpdateSlide` on release (undo/autosave boundary), canvas trusts the roundtrip again and `6ea6a03`'s write-behind is gone. Still owed: a minimal repro for an upstream Compose Multiplatform issue (local snapshot write from a `pointerInput` handler on an idle window).
 
 - Collaboration/sync (`● synced` in the design status bar): real-time co-editing implies a backend and CRDT-shaped document work; comments/highlights ride the same infrastructure. Out of scope until the editor core is done.
-- Speaker-notes authoring UX: strip (per design) vs panel; and whether notes join the presenter-display Phase 7 work or land earlier with the shared model.
+- Speaker-notes authoring UX: read-only strips shipped in both shells per the design (`4b4bb12` mac, `86d6a74` desktop); still open whether notes are *edited* in the strip or a panel, and whether editing lands with Phase 6's presenter display or earlier.
 
 ## Not planned
 
