@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <mask id="cbPlay">
+      <rect width="128" height="128" fill="#fff"></rect>
+      <path d="M48.5 34 L61 41 L48.5 48 Z" fill="#000"></path>
+    </mask>
+  </defs>
+  <g fill="none" stroke="currentColor" stroke-width="8">
+    <rect x="14" y="14" width="100" height="100" rx="20"></rect>
+    <path d="M18 64 H110"></path>
+  </g>
+  <rect x="26" y="26" width="54" height="30" rx="4" fill="currentColor" mask="url(#cbPlay)"></rect>
+  <path d="M88 83.3 A10 10 0 1 1 88 100.7 L90.3 96.8 A5.5 5.5 0 1 0 90.3 87.2 Z" fill="currentColor"></path>
+  <path d="M59 79 H95 L93.5 96 A19 19 0 0 1 60.5 96 Z" fill="currentColor"></path>
+</svg>
