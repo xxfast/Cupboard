@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
@@ -82,36 +84,64 @@ fun EditorView(
                 onSelectSlide = onSelectSlide,
                 onToggleCollapsed = onToggleCollapsed,
             )
-            Column(Modifier.weight(1f).fillMaxHeight().padding(28.dp)) {
-                if (onPlay != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        TextButton(
-                            onClick = {
-                                onPlay(state.document, state.selectedSlideIndex().coerceAtLeast(0))
-                            },
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                Column(Modifier.weight(1f).fillMaxWidth().padding(28.dp)) {
+                    if (onPlay != null) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                            horizontalArrangement = Arrangement.End,
                         ) {
-                            Text("▶ Play", color = Color(0xFFD9CFFF), fontSize = 13.sp)
+                            TextButton(
+                                onClick = {
+                                    onPlay(state.document, state.selectedSlideIndex().coerceAtLeast(0))
+                                },
+                            ) {
+                                Text("▶ Play", color = Color(0xFFD9CFFF), fontSize = 13.sp)
+                            }
                         }
                     }
+                    Box(
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EditorCanvas(
+                            slide = selectedSlide,
+                            selectedElementId = state.selectedElementId,
+                            onSelectElement = onSelectElement,
+                            onSlideChange = onUpdateSlide,
+                            onSlidePreview = onPreviewSlide,
+                            onPreviewCancel = onCancelPreview,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    EditorCanvas(
-                        slide = selectedSlide,
-                        selectedElementId = state.selectedElementId,
-                        onSelectElement = onSelectElement,
-                        onSlideChange = onUpdateSlide,
-                        onSlidePreview = onPreviewSlide,
-                        onPreviewCancel = onCancelPreview,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+                if (state.showNotes) SpeakerNotes(notes = selectedSlide.notes)
             }
+        }
+    }
+}
+
+@Composable
+private fun SpeakerNotes(notes: String) {
+    Column(Modifier.fillMaxWidth().background(Color(0xFF1E1F26))) {
+        HorizontalDivider(thickness = 1.dp, color = Color(0xFF33363D))
+        Column(
+            modifier = Modifier.padding(top = 12.dp, start = 24.dp, end = 24.dp, bottom = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "SPEAKER NOTES",
+                color = Color(0xFF8A8B94),
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+            )
+            if (notes.isNotEmpty()) Text(
+                text = notes,
+                color = Color(0xFFA0A0A8),
+                fontSize = 13.5.sp,
+                lineHeight = 20.25.sp,
+            )
         }
     }
 }
