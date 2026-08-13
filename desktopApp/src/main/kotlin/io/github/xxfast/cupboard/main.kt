@@ -65,6 +65,11 @@ private fun systemTheme(): SystemTheme = when (currentSystemTheme) {
 }
 
 fun main() {
+    // AWT title bars on macOS stay light aqua regardless of the OS appearance
+    // unless the app opts into following it. JetBrains Runtime honours this;
+    // other JVMs and platforms ignore it. Must be set before the first window.
+    System.setProperty("apple.awt.application.appearance", "system")
+
     // One view model for the whole app: the editor window and the play window are
     // two views onto it, not two editors. Autosave lives inside it. Where the
     // document lives and how it loads is the factory's business, not this shell's.
