@@ -6,6 +6,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.visibleIndices
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** One navigator row, already resolved for the shell that renders it. */
 data class OutlineEntry(
@@ -38,6 +39,15 @@ data class EditorState(
      * carried its own past would serialize every version of the document. */
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
+    /**
+     * True between the first preview of a gesture and its commit, so a shell can
+     * tell a mid-drag document from a settled one. Anything expensive that only
+     * needs the settled document (the navigator's rasterized thumbnails) skips
+     * the in-between frames instead of paying for every pointer sample.
+     *
+     * Transient: a state restored from disk is by definition not mid-gesture.
+     */
+    @Transient val isPreviewing: Boolean = false,
 ) {
     /** The selected slide, falling back to the first one if the id went stale. */
     val selectedSlide: Slide

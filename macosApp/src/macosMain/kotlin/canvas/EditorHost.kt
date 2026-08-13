@@ -202,11 +202,19 @@ class EditorHost {
      * emission, and a drag emits one per pointer sample, so rendering each row
      * every time starved the main thread. Only the slide that actually changed
      * misses the cache.
+     *
+     * Mid-gesture the cache answers even for the slide being dragged, stale on
+     * purpose: one render costs 20-30ms, and paying that per pointer sample ate
+     * three quarters of the main thread. The commit clears [EditorState.isPreviewing]
+     * and the row catches up then, one render per gesture.
      */
     fun thumbnail(index: Int, width: Int): NSImage? {
         val slide = state.document.allSlides().getOrNull(index) ?: return null
         val cached = thumbnails[slide.id]
-        if (cached != null && cached.width == width && cached.slide == slide) return cached.image
+        // Settled, the cache has to match the slide; mid-gesture any render of it will do.
+        val usable = cached != null && cached.width == width &&
+            (cached.slide == slide || state.isPreviewing)
+        if (usable) return cached.image
 
         val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {

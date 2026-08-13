@@ -107,6 +107,32 @@ class EditorUndoRedoTest {
     }
 
     @Test
+    fun previewsFlagTheGestureUntilItCommits() = runTest {
+        val viewModel = editor()
+        val slide = viewModel.states.value.selectedSlide
+        assertFalse(viewModel.states.value.isPreviewing)
+
+        viewModel.onPreviewSlide(slide.copy(title = "One"))
+        assertTrue(viewModel.await { it.selectedSlide.title == "One" }.isPreviewing)
+
+        viewModel.onUpdateSlide(slide.copy(title = "Final"))
+        assertFalse(viewModel.await { it.selectedSlide.title == "Final" }.isPreviewing)
+    }
+
+    @Test
+    fun aCancelledGestureClearsThePreviewFlag() = runTest {
+        val viewModel = editor()
+        val before = viewModel.states.value.document
+        val slide = viewModel.states.value.selectedSlide
+
+        viewModel.onPreviewSlide(slide.copy(title = "One"))
+        assertTrue(viewModel.await { it.selectedSlide.title == "One" }.isPreviewing)
+
+        viewModel.onCancelPreview()
+        assertFalse(viewModel.await { it.document == before }.isPreviewing)
+    }
+
+    @Test
     fun aGestureOfPreviewsUndoesAsOneEdit() = runTest {
         val viewModel = editor()
         val before = viewModel.states.value.document

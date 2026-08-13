@@ -86,20 +86,26 @@ fun EditorPresenter(
                 // gesture is one edit, and it isn't done yet.
                 is PreviewSlide -> {
                     if (gestureBase == null) gestureBase = state.document
-                    state.copy(document = state.document.updateSlide(event.slide))
+                    state.copy(
+                        document = state.document.updateSlide(event.slide),
+                        isPreviewing = true,
+                    )
                 }
 
                 is UpdateSlide -> {
                     undone.push(gestureBase ?: state.document)
                     gestureBase = null
                     redone.clear()
-                    state.copy(document = state.document.updateSlide(event.slide))
+                    state.copy(
+                        document = state.document.updateSlide(event.slide),
+                        isPreviewing = false,
+                    )
                 }
 
                 CancelPreview -> gestureBase
                     ?.let { base ->
                         gestureBase = null
-                        state.copy(document = base)
+                        state.copy(document = base, isPreviewing = false)
                     }
                     ?: state
 
