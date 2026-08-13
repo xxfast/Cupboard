@@ -1,12 +1,20 @@
+@file:OptIn(InternalComposeUiApi::class)
+
 package io.github.xxfast.cupboard
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.SystemTheme
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.KeyShortcut
@@ -23,6 +31,9 @@ import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
+import kotlinx.coroutines.delay
+import org.jetbrains.skiko.currentSystemTheme
+import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
 
 private data class PlayRequest(val document: Document, val slideIndex: Int)
 
@@ -34,6 +45,24 @@ private val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWit
 
 private fun editShortcut(shift: Boolean = false): KeyShortcut =
     KeyShortcut(Key.Z, shift = shift, meta = isMacOs, ctrl = !isMacOs)
+
+/** The OS dark/light setting as a live value, re-read every second. */
+@Composable
+private fun pollSystemTheme(): SystemTheme {
+    val theme: SystemTheme by produceState(initialValue = systemTheme()) {
+        while (true) {
+            delay(1_000)
+            value = systemTheme()
+        }
+    }
+    return theme
+}
+
+private fun systemTheme(): SystemTheme = when (currentSystemTheme) {
+    SkikoSystemTheme.DARK -> SystemTheme.Dark
+    SkikoSystemTheme.LIGHT -> SystemTheme.Light
+    SkikoSystemTheme.UNKNOWN -> SystemTheme.Unknown
+}
 
 fun main() {
     // One view model for the whole app: the editor window and the play window are
@@ -67,12 +96,18 @@ fun main() {
                 }
             }
 
-            EditorScreen(
-                viewModel = viewModel,
-                // The document and index the editor has right now: play is a
-                // snapshot, later edits don't reach the running presentation.
-                onPlay = { document, index -> playing = PlayRequest(document, index) },
-            )
+            // Desktop Compose reads the OS theme once, lazily (LocalSystemTheme's
+            // default is a one-shot skiko read), so a running app never sees the
+            // system switch. Re-providing it from a poll keeps the shared shell's
+            // isSystemInDarkTheme() live.
+            CompositionLocalProvider(LocalSystemTheme provides pollSystemTheme()) {
+                EditorScreen(
+                    viewModel = viewModel,
+                    // The document and index the editor has right now: play is a
+                    // snapshot, later edits don't reach the running presentation.
+                    onPlay = { document, index -> playing = PlayRequest(document, index) },
+                )
+            }
         }
 
         playing?.let { request ->
