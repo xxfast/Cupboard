@@ -27,10 +27,17 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.ZOrderMove.Backward
+import io.github.xxfast.cupboard.document.ZOrderMove.Forward
+import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
+import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
+import io.github.xxfast.cupboard.screens.editor.FlipAxis.Horizontal
+import io.github.xxfast.cupboard.screens.editor.FlipAxis.Vertical
 import kotlinx.coroutines.delay
 import org.jetbrains.skiko.currentSystemTheme
 import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
@@ -97,6 +104,56 @@ fun main() {
                         shortcut = editShortcut(shift = true),
                         enabled = state.canRedo,
                         onClick = viewModel::onRedo,
+                    )
+                }
+
+                // Everything here needs something selected, and everything but
+                // the unlock needs it unlocked: the same rule the presenter
+                // applies, so a greyed item is never a silently dropped event.
+                val element: Element? = state.selectedElement
+                val editable: Boolean = element != null && !element.locked
+
+                Menu("Arrange", mnemonic = 'A') {
+                    Item(
+                        text = "Bring Forward",
+                        enabled = editable,
+                        onClick = { element?.let { viewModel.onReorderElement(it.id, Forward) } },
+                    )
+                    Item(
+                        text = "Send Backward",
+                        enabled = editable,
+                        onClick = { element?.let { viewModel.onReorderElement(it.id, Backward) } },
+                    )
+                    Item(
+                        text = "Bring to Front",
+                        enabled = editable,
+                        onClick = { element?.let { viewModel.onReorderElement(it.id, ToFront) } },
+                    )
+                    Item(
+                        text = "Send to Back",
+                        enabled = editable,
+                        onClick = { element?.let { viewModel.onReorderElement(it.id, ToBack) } },
+                    )
+
+                    Separator()
+
+                    Item(
+                        text = "Flip Horizontally",
+                        enabled = editable,
+                        onClick = { element?.let { viewModel.onFlipElement(it.id, Horizontal) } },
+                    )
+                    Item(
+                        text = "Flip Vertically",
+                        enabled = editable,
+                        onClick = { element?.let { viewModel.onFlipElement(it.id, Vertical) } },
+                    )
+
+                    Separator()
+
+                    Item(
+                        text = if (element?.locked == true) "Unlock" else "Lock",
+                        enabled = element != null,
+                        onClick = { element?.let { viewModel.onToggleElementLock(it.id) } },
                     )
                 }
             }

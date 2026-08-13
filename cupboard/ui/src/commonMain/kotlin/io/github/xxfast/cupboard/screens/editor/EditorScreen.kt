@@ -22,7 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.theme.ChromeTheme
@@ -54,6 +56,11 @@ fun EditorScreen(
         onUpdateSlide = viewModel::onUpdateSlide,
         onPreviewSlide = viewModel::onPreviewSlide,
         onCancelPreview = viewModel::onCancelPreview,
+        onUpdateElement = viewModel::onUpdateElement,
+        onPreviewElement = viewModel::onPreviewElement,
+        onReorderElement = viewModel::onReorderElement,
+        onToggleElementLock = viewModel::onToggleElementLock,
+        onFlipElement = viewModel::onFlipElement,
         onSelectInspectorTab = viewModel::onSelectInspectorTab,
         onPlay = onPlay,
     )
@@ -68,6 +75,11 @@ fun EditorView(
     onUpdateSlide: (Slide) -> Unit,
     onPreviewSlide: (Slide) -> Unit,
     onCancelPreview: () -> Unit,
+    onUpdateElement: (Element) -> Unit,
+    onPreviewElement: (Element) -> Unit,
+    onReorderElement: (String, ZOrderMove) -> Unit,
+    onToggleElementLock: (String) -> Unit,
+    onFlipElement: (String, FlipAxis) -> Unit,
     onSelectInspectorTab: (InspectorTab) -> Unit,
     onPlay: ((Document, Int) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
@@ -137,6 +149,12 @@ fun EditorView(
                     if (state.inspectorOpen) EditorInspector(
                         tab = state.inspectorTab,
                         onSelectTab = onSelectInspectorTab,
+                        selectedElement = state.selectedElement,
+                        onUpdateElement = onUpdateElement,
+                        onPreviewElement = onPreviewElement,
+                        onReorderElement = onReorderElement,
+                        onToggleElementLock = onToggleElementLock,
+                        onFlipElement = onFlipElement,
                     )
                 }
             }

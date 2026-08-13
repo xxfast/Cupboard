@@ -27,6 +27,81 @@ class DocumentTest {
         assertEquals(1, decoded.slides[1].depth)
     }
 
+    /**
+     * The transform fields arrived after the first documents were written, so a
+     * file without them has to keep opening. Hand-written JSON on purpose: a
+     * round trip through the current encoder would write the fields and prove
+     * nothing about the files already on disk.
+     */
+    @Test
+    fun anElementWrittenBeforeTheTransformFieldsStillDecodes() {
+        val json = """
+            {
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "shape",
+                      "id": "shape",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 }
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val element = decodeDocument(json).slides.single().elements.single()
+        assertEquals(1f, element.opacity)
+        assertEquals(0f, element.rotation)
+        assertFalse(element.flippedHorizontally)
+        assertFalse(element.flippedVertically)
+        assertFalse(element.locked)
+    }
+
+    @Test
+    fun updateElementReplacesByIdAndIgnoresAnUnknownOne() {
+        val slide = Slide(
+            elements = listOf(
+                ShapeElement(id = "a", frame = Frame(0f, 0f, 10f, 10f)),
+                ShapeElement(id = "b", frame = Frame(0f, 0f, 10f, 10f)),
+            ),
+        )
+        val updated = slide.updateElement(slide.elements[1].update(locked = true))
+        assertFalse(updated.elements[0].locked)
+        assertTrue(updated.elements[1].locked)
+
+        val untouched = slide.updateElement(ShapeElement(id = "gone", frame = Frame(0f, 0f, 1f, 1f)))
+        assertEquals(slide.elements, untouched.elements)
+    }
+
+    @Test
+    fun reorderElementClampsAndReturnsTheSameSlideWhenNothingMoves() {
+        val slide = Slide(
+            elements = listOf(
+                ShapeElement(id = "a", frame = Frame(0f, 0f, 10f, 10f)),
+                ShapeElement(id = "b", frame = Frame(0f, 0f, 10f, 10f)),
+                ShapeElement(id = "c", frame = Frame(0f, 0f, 10f, 10f)),
+            ),
+        )
+        fun Slide.ids(): List<String> = elements.map { it.id }
+
+        assertEquals(listOf("b", "a", "c"), slide.reorderElement("a", ZOrderMove.Forward).ids())
+        assertEquals(listOf("a", "c", "b"), slide.reorderElement("c", ZOrderMove.Backward).ids())
+        assertEquals(listOf("b", "c", "a"), slide.reorderElement("a", ZOrderMove.ToFront).ids())
+        assertEquals(listOf("c", "a", "b"), slide.reorderElement("c", ZOrderMove.ToBack).ids())
+
+        // Identity is the signal callers use to skip the history entry.
+        assertTrue(slide === slide.reorderElement("a", ZOrderMove.Backward))
+        assertTrue(slide === slide.reorderElement("a", ZOrderMove.ToBack))
+        assertTrue(slide === slide.reorderElement("c", ZOrderMove.Forward))
+        assertTrue(slide === slide.reorderElement("c", ZOrderMove.ToFront))
+        assertTrue(slide === slide.reorderElement("gone", ZOrderMove.ToFront))
+    }
+
     @Test
     fun allSlidesIsTheFlatPresentationOrder() {
         val document = sampleDocument()

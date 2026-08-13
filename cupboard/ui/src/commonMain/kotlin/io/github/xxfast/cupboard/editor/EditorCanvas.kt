@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -81,11 +83,11 @@ fun EditorCanvas(
         fun toDoc(position: Offset) = Offset(position.x / docDensity, position.y / docDensity)
 
         fun elementAt(p: Offset): Element? =
-            currentSlide.elements.lastOrNull { it.frame.contains(p.x, p.y) }
+            currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
 
         fun placed(elementId: String, frame: Frame): Slide = currentSlide.copy(
             elements = currentSlide.elements.map {
-                if (it.id == elementId) it.withFrame(frame) else it
+                if (it.id == elementId) it.update(frame = frame) else it
             }
         )
 
@@ -106,12 +108,14 @@ fun EditorCanvas(
                     var target: DragTarget? = null
                     var draggedFrame: Frame? = null
                     var startFrame: Frame? = null
+                    var startRotation = 0f
                     var totalDx = 0f
                     var totalDy = 0f
                     fun reset() {
                         target = null
                         draggedFrame = null
                         startFrame = null
+                        startRotation = 0f
                         totalDx = 0f
                         totalDy = 0f
                         guideX = false
@@ -121,21 +125,33 @@ fun EditorCanvas(
                         onDragStart = { position ->
                             val p = toDoc(position)
                             val selected = currentSlide.elements.firstOrNull { it.id == currentSelection }
-                            val handle = selected?.let {
-                                hitTestHandle(it.frame, p.x, p.y, tolerance = 8f / canvasScale)
-                            }
+                            // A locked element has no handles to hit: it neither
+                            // resizes nor moves. Selection still happens either
+                            // way, so the inspector can reach it to unlock it.
+                            // Handles live where they are drawn, so the pointer
+                            // maps into the element's own space before the test.
+                            val handle = selected
+                                ?.takeIf { !it.locked }
+                                ?.let { element ->
+                                    val (lx, ly) = element.toLocal(p.x, p.y)
+                                    hitTestHandle(element.frame, lx, ly, tolerance = 8f / canvasScale)
+                                }
                             target = when {
                                 selected != null && handle != null -> DragTarget.Resize(selected.id, handle)
-                                else -> elementAt(p)?.also { onSelectElement(it.id) }?.let { DragTarget.Move(it.id) }
+                                else -> elementAt(p)
+                                    ?.also { onSelectElement(it.id) }
+                                    ?.takeIf { !it.locked }
+                                    ?.let { DragTarget.Move(it.id) }
                             }
                             val targetId = when (val t = target) {
                                 is DragTarget.Move -> t.elementId
                                 is DragTarget.Resize -> t.elementId
                                 null -> null
                             }
-                            val frame = currentSlide.elements.firstOrNull { it.id == targetId }?.frame
-                            draggedFrame = frame
-                            startFrame = frame
+                            val element = currentSlide.elements.firstOrNull { it.id == targetId }
+                            draggedFrame = element?.frame
+                            startFrame = element?.frame
+                            startRotation = element?.rotation ?: 0f
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
@@ -159,7 +175,7 @@ fun EditorCanvas(
                                     // Always from the start frame with running
                                     // totals: same math as iterating, and the
                                     // min-size clamp holds across the gesture.
-                                    onSlidePreview(placed(t.elementId, resizeFrame(start, t.handle, totalDx, totalDy)))
+                                    onSlidePreview(placed(t.elementId, resizeFrame(start, startRotation, t.handle, totalDx, totalDy)))
                                 }
                                 null -> {}
                             }
@@ -172,7 +188,7 @@ fun EditorCanvas(
                                     onSlideChange(placed(t.elementId, snapToSlideCenter(frame).frame))
                                 }
                                 is DragTarget.Resize -> startFrame?.let { start ->
-                                    onSlideChange(placed(t.elementId, resizeFrame(start, t.handle, totalDx, totalDy)))
+                                    onSlideChange(placed(t.elementId, resizeFrame(start, startRotation, t.handle, totalDx, totalDy)))
                                 }
                                 null -> {}
                             }
@@ -190,7 +206,7 @@ fun EditorCanvas(
 
         // Selection ring + handles
         slide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
-            SelectionOverlay(selected.frame, canvasScale)
+            SelectionOverlay(selected, canvasScale)
         }
 
         // Alignment guides
@@ -199,21 +215,35 @@ fun EditorCanvas(
     }
 }
 
+/**
+ * The selection ring, and the 8 handles unless [element] is locked: a lock
+ * means what it says. Ring and handles both ride the element's rotation, the
+ * handles by sitting at their corner's drawn position and turning with it.
+ */
 @Composable
-private fun SelectionOverlay(frame: Frame, scale: Float) {
+private fun SelectionOverlay(element: Element, scale: Float) {
+    val frame = element.frame
     Box(
         Modifier
             .offset(frame.x.dp, frame.y.dp)
             .size(frame.width.dp, frame.height.dp)
+            .graphicsLayer {
+                rotationZ = element.rotation
+                transformOrigin = TransformOrigin.Center
+            }
             .border((1.5f / scale).dp, Accent)
     )
+    if (element.locked) return
+
     val handleSize = 9f / scale
     for ((_, position) in handlePositions(frame)) {
         val (hx, hy) = position
+        val (drawnX, drawnY) = element.toSlide(hx, hy)
         Box(
             Modifier
-                .offset((hx - handleSize / 2).dp, (hy - handleSize / 2).dp)
+                .offset((drawnX - handleSize / 2).dp, (drawnY - handleSize / 2).dp)
                 .size(handleSize.dp)
+                .graphicsLayer { rotationZ = element.rotation }
                 .background(Color.White, RoundedCornerShape((2f / scale).dp))
                 .border((1.5f / scale).dp, Accent, RoundedCornerShape((2f / scale).dp))
         )

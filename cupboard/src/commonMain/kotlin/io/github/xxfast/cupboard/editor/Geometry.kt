@@ -1,7 +1,11 @@
 package io.github.xxfast.cupboard.editor
 
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 enum class Handle {
     TopLeft, Top, TopRight,
@@ -35,6 +39,43 @@ fun hitTestHandle(frame: Frame, x: Float, y: Float, tolerance: Float = 8f): Hand
 fun Frame.contains(x: Float, y: Float): Boolean =
     x in this.x..(this.x + width) && y in this.y..(this.y + height)
 
+/** The vector ([dx], [dy]) rotated by [degrees], clockwise-positive like the canvas. */
+private fun rotateVector(dx: Float, dy: Float, degrees: Float): Pair<Float, Float> {
+    val radians = degrees * PI.toFloat() / 180f
+    val cos = cos(radians)
+    val sin = sin(radians)
+    return (dx * cos - dy * sin) to (dx * sin + dy * cos)
+}
+
+/**
+ * The slide-space point ([x], [y]) mapped into the element's unrotated frame
+ * space: rotation happens around the frame's center, so hit-testing rotates the
+ * point back instead of trying to rotate the frame.
+ */
+fun Element.toLocal(x: Float, y: Float): Pair<Float, Float> {
+    val (dx, dy) = rotateVector(x - frame.centerX, y - frame.centerY, -rotation)
+    return (frame.centerX + dx) to (frame.centerY + dy)
+}
+
+/** Inverse of [toLocal]: a point in the element's frame space, as drawn on the slide. */
+fun Element.toSlide(x: Float, y: Float): Pair<Float, Float> {
+    val (dx, dy) = rotateVector(x - frame.centerX, y - frame.centerY, rotation)
+    return (frame.centerX + dx) to (frame.centerY + dy)
+}
+
+/**
+ * Whether a point lands on the element as drawn: the frame test in the frame's
+ * own space, so rotation is honoured; hit-testing the raw frame instead loses
+ * the visible box the further rotation takes it from the unrotated one. Flips
+ * need no counterpart: mirroring a rectangle about its own center leaves its
+ * footprint where it was.
+ */
+fun Element.contains(x: Float, y: Float): Boolean {
+    if (rotation == 0f) return frame.contains(x, y)
+    val (localX, localY) = toLocal(x, y)
+    return frame.contains(localX, localY)
+}
+
 fun resizeFrame(frame: Frame, handle: Handle, dx: Float, dy: Float, minSize: Float = 40f): Frame {
     var left = frame.x
     var top = frame.y
@@ -47,6 +88,30 @@ fun resizeFrame(frame: Frame, handle: Handle, dx: Float, dy: Float, minSize: Flo
     if (handle.affectsBottom) bottom = (bottom + dy).coerceAtLeast(top + minSize)
 
     return Frame(left, top, right - left, bottom - top)
+}
+
+/**
+ * [resizeFrame] for a frame drawn at [rotation] degrees. The deltas arrive in
+ * slide space, so they are rotated into the frame's own space before resizing,
+ * and the result is shifted so the edge or corner opposite the handle stays put
+ * on screen: resizing moves the frame's center, rotation pivots on the center,
+ * so an uncorrected resize swings the whole element around the slide.
+ */
+fun resizeFrame(
+    frame: Frame,
+    rotation: Float,
+    handle: Handle,
+    dx: Float,
+    dy: Float,
+    minSize: Float = 40f,
+): Frame {
+    if (rotation == 0f) return resizeFrame(frame, handle, dx, dy, minSize)
+    val (localDx, localDy) = rotateVector(dx, dy, -rotation)
+    val resized = resizeFrame(frame, handle, localDx, localDy, minSize)
+    val shiftX = resized.centerX - frame.centerX
+    val shiftY = resized.centerY - frame.centerY
+    val (drawnShiftX, drawnShiftY) = rotateVector(shiftX, shiftY, rotation)
+    return resized.translate(drawnShiftX - shiftX, drawnShiftY - shiftY)
 }
 
 data class SnapResult(

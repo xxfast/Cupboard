@@ -13,12 +13,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -34,14 +35,24 @@ import io.github.xxfast.cupboard.document.TextElement
 
 fun Long.toComposeColor(): Color = Color(this)
 
-/** Positions [element] at its frame (1dp == 1 doc unit inside [SlideSurface]) and renders it. */
+/**
+ * Positions [element] at its frame (1dp == 1 doc unit inside [SlideSurface]) and
+ * renders it. Opacity, rotation and both flips ride one graphics layer around the
+ * frame's center, so they cost the same as the opacity layer alone used to.
+ */
 @Composable
 fun ElementView(element: Element, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .offset(element.frame.x.dp, element.frame.y.dp)
             .size(element.frame.width.dp, element.frame.height.dp)
-            .alpha(element.opacity)
+            .graphicsLayer {
+                alpha = element.opacity
+                rotationZ = element.rotation
+                scaleX = if (element.flippedHorizontally) -1f else 1f
+                scaleY = if (element.flippedVertically) -1f else 1f
+                transformOrigin = TransformOrigin.Center
+            }
     ) {
         when (element) {
             is TextElement -> TextElementView(element)

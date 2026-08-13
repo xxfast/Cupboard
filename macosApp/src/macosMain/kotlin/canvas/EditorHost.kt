@@ -16,14 +16,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
+import io.github.xxfast.cupboard.screens.editor.FlipAxis
 import io.github.xxfast.cupboard.screens.editor.InspectorTab
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -57,6 +64,30 @@ class OutlineRow(
     val slideIndex: Int,
     val hasChildren: Boolean,
     val collapsed: Boolean,
+)
+
+/**
+ * The selected element's shared properties, flattened for the native inspector.
+ *
+ * A value, not a handle: the shell re-reads it whenever [EditorHost.onChange]
+ * fires and sends edits back through the setters, so nothing here can drift out
+ * of step with the document. [Element][io.github.xxfast.cupboard.document.Element]
+ * itself never crosses the boundary; a shell holding one could edit its way
+ * around a lock.
+ */
+class ElementProps(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+    val opacity: Float,
+    /** Degrees clockwise, applied around the frame's center. */
+    val rotation: Float,
+    val flippedHorizontally: Boolean,
+    val flippedVertically: Boolean,
+    val locked: Boolean,
+    /** "Text", "Shape", "Image" or "Code": what the inspector titles itself. */
+    val kind: String,
 )
 
 /**
@@ -225,6 +256,84 @@ class EditorHost {
 
     fun closeInspector() {
         viewModel.onCloseInspector()
+    }
+
+    /**
+     * What the Format inspector shows, or null when nothing is selected.
+     *
+     * Every setter below resolves the selection the same way, at call time, so a
+     * click that lands after the selection moved edits nothing rather than the
+     * wrong element.
+     */
+    fun selectedElement(): ElementProps? = state.selectedElement?.let { element ->
+        ElementProps(
+            x = element.frame.x,
+            y = element.frame.y,
+            width = element.frame.width,
+            height = element.frame.height,
+            opacity = element.opacity,
+            rotation = element.rotation,
+            flippedHorizontally = element.flippedHorizontally,
+            flippedVertically = element.flippedVertically,
+            locked = element.locked,
+            kind = when (element) {
+                is TextElement -> "Text"
+                is ShapeElement -> "Shape"
+                is ImageElement -> "Image"
+                is CodeElement -> "Code"
+            },
+        )
+    }
+
+    /**
+     * Commits a typed frame. Sizes floor at one document unit: an element with no
+     * extent has nothing left to click, so there is no way to select it back out.
+     */
+    fun setSelectedElementFrame(x: Float, y: Float, width: Float, height: Float) {
+        val element = state.selectedElement ?: return
+        viewModel.onUpdateElement(
+            element.update(
+                frame = Frame(
+                    x = x,
+                    y = y,
+                    width = width.coerceAtLeast(1f),
+                    height = height.coerceAtLeast(1f),
+                ),
+            ),
+        )
+    }
+
+    /**
+     * [commit] false is a slider still under the thumb: it folds into the document
+     * so the canvas redraws, but makes no history entry. True is the release, and
+     * the whole drag lands as one undo step.
+     */
+    fun setSelectedElementOpacity(opacity: Float, commit: Boolean) {
+        val element = state.selectedElement ?: return
+        val updated = element.update(opacity = opacity.coerceIn(0f, 1f))
+        if (commit) viewModel.onUpdateElement(updated) else viewModel.onPreviewElement(updated)
+    }
+
+    /** Degrees clockwise. Typed, so it commits: the shell has no rotate gesture yet. */
+    fun setSelectedElementRotation(degrees: Float) {
+        val element = state.selectedElement ?: return
+        viewModel.onUpdateElement(element.update(rotation = degrees))
+    }
+
+    fun flipSelectedElement(axis: FlipAxis) {
+        val element = state.selectedElement ?: return
+        viewModel.onFlipElement(element.id, axis)
+    }
+
+    fun reorderSelectedElement(move: ZOrderMove) {
+        val element = state.selectedElement ?: return
+        viewModel.onReorderElement(element.id, move)
+    }
+
+    /** The one edit a locked element still answers to. */
+    fun toggleSelectedElementLock() {
+        val element = state.selectedElement ?: return
+        viewModel.onToggleElementLock(element.id)
     }
 
     /**

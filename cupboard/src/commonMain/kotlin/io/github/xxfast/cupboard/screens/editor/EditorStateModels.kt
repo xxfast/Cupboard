@@ -1,7 +1,9 @@
 package io.github.xxfast.cupboard.screens.editor
 
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.visibleIndices
@@ -63,6 +65,10 @@ data class EditorState(
         get() = document.allSlides().firstOrNull { it.id == selectedSlideId }
             ?: document.slides.first()
 
+    /** The selected element, or null when nothing is selected or the id went stale. */
+    val selectedElement: Element?
+        get() = selectedElementId?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
 
@@ -112,6 +118,9 @@ data class EditorState(
 @Serializable
 enum class InspectorTab { Format, Animate, Document }
 
+/** Which way an element flips. Both flips are around the frame's center. */
+enum class FlipAxis { Horizontal, Vertical }
+
 sealed interface EditorEvent {
     data class SelectSlide(val id: String) : EditorEvent
     /** Selects by index in presentation order; out of range indices are ignored. */
@@ -124,6 +133,17 @@ sealed interface EditorEvent {
     /** A cancelled gesture never happened: restores the document from before
      * the gesture's first preview. */
     data object CancelPreview : EditorEvent
+    /** A settled property edit on one element: a typed-in number, a flip, a
+     * released slider. Rotation rides here too, it needs no event of its own. */
+    data class UpdateElement(val element: Element) : EditorEvent
+    /** An in-flight sample from a continuous control, [PreviewSlide]'s semantics
+     * at element granularity: it folds into the document, makes no history entry
+     * and is undone wholesale by [CancelPreview]. */
+    data class PreviewElement(val element: Element) : EditorEvent
+    data class ReorderElement(val id: String, val move: ZOrderMove) : EditorEvent
+    /** The only event a locked element answers to. Undoable, like Keynote's. */
+    data class ToggleElementLock(val id: String) : EditorEvent
+    data class FlipElement(val id: String, val axis: FlipAxis) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent

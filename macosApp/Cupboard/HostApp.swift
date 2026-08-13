@@ -566,6 +566,37 @@ private struct EditorView: View {
         let tab: InspectorTab
         let showNotes: Bool
         let notes: String
+        /// Nil when nothing is selected.
+        let element: Selection?
+    }
+
+    /// The selected element's properties as a Swift value. Kotlin hands back a
+    /// fresh object on every read, so a struct is what lets the inspector's
+    /// fields tell a real change from another pass over the same numbers.
+    private struct Selection: Equatable {
+        let x: Double
+        let y: Double
+        let width: Double
+        let height: Double
+        let opacity: Double
+        let rotation: Double
+        let flippedHorizontally: Bool
+        let flippedVertically: Bool
+        let locked: Bool
+        let kind: String
+
+        init(_ props: ElementProps) {
+            x = Double(props.x)
+            y = Double(props.y)
+            width = Double(props.width)
+            height = Double(props.height)
+            opacity = Double(props.opacity)
+            rotation = Double(props.rotation)
+            flippedHorizontally = props.flippedHorizontally
+            flippedVertically = props.flippedVertically
+            locked = props.locked
+            kind = props.kind
+        }
     }
 
     /// Touching `generation` is what subscribes this view to store changes.
@@ -576,7 +607,8 @@ private struct EditorView: View {
             inspectorOpen: host.inspectorOpen(),
             tab: host.inspectorTab(),
             showNotes: host.showNotes(),
-            notes: host.slideNotes()
+            notes: host.slideNotes(),
+            element: host.selectedElement().map(Selection.init)
         )
     }
 
@@ -1028,7 +1060,7 @@ private struct EditorView: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: Layout.header)
 
-            Text(inspectorTitle(ui.tab))
+            Text(inspectorTitle(ui))
                 .font(.system(size: 13))
                 .foregroundStyle(palette.subtle)
                 .frame(maxWidth: .infinity)
@@ -1038,8 +1070,10 @@ private struct EditorView: View {
 
             if ui.tab == InspectorTab.document {
                 documentPanel
+            } else if ui.tab == InspectorTab.format {
+                formatPanel(ui)
             } else {
-                // Format and Animate bodies land in a later pass.
+                // The Animate body lands with the build editor.
                 Spacer(minLength: 0)
             }
         }
@@ -1048,10 +1082,266 @@ private struct EditorView: View {
         .glass(.sidebar, edge: .leading, palette: palette)
     }
 
-    private func inspectorTitle(_ tab: InspectorTab) -> String {
-        if tab == InspectorTab.animate { return "Build" }
-        if tab == InspectorTab.document { return "Slide" }
-        return "Text"
+    /// Format names what it is formatting, so the title follows the selection.
+    private func inspectorTitle(_ ui: Chrome) -> String {
+        if ui.tab == InspectorTab.animate { return "Build" }
+        if ui.tab == InspectorTab.document { return "Slide" }
+        return ui.element?.kind ?? "Text"
+    }
+
+    // MARK: Format panel
+
+    /// The selected element's shared properties. Everything shown here comes
+    /// back through `states`, so a typed value, a canvas drag and an undo all
+    /// land in the same place.
+    @ViewBuilder private func formatPanel(_ ui: Chrome) -> some View {
+        if let element = ui.element {
+            VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                    positionSection(element)
+                    palette.divider.frame(height: 1)
+                    rotateSection(element)
+                    palette.divider.frame(height: 1)
+                    opacitySection(element)
+                    palette.divider.frame(height: 1)
+                    arrangeSection
+                }
+                // A locked element ignores every edit but the button below, so
+                // the panel says so rather than swallowing them silently.
+                .disabled(element.locked)
+                .opacity(element.locked ? 0.45 : 1)
+
+                Spacer(minLength: 0)
+                lockButton(element)
+            }
+            .padding(Layout.panelPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } else {
+            Text("Select an element to edit it")
+                .font(.system(size: 12))
+                .foregroundStyle(palette.faint)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(Layout.panelPadding)
+        }
+    }
+
+    private func positionSection(_ element: Selection) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Position & Size")
+
+            HStack(spacing: 8) {
+                ValueField(label: "X", value: element.x, palette: palette) {
+                    setFrame(element, x: $0)
+                }
+                ValueField(label: "Y", value: element.y, palette: palette) {
+                    setFrame(element, y: $0)
+                }
+            }
+
+            HStack(spacing: 8) {
+                ValueField(label: "W", value: element.width, palette: palette) {
+                    setFrame(element, width: $0)
+                }
+                ValueField(label: "H", value: element.height, palette: palette) {
+                    setFrame(element, height: $0)
+                }
+            }
+        }
+    }
+
+    /// A frame commits whole, so a field that edits one number sends the other
+    /// three back as they stand.
+    private func setFrame(
+        _ element: Selection,
+        x: Double? = nil,
+        y: Double? = nil,
+        width: Double? = nil,
+        height: Double? = nil
+    ) {
+        host.setSelectedElementFrame(
+            x: Float(x ?? element.x),
+            y: Float(y ?? element.y),
+            width: Float(width ?? element.width),
+            height: Float(height ?? element.height)
+        )
+    }
+
+    private func rotateSection(_ element: Selection) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Rotate")
+
+            HStack(spacing: 8) {
+                ValueField(label: "\u{00B0}", value: element.rotation, palette: palette) {
+                    host.setSelectedElementRotation(degrees: Float($0))
+                }
+                .frame(width: 104)
+
+                Spacer(minLength: 0)
+
+                flipButton(
+                    "arrow.left.and.right.righttriangle.left.righttriangle.right",
+                    help: "Flip Horizontally"
+                ) { host.flipSelectedElement(axis: FlipAxis.horizontal) }
+
+                flipButton(
+                    "arrow.up.and.down.righttriangle.up.righttriangle.down",
+                    help: "Flip Vertically"
+                ) { host.flipSelectedElement(axis: FlipAxis.vertical) }
+            }
+        }
+    }
+
+    private func flipButton(
+        _ symbol: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.ctrlText)
+                .frame(width: 32, height: 22)
+                .background(palette.ctrl, in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func opacitySection(_ element: Selection) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Opacity")
+
+            HStack(spacing: 10) {
+                Slider(
+                    value: Binding(
+                        get: { element.opacity },
+                        set: { host.setSelectedElementOpacity(opacity: Float($0), commit: false) }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        // The release commits whatever the previews left in the
+                        // document, so the whole drag is one undo entry. Read it
+                        // back rather than trusting this pass's snapshot.
+                        guard !editing, let live = host.selectedElement() else { return }
+                        host.setSelectedElementOpacity(opacity: live.opacity, commit: true)
+                    }
+                )
+                .controlSize(.small)
+                .tint(palette.accent)
+
+                Text("\(Int((element.opacity * 100).rounded()))%")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(palette.ctrlText)
+                    .frame(width: 40, alignment: .trailing)
+            }
+        }
+    }
+
+    private var arrangeSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Arrange")
+
+            HStack(spacing: 8) {
+                arrangeButton("Bring Forward", ZOrderMove.forward)
+                arrangeButton("Send Backward", ZOrderMove.backward)
+            }
+
+            HStack(spacing: 8) {
+                arrangeButton("Bring to Front", ZOrderMove.tofront)
+                arrangeButton("Send to Back", ZOrderMove.toback)
+            }
+        }
+    }
+
+    private func arrangeButton(_ label: String, _ move: ZOrderMove) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button { host.reorderSelectedElement(move: move) } label: {
+            Text(label)
+                .font(.system(size: 11.5))
+                .foregroundStyle(palette.ctrlText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .background(palette.ctrl, in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Full width and always live: it is the only way back into a locked element.
+    private func lockButton(_ element: Selection) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return Button { host.toggleSelectedElementLock() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: element.locked ? "lock.fill" : "lock.open")
+                    .font(.system(size: 11))
+                Text(element.locked ? "Unlock" : "Lock")
+                    .font(.system(size: 12.5))
+            }
+            .foregroundStyle(palette.ctrlText)
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(palette.buttonFill, in: shape)
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// A small bordered value field: whole document units, mono, committed on
+    /// Enter or on losing focus. Anything that is not a number reverts to what
+    /// the document holds, so a half-typed field cannot push nonsense in.
+    private struct ValueField: View {
+        let label: String
+        let value: Double
+        let palette: Palette
+        let onCommit: (Double) -> Void
+
+        @State private var text: String = ""
+        @FocusState private var focused: Bool
+
+        private var shape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+        }
+
+        var body: some View {
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.subtle)
+                    .frame(width: 11, alignment: .leading)
+
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(palette.ctrlText)
+                    .multilineTextAlignment(.trailing)
+                    .focused($focused)
+                    .padding(.horizontal, 7)
+                    .frame(height: 22)
+                    .background(palette.ctrl, in: shape)
+                    .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+                    .onSubmit { commit() }
+                    .onChange(of: focused) { _, now in if !now { commit() } }
+            }
+            .onAppear { text = Self.whole(value) }
+            // A canvas drag or an undo moves the element under the field. The
+            // one being typed in is left alone until it loses focus.
+            .onChange(of: value) { _, latest in if !focused { text = Self.whole(latest) } }
+        }
+
+        private func commit() {
+            guard let typed = Double(text.trimmingCharacters(in: .whitespaces)) else {
+                text = Self.whole(value)
+                return
+            }
+            text = Self.whole(typed)
+            onCommit(typed)
+        }
+
+        private static func whole(_ value: Double) -> String { String(Int(value.rounded())) }
     }
 
     // MARK: Document panel

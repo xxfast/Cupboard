@@ -3,6 +3,9 @@ package io.github.xxfast.cupboard.screens.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Tab
@@ -26,13 +30,30 @@ import androidx.compose.material3.TabPosition
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -40,13 +61,21 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlin.math.roundToInt
 
 /**
- * The 282dp M3 inspector: Format / Animate / Slide tabs over static placeholder
- * bodies mirroring the design's Linux mock. Real editing panels land in later
- * phases; clicking the active tab does nothing (close-on-reclick is macOS-only).
+ * The 282dp M3 inspector: Format / Animate / Slide tabs over their bodies.
+ * Clicking the active tab does nothing (close-on-reclick is macOS-only).
+ *
+ * Format is live whenever [selectedElement] is non-null: the geometry, rotation,
+ * opacity, z-order and lock of that one element. With nothing selected it falls
+ * back to the design's text mock, which is still a placeholder (text formatting
+ * is its own roadmap item). Animate and Slide remain mocks throughout.
  *
  * The "Slide" tab is [InspectorTab.Document]: same pane, per-platform label.
  */
@@ -54,6 +83,12 @@ import io.github.xxfast.cupboard.theme.LocalChromeTokens
 fun EditorInspector(
     tab: InspectorTab,
     onSelectTab: (InspectorTab) -> Unit,
+    selectedElement: Element?,
+    onUpdateElement: (Element) -> Unit,
+    onPreviewElement: (Element) -> Unit,
+    onReorderElement: (String, ZOrderMove) -> Unit,
+    onToggleElementLock: (String) -> Unit,
+    onFlipElement: (String, FlipAxis) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -96,7 +131,16 @@ fun EditorInspector(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (tab) {
-                InspectorTab.Format -> FormatPanel()
+                InspectorTab.Format -> if (selectedElement == null) TextFormatPanel()
+                else ElementFormatPanel(
+                    element = selectedElement,
+                    onUpdate = onUpdateElement,
+                    onPreview = onPreviewElement,
+                    onReorder = onReorderElement,
+                    onToggleLock = onToggleElementLock,
+                    onFlip = onFlipElement,
+                )
+
                 InspectorTab.Animate -> AnimatePanel()
                 InspectorTab.Document -> SlidePanel()
             }
@@ -125,8 +169,9 @@ private fun PanelDivider() {
     HorizontalDivider(thickness = 1.dp, color = LocalChromeTokens.current.div)
 }
 
+/** The design's text mock, shown while nothing is selected. Still a placeholder. */
 @Composable
-private fun FormatPanel() {
+private fun TextFormatPanel() {
     val tokens: ChromeTokens = LocalChromeTokens.current
 
     SectionLabel("TEXT")
@@ -189,6 +234,142 @@ private fun FormatPanel() {
 
     SectionLabel("OPACITY")
     SliderRow(fraction = 1f, valueLabel = "100%")
+}
+
+/**
+ * The live property editor for the selected element.
+ *
+ * Every control is stateless against [element]: what it shows is what came back
+ * through the state, and what it sends is [Element.update] applied to that same
+ * value. A locked element dims everything but its unlock button; the presenter
+ * enforces the same rule, this only stops the user reaching for it.
+ */
+@Composable
+private fun ElementFormatPanel(
+    element: Element,
+    onUpdate: (Element) -> Unit,
+    onPreview: (Element) -> Unit,
+    onReorder: (String, ZOrderMove) -> Unit,
+    onToggleLock: (String) -> Unit,
+    onFlip: (String, FlipAxis) -> Unit,
+) {
+    val frame: Frame = element.frame
+    val enabled: Boolean = !element.locked
+
+    SectionLabel("POSITION & SIZE")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberField(
+            label = "X",
+            value = frame.x,
+            enabled = enabled,
+            onCommit = { onUpdate(element.update(frame = frame.copy(x = it))) },
+            modifier = Modifier.weight(1f),
+        )
+        NumberField(
+            label = "Y",
+            value = frame.y,
+            enabled = enabled,
+            onCommit = { onUpdate(element.update(frame = frame.copy(y = it))) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberField(
+            label = "W",
+            value = frame.width,
+            enabled = enabled,
+            onCommit = { onUpdate(element.update(frame = frame.copy(width = it))) },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+        NumberField(
+            label = "H",
+            value = frame.height,
+            enabled = enabled,
+            onCommit = { onUpdate(element.update(frame = frame.copy(height = it))) },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+    }
+
+    PanelDivider()
+
+    SectionLabel("ROTATE")
+    NumberField(
+        label = "Angle",
+        value = element.rotation,
+        enabled = enabled,
+        onCommit = { onUpdate(element.update(rotation = it)) },
+    )
+    SegmentedRow {
+        Segment(
+            selected = element.flippedHorizontally,
+            first = true,
+            onClick = if (enabled) ({ onFlip(element.id, FlipAxis.Horizontal) }) else null,
+        ) {
+            SegmentLabel("Flip H", selected = element.flippedHorizontally, enabled = enabled)
+        }
+        Segment(
+            selected = element.flippedVertically,
+            first = false,
+            onClick = if (enabled) ({ onFlip(element.id, FlipAxis.Vertical) }) else null,
+        ) {
+            SegmentLabel("Flip V", selected = element.flippedVertically, enabled = enabled)
+        }
+    }
+
+    PanelDivider()
+
+    SectionLabel("OPACITY")
+    SliderRow(
+        fraction = element.opacity,
+        valueLabel = "${(element.opacity * 100).roundToInt()}%",
+        enabled = enabled,
+        // The whole drag is one edit: samples preview, the release commits.
+        onDrag = { onPreview(element.update(opacity = it)) },
+        onRelease = { onUpdate(element.update(opacity = it)) },
+    )
+
+    PanelDivider()
+
+    SectionLabel("ARRANGE")
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TonalButton(
+            label = "Bring Forward",
+            enabled = enabled,
+            onClick = { onReorder(element.id, ZOrderMove.Forward) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "Send Backward",
+            enabled = enabled,
+            onClick = { onReorder(element.id, ZOrderMove.Backward) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TonalButton(
+            label = "Bring to Front",
+            enabled = enabled,
+            onClick = { onReorder(element.id, ZOrderMove.ToFront) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "Send to Back",
+            enabled = enabled,
+            onClick = { onReorder(element.id, ZOrderMove.ToBack) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    PanelDivider()
+
+    TonalButton(
+        label = if (element.locked) "Unlock" else "Lock",
+        enabled = true,
+        onClick = { onToggleLock(element.id) },
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 @Composable
@@ -427,6 +608,118 @@ private fun OutlinedField(
     }
 }
 
+/** Document units read as whole numbers; the fractions are the canvas's business. */
+private fun Float.asWholeNumber(): String = roundToInt().toString()
+
+/**
+ * [OutlinedField]'s look with an editable value, committed on Enter and on focus
+ * loss. Anything that isn't a number reverts to what the document holds, so a
+ * half-typed field can never write a garbage frame.
+ *
+ * The text is keyed on the displayed value, so an edit that lands elsewhere (an
+ * undo, a canvas drag) redraws the field instead of leaving stale digits behind.
+ */
+@Composable
+private fun NumberField(
+    label: String,
+    value: Float,
+    enabled: Boolean,
+    onCommit: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    minimum: Float = Float.NEGATIVE_INFINITY,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val focusManager: FocusManager = LocalFocusManager.current
+    val display: String = value.asWholeNumber()
+    var text: String by remember(display) { mutableStateOf(display) }
+    var focused: Boolean by remember { mutableStateOf(false) }
+
+    // Reverting covers the no-change case too: "72.0" typed over 72 normalizes
+    // back to "72" rather than sitting there as a phantom edit.
+    fun commit() {
+        val entered: Float? = text.trim().toFloatOrNull()?.coerceAtLeast(minimum)
+        if (entered == null || entered == value) text = display
+        else onCommit(entered)
+    }
+
+    Box(modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .border(1.dp, if (enabled) tokens.outline else tokens.div, RoundedCornerShape(4.dp))
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                enabled = enabled,
+                singleLine = true,
+                textStyle = TextStyle(
+                    color = if (enabled) tokens.text else tokens.faint,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                ),
+                cursorBrush = SolidColor(tokens.accent),
+                modifier = Modifier
+                    .weight(1f)
+                    .onFocusChanged { state ->
+                        if (focused && !state.isFocused) commit()
+                        focused = state.isFocused
+                    }
+                    .onPreviewKeyEvent { event ->
+                        val entered: Boolean = event.type == KeyEventType.KeyDown &&
+                            (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                        if (entered) {
+                            commit()
+                            focusManager.clearFocus()
+                        }
+                        entered
+                    },
+            )
+        }
+        Text(
+            text = label,
+            color = if (enabled) tokens.subtle else tokens.faint,
+            fontSize = 10.5.sp,
+            modifier = Modifier
+                .offset(x = 10.dp, y = (-7).dp)
+                .background(tokens.insBg)
+                .padding(horizontal = 5.dp),
+        )
+    }
+}
+
+/** A full-width M3 tonal button, the inspector's action shape. */
+@Composable
+private fun TonalButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Row(
+        modifier = modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(if (enabled) tokens.tonal else tokens.track)
+            .clickable(enabled = enabled, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) tokens.tonalText else tokens.faint,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
 /** An outlined segmented button row, radius 20, hairlines between segments. */
 @Composable
 private fun SegmentedRow(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
@@ -438,8 +731,14 @@ private fun SegmentedRow(modifier: Modifier = Modifier, content: @Composable Row
     )
 }
 
+/** [onClick] null leaves the segment inert, which is what the mocks want. */
 @Composable
-private fun RowScope.Segment(selected: Boolean, first: Boolean, content: @Composable () -> Unit) {
+private fun RowScope.Segment(
+    selected: Boolean,
+    first: Boolean,
+    onClick: (() -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
     val tokens: ChromeTokens = LocalChromeTokens.current
 
     Row(Modifier.weight(1f).height(38.dp)) {
@@ -448,12 +747,30 @@ private fun RowScope.Segment(selected: Boolean, first: Boolean, content: @Compos
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
-                .background(if (selected) tokens.segOn else Color.Transparent),
+                .background(if (selected) tokens.segOn else Color.Transparent)
+                .clickable(enabled = onClick != null) { onClick?.invoke() },
             contentAlignment = Alignment.Center,
         ) {
             content()
         }
     }
+}
+
+/** A segment's text, coloured for its on/off and enabled/disabled corners. */
+@Composable
+private fun SegmentLabel(text: String, selected: Boolean, enabled: Boolean) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Text(
+        text = text,
+        color = when {
+            !enabled -> tokens.faint
+            selected -> tokens.segOnText
+            else -> tokens.segOff
+        },
+        fontSize = 12.5.sp,
+        fontWeight = FontWeight.Medium,
+    )
 }
 
 /** Text alignment glyph: four rules, the short ones placed per [variant]. */
@@ -480,17 +797,58 @@ private fun AlignGlyph(color: Color, variant: Int) {
     }
 }
 
-/** A static slider mock: filled track up to [fraction], knob riding the seam. */
+/**
+ * A slider: filled track up to [fraction], knob riding the seam.
+ *
+ * Interactive once [onDrag] is given, inert otherwise (the mock panels). It draws
+ * only from [fraction], never from where the pointer is: what a gesture shows has
+ * to come back through the state, or the repaint can go missing mid-drag.
+ */
 @Composable
-private fun SliderRow(fraction: Float, valueLabel: String, modifier: Modifier = Modifier) {
+private fun SliderRow(
+    fraction: Float,
+    valueLabel: String,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onDrag: ((Float) -> Unit)? = null,
+    onRelease: ((Float) -> Unit)? = null,
+) {
     val tokens: ChromeTokens = LocalChromeTokens.current
+    val interactive: Boolean = enabled && onDrag != null
+    val filled: Float = fraction.coerceIn(0f, 1f)
+    val fill: Color = if (enabled) tokens.accent else tokens.faint
+    // The callbacks close over the current element, so the gesture loop has to
+    // read the latest ones rather than the pair it started with.
+    val stream: ((Float) -> Unit)? by rememberUpdatedState(onDrag)
+    val commit: ((Float) -> Unit)? by rememberUpdatedState(onRelease)
 
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Box(Modifier.weight(1f).height(20.dp)) {
+        Box(
+            Modifier
+                .weight(1f)
+                .height(20.dp)
+                .pointerInput(interactive) {
+                    if (!interactive) return@pointerInput
+                    awaitPointerEventScope {
+                        while (true) {
+                            val down: PointerInputChange = awaitFirstDown()
+                            var value: Float = valueAt(down.position.x, size.width)
+                            down.consume()
+                            stream?.invoke(value)
+                            drag(down.id) { change ->
+                                value = valueAt(change.position.x, size.width)
+                                change.consume()
+                                stream?.invoke(value)
+                            }
+                            commit?.invoke(value)
+                        }
+                    }
+                },
+        ) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -501,29 +859,33 @@ private fun SliderRow(fraction: Float, valueLabel: String, modifier: Modifier = 
             )
             Box(
                 Modifier
-                    .fillMaxWidth(fraction)
+                    .fillMaxWidth(filled)
                     .height(4.dp)
                     .align(Alignment.CenterStart)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(tokens.accent),
+                    .background(fill),
             )
             // Alignment bias maps 0..1 along the track to -1..1.
             Box(
                 Modifier
-                    .align(BiasAlignment(fraction * 2f - 1f, 0f))
+                    .align(BiasAlignment(filled * 2f - 1f, 0f))
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(tokens.accent),
+                    .background(fill),
             )
         }
         Text(
             text = valueLabel,
-            color = tokens.text,
+            color = if (enabled) tokens.text else tokens.faint,
             fontSize = 12.5.sp,
             fontFamily = FontFamily.Monospace,
         )
     }
 }
+
+/** Where [x] sits along a [width]-wide track, as 0..1. A zero width reads as 0. */
+private fun valueAt(x: Float, width: Int): Float =
+    if (width == 0) 0f else (x / width).coerceIn(0f, 1f)
 
 /** One build-order row as a 12dp-radius tonal card, per the Linux mock. */
 @Composable

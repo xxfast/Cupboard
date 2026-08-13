@@ -7,21 +7,30 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.reorderElement
 import io.github.xxfast.cupboard.document.toggleCollapsed
+import io.github.xxfast.cupboard.document.updateElement
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementLock
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.delay
@@ -42,6 +51,23 @@ private fun ArrayDeque<Document>.push(document: Document) {
     addLast(document)
     if (size > HistoryLimit) removeFirst()
 }
+
+/**
+ * The selected slide's element with [id], null when the id no longer resolves.
+ *
+ * Element events always resolve against the stored copy rather than trusting the
+ * one they carry: whether an element is locked is the document's answer, and a
+ * shell holding a stale copy must not be able to edit its way around the lock.
+ */
+private fun EditorState.element(id: String): Element? =
+    selectedSlide.elements.firstOrNull { it.id == id }
+
+/** [element], but only when it is unlocked, i.e. when an edit may touch it. */
+private fun EditorState.unlockedElement(id: String): Element? = element(id)?.takeIf { !it.locked }
+
+/** Folds [element] back into the document through its slide. */
+private fun EditorState.withElement(element: Element): EditorState =
+    copy(document = document.updateSlide(selectedSlide.updateElement(element)))
 
 /**
  * The editor screen's logic, once, for every shell.
@@ -112,6 +138,65 @@ fun EditorPresenter(
                         state.copy(document = base, isPreviewing = false)
                     }
                     ?: state
+
+                // The element events below are the slide ones at finer grain, so
+                // they carry the same history rules. All of them ignore a locked
+                // element: ToggleElementLock is the only way back in.
+                is PreviewElement -> state.unlockedElement(event.element.id)
+                    ?.let {
+                        if (gestureBase == null) gestureBase = state.document
+                        state.withElement(event.element).copy(isPreviewing = true)
+                    }
+                    ?: state
+
+                is UpdateElement -> state.unlockedElement(event.element.id)
+                    ?.let {
+                        undone.push(gestureBase ?: state.document)
+                        gestureBase = null
+                        redone.clear()
+                        state.withElement(event.element).copy(isPreviewing = false)
+                    }
+                    ?: state
+
+                is FlipElement -> state.unlockedElement(event.id)
+                    ?.let { current ->
+                        undone.push(state.document)
+                        redone.clear()
+                        state.withElement(
+                            when (event.axis) {
+                                FlipAxis.Horizontal ->
+                                    current.update(flippedHorizontally = !current.flippedHorizontally)
+
+                                FlipAxis.Vertical ->
+                                    current.update(flippedVertically = !current.flippedVertically)
+                            }
+                        )
+                    }
+                    ?: state
+
+                is ToggleElementLock -> state.element(event.id)
+                    ?.let { current ->
+                        undone.push(state.document)
+                        redone.clear()
+                        state.withElement(current.update(locked = !current.locked))
+                    }
+                    ?: state
+
+                // Clamped at the ends, so a move that changes nothing comes back
+                // as the same slide and costs no history entry.
+                is ReorderElement -> {
+                    val slide: Slide = state.selectedSlide
+                    val reordered: Slide? = state.unlockedElement(event.id)
+                        ?.let { slide.reorderElement(event.id, event.move) }
+                        ?.takeIf { it !== slide }
+
+                    if (reordered == null) state
+                    else {
+                        undone.push(state.document)
+                        redone.clear()
+                        state.copy(document = state.document.updateSlide(reordered))
+                    }
+                }
 
                 // Disclosure is not an edit, so it makes no history entry, the
                 // same way Keynote won't undo a twisty. The document still

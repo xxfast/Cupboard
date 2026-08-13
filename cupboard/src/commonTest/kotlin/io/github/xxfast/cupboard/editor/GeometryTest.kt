@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard.editor
 
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.TextElement
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -57,5 +58,63 @@ class GeometryTest {
         val result = snapToSlideCenter(far)
         assertFalse(result.snappedX)
         assertEquals(845f, result.frame.x)
+    }
+
+    @Test
+    fun unrotatedElementHitTestsItsFrame() {
+        val element = TextElement(frame = frame)
+        assertTrue(element.contains(101f, 101f))
+        assertFalse(element.contains(99f, 150f))
+    }
+
+    @Test
+    fun rotatedElementHitTestsWhereItIsDrawn() {
+        // 200x100 at (100,100), center (200,150). Rotated 90 degrees it draws
+        // as 100x200: x 150..250, y 50..250.
+        val element = TextElement(frame = frame, rotation = 90f)
+        // On the drawn box but outside the raw frame.
+        assertTrue(element.contains(200f, 60f))
+        // Inside the raw frame but off the drawn box.
+        assertFalse(element.contains(105f, 105f))
+    }
+
+    @Test
+    fun rotatedResizeRotatesTheDeltaAndHoldsTheAnchor() {
+        // 200x100 at (100,100) drawn at 90 degrees: x 150..250, y 50..250.
+        // Dragging the BottomRight handle 40 left is 40 down in frame space,
+        // so height grows by 40, and the drawn opposite corner (250,50) holds:
+        // the frame shifts to (80,80) to keep it there.
+        val resized = resizeFrame(frame, rotation = 90f, Handle.BottomRight, dx = -40f, dy = 0f)
+        assertFrame(Frame(80f, 80f, 200f, 140f), resized)
+    }
+
+    @Test
+    fun unrotatedResizeMatchesThePlainOverload() {
+        val resized = resizeFrame(frame, rotation = 0f, Handle.BottomRight, dx = 50f, dy = 30f)
+        assertEquals(resizeFrame(frame, Handle.BottomRight, dx = 50f, dy = 30f), resized)
+    }
+
+    @Test
+    fun toLocalAndToSlideRoundTrip() {
+        val element = TextElement(frame = frame, rotation = 37f)
+        val (sx, sy) = element.toSlide(120f, 180f)
+        val (lx, ly) = element.toLocal(sx, sy)
+        assertEquals(120f, lx, absoluteTolerance = 0.001f)
+        assertEquals(180f, ly, absoluteTolerance = 0.001f)
+    }
+
+    /** Frame equality with float tolerance: rotation math never lands exact. */
+    private fun assertFrame(expected: Frame, actual: Frame, tolerance: Float = 0.001f) {
+        assertEquals(expected.x, actual.x, tolerance)
+        assertEquals(expected.y, actual.y, tolerance)
+        assertEquals(expected.width, actual.width, tolerance)
+        assertEquals(expected.height, actual.height, tolerance)
+    }
+
+    @Test
+    fun flippedElementKeepsItsFootprint() {
+        val element = TextElement(frame = frame, flippedHorizontally = true, flippedVertically = true)
+        assertTrue(element.contains(101f, 101f))
+        assertFalse(element.contains(99f, 150f))
     }
 }

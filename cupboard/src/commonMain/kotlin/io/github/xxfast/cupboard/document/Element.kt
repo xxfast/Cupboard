@@ -21,8 +21,26 @@ sealed interface Element {
     val id: String
     val frame: Frame
     val opacity: Float
+    /** Degrees clockwise, applied around the frame's center. */
+    val rotation: Float
+    val flippedHorizontally: Boolean
+    val flippedVertically: Boolean
+    /** A locked element still selects and still renders, but nothing edits it until it unlocks. */
+    val locked: Boolean
 
-    fun withFrame(frame: Frame): Element
+    /**
+     * The one mutator every element implements: copies with whichever of the
+     * shared properties were passed and keeps the element's own type and fields.
+     * Defaulted against `this`, so a caller names only what it is changing.
+     */
+    fun update(
+        frame: Frame = this.frame,
+        opacity: Float = this.opacity,
+        rotation: Float = this.rotation,
+        flippedHorizontally: Boolean = this.flippedHorizontally,
+        flippedVertically: Boolean = this.flippedVertically,
+        locked: Boolean = this.locked,
+    ): Element
 }
 
 enum class TextAlign { Start, Center, End }
@@ -33,6 +51,10 @@ data class TextElement(
     override val id: String = newId(),
     override val frame: Frame,
     override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
     val text: String = "",
     val fontSize: Float = 15f,
     val fontWeight: Int = 400,
@@ -41,7 +63,21 @@ data class TextElement(
     val color: Long = 0xFFFFFFFF,
     val align: TextAlign = TextAlign.Start,
 ) : Element {
-    override fun withFrame(frame: Frame): Element = copy(frame = frame)
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
 }
 
 enum class ShapeKind { Rectangle, Ellipse }
@@ -52,6 +88,10 @@ data class ShapeElement(
     override val id: String = newId(),
     override val frame: Frame,
     override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
     val kind: ShapeKind = ShapeKind.Rectangle,
     val cornerRadius: Float = 10f,
     val fill: Long = 0x387F52FF,
@@ -61,7 +101,21 @@ data class ShapeElement(
     val labelSize: Float = 15f,
     val labelColor: Long = 0xFFD9CFFF,
 ) : Element {
-    override fun withFrame(frame: Frame): Element = copy(frame = frame)
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
 }
 
 /**
@@ -74,9 +128,27 @@ data class ImageElement(
     override val id: String = newId(),
     override val frame: Frame,
     override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
     val placeholder: String = "Drop frame capture here",
 ) : Element {
-    override fun withFrame(frame: Frame): Element = copy(frame = frame)
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
 }
 
 @Serializable
@@ -85,9 +157,27 @@ data class CodeElement(
     override val id: String = newId(),
     override val frame: Frame,
     override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
     val code: String = "",
     val language: String = "kotlin",
     val fontSize: Float = 14f,
 ) : Element {
-    override fun withFrame(frame: Frame): Element = copy(frame = frame)
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
 }
