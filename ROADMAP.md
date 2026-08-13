@@ -33,7 +33,7 @@ macOS, Windows, and Linux are built side by side; there is no dedicated desktop 
 The parity core every later phase builds on. All of it is `screens/editor/` events + reductions first, shell surfaces second.
 
 - [x] Element property events: position/size (numeric entry), opacity, z-order (forward/back/front/back), lock/unlock, flip/rotate. Rotated elements hit-test and resize where they're drawn (anchor-corner-fixed math in `Geometry.kt`); live Format panels in both shells, Arrange menu on desktop. (`2943c50`, needs a visual pass)
-- [ ] Multi-select: marquee + shift-click, group/ungroup, align/distribute, batch property edits.
+- [x] Multi-select: marquee + shift-click (toggles at press time), group/ungroup (`GroupElement`, absolute-coordinate children, transforms baked on ungroup), align/distribute, batch property edits in both shells. (`13ffcc6`, needs a visual pass; known open bug: group resize misbehaves with rotated children, seen on visual review)
 - [ ] Clipboard: cut/copy/paste/duplicate for elements and slides, paste style / copy style.
 - [ ] Deletion: elements and slides (revisit undo's selection-dangle assumption), Clear All.
 - [ ] Slide management: add/duplicate/delete/reorder (navigator drag), skip slide, slide numbers, per-slide background (color/gradient/image).
