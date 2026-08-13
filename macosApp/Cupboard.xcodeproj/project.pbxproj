@@ -6,12 +6,17 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CB0000000000000000000014 /* cupboard.icon in Resources */ = {isa = PBXBuildFile; fileRef = CB0000000000000000000013 /* cupboard.icon */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		CB0000000000000000000001 /* Cupboard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Cupboard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CB0000000000000000000013 /* cupboard.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = cupboard.icon; path = ../design/icon/cupboard.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		CB0000000000000000000012 /* Exceptions for "Cupboard" folder in "Cupboard" target */ = {
+		CB0000000000000000000012 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -24,7 +29,11 @@
 		CB0000000000000000000002 /* Cupboard */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				CB0000000000000000000012 /* Exceptions for "Cupboard" folder in "Cupboard" target */,
+				CB0000000000000000000012 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
 			);
 			path = Cupboard;
 			sourceTree = "<group>";
@@ -46,6 +55,7 @@
 			isa = PBXGroup;
 			children = (
 				CB0000000000000000000002 /* Cupboard */,
+				CB0000000000000000000013 /* cupboard.icon */,
 				CB0000000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -124,6 +134,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CB0000000000000000000014 /* cupboard.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,7 +315,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = cupboard;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
@@ -340,7 +351,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = cupboard;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
