@@ -2,7 +2,6 @@ package io.github.xxfast.cupboard.screens.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -44,19 +44,23 @@ fun EditorStatusBar(
         ) {
             StatusText("slide $slideNumber / $slideCount", tokens.faint)
             StatusText("944 × 531 @ 1x", tokens.faint)
-            StatusText(uiLabel, tokens.faint)
-            Box(Modifier.weight(1f))
+            // The one flexible cell: ellipsizes in a narrow window instead of
+            // pushing the synced indicator off the end of the row.
+            StatusText(uiLabel, tokens.faint, modifier = Modifier.weight(1f))
             StatusText("● synced", SYNCED_GREEN)
         }
     }
 }
 
 @Composable
-private fun StatusText(text: String, color: Color) {
+private fun StatusText(text: String, color: Color, modifier: Modifier = Modifier) {
     Text(
         text = text,
         color = color,
         fontSize = 11.5.sp,
         fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
     )
 }
