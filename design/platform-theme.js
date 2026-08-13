@@ -101,10 +101,12 @@
     { title: 'Dolor sit' },
     { title: 'Amet consectetur' },
     { title: 'Adipiscing elit', depth: 1 },
-    { title: 'Sed eiusmod', depth: 1 },
-    { title: 'Tempor incididunt', depth: 1 },
-    { title: 'Ut labore' },
+    { title: 'Sed eiusmod', depth: 2 },
+    { title: 'Tempor incididunt', depth: 2 },
+    { title: 'Ut labore', depth: 1 },
     { title: 'Dolore magna' },
+    { title: 'Aliqua enim', depth: 1 },
+    { title: 'Ad minim veniam' },
   ];
 
   window.SlidesTheme = { themes, resolve, deck };

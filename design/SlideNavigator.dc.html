@@ -23,14 +23,16 @@
     </div>
     <div style="flex: 1; overflow-y: auto; padding: 2px 8px 16px 8px; display: flex; flex-direction: column; gap: 2px;">
       <sc-for list="{{ rows }}" as="s" hint-placeholder-count="6">
-        <div style="display: flex; flex-direction: column; align-items: flex-start;">
-          <div onClick="{{ s.onClick }}" style="display: flex; align-items: flex-end; gap: 5px; cursor: pointer; padding: 5px 6px; border-radius: 10px; background: {{ s.capsule }}; box-shadow: {{ s.capsuleEdge }}; margin-left: {{ s.indentPx }};" style-hover="background: {{ theme.hov }};">
-            <div style="width: 12px; flex-shrink: 0; font-size: 11px; line-height: 1; color: {{ theme.faint }}; text-align: right; padding-bottom: 2px;">{{ s.n }}</div>
-            <dc-import name="Slide" width="{{ thumbW }}" radius="4px" shadow="{{ s.thumbShadow }}" hint-size="150px,84px"></dc-import>
+        <div onClick="{{ s.onClick }}" style="display: flex; align-items: stretch; gap: 4px; cursor: pointer; padding: 5px 6px; border-radius: 10px; background: {{ s.capsule }}; box-shadow: {{ s.capsuleEdge }}; margin-left: {{ s.indentPx }};" style-hover="background: {{ theme.hov }};">
+          <div style="width: 15px; flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center;">
+            <sc-if value="{{ s.hasKids }}" hint-placeholder-val="{{ false }}">
+              <div onClick="{{ s.onToggle }}" style="width: 16px; height: 20px; display: flex; align-items: center; justify-content: center; color: {{ theme.icon }}; border-radius: 4px;" style-hover="background: {{ theme.hov2 }};">
+                <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: {{ s.chevRot }}; transition: transform 140ms ease;"><path d="M2.6 1.1 L6.4 4.5 L2.6 7.9"></path></svg>
+              </div>
+            </sc-if>
+            <div style="position: absolute; right: 0; bottom: 1px; font-size: 11px; line-height: 1; color: {{ theme.faint }};">{{ s.n }}</div>
           </div>
-          <sc-if value="{{ s.hasKids }}" hint-placeholder-val="{{ false }}">
-            <div onClick="{{ s.onToggle }}" style="height: 22px; align-self: stretch; display: flex; align-items: center; justify-content: center; color: {{ theme.dim }}; font-size: 11px; line-height: 1; cursor: pointer; border-radius: 6px;" style-hover="background: {{ theme.hov2 }};">{{ s.arrow }}</div>
-          </sc-if>
+          <dc-import name="Slide" width="{{ s.thumbW }}" radius="4px" shadow="{{ s.thumbShadow }}" hint-size="150px,84px"></dc-import>
         </div>
       </sc-for>
     </div>
@@ -40,11 +42,15 @@
     <div style="flex: 1; overflow-y: auto; padding: 10px 10px 14px; display: flex; flex-direction: column; gap: 6px;">
       <sc-for list="{{ rows }}" as="s" hint-placeholder-count="7">
         <div onClick="{{ s.onClick }}" style="display: flex; align-items: flex-start; gap: 4px; cursor: pointer; padding: 5px 6px 5px 0; border-radius: 9px; background: {{ s.capsule }};" style-hover="background: {{ theme.rowBg }};">
-          <div onClick="{{ s.onToggle }}" style="width: 14px; height: 14px; flex-shrink: 0; margin-top: 3px; display: flex; align-items: center; justify-content: center; font-size: 8px; color: {{ theme.dim }}; border-radius: 3px;" style-hover="background: {{ theme.hov }};">{{ s.arrow }}</div>
+          <div onClick="{{ s.onToggle }}" style="width: 16px; height: 16px; flex-shrink: 0; margin-top: 3px; display: flex; align-items: center; justify-content: center; color: {{ theme.icon }}; border-radius: 3px;" style-hover="background: {{ theme.hov }};">
+            <sc-if value="{{ s.hasKids }}" hint-placeholder-val="{{ false }}">
+              <svg width="9" height="9" viewBox="0 0 9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: {{ s.chevRot }}; transition: transform 140ms ease;"><path d="M2.6 1.1 L6.4 4.5 L2.6 7.9"></path></svg>
+            </sc-if>
+          </div>
           <div style="flex: 1; min-width: 0; display: flex; gap: 6px; margin-left: {{ s.indentPx }};">
             <div style="width: 14px; flex-shrink: 0; font-size: 11px; color: {{ theme.faint }}; text-align: right; padding-top: 2px; font-family: 'IBM Plex Mono', monospace;">{{ s.n }}</div>
             <div style="border: 2px solid {{ s.ring }}; border-radius: {{ theme.thumbR }}; line-height: 0; box-shadow: 0 1px 4px rgba(0,0,0,0.3);">
-              <dc-import name="Slide" width="{{ thumbW }}" radius="{{ theme.thumbR }}" hint-size="136px,77px"></dc-import>
+              <dc-import name="Slide" width="{{ s.thumbW }}" radius="{{ theme.thumbR }}" hint-size="136px,77px"></dc-import>
             </div>
           </div>
         </div>
@@ -104,7 +110,11 @@ class Component extends DCLogic {
         title: d.title,
         hasKids: hasChildren(i),
         arrow: collapsed[i] ? '›' : '⌄',
-        indentPx: (depth * (isMac ? 16 : 18)) + 'px',
+        chevRot: collapsed[i] ? 'rotate(0deg)' : 'rotate(90deg)',
+        indentPx: (depth * 12) + 'px',
+        // Nested slides also step down in thumbnail size, so depth reads at a
+        // glance and the indent never pushes the thumbnail past the panel edge.
+        thumbW: (isMac ? 150 : 136) - Math.min(depth, 3) * 12,
         capsule: on ? (isMac ? macCapsule : t.rowHov) : 'transparent',
         capsuleEdge: on && isMac ? macCapsuleEdge : 'none',
         ring: on ? t.accent : 'transparent',
