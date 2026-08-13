@@ -670,19 +670,25 @@ private struct EditorView: View {
         // Reading generation is what subscribes the rows to store changes.
         let _ = model.generation
         let selected = host.selectedSlideIndex()
+        let rows = host.outline()
         return ScrollView {
+            // Rows are identified by their absolute slide index, so collapsing a
+            // group reads as those rows leaving and everything after sliding up,
+            // not as every row changing in place.
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(host.outline().enumerated()), id: \.offset) { _, row in
+                ForEach(rows, id: \.slideIndex) { row in
                     NavigatorRow(
                         row: row,
                         selected: row.slideIndex == selected,
                         palette: palette,
                         host: host
                     )
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .padding(EdgeInsets(top: 2, leading: 8, bottom: 16, trailing: 8))
             .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(.easeInOut(duration: 0.14), value: rows.map(\.slideIndex))
         }
         .scrollContentBackground(.hidden)
     }

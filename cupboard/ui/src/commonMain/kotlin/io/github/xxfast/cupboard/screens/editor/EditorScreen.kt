@@ -1,7 +1,12 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -90,7 +95,7 @@ fun EditorView(
         Row(modifier.fillMaxSize().background(Color(0xFF17181C))) {
             Navigator(
                 document = state.document,
-                entries = state.outline(),
+                entries = state.fullOutline(),
                 selectedSlideId = selectedSlide.id,
                 onSelectSlide = onSelectSlide,
                 onToggleCollapsed = onToggleCollapsed,
@@ -171,58 +176,84 @@ private fun Navigator(
             .fillMaxHeight()
             .background(Color(0xFF1E1F26))
             .verticalScroll(rememberScrollState())
-            .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            // Rows carry their own 6.dp bottom gap (so it collapses away with
+            // them); the last one plus this padding lands on the design's 14.
+            .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp),
     ) {
         for (entry in entries) {
             val slide: Slide = document.slides[entry.slideIndex]
             val selected: Boolean = entry.slideId == selectedSlideId
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(if (selected) Color(0xFF38353F) else Color.Transparent)
-                    .clickable { onSelectSlide(entry.slideId) }
-                    .padding(top = 5.dp, bottom = 5.dp, end = 6.dp),
-                verticalAlignment = Alignment.Top,
+            // Hidden rows stay in the tree so collapsing animates them out.
+            AnimatedVisibility(
+                visible = entry.visible,
+                enter = expandVertically(tween(durationMillis = 140)) + fadeIn(tween(durationMillis = 140)),
+                exit = shrinkVertically(tween(durationMillis = 140)) + fadeOut(tween(durationMillis = 140)),
             ) {
-                // Fixed gutter, outside the indent, so every chevron shares one left rail.
-                Box(
-                    modifier = Modifier
-                        .padding(top = 3.dp)
-                        .size(16.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .let {
-                            if (entry.hasChildren) it.clickable { onToggleCollapsed(entry.slideId) }
-                            else it
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (entry.hasChildren) DisclosureChevron(collapsed = entry.collapsed)
-                }
-                Row(
-                    modifier = Modifier.padding(start = (entry.depth * 12).dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        text = "${entry.slideIndex + 1}",
-                        color = Color(0xFF8A8B94),
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.width(14.dp).padding(top = 2.dp),
-                    )
-                    SlideThumbnail(
-                        slide = slide,
-                        width = (136 - 12 * minOf(entry.depth, 3)).dp,
-                        modifier = if (selected) {
-                            Modifier.border(2.dp, Color(0xFF7F52FF), RoundedCornerShape(5.dp))
-                        } else {
-                            Modifier
-                        },
-                    )
-                }
+                NavigatorRow(
+                    slide = slide,
+                    entry = entry,
+                    selected = selected,
+                    onSelectSlide = onSelectSlide,
+                    onToggleCollapsed = onToggleCollapsed,
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun NavigatorRow(
+    slide: Slide,
+    entry: OutlineEntry,
+    selected: Boolean,
+    onSelectSlide: (String) -> Unit,
+    onToggleCollapsed: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) Color(0xFF38353F) else Color.Transparent)
+            .clickable { onSelectSlide(entry.slideId) }
+            .padding(top = 5.dp, bottom = 5.dp, end = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        // Fixed gutter, outside the indent, so every chevron shares one left rail.
+        Box(
+            modifier = Modifier
+                .padding(top = 3.dp)
+                .size(16.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .let {
+                    if (entry.hasChildren) it.clickable { onToggleCollapsed(entry.slideId) }
+                    else it
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            if (entry.hasChildren) DisclosureChevron(collapsed = entry.collapsed)
+        }
+        Row(
+            modifier = Modifier.padding(start = (entry.depth * 12).dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "${entry.slideIndex + 1}",
+                color = Color(0xFF8A8B94),
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(14.dp).padding(top = 2.dp),
+            )
+            SlideThumbnail(
+                slide = slide,
+                width = (136 - 12 * minOf(entry.depth, 3)).dp,
+                modifier = if (selected) {
+                    Modifier.border(2.dp, Color(0xFF7F52FF), RoundedCornerShape(5.dp))
+                } else {
+                    Modifier
+                },
+            )
         }
     }
 }

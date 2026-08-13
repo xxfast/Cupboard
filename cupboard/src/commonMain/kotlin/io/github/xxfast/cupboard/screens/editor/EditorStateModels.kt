@@ -16,6 +16,8 @@ data class OutlineEntry(
     val slideIndex: Int,
     val hasChildren: Boolean,
     val collapsed: Boolean,
+    /** False for a slide hidden inside a collapsed group. Always true in [EditorState.outline]. */
+    val visible: Boolean = true,
 )
 
 /**
@@ -69,16 +71,27 @@ data class EditorState(
      * following run of deeper slides. [OutlineEntry.slideIndex] is the absolute
      * index, so numbering (index + 1) survives collapsing.
      */
-    fun outline(): List<OutlineEntry> = document.visibleIndices().map { index ->
-        val slide = document.slides[index]
-        OutlineEntry(
-            slideId = slide.id,
-            title = slide.title,
-            depth = slide.depth,
-            slideIndex = index,
-            hasChildren = document.hasChildren(index),
-            collapsed = slide.collapsed,
-        )
+    fun outline(): List<OutlineEntry> = fullOutline().filter { entry -> entry.visible }
+
+    /**
+     * Every slide as a navigator row, hidden ones included: [OutlineEntry.visible]
+     * is false inside a collapsed group. For shells that animate collapsing, where
+     * an exiting row has to stay in the tree to animate out.
+     */
+    fun fullOutline(): List<OutlineEntry> {
+        val visibleIndices: Set<Int> = document.visibleIndices().toSet()
+
+        return document.slides.mapIndexed { index, slide ->
+            OutlineEntry(
+                slideId = slide.id,
+                title = slide.title,
+                depth = slide.depth,
+                slideIndex = index,
+                hasChildren = document.hasChildren(index),
+                collapsed = slide.collapsed,
+                visible = index in visibleIndices,
+            )
+        }
     }
 
     companion object {

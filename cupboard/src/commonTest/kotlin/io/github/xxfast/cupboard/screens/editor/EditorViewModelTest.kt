@@ -168,4 +168,20 @@ class EditorViewModelTest {
         assertTrue(entries[0].hasChildren)
         assertFalse(entries[1].hasChildren)
     }
+
+    @Test
+    fun fullOutlineKeepsHiddenRowsAndFlagsThem() = runTest {
+        val viewModel = editor()
+        val slides = viewModel.states.value.document.slides
+        val whyKmp = slides.first { it.title == "Why KMP" }
+
+        viewModel.onToggleCollapsed(whyKmp.id)
+        val state = viewModel.await { it.fullOutline().any { row -> !row.visible } }
+
+        // Every slide stays in the full outline, only its visibility changes.
+        assertEquals(slides.size, state.fullOutline().size)
+        assertEquals(listOf(3, 4, 5), state.fullOutline().filter { !it.visible }.map { it.slideIndex })
+        // The filtered view is exactly what the collapse-applied outline shows.
+        assertEquals(state.outline(), state.fullOutline().filter { it.visible })
+    }
 }
