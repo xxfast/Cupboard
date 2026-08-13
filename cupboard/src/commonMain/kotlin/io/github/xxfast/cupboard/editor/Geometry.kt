@@ -3,10 +3,10 @@ package io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
-import kotlin.math.PI
-import kotlin.math.cos
+import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.boundingFrame
+import io.github.xxfast.cupboard.document.rotateVector
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 enum class Handle {
     TopLeft, Top, TopRight,
@@ -71,14 +71,6 @@ fun hitTestHandle(frame: Frame, x: Float, y: Float, tolerance: Float = 8f): Hand
 fun Frame.contains(x: Float, y: Float): Boolean =
     x in this.x..(this.x + width) && y in this.y..(this.y + height)
 
-/** The vector ([dx], [dy]) rotated by [degrees], clockwise-positive like the canvas. */
-private fun rotateVector(dx: Float, dy: Float, degrees: Float): Pair<Float, Float> {
-    val radians = degrees * PI.toFloat() / 180f
-    val cos = cos(radians)
-    val sin = sin(radians)
-    return (dx * cos - dy * sin) to (dx * sin + dy * cos)
-}
-
 /**
  * The slide-space point ([x], [y]) mapped into the element's unrotated frame
  * space: rotation happens around the frame's center, so hit-testing rotates the
@@ -101,11 +93,88 @@ fun Element.toSlide(x: Float, y: Float): Pair<Float, Float> {
  * the visible box the further rotation takes it from the unrotated one. Flips
  * need no counterpart: mirroring a rectangle about its own center leaves its
  * footprint where it was.
+ *
+ * A group is its children, not its box: the empty space inside a group's bounds
+ * is not the group, so a click there falls through to whatever is behind it.
  */
 fun Element.contains(x: Float, y: Float): Boolean {
-    if (rotation == 0f) return frame.contains(x, y)
-    val (localX, localY) = toLocal(x, y)
-    return frame.contains(localX, localY)
+    val (localX: Float, localY: Float) = if (rotation == 0f) x to y else toLocal(x, y)
+    return when (this) {
+        is GroupElement -> children.any { it.contains(localX, localY) }
+        else -> frame.contains(localX, localY)
+    }
+}
+
+/** Which edge, or center line, [alignFrames] lines elements up on. */
+enum class AlignEdge { Left, CenterX, Right, Top, CenterY, Bottom }
+
+/** The axis [distributeFrames] spreads elements along. */
+enum class Axis { Horizontal, Vertical }
+
+/**
+ * Lines [elements] up on [edge]: two or more align to their own bounding box, a
+ * lone one aligns to the slide, which is what Keynote does and the only reading
+ * of "align left" that means anything for a single element.
+ *
+ * Stored frames, not drawn ones, so a rotated element lines up by its unrotated
+ * box. Known v1 simplification.
+ *
+ * Only the elements that actually moved come back, so an align that changes
+ * nothing comes back empty and the caller can skip the edit outright.
+ */
+fun alignFrames(
+    elements: List<Element>,
+    edge: AlignEdge,
+    slideWidth: Float = Document.SLIDE_WIDTH,
+    slideHeight: Float = Document.SLIDE_HEIGHT,
+): List<Element> {
+    if (elements.isEmpty()) return emptyList()
+
+    val bounds: Frame =
+        if (elements.size == 1) Frame(0f, 0f, slideWidth, slideHeight)
+        else boundingFrame(elements.map { it.frame })
+
+    return elements.mapNotNull { element ->
+        val frame: Frame = element.frame
+        val aligned: Frame = when (edge) {
+            AlignEdge.Left -> frame.copy(x = bounds.x)
+            AlignEdge.CenterX -> frame.copy(x = bounds.centerX - frame.width / 2)
+            AlignEdge.Right -> frame.copy(x = bounds.x + bounds.width - frame.width)
+            AlignEdge.Top -> frame.copy(y = bounds.y)
+            AlignEdge.CenterY -> frame.copy(y = bounds.centerY - frame.height / 2)
+            AlignEdge.Bottom -> frame.copy(y = bounds.y + bounds.height - frame.height)
+        }
+        if (aligned == frame) null else element.update(frame = aligned)
+    }
+}
+
+/**
+ * Spreads [elements] along [axis] so the gaps between neighbours are equal. The
+ * outermost two stay where they are: they are the span everything else shares.
+ *
+ * Fewer than three elements have no gap to equalize, so nothing comes back, and
+ * as with [alignFrames] only the elements that moved do.
+ */
+fun distributeFrames(elements: List<Element>, axis: Axis): List<Element> {
+    if (elements.size < 3) return emptyList()
+
+    fun start(frame: Frame): Float = if (axis == Axis.Horizontal) frame.x else frame.y
+    fun extent(frame: Frame): Float = if (axis == Axis.Horizontal) frame.width else frame.height
+
+    val ordered: List<Element> = elements.sortedBy { start(it.frame) }
+    val first: Frame = ordered.first().frame
+    val last: Frame = ordered.last().frame
+    val span: Float = start(last) + extent(last) - start(first)
+    val gap: Float = (span - ordered.map { extent(it.frame) }.sum()) / (ordered.size - 1)
+
+    var cursor: Float = start(first)
+    return ordered.mapNotNull { element ->
+        val frame: Frame = element.frame
+        val spread: Frame =
+            if (axis == Axis.Horizontal) frame.copy(x = cursor) else frame.copy(y = cursor)
+        cursor += extent(frame) + gap
+        if (spread == frame) null else element.update(frame = spread)
+    }
 }
 
 fun resizeFrame(frame: Frame, handle: Handle, dx: Float, dy: Float, minSize: Float = 40f): Frame {

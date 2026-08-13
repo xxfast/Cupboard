@@ -30,10 +30,13 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ZOrderMove.Backward
 import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
+import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
@@ -180,31 +183,39 @@ fun main() {
                 }
 
                 // Everything here needs something selected, and everything but
-                // the unlock needs it unlocked: the same rule the presenter
-                // applies, so a greyed item is never a silently dropped event.
-                val element: Element? = state.selectedElement
-                val editable: Boolean = element != null && !element.locked
+                // the unlock needs something unlocked: the same rule the
+                // presenter applies, so a greyed item is never a silently
+                // dropped event. The label follows the primary element, the
+                // events carry the whole selection.
+                val primary: Element? = state.primaryElement
+                val ids: List<String> = state.selectedElementIds
+                val unlocked: List<Element> = state.selectedElements.filter { !it.locked }
+                val editable: Boolean = unlocked.isNotEmpty()
+                // Ungrouping is a single-group act: two groups selected is a
+                // batch nothing else in the app does.
+                val group: GroupElement? = (primary as? GroupElement)
+                    ?.takeIf { ids.size == 1 && !it.locked }
 
                 Menu("Arrange", mnemonic = 'A') {
                     Item(
                         text = "Bring Forward",
                         enabled = editable,
-                        onClick = { element?.let { viewModel.onReorderElement(it.id, Forward) } },
+                        onClick = { viewModel.onReorderElements(ids, Forward) },
                     )
                     Item(
                         text = "Send Backward",
                         enabled = editable,
-                        onClick = { element?.let { viewModel.onReorderElement(it.id, Backward) } },
+                        onClick = { viewModel.onReorderElements(ids, Backward) },
                     )
                     Item(
                         text = "Bring to Front",
                         enabled = editable,
-                        onClick = { element?.let { viewModel.onReorderElement(it.id, ToFront) } },
+                        onClick = { viewModel.onReorderElements(ids, ToFront) },
                     )
                     Item(
                         text = "Send to Back",
                         enabled = editable,
-                        onClick = { element?.let { viewModel.onReorderElement(it.id, ToBack) } },
+                        onClick = { viewModel.onReorderElements(ids, ToBack) },
                     )
 
                     Separator()
@@ -212,21 +223,57 @@ fun main() {
                     Item(
                         text = "Flip Horizontally",
                         enabled = editable,
-                        onClick = { element?.let { viewModel.onFlipElement(it.id, Horizontal) } },
+                        onClick = { viewModel.onFlipElements(ids, Horizontal) },
                     )
                     Item(
                         text = "Flip Vertically",
                         enabled = editable,
-                        onClick = { element?.let { viewModel.onFlipElement(it.id, Vertical) } },
+                        onClick = { viewModel.onFlipElements(ids, Vertical) },
                     )
 
                     Separator()
 
                     Item(
-                        text = if (element?.locked == true) "Unlock" else "Lock",
-                        enabled = element != null,
-                        onClick = { element?.let { viewModel.onToggleElementLock(it.id) } },
+                        text = if (primary?.locked == true) "Unlock" else "Lock",
+                        enabled = primary != null,
+                        onClick = { viewModel.onSetElementsLocked(ids, primary?.locked != true) },
                     )
+
+                    Separator()
+
+                    Item(
+                        text = "Group",
+                        enabled = unlocked.size >= 2,
+                        onClick = { viewModel.onGroupElements(ids) },
+                    )
+                    Item(
+                        text = "Ungroup",
+                        enabled = group != null,
+                        onClick = { group?.let { viewModel.onUngroupElements(it.id) } },
+                    )
+
+                    Separator()
+
+                    // A lone element aligns to the slide, so one is enough.
+                    Menu("Align Objects", enabled = editable) {
+                        Item("Left", onClick = { viewModel.onAlignElements(AlignEdge.Left) })
+                        Item("Center", onClick = { viewModel.onAlignElements(AlignEdge.CenterX) })
+                        Item("Right", onClick = { viewModel.onAlignElements(AlignEdge.Right) })
+                        Item("Top", onClick = { viewModel.onAlignElements(AlignEdge.Top) })
+                        Item("Middle", onClick = { viewModel.onAlignElements(AlignEdge.CenterY) })
+                        Item("Bottom", onClick = { viewModel.onAlignElements(AlignEdge.Bottom) })
+                    }
+                    // Two elements have no gap between them to equalize.
+                    Menu("Distribute Objects", enabled = unlocked.size >= 3) {
+                        Item(
+                            text = "Horizontally",
+                            onClick = { viewModel.onDistributeElements(Axis.Horizontal) },
+                        )
+                        Item(
+                            text = "Vertically",
+                            onClick = { viewModel.onDistributeElements(Axis.Vertical) },
+                        )
+                    }
                 }
             }
 

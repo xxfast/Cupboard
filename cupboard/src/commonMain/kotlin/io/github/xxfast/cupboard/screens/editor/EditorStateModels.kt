@@ -2,11 +2,14 @@ package io.github.xxfast.cupboard.screens.editor
 
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.visibleIndices
+import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.Axis
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -37,7 +40,8 @@ data class OutlineEntry(
 data class EditorState(
     val document: Document,
     val selectedSlideId: String,
-    val selectedElementId: String? = null,
+    /** The element selection, in the order it was made. Empty when nothing is selected. */
+    val selectedElementIds: List<String> = emptyList(),
     /** Whether Edit > Undo / Redo are live. The history itself stays in the
      * presenter: shells only need to know what to grey out, and a state that
      * carried its own past would serialize every version of the document. */
@@ -59,15 +63,37 @@ data class EditorState(
      * Transient: a state restored from disk is by definition not mid-gesture.
      */
     @Transient val isPreviewing: Boolean = false,
+    /**
+     * The marquee rectangle being dragged out, null when none is. View state,
+     * but it rides through the loop like every other gesture: a canvas that kept
+     * it locally would be writing snapshot state from a pointer handler, which
+     * is what the drag-freeze bug was (see ROADMAP.md).
+     *
+     * Transient for the same reason as [isPreviewing].
+     */
+    @Transient val marquee: Frame? = null,
 ) {
     /** The selected slide, falling back to the first one if the id went stale. */
     val selectedSlide: Slide
         get() = document.allSlides().firstOrNull { it.id == selectedSlideId }
             ?: document.slides.first()
 
-    /** The selected element, or null when nothing is selected or the id went stale. */
-    val selectedElement: Element?
-        get() = selectedElementId?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+    /**
+     * The selected elements, in selection order. Ids that no longer resolve are
+     * dropped rather than carried: an undo can take a group away underneath its
+     * own selection, and a selection of ghosts is worse than a short one.
+     */
+    val selectedElements: List<Element>
+        get() = selectedElementIds.mapNotNull { id ->
+            selectedSlide.elements.firstOrNull { it.id == id }
+        }
+
+    /**
+     * The one element a single-element control speaks for: the first of the
+     * selection, which is what the inspector shows and what a multi-selection
+     * aligns the rest to in every editor that has an opinion.
+     */
+    val primaryElement: Element? get() = selectedElements.firstOrNull()
 
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
@@ -125,7 +151,21 @@ sealed interface EditorEvent {
     data class SelectSlide(val id: String) : EditorEvent
     /** Selects by index in presentation order; out of range indices are ignored. */
     data class SelectSlideAt(val index: Int) : EditorEvent
+    /** Replaces the whole element selection with [id], or clears it when null. */
     data class SelectElement(val id: String?) : EditorEvent
+    /** Replaces the whole element selection, in the order given. */
+    data class SelectElements(val ids: List<String>) : EditorEvent
+    /** Shift-click: adds [id] to the selection, or takes it back out. */
+    data class ToggleElementSelection(val id: String) : EditorEvent
+    /**
+     * An in-flight marquee sample: keeps the rectangle for the canvas to draw
+     * and reselects everything it overlaps, so the selection is live under the
+     * pointer rather than settled on release. Locked elements included, they
+     * select like anything else.
+     */
+    data class PreviewMarquee(val rect: Frame) : EditorEvent
+    /** The marquee is over: the rectangle goes, what it selected stays. */
+    data object EndMarquee : EditorEvent
     data class UpdateSlide(val slide: Slide) : EditorEvent
     /** An in-flight gesture sample: folds into the document so the canvas can
      * render it, but makes no history entry and clears no redo stack. */
@@ -133,17 +173,27 @@ sealed interface EditorEvent {
     /** A cancelled gesture never happened: restores the document from before
      * the gesture's first preview. */
     data object CancelPreview : EditorEvent
-    /** A settled property edit on one element: a typed-in number, a flip, a
-     * released slider. Rotation rides here too, it needs no event of its own. */
-    data class UpdateElement(val element: Element) : EditorEvent
+    /** A settled property edit on a set of elements: a typed-in number, a flip, a
+     * released slider, a dropped drag. Rotation rides here too, it needs no event
+     * of its own. One history entry however many elements it carries. */
+    data class UpdateElements(val elements: List<Element>) : EditorEvent
     /** An in-flight sample from a continuous control, [PreviewSlide]'s semantics
      * at element granularity: it folds into the document, makes no history entry
      * and is undone wholesale by [CancelPreview]. */
-    data class PreviewElement(val element: Element) : EditorEvent
-    data class ReorderElement(val id: String, val move: ZOrderMove) : EditorEvent
-    /** The only event a locked element answers to. Undoable, like Keynote's. */
-    data class ToggleElementLock(val id: String) : EditorEvent
-    data class FlipElement(val id: String, val axis: FlipAxis) : EditorEvent
+    data class PreviewElements(val elements: List<Element>) : EditorEvent
+    data class ReorderElements(val ids: List<String>, val move: ZOrderMove) : EditorEvent
+    /** The only event a locked element answers to. Undoable, like Keynote's.
+     * The shell decides what the toggle means for a mixed selection. */
+    data class SetElementsLocked(val ids: List<String>, val locked: Boolean) : EditorEvent
+    data class FlipElements(val ids: List<String>, val axis: FlipAxis) : EditorEvent
+    /** Wraps the selection into one group and selects it. Needs two unlocked members. */
+    data class GroupElements(val ids: List<String>) : EditorEvent
+    /** Breaks the group apart and selects the children it frees. Not for a locked group. */
+    data class UngroupElements(val id: String) : EditorEvent
+    /** Lines the selection up: two or more on their own bounds, a lone one on the slide. */
+    data class AlignElements(val edge: AlignEdge) : EditorEvent
+    /** Equalizes the gaps across the selection. Needs three unlocked members. */
+    data class DistributeElements(val axis: Axis) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent

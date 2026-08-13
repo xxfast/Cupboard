@@ -1,7 +1,12 @@
 package io.github.xxfast.cupboard.editor
 
+import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.groupElements
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -156,5 +161,111 @@ class GeometryTest {
         val element = TextElement(frame = frame, flippedHorizontally = true, flippedVertically = true)
         assertTrue(element.contains(101f, 101f))
         assertFalse(element.contains(99f, 150f))
+    }
+
+    private fun shape(id: String, x: Float, y: Float, width: Float = 100f, height: Float = 100f) =
+        ShapeElement(id = id, frame = Frame(x, y, width, height))
+
+    private fun group(vararg children: Element, id: String = "group"): GroupElement =
+        Slide(elements = children.toList())
+            .groupElements(children.map { it.id }, groupId = id)
+            .elements
+            .single() as GroupElement
+
+    @Test
+    fun aGroupIsHitOnItsChildrenNotOnItsBox() {
+        val group = group(shape("a", 0f, 0f), shape("b", 240f, 0f))
+        assertEquals(Frame(0f, 0f, 340f, 100f), group.frame)
+
+        assertTrue(group.contains(50f, 50f))
+        assertTrue(group.contains(290f, 50f))
+        // In the bounding box, between the children: a click there belongs to
+        // whatever is behind the group.
+        assertFalse(group.contains(170f, 50f))
+        assertFalse(group.contains(400f, 50f))
+    }
+
+    @Test
+    fun aRotatedGroupIsHitWhereItIsDrawn() {
+        // Bounds (0,0,340,100), center (170,50). A quarter turn puts child "a"
+        // (center 120 to the left of that) 120 above it.
+        val group = group(shape("a", 0f, 0f), shape("b", 240f, 0f)).copy(rotation = 90f)
+        assertTrue(group.contains(170f, -70f))
+        assertFalse(group.contains(50f, 50f))
+    }
+
+    @Test
+    fun nestedGroupsHitThroughToTheirLeaves() {
+        val inner = group(shape("a", 0f, 0f), shape("b", 240f, 0f), id = "inner")
+        val outer = group(inner, shape("c", 500f, 0f), id = "outer")
+        assertTrue(outer.contains(50f, 50f))
+        assertTrue(outer.contains(550f, 50f))
+        assertFalse(outer.contains(170f, 50f))
+    }
+
+    @Test
+    fun alignLinesElementsUpOnTheSelectionBounds() {
+        // Bounds (0,0,250,200): a is the left and top edge, b the right and bottom.
+        val a = shape("a", 0f, 0f, width = 100f, height = 50f)
+        val b = shape("b", 200f, 100f, width = 50f, height = 100f)
+        val elements = listOf(a, b)
+
+        // Only what moves comes back, so aligning left leaves "a" out of it.
+        val left = alignFrames(elements, AlignEdge.Left)
+        assertEquals(listOf("b"), left.map { it.id })
+        assertEquals(0f, left.single().frame.x)
+
+        assertEquals(150f, alignFrames(elements, AlignEdge.Right).single().frame.x)
+        assertEquals(0f, alignFrames(elements, AlignEdge.Top).single().frame.y)
+        assertEquals(150f, alignFrames(elements, AlignEdge.Bottom).single().frame.y)
+
+        val centerX = alignFrames(elements, AlignEdge.CenterX)
+        assertEquals(listOf(75f, 100f), centerX.map { it.frame.x })
+        val centerY = alignFrames(elements, AlignEdge.CenterY)
+        assertEquals(listOf(75f, 50f), centerY.map { it.frame.y })
+    }
+
+    @Test
+    fun aLoneElementAlignsToTheSlide() {
+        val element = shape("a", 100f, 100f, width = 200f, height = 100f)
+        val single = listOf(element)
+
+        assertEquals(0f, alignFrames(single, AlignEdge.Left).single().frame.x)
+        assertEquals(860f, alignFrames(single, AlignEdge.CenterX).single().frame.x)
+        assertEquals(1720f, alignFrames(single, AlignEdge.Right).single().frame.x)
+        assertEquals(0f, alignFrames(single, AlignEdge.Top).single().frame.y)
+        assertEquals(490f, alignFrames(single, AlignEdge.CenterY).single().frame.y)
+        assertEquals(980f, alignFrames(single, AlignEdge.Bottom).single().frame.y)
+
+        assertEquals(emptyList(), alignFrames(emptyList(), AlignEdge.Left))
+    }
+
+    @Test
+    fun distributeEqualizesTheGapsAndLeavesTheEndsPut() {
+        val elements = listOf(
+            shape("a", 0f, 0f),
+            shape("b", 150f, 0f),
+            shape("c", 500f, 0f),
+        )
+        // Span 600 across 300 of element, so two gaps of 150 each.
+        val spread = distributeFrames(elements, Axis.Horizontal)
+        assertEquals(listOf("b"), spread.map { it.id })
+        assertEquals(250f, spread.single().frame.x)
+
+        // Two have no gap to equalize, and neither does an empty selection.
+        assertEquals(emptyList(), distributeFrames(elements.take(2), Axis.Horizontal))
+        assertEquals(emptyList(), distributeFrames(emptyList(), Axis.Vertical))
+    }
+
+    @Test
+    fun distributeSortsByPositionNotByTheOrderGiven() {
+        val elements = listOf(
+            shape("c", 0f, 500f),
+            shape("a", 0f, 0f),
+            shape("b", 0f, 90f),
+        )
+        val spread = distributeFrames(elements, Axis.Vertical)
+        assertEquals(listOf("b"), spread.map { it.id })
+        assertEquals(250f, spread.single().frame.y)
     }
 }

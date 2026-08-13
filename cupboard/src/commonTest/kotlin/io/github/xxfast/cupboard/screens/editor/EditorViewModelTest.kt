@@ -23,7 +23,8 @@ class EditorViewModelTest {
             sampleDocument().slides.first { it.elements.isNotEmpty() }.title,
             state.selectedSlide.title,
         )
-        assertNull(state.selectedElementId)
+        assertEquals(emptyList(), state.selectedElementIds)
+        assertNull(state.primaryElement)
     }
 
     @Test
@@ -43,11 +44,11 @@ class EditorViewModelTest {
         val viewModel = editor()
         val elementId = viewModel.states.value.selectedSlide.elements.first().id
         viewModel.onSelectElement(elementId)
-        viewModel.await { it.selectedElementId == elementId }
+        viewModel.await { it.selectedElementIds == listOf(elementId) }
 
         viewModel.onSelectSlideAt(1)
         val state = viewModel.await { it.selectedSlideIndex() == 1 }
-        assertNull(state.selectedElementId)
+        assertEquals(emptyList(), state.selectedElementIds)
     }
 
     @Test

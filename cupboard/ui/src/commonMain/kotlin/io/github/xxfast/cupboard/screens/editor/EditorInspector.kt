@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
@@ -72,10 +73,10 @@ import kotlin.math.roundToInt
  * The 282dp M3 inspector: Format / Animate / Slide tabs over their bodies.
  * Clicking the active tab does nothing (close-on-reclick is macOS-only).
  *
- * Format is live whenever [selectedElement] is non-null: the geometry, rotation,
- * opacity, z-order and lock of that one element. With nothing selected it falls
- * back to the design's text mock, which is still a placeholder (text formatting
- * is its own roadmap item). Animate and Slide remain mocks throughout.
+ * Format is live whenever [selectedElements] isn't empty: the geometry, rotation,
+ * opacity, z-order and lock of the selection. With nothing selected it falls back
+ * to the design's text mock, which is still a placeholder (text formatting is its
+ * own roadmap item). Animate and Slide remain mocks throughout.
  *
  * The "Slide" tab is [InspectorTab.Document]: same pane, per-platform label.
  */
@@ -83,12 +84,14 @@ import kotlin.math.roundToInt
 fun EditorInspector(
     tab: InspectorTab,
     onSelectTab: (InspectorTab) -> Unit,
-    selectedElement: Element?,
-    onUpdateElement: (Element) -> Unit,
-    onPreviewElement: (Element) -> Unit,
-    onReorderElement: (String, ZOrderMove) -> Unit,
-    onToggleElementLock: (String) -> Unit,
-    onFlipElement: (String, FlipAxis) -> Unit,
+    selectedElements: List<Element>,
+    onUpdateElements: (List<Element>) -> Unit,
+    onPreviewElements: (List<Element>) -> Unit,
+    onReorderElements: (List<String>, ZOrderMove) -> Unit,
+    onSetElementsLocked: (List<String>, Boolean) -> Unit,
+    onFlipElements: (List<String>, FlipAxis) -> Unit,
+    onGroupElements: (List<String>) -> Unit,
+    onUngroupElements: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -131,14 +134,16 @@ fun EditorInspector(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (tab) {
-                InspectorTab.Format -> if (selectedElement == null) TextFormatPanel()
+                InspectorTab.Format -> if (selectedElements.isEmpty()) TextFormatPanel()
                 else ElementFormatPanel(
-                    element = selectedElement,
-                    onUpdate = onUpdateElement,
-                    onPreview = onPreviewElement,
-                    onReorder = onReorderElement,
-                    onToggleLock = onToggleElementLock,
-                    onFlip = onFlipElement,
+                    elements = selectedElements,
+                    onUpdate = onUpdateElements,
+                    onPreview = onPreviewElements,
+                    onReorder = onReorderElements,
+                    onSetLocked = onSetElementsLocked,
+                    onFlip = onFlipElements,
+                    onGroup = onGroupElements,
+                    onUngroup = onUngroupElements,
                 )
 
                 InspectorTab.Animate -> AnimatePanel()
@@ -237,24 +242,35 @@ private fun TextFormatPanel() {
 }
 
 /**
- * The live property editor for the selected element.
+ * The live property editor for the selection.
  *
- * Every control is stateless against [element]: what it shows is what came back
- * through the state, and what it sends is [Element.update] applied to that same
- * value. A locked element dims everything but its unlock button; the presenter
- * enforces the same rule, this only stops the user reaching for it.
+ * Every control shows the primary element (the first selected) and edits the
+ * whole selection: typing 40 into X puts every selected element at x = 40, the
+ * way Keynote's inspector does, rather than moving them as a block. Controls are
+ * stateless against [elements]: what they show is what came back through the
+ * state, and what they send is [Element.update] applied to those same values.
+ *
+ * A locked primary dims everything but its unlock button; the presenter enforces
+ * the same rule per element, this only stops the user reaching for it.
  */
 @Composable
 private fun ElementFormatPanel(
-    element: Element,
-    onUpdate: (Element) -> Unit,
-    onPreview: (Element) -> Unit,
-    onReorder: (String, ZOrderMove) -> Unit,
-    onToggleLock: (String) -> Unit,
-    onFlip: (String, FlipAxis) -> Unit,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+    onPreview: (List<Element>) -> Unit,
+    onReorder: (List<String>, ZOrderMove) -> Unit,
+    onSetLocked: (List<String>, Boolean) -> Unit,
+    onFlip: (List<String>, FlipAxis) -> Unit,
+    onGroup: (List<String>) -> Unit,
+    onUngroup: (String) -> Unit,
 ) {
-    val frame: Frame = element.frame
-    val enabled: Boolean = !element.locked
+    val primary: Element = elements.first()
+    val ids: List<String> = elements.map { it.id }
+    val frame: Frame = primary.frame
+    val enabled: Boolean = !primary.locked
+
+    fun frames(edit: (Frame) -> Frame): List<Element> =
+        elements.map { it.update(frame = edit(it.frame)) }
 
     SectionLabel("POSITION & SIZE")
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -262,14 +278,14 @@ private fun ElementFormatPanel(
             label = "X",
             value = frame.x,
             enabled = enabled,
-            onCommit = { onUpdate(element.update(frame = frame.copy(x = it))) },
+            onCommit = { x -> onUpdate(frames { it.copy(x = x) }) },
             modifier = Modifier.weight(1f),
         )
         NumberField(
             label = "Y",
             value = frame.y,
             enabled = enabled,
-            onCommit = { onUpdate(element.update(frame = frame.copy(y = it))) },
+            onCommit = { y -> onUpdate(frames { it.copy(y = y) }) },
             modifier = Modifier.weight(1f),
         )
     }
@@ -278,7 +294,7 @@ private fun ElementFormatPanel(
             label = "W",
             value = frame.width,
             enabled = enabled,
-            onCommit = { onUpdate(element.update(frame = frame.copy(width = it))) },
+            onCommit = { width -> onUpdate(frames { it.copy(width = width) }) },
             modifier = Modifier.weight(1f),
             minimum = 1f,
         )
@@ -286,7 +302,7 @@ private fun ElementFormatPanel(
             label = "H",
             value = frame.height,
             enabled = enabled,
-            onCommit = { onUpdate(element.update(frame = frame.copy(height = it))) },
+            onCommit = { height -> onUpdate(frames { it.copy(height = height) }) },
             modifier = Modifier.weight(1f),
             minimum = 1f,
         )
@@ -297,24 +313,24 @@ private fun ElementFormatPanel(
     SectionLabel("ROTATE")
     NumberField(
         label = "Angle",
-        value = element.rotation,
+        value = primary.rotation,
         enabled = enabled,
-        onCommit = { onUpdate(element.update(rotation = it)) },
+        onCommit = { angle -> onUpdate(elements.map { it.update(rotation = angle) }) },
     )
     SegmentedRow {
         Segment(
-            selected = element.flippedHorizontally,
+            selected = primary.flippedHorizontally,
             first = true,
-            onClick = if (enabled) ({ onFlip(element.id, FlipAxis.Horizontal) }) else null,
+            onClick = if (enabled) ({ onFlip(ids, FlipAxis.Horizontal) }) else null,
         ) {
-            SegmentLabel("Flip H", selected = element.flippedHorizontally, enabled = enabled)
+            SegmentLabel("Flip H", selected = primary.flippedHorizontally, enabled = enabled)
         }
         Segment(
-            selected = element.flippedVertically,
+            selected = primary.flippedVertically,
             first = false,
-            onClick = if (enabled) ({ onFlip(element.id, FlipAxis.Vertical) }) else null,
+            onClick = if (enabled) ({ onFlip(ids, FlipAxis.Vertical) }) else null,
         ) {
-            SegmentLabel("Flip V", selected = element.flippedVertically, enabled = enabled)
+            SegmentLabel("Flip V", selected = primary.flippedVertically, enabled = enabled)
         }
     }
 
@@ -322,12 +338,12 @@ private fun ElementFormatPanel(
 
     SectionLabel("OPACITY")
     SliderRow(
-        fraction = element.opacity,
-        valueLabel = "${(element.opacity * 100).roundToInt()}%",
+        fraction = primary.opacity,
+        valueLabel = "${(primary.opacity * 100).roundToInt()}%",
         enabled = enabled,
         // The whole drag is one edit: samples preview, the release commits.
-        onDrag = { onPreview(element.update(opacity = it)) },
-        onRelease = { onUpdate(element.update(opacity = it)) },
+        onDrag = { value -> onPreview(elements.map { it.update(opacity = value) }) },
+        onRelease = { value -> onUpdate(elements.map { it.update(opacity = value) }) },
     )
 
     PanelDivider()
@@ -337,13 +353,13 @@ private fun ElementFormatPanel(
         TonalButton(
             label = "Bring Forward",
             enabled = enabled,
-            onClick = { onReorder(element.id, ZOrderMove.Forward) },
+            onClick = { onReorder(ids, ZOrderMove.Forward) },
             modifier = Modifier.weight(1f),
         )
         TonalButton(
             label = "Send Backward",
             enabled = enabled,
-            onClick = { onReorder(element.id, ZOrderMove.Backward) },
+            onClick = { onReorder(ids, ZOrderMove.Backward) },
             modifier = Modifier.weight(1f),
         )
     }
@@ -351,23 +367,47 @@ private fun ElementFormatPanel(
         TonalButton(
             label = "Bring to Front",
             enabled = enabled,
-            onClick = { onReorder(element.id, ZOrderMove.ToFront) },
+            onClick = { onReorder(ids, ZOrderMove.ToFront) },
             modifier = Modifier.weight(1f),
         )
         TonalButton(
             label = "Send to Back",
             enabled = enabled,
-            onClick = { onReorder(element.id, ZOrderMove.ToBack) },
+            onClick = { onReorder(ids, ZOrderMove.ToBack) },
             modifier = Modifier.weight(1f),
+        )
+    }
+
+    // Two unlocked elements make a group; a lone group comes apart again. Neither
+    // button is worth a section on its own, so the section is only here when one
+    // of them has something to do.
+    val groupable: Boolean = elements.count { !it.locked } >= 2
+    val ungroupable: Boolean = primary is GroupElement && elements.size == 1
+
+    if (groupable || ungroupable) {
+        PanelDivider()
+
+        SectionLabel("GROUP")
+        if (groupable) TonalButton(
+            label = "Group",
+            enabled = enabled,
+            onClick = { onGroup(ids) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (ungroupable) TonalButton(
+            label = "Ungroup",
+            enabled = enabled,
+            onClick = { onUngroup(primary.id) },
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 
     PanelDivider()
 
     TonalButton(
-        label = if (element.locked) "Unlock" else "Lock",
+        label = if (primary.locked) "Unlock" else "Lock",
         enabled = true,
-        onClick = { onToggleLock(element.id) },
+        onClick = { onSetLocked(ids, !primary.locked) },
         modifier = Modifier.fillMaxWidth(),
     )
 }

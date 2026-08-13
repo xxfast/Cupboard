@@ -20,13 +20,17 @@ import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
@@ -111,13 +115,15 @@ class OutlineRow(
 )
 
 /**
- * The selected element's shared properties, flattened for the native inspector.
+ * The primary selected element's shared properties, flattened for the native
+ * inspector: the first of a selection that may hold many, which is what every
+ * single-element control speaks for. The setters it feeds edit the whole
+ * selection, so this is what the inspector shows, not what it edits.
  *
  * A value, not a handle: the shell re-reads it whenever [EditorHost.onChange]
  * fires and sends edits back through the setters, so nothing here can drift out
- * of step with the document. [Element][io.github.xxfast.cupboard.document.Element]
- * itself never crosses the boundary; a shell holding one could edit its way
- * around a lock.
+ * of step with the document. [Element] itself never crosses the boundary; a
+ * shell holding one could edit its way around a lock.
  */
 class ElementProps(
     val x: Float,
@@ -130,7 +136,7 @@ class ElementProps(
     val flippedHorizontally: Boolean,
     val flippedVertically: Boolean,
     val locked: Boolean,
-    /** "Text", "Shape", "Image" or "Code": what the inspector titles itself. */
+    /** "Text", "Shape", "Image", "Code" or "Group": what the inspector titles itself. */
     val kind: String,
 )
 
@@ -213,10 +219,14 @@ class EditorHost {
             Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
                 EditorCanvas(
                     slide = state.selectedSlide,
-                    selectedElementId = state.selectedElementId,
+                    selectedElementIds = state.selectedElementIds,
+                    marquee = state.marquee,
                     onSelectElement = viewModel::onSelectElement,
-                    onSlideChange = viewModel::onUpdateSlide,
-                    onSlidePreview = viewModel::onPreviewSlide,
+                    onToggleElementSelection = viewModel::onToggleElementSelection,
+                    onPreviewMarquee = viewModel::onPreviewMarquee,
+                    onEndMarquee = viewModel::onEndMarquee,
+                    onUpdateElements = viewModel::onUpdateElements,
+                    onPreviewElements = viewModel::onPreviewElements,
                     onPreviewCancel = viewModel::onCancelPreview,
                     modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
                     else Modifier.fillMaxSize(),
@@ -305,13 +315,14 @@ class EditorHost {
     }
 
     /**
-     * What the Format inspector shows, or null when nothing is selected.
+     * What the Format inspector shows, or null when nothing is selected: the
+     * primary element, with the rest of the selection behind it.
      *
      * Every setter below resolves the selection the same way, at call time, so a
      * click that lands after the selection moved edits nothing rather than the
-     * wrong element.
+     * wrong elements.
      */
-    fun selectedElement(): ElementProps? = state.selectedElement?.let { element ->
+    fun selectedElement(): ElementProps? = state.primaryElement?.let { element ->
         ElementProps(
             x = element.frame.x,
             y = element.frame.y,
@@ -327,59 +338,109 @@ class EditorHost {
                 is ShapeElement -> "Shape"
                 is ImageElement -> "Image"
                 is CodeElement -> "Code"
+                is GroupElement -> "Group"
             },
         )
     }
 
+    /** How many elements are selected, for the inspector's "N selected" line. */
+    fun selectionCount(): Int = state.selectedElements.size
+
+    /** Two unlocked elements are what a group is made of. */
+    fun canGroup(): Boolean {
+        val elements: List<Element> = state.selectedElements
+        return elements.size >= 2 && elements.count { !it.locked } >= 2
+    }
+
     /**
-     * Commits a typed frame. Sizes floor at one document unit: an element with no
+     * Ungrouping is a single-group act: two groups selected is a batch nothing
+     * else in the app does, so the menu item goes dead rather than guessing.
+     */
+    fun canUngroup(): Boolean {
+        val group: Element = state.selectedElements.singleOrNull() ?: return false
+        return group is GroupElement && !group.locked
+    }
+
+    // The selection an edit may touch. A locked element answers to nothing but
+    // the unlock, which the presenter enforces too; this keeps the shell from
+    // sending edits it knows will be dropped.
+    private fun editable(): List<Element> = state.selectedElements.filter { !it.locked }
+
+    /**
+     * Commits a typed frame onto every selected element, the way Keynote's
+     * inspector does: typing 40 into X puts them all at x = 40 rather than moving
+     * them as a block. Sizes floor at one document unit: an element with no
      * extent has nothing left to click, so there is no way to select it back out.
      */
     fun setSelectedElementFrame(x: Float, y: Float, width: Float, height: Float) {
-        val element = state.selectedElement ?: return
-        viewModel.onUpdateElement(
-            element.update(
-                frame = Frame(
-                    x = x,
-                    y = y,
-                    width = width.coerceAtLeast(1f),
-                    height = height.coerceAtLeast(1f),
-                ),
-            ),
+        val frame = Frame(
+            x = x,
+            y = y,
+            width = width.coerceAtLeast(1f),
+            height = height.coerceAtLeast(1f),
         )
+        val edits: List<Element> = editable().map { it.update(frame = frame) }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
     }
 
     /**
      * [commit] false is a slider still under the thumb: it folds into the document
      * so the canvas redraws, but makes no history entry. True is the release, and
-     * the whole drag lands as one undo step.
+     * the whole drag lands as one undo step however many elements it moved.
      */
     fun setSelectedElementOpacity(opacity: Float, commit: Boolean) {
-        val element = state.selectedElement ?: return
-        val updated = element.update(opacity = opacity.coerceIn(0f, 1f))
-        if (commit) viewModel.onUpdateElement(updated) else viewModel.onPreviewElement(updated)
+        val edits: List<Element> = editable().map { it.update(opacity = opacity.coerceIn(0f, 1f)) }
+        if (edits.isEmpty()) return
+        if (commit) viewModel.onUpdateElements(edits) else viewModel.onPreviewElements(edits)
     }
 
     /** Degrees clockwise. Typed, so it commits: the shell has no rotate gesture yet. */
     fun setSelectedElementRotation(degrees: Float) {
-        val element = state.selectedElement ?: return
-        viewModel.onUpdateElement(element.update(rotation = degrees))
+        val edits: List<Element> = editable().map { it.update(rotation = degrees) }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
     }
 
     fun flipSelectedElement(axis: FlipAxis) {
-        val element = state.selectedElement ?: return
-        viewModel.onFlipElement(element.id, axis)
+        val ids: List<String> = state.selectedElementIds
+        if (ids.isEmpty()) return
+        viewModel.onFlipElements(ids, axis)
     }
 
     fun reorderSelectedElement(move: ZOrderMove) {
-        val element = state.selectedElement ?: return
-        viewModel.onReorderElement(element.id, move)
+        val ids: List<String> = state.selectedElementIds
+        if (ids.isEmpty()) return
+        viewModel.onReorderElements(ids, move)
     }
 
-    /** The one edit a locked element still answers to. */
+    /** The one edit a locked element still answers to. The primary decides which way. */
     fun toggleSelectedElementLock() {
-        val element = state.selectedElement ?: return
-        viewModel.onToggleElementLock(element.id)
+        val primary: Element = state.primaryElement ?: return
+        viewModel.onSetElementsLocked(state.selectedElementIds, !primary.locked)
+    }
+
+    /** Wraps the selection into one group. Does nothing unless [canGroup]. */
+    fun groupSelection() {
+        if (!canGroup()) return
+        viewModel.onGroupElements(state.selectedElementIds)
+    }
+
+    /** Breaks the selected group apart. Does nothing unless [canUngroup]. */
+    fun ungroupSelection() {
+        if (!canUngroup()) return
+        val group: Element = state.primaryElement ?: return
+        viewModel.onUngroupElements(group.id)
+    }
+
+    /** Two or more line up on their own bounds, a lone one on the slide. */
+    fun alignSelection(edge: AlignEdge) {
+        viewModel.onAlignElements(edge)
+    }
+
+    /** Equalizes the gaps across the selection. Needs three unlocked members. */
+    fun distributeSelection(axis: Axis) {
+        viewModel.onDistributeElements(axis)
     }
 
     /**

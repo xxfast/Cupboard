@@ -102,6 +102,234 @@ class DocumentTest {
         assertTrue(slide === slide.reorderElement("gone", ZOrderMove.ToFront))
     }
 
+    private fun slideOf(vararg elements: Element): Slide = Slide(elements = elements.toList())
+
+    private fun Slide.ids(): List<String> = elements.map { it.id }
+
+    private fun shape(id: String, x: Float, y: Float, size: Float = 100f): ShapeElement =
+        ShapeElement(id = id, frame = Frame(x, y, size, size))
+
+    @Test
+    fun updateElementsReplacesEveryIdItCarries() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f), shape("c", 400f, 0f))
+        val updated = slide.updateElements(
+            listOf(
+                slide.elements[0].update(opacity = 0.5f),
+                slide.elements[2].update(opacity = 0.25f),
+                ShapeElement(id = "gone", frame = Frame(0f, 0f, 1f, 1f)),
+            ),
+        )
+        assertEquals(listOf("a", "b", "c"), updated.ids())
+        assertEquals(0.5f, updated.elements[0].opacity)
+        assertEquals(1f, updated.elements[1].opacity)
+        assertEquals(0.25f, updated.elements[2].opacity)
+    }
+
+    @Test
+    fun groupingLandsAtTheTopmostMemberAndKeepsChildOrder() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f), shape("c", 400f, 0f))
+        // Grouped bottom-up on purpose: children come back in z-order, not in the
+        // order the ids were passed.
+        val grouped = slide.groupElements(listOf("c", "a"), groupId = "group")
+        assertEquals(listOf("b", "group"), grouped.ids())
+
+        val group = grouped.elements.last() as GroupElement
+        assertEquals(listOf("a", "c"), group.children.map { it.id })
+        assertEquals(Frame(0f, 0f, 500f, 100f), group.frame)
+    }
+
+    @Test
+    fun groupingBoxesRotatedMembersWhereTheyAreDrawn() {
+        // 200x100 at (200,0) rotated 90 draws as 100x200 around center (300,50):
+        // x 250..350, y -50..150. The group frame hugs that, not the raw frame.
+        val rotated = shape("b", 200f, 0f)
+            .update(frame = Frame(200f, 0f, 200f, 100f), rotation = 90f)
+        val slide = slideOf(shape("a", 0f, 0f)).copy(elements = listOf(shape("a", 0f, 0f), rotated))
+
+        val group = slide.groupElements(listOf("a", "b"), groupId = "group")
+            .elements.single() as GroupElement
+        assertEquals(0f, group.frame.x, absoluteTolerance = 0.001f)
+        assertEquals(-50f, group.frame.y, absoluteTolerance = 0.001f)
+        assertEquals(350f, group.frame.width, absoluteTolerance = 0.001f)
+        assertEquals(200f, group.frame.height, absoluteTolerance = 0.001f)
+    }
+
+    @Test
+    fun groupingNeedsTwoUnlockedMembers() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f))
+        assertTrue(slide === slide.groupElements(listOf("a")))
+        assertTrue(slide === slide.groupElements(listOf("a", "gone")))
+        assertTrue(slide === slide.groupElements(emptyList()))
+
+        // A locked member is left where it is, which leaves nothing to group.
+        val locked = slide.updateElement(slide.elements[1].update(locked = true))
+        assertTrue(locked === locked.groupElements(listOf("a", "b")))
+    }
+
+    @Test
+    fun aMovedGroupMovesItsChildrenWithIt() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "group")
+        val group = slide.elements.single() as GroupElement
+
+        val moved = group.update(frame = group.frame.translate(50f, 30f)) as GroupElement
+        assertEquals(Frame(50f, 30f, 100f, 100f), moved.children[0].frame)
+        assertEquals(Frame(250f, 30f, 100f, 100f), moved.children[1].frame)
+    }
+
+    @Test
+    fun aResizedGroupScalesItsChildren() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "group")
+        val group = slide.elements.single() as GroupElement
+        assertEquals(Frame(0f, 0f, 300f, 100f), group.frame)
+
+        val resized = group.update(frame = Frame(0f, 0f, 600f, 50f)) as GroupElement
+        assertEquals(Frame(0f, 0f, 200f, 50f), resized.children[0].frame)
+        assertEquals(Frame(400f, 0f, 200f, 50f), resized.children[1].frame)
+    }
+
+    @Test
+    fun ungroupingSplicesTheChildrenBackWhereTheGroupSat() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f), shape("c", 400f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "group")
+        assertEquals(listOf("group", "c"), slide.ids())
+
+        val ungrouped = slide.ungroupElement("group")
+        assertEquals(listOf("a", "b", "c"), ungrouped.ids())
+        assertEquals(Frame(0f, 0f, 100f, 100f), ungrouped.elements[0].frame)
+
+        assertTrue(slide === slide.ungroupElement("c"))
+        assertTrue(slide === slide.ungroupElement("gone"))
+    }
+
+    @Test
+    fun ungroupingBakesTheGroupsTransformsIntoTheChildren() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "group")
+        val group = slide.elements.single() as GroupElement
+        // Bounds (0,0,300,100), center (150,50). Turned a quarter turn, child "a"
+        // (center (50,50), i.e. 100 to the left of the group's center) swings to
+        // 100 above it.
+        val turned = group.update(rotation = 90f, opacity = 0.5f)
+
+        val freed = slide.updateElement(turned).ungroupElement("group").elements
+        assertEquals(90f, freed[0].rotation)
+        assertEquals(0.5f, freed[0].opacity)
+        assertEquals(150f, freed[0].frame.centerX, 0.001f)
+        assertEquals(-50f, freed[0].frame.centerY, 0.001f)
+        assertEquals(150f, freed[1].frame.centerX, 0.001f)
+        assertEquals(150f, freed[1].frame.centerY, 0.001f)
+    }
+
+    @Test
+    fun aFlippedGroupMirrorsItsChildrenAcrossItsCenter() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "group")
+        val group = slide.elements.single() as GroupElement
+        val flipped = group.update(flippedHorizontally = true)
+
+        val freed = slide.updateElement(flipped).ungroupElement("group").elements
+        assertEquals(250f, freed[0].frame.centerX, 0.001f)
+        assertEquals(50f, freed[0].frame.centerY, 0.001f)
+        assertTrue(freed[0].flippedHorizontally)
+        assertEquals(50f, freed[1].frame.centerX, 0.001f)
+    }
+
+    @Test
+    fun groupsNestAndMoveThroughEachOther() {
+        val inner = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f), shape("c", 400f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "inner")
+        val outer = inner.groupElements(listOf("inner", "c"), groupId = "outer")
+
+        val group = outer.elements.single() as GroupElement
+        assertEquals(Frame(0f, 0f, 500f, 100f), group.frame)
+        assertEquals(listOf("inner", "c"), group.children.map { it.id })
+
+        val moved = group.update(frame = group.frame.translate(10f, 0f)) as GroupElement
+        val movedInner = moved.children[0] as GroupElement
+        assertEquals(Frame(10f, 0f, 300f, 100f), movedInner.frame)
+        assertEquals(Frame(10f, 0f, 100f, 100f), movedInner.children[0].frame)
+    }
+
+    @Test
+    fun reorderingABlockKeepsItsRelativeOrder() {
+        val slide = slideOf(
+            shape("a", 0f, 0f), shape("b", 0f, 0f), shape("c", 0f, 0f), shape("d", 0f, 0f),
+        )
+        assertEquals(
+            listOf("b", "d", "a", "c"),
+            slide.reorderElements(listOf("c", "a"), ZOrderMove.ToFront).ids(),
+        )
+        assertEquals(
+            listOf("b", "d", "a", "c"),
+            slide.reorderElements(listOf("b", "d"), ZOrderMove.ToBack).ids(),
+        )
+    }
+
+    @Test
+    fun steppingABlockNeverLetsMembersLeapfrogEachOther() {
+        val slide = slideOf(
+            shape("a", 0f, 0f), shape("b", 0f, 0f), shape("c", 0f, 0f), shape("d", 0f, 0f),
+        )
+        // a and b each step one forward, keeping their order and the gap to c.
+        assertEquals(
+            listOf("c", "a", "b", "d"),
+            slide.reorderElements(listOf("a", "b"), ZOrderMove.Forward).ids(),
+        )
+        assertEquals(
+            listOf("a", "c", "d", "b"),
+            slide.reorderElements(listOf("c", "d"), ZOrderMove.Backward).ids(),
+        )
+
+        // Against the ceiling: the top member can't move, so neither can the one
+        // behind it, and the whole move is a no-op.
+        assertTrue(slide === slide.reorderElements(listOf("c", "d"), ZOrderMove.Forward))
+        assertTrue(slide === slide.reorderElements(listOf("a", "b"), ZOrderMove.Backward))
+        assertTrue(slide === slide.reorderElements(listOf("a", "b"), ZOrderMove.ToBack))
+        assertTrue(slide === slide.reorderElements(emptyList(), ZOrderMove.ToFront))
+    }
+
+    @Test
+    fun serializationRoundTripsANestedGroup() {
+        val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f), shape("c", 400f, 0f))
+            .groupElements(listOf("a", "b"), groupId = "inner")
+        val document = Document(
+            slides = listOf(slide.groupElements(listOf("inner", "c"), groupId = "outer")),
+        )
+
+        val decoded = decodeDocument(document.encodeToString())
+        assertEquals(document, decoded)
+        val outer = decoded.slides.single().elements.single() as GroupElement
+        assertEquals("inner", (outer.children.first() as GroupElement).id)
+    }
+
+    /** Files written before groups existed have no "children" anywhere: still ours. */
+    @Test
+    fun aDocumentWithoutGroupsStillDecodes() {
+        val json = """
+            {
+              "id": "doc",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "text",
+                      "id": "text",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "text": "Hello"
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val element = decodeDocument(json).slides.single().elements.single()
+        assertEquals("Hello", (element as TextElement).text)
+    }
+
     @Test
     fun allSlidesIsTheFlatPresentationOrder() {
         val document = sampleDocument()

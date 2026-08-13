@@ -184,7 +184,7 @@ class EditorUndoRedoTest {
         viewModel.await { it.selectedSlideIndex() == 3 }
         val elementId = viewModel.states.value.selectedSlide.elements.firstOrNull()?.id
         viewModel.onSelectElement(elementId)
-        val selected = viewModel.await { it.selectedElementId == elementId }
+        val selected = viewModel.await { it.selectedElementIds == listOfNotNull(elementId) }
         assertFalse(selected.canUndo)
         assertFalse(selected.canRedo)
     }

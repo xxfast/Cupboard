@@ -42,7 +42,7 @@ class EditorElementTest {
         val before = viewModel.states.value.element("b")
         assertFalse(viewModel.states.value.canUndo)
 
-        viewModel.onUpdateElement(before.update(opacity = 0.5f, rotation = 45f))
+        viewModel.onUpdateElements(listOf(before.update(opacity = 0.5f, rotation = 45f)))
         val edited = viewModel.await { it.element("b").opacity == 0.5f }
         assertEquals(45f, edited.element("b").rotation)
         assertTrue(edited.canUndo)
@@ -60,7 +60,7 @@ class EditorElementTest {
         val viewModel = editor(document())
         val before = viewModel.states.value.selectedSlide
 
-        viewModel.onUpdateElement(viewModel.states.value.element("b").update(opacity = 0.25f))
+        viewModel.onUpdateElements(listOf(viewModel.states.value.element("b").update(opacity = 0.25f)))
         val edited = viewModel.await { it.element("b").opacity == 0.25f }
         assertEquals(before.elements.map { it.id }, edited.order())
         assertEquals(before.elements[0], edited.element("a"))
@@ -70,14 +70,21 @@ class EditorElementTest {
     @Test
     fun selectedElementResolvesInsideTheSelectedSlide() = runTest {
         val viewModel = editor(document())
-        assertEquals(null, viewModel.states.value.selectedElement)
+        assertEquals(null, viewModel.states.value.primaryElement)
 
         viewModel.onSelectElement("c")
-        assertEquals("c", viewModel.await { it.selectedElementId == "c" }.selectedElement?.id)
+        val selected = viewModel.await { it.selectedElementIds == listOf("c") }
+        assertEquals("c", selected.primaryElement?.id)
 
         // A stale id resolves to nothing rather than to the wrong element.
         viewModel.onSelectElement("gone")
-        assertEquals(null, viewModel.await { it.selectedElementId == "gone" }.selectedElement)
+        val stale = viewModel.await { it.selectedElementIds == listOf("gone") }
+        assertEquals(null, stale.primaryElement)
+        assertEquals(emptyList(), stale.selectedElements)
+
+        // Null clears it outright.
+        viewModel.onSelectElement(null)
+        assertEquals(emptyList(), viewModel.await { it.selectedElementIds.isEmpty() }.selectedElementIds)
     }
 
     @Test
@@ -86,13 +93,13 @@ class EditorElementTest {
         val before = viewModel.states.value.document
         val element = viewModel.states.value.element("b")
 
-        viewModel.onPreviewElement(element.update(opacity = 0.9f))
-        viewModel.onPreviewElement(element.update(opacity = 0.7f))
+        viewModel.onPreviewElements(listOf(element.update(opacity = 0.9f)))
+        viewModel.onPreviewElements(listOf(element.update(opacity = 0.7f)))
         val previewing = viewModel.await { it.element("b").opacity == 0.7f }
         assertTrue(previewing.isPreviewing)
         assertFalse(previewing.canUndo)
 
-        viewModel.onUpdateElement(element.update(opacity = 0.5f))
+        viewModel.onUpdateElements(listOf(element.update(opacity = 0.5f)))
         val committed = viewModel.await { it.element("b").opacity == 0.5f }
         assertFalse(committed.isPreviewing)
         assertTrue(committed.canUndo)
@@ -109,8 +116,8 @@ class EditorElementTest {
         val before = viewModel.states.value.document
         val element = viewModel.states.value.element("b")
 
-        viewModel.onPreviewElement(element.update(opacity = 0.9f))
-        viewModel.onPreviewElement(element.update(opacity = 0.4f))
+        viewModel.onPreviewElements(listOf(element.update(opacity = 0.9f)))
+        viewModel.onPreviewElements(listOf(element.update(opacity = 0.4f)))
         assertTrue(viewModel.await { it.element("b").opacity == 0.4f }.isPreviewing)
 
         viewModel.onCancelPreview()
@@ -125,16 +132,16 @@ class EditorElementTest {
         val viewModel = editor(document())
         assertEquals(listOf("a", "b", "c"), viewModel.states.value.order())
 
-        viewModel.onReorderElement("a", ZOrderMove.Forward)
+        viewModel.onReorderElements(listOf("a"), ZOrderMove.Forward)
         assertEquals(listOf("b", "a", "c"), viewModel.await { it.order().first() == "b" }.order())
 
-        viewModel.onReorderElement("a", ZOrderMove.Backward)
+        viewModel.onReorderElements(listOf("a"), ZOrderMove.Backward)
         assertEquals(listOf("a", "b", "c"), viewModel.await { it.order().first() == "a" }.order())
 
-        viewModel.onReorderElement("a", ZOrderMove.ToFront)
+        viewModel.onReorderElements(listOf("a"), ZOrderMove.ToFront)
         assertEquals(listOf("b", "c", "a"), viewModel.await { it.order().last() == "a" }.order())
 
-        viewModel.onReorderElement("a", ZOrderMove.ToBack)
+        viewModel.onReorderElements(listOf("a"), ZOrderMove.ToBack)
         assertEquals(listOf("a", "b", "c"), viewModel.await { it.order().last() == "c" }.order())
     }
 
@@ -143,12 +150,12 @@ class EditorElementTest {
         val viewModel = editor(document())
 
         // "a" is already at the back, "c" already at the front: four no-ops.
-        viewModel.onReorderElement("a", ZOrderMove.Backward)
-        viewModel.onReorderElement("a", ZOrderMove.ToBack)
-        viewModel.onReorderElement("c", ZOrderMove.Forward)
-        viewModel.onReorderElement("c", ZOrderMove.ToFront)
+        viewModel.onReorderElements(listOf("a"), ZOrderMove.Backward)
+        viewModel.onReorderElements(listOf("a"), ZOrderMove.ToBack)
+        viewModel.onReorderElements(listOf("c"), ZOrderMove.Forward)
+        viewModel.onReorderElements(listOf("c"), ZOrderMove.ToFront)
         // An id that doesn't resolve is a no-op too.
-        viewModel.onReorderElement("gone", ZOrderMove.ToFront)
+        viewModel.onReorderElements(listOf("gone"), ZOrderMove.ToFront)
 
         // Ordered behind them, so by the time this lands they have all been through.
         viewModel.onToggleSidebar()
@@ -161,15 +168,15 @@ class EditorElementTest {
     fun flipTogglesBothWaysOnBothAxes() = runTest {
         val viewModel = editor(document())
 
-        viewModel.onFlipElement("b", FlipAxis.Horizontal)
+        viewModel.onFlipElements(listOf("b"), FlipAxis.Horizontal)
         assertTrue(viewModel.await { it.element("b").flippedHorizontally }.canUndo)
 
-        viewModel.onFlipElement("b", FlipAxis.Vertical)
+        viewModel.onFlipElements(listOf("b"), FlipAxis.Vertical)
         val both = viewModel.await { it.element("b").flippedVertically }
         assertTrue(both.element("b").flippedHorizontally)
 
-        viewModel.onFlipElement("b", FlipAxis.Horizontal)
-        viewModel.onFlipElement("b", FlipAxis.Vertical)
+        viewModel.onFlipElements(listOf("b"), FlipAxis.Horizontal)
+        viewModel.onFlipElements(listOf("b"), FlipAxis.Vertical)
         val cleared = viewModel.await { !it.element("b").flippedVertically }
         assertFalse(cleared.element("b").flippedHorizontally)
 
@@ -183,14 +190,14 @@ class EditorElementTest {
         val viewModel = editor(document())
         val element = viewModel.states.value.element("b")
 
-        viewModel.onToggleElementLock("b")
+        viewModel.onSetElementsLocked(listOf("b"), locked = true)
         val locked = viewModel.await { it.element("b").locked }
         assertTrue(locked.canUndo)
 
-        viewModel.onUpdateElement(element.update(opacity = 0.5f))
-        viewModel.onPreviewElement(element.update(opacity = 0.2f))
-        viewModel.onFlipElement("b", FlipAxis.Horizontal)
-        viewModel.onReorderElement("b", ZOrderMove.ToFront)
+        viewModel.onUpdateElements(listOf(element.update(opacity = 0.5f)))
+        viewModel.onPreviewElements(listOf(element.update(opacity = 0.2f)))
+        viewModel.onFlipElements(listOf("b"), FlipAxis.Horizontal)
+        viewModel.onReorderElements(listOf("b"), ZOrderMove.ToFront)
 
         // Ordered behind the rejected events, so this landing means they have
         // all been through the presenter already.
@@ -201,9 +208,9 @@ class EditorElementTest {
         assertEquals(listOf("a", "b", "c"), after.order())
 
         // Unlocking is the way back in, and the edit lands once it has happened.
-        viewModel.onToggleElementLock("b")
+        viewModel.onSetElementsLocked(listOf("b"), locked = false)
         viewModel.await { !it.element("b").locked }
-        viewModel.onUpdateElement(element.update(opacity = 0.5f))
+        viewModel.onUpdateElements(listOf(element.update(opacity = 0.5f)))
         assertEquals(0.5f, viewModel.await { it.element("b").opacity == 0.5f }.element("b").opacity)
     }
 
@@ -211,7 +218,7 @@ class EditorElementTest {
     fun lockingIsItselfUndoable() = runTest {
         val viewModel = editor(document())
 
-        viewModel.onToggleElementLock("b")
+        viewModel.onSetElementsLocked(listOf("b"), locked = true)
         viewModel.await { it.element("b").locked }
 
         viewModel.onUndo()
@@ -224,14 +231,26 @@ class EditorElementTest {
     }
 
     @Test
+    fun lockingWhatIsAlreadyLockedIsNotAnEdit() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onSetElementsLocked(listOf("b"), locked = false)
+        viewModel.onSetElementsLocked(listOf("a", "c"), locked = false)
+
+        viewModel.onToggleSidebar()
+        val after = viewModel.await { !it.sidebarOpen }
+        assertFalse(after.canUndo)
+    }
+
+    @Test
     fun anElementEventForAnUnknownIdIsANoOp() = runTest {
         val viewModel = editor(document())
         val opened = viewModel.states.value.document
 
-        viewModel.onUpdateElement(ShapeElement(id = "gone", frame = Frame(0f, 0f, 1f, 1f)))
-        viewModel.onPreviewElement(ShapeElement(id = "gone", frame = Frame(0f, 0f, 1f, 1f)))
-        viewModel.onFlipElement("gone", FlipAxis.Vertical)
-        viewModel.onToggleElementLock("gone")
+        viewModel.onUpdateElements(listOf(ShapeElement(id = "gone", frame = Frame(0f, 0f, 1f, 1f))))
+        viewModel.onPreviewElements(listOf(ShapeElement(id = "gone", frame = Frame(0f, 0f, 1f, 1f))))
+        viewModel.onFlipElements(listOf("gone"), FlipAxis.Vertical)
+        viewModel.onSetElementsLocked(listOf("gone"), locked = true)
 
         viewModel.onToggleSidebar()
         val after = viewModel.await { !it.sidebarOpen }

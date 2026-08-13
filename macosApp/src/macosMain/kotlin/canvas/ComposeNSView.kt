@@ -17,6 +17,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.CanvasLayersComposeScene
@@ -220,10 +221,22 @@ class ComposeNSView(
             eventType = eventType,
             position = Offset((x * density).toFloat(), ((height - y) * density).toFloat()),
             scrollDelta = Offset(event.deltaX.toFloat(), event.deltaY.toFloat()),
+            // Key events carry these themselves, but pointer events only know what
+            // the sender passes: without this, shift-click reaches the canvas as a
+            // plain click.
+            keyboardModifiers = event.composeModifiers,
             nativeEvent = event,
             button = button,
         )
     }
+
+    private val NSEvent.composeModifiers: PointerKeyboardModifiers
+        get() = PointerKeyboardModifiers(
+            isAltPressed = modifierFlags and NSEventModifierFlagOption != 0UL,
+            isShiftPressed = modifierFlags and NSEventModifierFlagShift != 0UL,
+            isCtrlPressed = modifierFlags and NSEventModifierFlagControl != 0UL,
+            isMetaPressed = modifierFlags and NSEventModifierFlagCommand != 0UL,
+        )
 
     private fun NSEvent.toComposeEvent(): KeyEvent = KeyEvent(
         key = Key(keyCode.toLong()),

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
@@ -39,12 +40,22 @@ fun Long.toComposeColor(): Color = Color(this)
  * Positions [element] at its frame (1dp == 1 doc unit inside [SlideSurface]) and
  * renders it. Opacity, rotation and both flips ride one graphics layer around the
  * frame's center, so they cost the same as the opacity layer alone used to.
+ *
+ * [originX] and [originY] are the slide coordinates the offset is measured from:
+ * the slide's own corner at the top level, the group's corner for a group's
+ * children. Children are stored in absolute slide coordinates, so laying them out
+ * inside their group's box would otherwise apply the group's offset twice.
  */
 @Composable
-fun ElementView(element: Element, modifier: Modifier = Modifier) {
+fun ElementView(
+    element: Element,
+    modifier: Modifier = Modifier,
+    originX: Float = 0f,
+    originY: Float = 0f,
+) {
     Box(
         modifier = modifier
-            .offset(element.frame.x.dp, element.frame.y.dp)
+            .offset((element.frame.x - originX).dp, (element.frame.y - originY).dp)
             .size(element.frame.width.dp, element.frame.height.dp)
             .graphicsLayer {
                 alpha = element.opacity
@@ -59,6 +70,12 @@ fun ElementView(element: Element, modifier: Modifier = Modifier) {
             is ShapeElement -> ShapeElementView(element)
             is ImageElement -> ImageElementView(element)
             is CodeElement -> CodeElementView(element)
+            // The group draws nothing of its own: it is the box its transforms
+            // hang off, and its children draw inside it. A nested group recurses
+            // through here and re-bases its own children the same way.
+            is GroupElement -> for (child in element.children) {
+                ElementView(child, originX = element.frame.x, originY = element.frame.y)
+            }
         }
     }
 }

@@ -4,25 +4,36 @@ import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.Axis
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElement
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementLock
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.CoroutineDispatcher
@@ -86,14 +97,22 @@ class EditorViewModel(
     fun onSelectSlide(id: String) { scope.launch { events.emit(SelectSlide(id)) } }
     fun onSelectSlideAt(index: Int) { scope.launch { events.emit(SelectSlideAt(index)) } }
     fun onSelectElement(id: String?) { scope.launch { events.emit(SelectElement(id)) } }
+    fun onSelectElements(ids: List<String>) { scope.launch { events.emit(SelectElements(ids)) } }
+    fun onToggleElementSelection(id: String) { scope.launch { events.emit(ToggleElementSelection(id)) } }
+    fun onPreviewMarquee(rect: Frame) { scope.launch { events.emit(PreviewMarquee(rect)) } }
+    fun onEndMarquee() { scope.launch { events.emit(EndMarquee) } }
     fun onUpdateSlide(slide: Slide) { scope.launch { events.emit(UpdateSlide(slide)) } }
     fun onPreviewSlide(slide: Slide) { scope.launch { events.emit(PreviewSlide(slide)) } }
     fun onCancelPreview() { scope.launch { events.emit(CancelPreview) } }
-    fun onUpdateElement(element: Element) { scope.launch { events.emit(UpdateElement(element)) } }
-    fun onPreviewElement(element: Element) { scope.launch { events.emit(PreviewElement(element)) } }
-    fun onReorderElement(id: String, move: ZOrderMove) { scope.launch { events.emit(ReorderElement(id, move)) } }
-    fun onToggleElementLock(id: String) { scope.launch { events.emit(ToggleElementLock(id)) } }
-    fun onFlipElement(id: String, axis: FlipAxis) { scope.launch { events.emit(FlipElement(id, axis)) } }
+    fun onUpdateElements(elements: List<Element>) { scope.launch { events.emit(UpdateElements(elements)) } }
+    fun onPreviewElements(elements: List<Element>) { scope.launch { events.emit(PreviewElements(elements)) } }
+    fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
+    fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
+    fun onFlipElements(ids: List<String>, axis: FlipAxis) { scope.launch { events.emit(FlipElements(ids, axis)) } }
+    fun onGroupElements(ids: List<String>) { scope.launch { events.emit(GroupElements(ids)) } }
+    fun onUngroupElements(id: String) { scope.launch { events.emit(UngroupElements(id)) } }
+    fun onAlignElements(edge: AlignEdge) { scope.launch { events.emit(AlignElements(edge)) } }
+    fun onDistributeElements(axis: Axis) { scope.launch { events.emit(DistributeElements(axis)) } }
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }

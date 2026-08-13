@@ -497,6 +497,69 @@ final class EditorModel {
     }
 }
 
+// MARK: - Shared state snapshot
+
+/// One read of the shared chrome state, taken per pass by whoever needs it.
+/// Everything a click shows comes back through here, never from a local copy.
+/// A value, so the window and the menus read the same editor the same way.
+private struct Chrome {
+    let sidebarOpen: Bool
+    let inspectorOpen: Bool
+    let tab: InspectorTab
+    let showNotes: Bool
+    let notes: String
+    /// The primary of the selection, nil when nothing is selected.
+    let element: Selection?
+    let selectionCount: Int
+    let canGroup: Bool
+    let canUngroup: Bool
+
+    init(_ host: EditorHost) {
+        sidebarOpen = host.sidebarOpen()
+        inspectorOpen = host.inspectorOpen()
+        tab = host.inspectorTab()
+        showNotes = host.showNotes()
+        notes = host.slideNotes()
+        element = host.selectedElement().map(Selection.init)
+        selectionCount = Int(host.selectionCount())
+        canGroup = host.canGroup()
+        canUngroup = host.canUngroup()
+    }
+
+    /// Everything but the unlock needs something unlocked, the same rule the
+    /// presenter applies: a live item is never a silently dropped event.
+    var editable: Bool { element.map { !$0.locked } ?? false }
+}
+
+/// The primary selected element's properties as a Swift value. Kotlin hands back
+/// a fresh object on every read, so a struct is what lets the inspector's fields
+/// tell a real change from another pass over the same numbers.
+private struct Selection: Equatable {
+    let x: Double
+    let y: Double
+    let width: Double
+    let height: Double
+    let opacity: Double
+    let rotation: Double
+    let flippedHorizontally: Bool
+    let flippedVertically: Bool
+    let locked: Bool
+    let kind: String
+
+    init(_ props: ElementProps) {
+        x = Double(props.x)
+        y = Double(props.y)
+        width = Double(props.width)
+        height = Double(props.height)
+        opacity = Double(props.opacity)
+        rotation = Double(props.rotation)
+        flippedHorizontally = props.flippedHorizontally
+        flippedVertically = props.flippedVertically
+        locked = props.locked
+        kind = props.kind
+    }
+}
+
 // MARK: - App
 
 @main
@@ -540,6 +603,70 @@ struct CupboardHostApp: App {
                     set: { _ in host.toggleNotes() }
                 ))
             }
+            arrangeMenu
+        }
+    }
+
+    /// The Compose shell's Arrange menu, natively. The labels follow the primary
+    /// element, the actions carry the whole selection: the host's setters batch,
+    /// so one menu pick is one undo entry however many elements it moved.
+    private var arrangeMenu: some Commands {
+        CommandMenu("Arrange") {
+            // Reading generation is what keeps these enabled states fresh.
+            let _ = model.generation
+            let ui = Chrome(host)
+
+            Button("Bring Forward") { host.reorderSelectedElement(move: ZOrderMove.forward) }
+                .disabled(!ui.editable)
+            Button("Send Backward") { host.reorderSelectedElement(move: ZOrderMove.backward) }
+                .disabled(!ui.editable)
+            Button("Bring to Front") { host.reorderSelectedElement(move: ZOrderMove.tofront) }
+                .disabled(!ui.editable)
+            Button("Send to Back") { host.reorderSelectedElement(move: ZOrderMove.toback) }
+                .disabled(!ui.editable)
+
+            Divider()
+
+            Button("Flip Horizontally") { host.flipSelectedElement(axis: FlipAxis.horizontal) }
+                .disabled(!ui.editable)
+            Button("Flip Vertically") { host.flipSelectedElement(axis: FlipAxis.vertical) }
+                .disabled(!ui.editable)
+
+            Divider()
+
+            Button("Group") { host.groupSelection() }
+                .keyboardShortcut("g", modifiers: [.command, .option])
+                .disabled(!ui.canGroup)
+            Button("Ungroup") { host.ungroupSelection() }
+                .keyboardShortcut("g", modifiers: [.command, .option, .shift])
+                .disabled(!ui.canUngroup)
+
+            Divider()
+
+            // A lone element aligns to the slide, so one is enough.
+            Menu("Align") {
+                Button("Left") { host.alignSelection(edge: AlignEdge.left) }
+                Button("Center") { host.alignSelection(edge: AlignEdge.centerx) }
+                Button("Right") { host.alignSelection(edge: AlignEdge.right) }
+                Button("Top") { host.alignSelection(edge: AlignEdge.top) }
+                Button("Middle") { host.alignSelection(edge: AlignEdge.centery) }
+                Button("Bottom") { host.alignSelection(edge: AlignEdge.bottom) }
+            }
+            .disabled(!ui.editable)
+
+            // Two elements have no gap between them to equalize.
+            Menu("Distribute") {
+                Button("Horizontally") { host.distributeSelection(axis: Axis.horizontal) }
+                Button("Vertically") { host.distributeSelection(axis: Axis.vertical) }
+            }
+            .disabled(!ui.editable || ui.selectionCount < 3)
+
+            Divider()
+
+            Button(ui.element?.locked == true ? "Unlock" : "Lock") {
+                host.toggleSelectedElementLock()
+            }
+            .disabled(ui.element == nil)
         }
     }
 }
@@ -558,58 +685,10 @@ private struct EditorView: View {
     private var host: EditorHost { model.host }
     private var palette: Palette { Palette.of(colorScheme) }
 
-    /// One read of the shared chrome state per body pass. Everything a click
-    /// shows comes back through here, never from a local copy.
-    private struct Chrome {
-        let sidebarOpen: Bool
-        let inspectorOpen: Bool
-        let tab: InspectorTab
-        let showNotes: Bool
-        let notes: String
-        /// Nil when nothing is selected.
-        let element: Selection?
-    }
-
-    /// The selected element's properties as a Swift value. Kotlin hands back a
-    /// fresh object on every read, so a struct is what lets the inspector's
-    /// fields tell a real change from another pass over the same numbers.
-    private struct Selection: Equatable {
-        let x: Double
-        let y: Double
-        let width: Double
-        let height: Double
-        let opacity: Double
-        let rotation: Double
-        let flippedHorizontally: Bool
-        let flippedVertically: Bool
-        let locked: Bool
-        let kind: String
-
-        init(_ props: ElementProps) {
-            x = Double(props.x)
-            y = Double(props.y)
-            width = Double(props.width)
-            height = Double(props.height)
-            opacity = Double(props.opacity)
-            rotation = Double(props.rotation)
-            flippedHorizontally = props.flippedHorizontally
-            flippedVertically = props.flippedVertically
-            locked = props.locked
-            kind = props.kind
-        }
-    }
-
     /// Touching `generation` is what subscribes this view to store changes.
     private var chrome: Chrome {
         let _ = model.generation
-        return Chrome(
-            sidebarOpen: host.sidebarOpen(),
-            inspectorOpen: host.inspectorOpen(),
-            tab: host.inspectorTab(),
-            showNotes: host.showNotes(),
-            notes: host.slideNotes(),
-            element: host.selectedElement().map(Selection.init)
-        )
+        return Chrome(host)
     }
 
     /// Canvas at the back, edge to edge; the notes strip over it; the two panels
@@ -1060,13 +1139,22 @@ private struct EditorView: View {
         VStack(spacing: 0) {
             Color.clear.frame(height: Layout.header)
 
-            Text(inspectorTitle(ui))
-                .font(.system(size: 13))
-                .foregroundStyle(palette.subtle)
-                .frame(maxWidth: .infinity)
-                .padding(.top, 4)
-                .padding(.horizontal, Layout.panelPadding)
-                .padding(.bottom, 12)
+            VStack(spacing: 1) {
+                Text(inspectorTitle(ui))
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.subtle)
+                // The title names the primary element, so with more than one
+                // selected it has to say what else the controls are editing.
+                if ui.tab == InspectorTab.format && ui.selectionCount > 1 {
+                    Text("\(ui.selectionCount) selected")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.faint)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+            .padding(.horizontal, Layout.panelPadding)
+            .padding(.bottom, 12)
 
             if ui.tab == InspectorTab.document {
                 documentPanel
@@ -1112,6 +1200,16 @@ private struct EditorView: View {
                 .opacity(element.locked ? 0.45 : 1)
 
                 Spacer(minLength: 0)
+
+                // Two unlocked elements make a group; a lone group comes apart
+                // again. Neither button is here when it has nothing to do.
+                if ui.canGroup {
+                    panelButton("Group", symbol: "square.on.square") { host.groupSelection() }
+                }
+                if ui.canUngroup {
+                    panelButton("Ungroup", symbol: "square.split.2x2") { host.ungroupSelection() }
+                }
+
                 lockButton(element)
             }
             .padding(Layout.panelPadding)
@@ -1273,12 +1371,24 @@ private struct EditorView: View {
 
     /// Full width and always live: it is the only way back into a locked element.
     private func lockButton(_ element: Selection) -> some View {
+        panelButton(
+            element.locked ? "Unlock" : "Lock",
+            symbol: element.locked ? "lock.fill" : "lock.open"
+        ) { host.toggleSelectedElementLock() }
+    }
+
+    /// The panel's raised full-width button: the lock, and the group pair above it.
+    private func panelButton(
+        _ label: String,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
         let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        return Button { host.toggleSelectedElementLock() } label: {
+        return Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: element.locked ? "lock.fill" : "lock.open")
+                Image(systemName: symbol)
                     .font(.system(size: 11))
-                Text(element.locked ? "Unlock" : "Lock")
+                Text(label)
                     .font(.system(size: 12.5))
             }
             .foregroundStyle(palette.ctrlText)

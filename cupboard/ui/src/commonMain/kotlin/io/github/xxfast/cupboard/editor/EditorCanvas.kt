@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.editor
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -22,15 +23,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideSurface
@@ -38,45 +39,68 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
+import kotlin.math.abs
+import kotlin.math.min
 
 private val Accent = Color(0xFF7F52FF)
 private val GuideYellow = Color(0xFFF5C518)
 
 private sealed interface DragTarget {
-    data class Move(val elementId: String) : DragTarget
+    /**
+     * A move of the whole selection. [draggedId] is the one under the pointer:
+     * it is the frame that snaps, and the rest take the delta the snap settled on
+     * so the selection keeps its shape.
+     */
+    data class Move(val draggedId: String) : DragTarget
     data class Resize(val elementId: String, val handle: Handle) : DragTarget
+    /** A sweep over empty slide space. [start] is in doc units. */
+    data class Marquee(val start: Offset) : DragTarget
 }
 
+/** The rectangle two corners span, in either order, so a rect always has positive extent. */
+private fun rectBetween(a: Offset, b: Offset): Frame =
+    Frame(min(a.x, b.x), min(a.y, b.y), abs(b.x - a.x), abs(b.y - a.y))
+
 /**
- * The editable slide canvas: renders the slide plus selection ring, 8 resize
- * handles, drag-to-move/resize, and center alignment guides with snapping.
- * All hit-testing happens in doc units (1dp == 1 unit inside [SlideSurface]).
+ * The editable slide canvas: renders the slide plus a selection ring per selected
+ * element, the 8 resize handles for a lone selection, drag-to-move/resize,
+ * marquee selection, and center alignment guides with snapping. All hit-testing
+ * happens in doc units (1dp == 1 unit inside [SlideSurface]).
  *
- * The canvas renders purely from [slide]: a drag streams [onSlidePreview] per
- * pointer sample through the state loop and draws whatever comes back. It never
- * renders from local gesture state, because snapshot writes from pointer
- * handlers proved unreliable for repaint on desktop. [onSlideChange] fires
- * exactly once, on release: that's the undo and autosave boundary.
+ * The canvas renders purely from its arguments: a drag streams [onPreviewElements]
+ * (or [onPreviewMarquee]) per pointer sample through the state loop and draws
+ * whatever comes back. It never renders from local gesture state, because snapshot
+ * writes from pointer handlers proved unreliable for repaint on desktop.
+ * [onUpdateElements] fires exactly once, on release: that's the undo and autosave
+ * boundary.
  */
 @Composable
 fun EditorCanvas(
     slide: Slide,
-    selectedElementId: String?,
+    selectedElementIds: List<String>,
+    marquee: Frame?,
     onSelectElement: (String?) -> Unit,
-    onSlideChange: (Slide) -> Unit,
-    onSlidePreview: (Slide) -> Unit,
+    onToggleElementSelection: (String) -> Unit,
+    onPreviewMarquee: (Frame) -> Unit,
+    onEndMarquee: () -> Unit,
+    onUpdateElements: (List<Element>) -> Unit,
+    onPreviewElements: (List<Element>) -> Unit,
     onPreviewCancel: () -> Unit,
     modifier: Modifier = Modifier,
     zoom: Float? = null,
 ) {
     val currentSlide by rememberUpdatedState(slide)
-    val currentSelection by rememberUpdatedState(selectedElementId)
+    val currentSelection by rememberUpdatedState(selectedElementIds)
     var guideX by remember { mutableStateOf(false) }
     var guideY by remember { mutableStateOf(false) }
     // Cursor only. These two are written from pointer handlers, which the canvas
     // may not do for anything it draws, but the cursor is the shell's to paint.
     var hovered by remember { mutableStateOf<ResizeDirection?>(null) }
     var resizing by remember { mutableStateOf<ResizeDirection?>(null) }
+    // Whether the press in flight had shift down, latched by the click loop and
+    // read by the drag handler (whose callbacks never see modifiers): a shift
+    // gesture edits the selection and nothing else, so drags sit it out.
+    var shiftDown by remember { mutableStateOf(false) }
 
     SlideSurface(modifier, zoom = zoom) {
         for (element in slide.elements) ElementView(element)
@@ -90,8 +114,16 @@ fun EditorCanvas(
         fun elementAt(p: Offset): Element? =
             currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
 
-        fun selectedElement(): Element? =
-            currentSlide.elements.firstOrNull { it.id == currentSelection }
+        fun selectedElements(): List<Element> = currentSelection.mapNotNull { id ->
+            currentSlide.elements.firstOrNull { it.id == id }
+        }
+
+        // Handles belong to a lone selection: with two or more selected there is
+        // no one frame to resize, so every drag there is a move.
+        fun soleSelected(): Element? =
+            currentSelection.singleOrNull()?.let { id ->
+                currentSlide.elements.firstOrNull { it.id == id }
+            }
 
         // A locked element has no handles to hit: it neither resizes nor moves.
         // Selection still happens either way, so the inspector can reach it to
@@ -101,17 +133,11 @@ fun EditorCanvas(
         // [tolerance] is in screen dp: hovering is the more forgiving of the two,
         // so the cursor hints just before the grab starts working, never after.
         fun handleAt(position: Offset, tolerance: Float = 8f): Handle? {
-            val element = selectedElement()?.takeIf { !it.locked } ?: return null
+            val element = soleSelected()?.takeIf { !it.locked } ?: return null
             val p = toDoc(position)
             val (localX, localY) = element.toLocal(p.x, p.y)
             return hitTestHandle(element.frame, localX, localY, tolerance / canvasScale)
         }
-
-        fun placed(elementId: String, frame: Frame): Slide = currentSlide.copy(
-            elements = currentSlide.elements.map {
-                if (it.id == elementId) it.update(frame = frame) else it
-            }
-        )
 
         // The dragged handle wins over the hovered one: mid-resize the frame
         // moves under a still pointer, and the cursor must not flicker with it.
@@ -124,18 +150,62 @@ fun EditorCanvas(
                 .fillMaxSize()
                 .then(cursorModifier)
                 .pointerInput(Unit) {
-                    // Hover, for the cursor. Nothing is consumed here, so the
-                    // gesture handlers below see every event regardless.
+                    // Hover for the cursor, and the click that selects. One loop
+                    // because the click needs the modifiers of its own press,
+                    // which detectTapGestures doesn't hand out. Nothing is
+                    // consumed here, so the drag handler below still sees every
+                    // event; a press that becomes a drag has its changes consumed
+                    // there, which is what takes it out of the running as a click.
+                    val slop: Float = viewConfiguration.touchSlop
                     awaitPointerEventScope {
+                        var pressedAt: Offset? = null
                         while (true) {
-                            val event = awaitPointerEvent()
+                            val event: PointerEvent = awaitPointerEvent()
+                            val position: Offset? = event.changes.firstOrNull()?.position
+                            if (event.changes.any { it.isConsumed }) pressedAt = null
+
                             when (event.type) {
+                                // A shift press settles at press time, the way
+                                // editors do: toggling on release let a jitter
+                                // past the drag slop swallow the click, and the
+                                // drag it became would replace the selection the
+                                // user was building. Shift over empty space is a
+                                // no-op, not a clear: a near-miss while adding
+                                // must not cost the whole selection. Plain
+                                // clicks keep deciding on release, where a click
+                                // and a drag can still be told apart.
+                                PointerEventType.Press -> {
+                                    shiftDown = event.keyboardModifiers.isShiftPressed
+                                    if (shiftDown) {
+                                        position
+                                            ?.let { elementAt(toDoc(it)) }
+                                            ?.let { onToggleElementSelection(it.id) }
+                                        pressedAt = null
+                                    } else {
+                                        pressedAt = position
+                                    }
+                                }
+
                                 PointerEventType.Move -> {
-                                    val position = event.changes.firstOrNull()?.position
                                     hovered = position
                                         ?.let { handleAt(it, tolerance = 12f) }
-                                        ?.let { resizeDirection(it, selectedElement()?.rotation ?: 0f) }
+                                        ?.let { resizeDirection(it, soleSelected()?.rotation ?: 0f) }
                                 }
+
+                                PointerEventType.Release -> {
+                                    val start: Offset? = pressedAt
+                                    pressedAt = null
+                                    // A click, not a drag: the pointer came back
+                                    // up where it went down.
+                                    if (start != null && position != null &&
+                                        (position - start).getDistance() <= slop
+                                    ) {
+                                        val hit: Element? = elementAt(toDoc(start))
+                                        if (hit == null) onSelectElement(null)
+                                        else onSelectElement(hit.id)
+                                    }
+                                }
+
                                 PointerEventType.Exit -> hovered = null
                                 else -> {}
                             }
@@ -143,80 +213,112 @@ fun EditorCanvas(
                     }
                 }
                 .pointerInput(Unit) {
-                    detectTapGestures { position ->
-                        onSelectElement(elementAt(toDoc(position))?.id)
-                    }
-                }
-                .pointerInput(Unit) {
-                    // Plain vars, not snapshot state: each sample accumulates
-                    // into an absolute frame, so every emission carries the
-                    // whole gesture and a slow roundtrip can delay a repaint
-                    // but never lose movement.
+                    // Plain vars, not snapshot state: each sample recomputes from
+                    // the frames the gesture started with, so every emission
+                    // carries the whole gesture and a slow roundtrip can delay a
+                    // repaint but never lose movement.
                     var target: DragTarget? = null
-                    var draggedFrame: Frame? = null
+                    var startFrames: Map<String, Frame> = emptyMap()
                     var startFrame: Frame? = null
                     var startRotation = 0f
                     var totalDx = 0f
                     var totalDy = 0f
+                    var marqueeOrigin: Offset? = null
                     fun reset() {
                         target = null
-                        draggedFrame = null
+                        startFrames = emptyMap()
                         startFrame = null
                         startRotation = 0f
                         totalDx = 0f
                         totalDy = 0f
+                        marqueeOrigin = null
                         guideX = false
                         guideY = false
                         resizing = null
                     }
+
+                    // The whole selection moved by this gesture: the dragged
+                    // element snaps to the slide center and hands the delta it
+                    // settled on to the rest. The guides ride that same snap.
+                    fun moved(draggedId: String): List<Element> {
+                        val start: Frame = startFrames[draggedId] ?: return emptyList()
+                        val snapped: SnapResult =
+                            snapToSlideCenter(start.translate(totalDx, totalDy))
+                        guideX = snapped.snappedX
+                        guideY = snapped.snappedY
+                        val dx: Float = snapped.frame.x - start.x
+                        val dy: Float = snapped.frame.y - start.y
+                        return currentSlide.elements
+                            .filter { it.id in startFrames }
+                            .map { it.update(frame = startFrames.getValue(it.id).translate(dx, dy)) }
+                    }
+
+                    fun resized(t: DragTarget.Resize): List<Element> {
+                        val start: Frame = startFrame ?: return emptyList()
+                        val element: Element = currentSlide.elements
+                            .firstOrNull { it.id == t.elementId }
+                            ?: return emptyList()
+                        val frame: Frame =
+                            resizeFrame(start, startRotation, t.handle, totalDx, totalDy)
+                        return listOf(element.update(frame = frame))
+                    }
+
                     detectDragGestures(
                         onDragStart = { position ->
+                            // The selection was already edited at press time.
+                            if (shiftDown) return@detectDragGestures
                             val p = toDoc(position)
-                            val selected = selectedElement()
-                            val handle = handleAt(position)
+                            val sole: Element? = soleSelected()
+                            val handle: Handle? = handleAt(position)
+                            val hit: Element? = elementAt(p)
                             target = when {
-                                selected != null && handle != null -> DragTarget.Resize(selected.id, handle)
-                                else -> elementAt(p)
-                                    ?.also { onSelectElement(it.id) }
-                                    ?.takeIf { !it.locked }
-                                    ?.let { DragTarget.Move(it.id) }
+                                sole != null && handle != null -> {
+                                    startFrame = sole.frame
+                                    startRotation = sole.rotation
+                                    DragTarget.Resize(sole.id, handle)
+                                }
+
+                                // Empty space sweeps a marquee instead.
+                                hit == null -> DragTarget.Marquee(p)
+
+                                else -> {
+                                    // A press on something outside the selection
+                                    // takes the selection with it, exactly as a
+                                    // plain click would; a press inside it drags
+                                    // everything already selected.
+                                    val selected: Boolean = hit.id in currentSelection
+                                    if (!selected) onSelectElement(hit.id)
+                                    val movers: List<Element> =
+                                        if (selected) selectedElements() else listOf(hit)
+                                    startFrames = movers
+                                        .filter { !it.locked }
+                                        .associate { it.id to it.frame }
+                                    if (hit.locked) null else DragTarget.Move(hit.id)
+                                }
                             }
-                            val targetId = when (val t = target) {
-                                is DragTarget.Move -> t.elementId
-                                is DragTarget.Resize -> t.elementId
-                                null -> null
-                            }
-                            val element = currentSlide.elements.firstOrNull { it.id == targetId }
-                            draggedFrame = element?.frame
-                            startFrame = element?.frame
-                            startRotation = element?.rotation ?: 0f
                             resizing = (target as? DragTarget.Resize)
                                 ?.let { resizeDirection(it.handle, startRotation) }
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()
                             val delta = Offset(dragAmount.x / docDensity, dragAmount.y / docDensity)
+                            totalDx += delta.x
+                            totalDy += delta.y
                             when (val t = target) {
-                                is DragTarget.Move -> {
-                                    // The raw frame accumulates, the snapped one
-                                    // is emitted: snapping must not compound.
-                                    val moved = draggedFrame?.translate(delta.x, delta.y)
-                                        ?: return@detectDragGestures
-                                    draggedFrame = moved
-                                    val snapped = snapToSlideCenter(moved)
-                                    guideX = snapped.snappedX
-                                    guideY = snapped.snappedY
-                                    onSlidePreview(placed(t.elementId, snapped.frame))
+                                is DragTarget.Move -> onPreviewElements(moved(t.draggedId))
+                                is DragTarget.Resize -> onPreviewElements(resized(t))
+
+                                is DragTarget.Marquee -> {
+                                    // The rectangle starts at the press, not at
+                                    // where the slop was crossed: the first
+                                    // sample carries that gap, so it comes back
+                                    // off the start position once.
+                                    val origin: Offset = marqueeOrigin
+                                        ?: (t.start - delta).also { marqueeOrigin = it }
+                                    val corner = Offset(origin.x + totalDx, origin.y + totalDy)
+                                    onPreviewMarquee(rectBetween(origin, corner))
                                 }
-                                is DragTarget.Resize -> {
-                                    val start = startFrame ?: return@detectDragGestures
-                                    totalDx += delta.x
-                                    totalDy += delta.y
-                                    // Always from the start frame with running
-                                    // totals: same math as iterating, and the
-                                    // min-size clamp holds across the gesture.
-                                    onSlidePreview(placed(t.elementId, resizeFrame(start, startRotation, t.handle, totalDx, totalDy)))
-                                }
+
                                 null -> {}
                             }
                         },
@@ -224,30 +326,38 @@ fun EditorCanvas(
                         // drag must never publish anything.
                         onDragEnd = {
                             when (val t = target) {
-                                is DragTarget.Move -> draggedFrame?.let { frame ->
-                                    onSlideChange(placed(t.elementId, snapToSlideCenter(frame).frame))
-                                }
-                                is DragTarget.Resize -> startFrame?.let { start ->
-                                    onSlideChange(placed(t.elementId, resizeFrame(start, startRotation, t.handle, totalDx, totalDy)))
-                                }
+                                is DragTarget.Move -> onUpdateElements(moved(t.draggedId))
+                                is DragTarget.Resize -> onUpdateElements(resized(t))
+                                // What a half-swept marquee caught, it keeps.
+                                is DragTarget.Marquee -> onEndMarquee()
                                 null -> {}
                             }
                             reset()
                         },
-                        // A cancelled gesture never happened: the presenter
-                        // rolls the document back to its pre-gesture state.
+                        // A cancelled gesture never happened: the presenter rolls
+                        // the document back to its pre-gesture state. A marquee
+                        // changed no document, so it only has its rectangle to
+                        // put away.
                         onDragCancel = {
-                            if (target != null) onPreviewCancel()
+                            when (target) {
+                                is DragTarget.Marquee -> onEndMarquee()
+                                null -> {}
+                                else -> onPreviewCancel()
+                            }
                             reset()
                         },
                     )
                 }
         )
 
-        // Selection ring + handles
-        slide.elements.firstOrNull { it.id == selectedElementId }?.let { selected ->
-            SelectionOverlay(selected, canvasScale)
+        // Selection rings, one per selected element; handles only for a lone one.
+        val selected: List<Element> = slide.elements.filter { it.id in selectedElementIds }
+        for (element in selected) {
+            SelectionOverlay(element, canvasScale, handles = selected.size == 1)
         }
+
+        // The marquee, drawn from state rather than from the gesture's own vars.
+        if (marquee != null) MarqueeOverlay(marquee, canvasScale)
 
         // Alignment guides
         if (guideX) VerticalCenterGuide(canvasScale)
@@ -256,12 +366,12 @@ fun EditorCanvas(
 }
 
 /**
- * The selection ring, and the 8 handles unless [element] is locked: a lock
- * means what it says. Ring and handles both ride the element's rotation, the
- * handles by sitting at their corner's drawn position and turning with it.
+ * The selection ring, and the 8 handles when [handles] and [element] is unlocked:
+ * a lock means what it says. Ring and handles both ride the element's rotation,
+ * the handles by sitting at their corner's drawn position and turning with it.
  */
 @Composable
-private fun SelectionOverlay(element: Element, scale: Float) {
+private fun SelectionOverlay(element: Element, scale: Float, handles: Boolean) {
     val frame = element.frame
     Box(
         Modifier
@@ -273,7 +383,7 @@ private fun SelectionOverlay(element: Element, scale: Float) {
             }
             .border((1.5f / scale).dp, Accent)
     )
-    if (element.locked) return
+    if (!handles || element.locked) return
 
     val handleSize = 9f / scale
     for ((_, position) in handlePositions(frame)) {
@@ -288,6 +398,18 @@ private fun SelectionOverlay(element: Element, scale: Float) {
                 .border((1.5f / scale).dp, Accent, RoundedCornerShape((2f / scale).dp))
         )
     }
+}
+
+/** The sweep rectangle: a hairline accent border over a wash of the same accent. */
+@Composable
+private fun MarqueeOverlay(rect: Frame, scale: Float) {
+    Box(
+        Modifier
+            .offset(rect.x.dp, rect.y.dp)
+            .size(rect.width.dp, rect.height.dp)
+            .background(Accent.copy(alpha = 0.1f))
+            .border((1f / scale).dp, Accent)
+    )
 }
 
 @Composable

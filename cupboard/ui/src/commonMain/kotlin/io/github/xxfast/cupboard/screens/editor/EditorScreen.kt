@@ -23,6 +23,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -53,14 +54,17 @@ fun EditorScreen(
         onSelectSlide = viewModel::onSelectSlide,
         onToggleCollapsed = viewModel::onToggleCollapsed,
         onSelectElement = viewModel::onSelectElement,
-        onUpdateSlide = viewModel::onUpdateSlide,
-        onPreviewSlide = viewModel::onPreviewSlide,
+        onToggleElementSelection = viewModel::onToggleElementSelection,
+        onPreviewMarquee = viewModel::onPreviewMarquee,
+        onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
-        onUpdateElement = viewModel::onUpdateElement,
-        onPreviewElement = viewModel::onPreviewElement,
-        onReorderElement = viewModel::onReorderElement,
-        onToggleElementLock = viewModel::onToggleElementLock,
-        onFlipElement = viewModel::onFlipElement,
+        onUpdateElements = viewModel::onUpdateElements,
+        onPreviewElements = viewModel::onPreviewElements,
+        onReorderElements = viewModel::onReorderElements,
+        onSetElementsLocked = viewModel::onSetElementsLocked,
+        onFlipElements = viewModel::onFlipElements,
+        onGroupElements = viewModel::onGroupElements,
+        onUngroupElements = viewModel::onUngroupElements,
         onSelectInspectorTab = viewModel::onSelectInspectorTab,
         onPlay = onPlay,
     )
@@ -72,14 +76,17 @@ fun EditorView(
     onSelectSlide: (String) -> Unit,
     onToggleCollapsed: (String) -> Unit,
     onSelectElement: (String?) -> Unit,
-    onUpdateSlide: (Slide) -> Unit,
-    onPreviewSlide: (Slide) -> Unit,
+    onToggleElementSelection: (String) -> Unit,
+    onPreviewMarquee: (Frame) -> Unit,
+    onEndMarquee: () -> Unit,
     onCancelPreview: () -> Unit,
-    onUpdateElement: (Element) -> Unit,
-    onPreviewElement: (Element) -> Unit,
-    onReorderElement: (String, ZOrderMove) -> Unit,
-    onToggleElementLock: (String) -> Unit,
-    onFlipElement: (String, FlipAxis) -> Unit,
+    onUpdateElements: (List<Element>) -> Unit,
+    onPreviewElements: (List<Element>) -> Unit,
+    onReorderElements: (List<String>, ZOrderMove) -> Unit,
+    onSetElementsLocked: (List<String>, Boolean) -> Unit,
+    onFlipElements: (List<String>, FlipAxis) -> Unit,
+    onGroupElements: (List<String>) -> Unit,
+    onUngroupElements: (String) -> Unit,
     onSelectInspectorTab: (InspectorTab) -> Unit,
     onPlay: ((Document, Int) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
@@ -127,10 +134,14 @@ fun EditorView(
                         ) {
                             EditorCanvas(
                                 slide = selectedSlide,
-                                selectedElementId = state.selectedElementId,
+                                selectedElementIds = state.selectedElementIds,
+                                marquee = state.marquee,
                                 onSelectElement = onSelectElement,
-                                onSlideChange = onUpdateSlide,
-                                onSlidePreview = onPreviewSlide,
+                                onToggleElementSelection = onToggleElementSelection,
+                                onPreviewMarquee = onPreviewMarquee,
+                                onEndMarquee = onEndMarquee,
+                                onUpdateElements = onUpdateElements,
+                                onPreviewElements = onPreviewElements,
                                 onPreviewCancel = onCancelPreview,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
                                 modifier = Modifier.fillMaxSize(),
@@ -149,12 +160,14 @@ fun EditorView(
                     if (state.inspectorOpen) EditorInspector(
                         tab = state.inspectorTab,
                         onSelectTab = onSelectInspectorTab,
-                        selectedElement = state.selectedElement,
-                        onUpdateElement = onUpdateElement,
-                        onPreviewElement = onPreviewElement,
-                        onReorderElement = onReorderElement,
-                        onToggleElementLock = onToggleElementLock,
-                        onFlipElement = onFlipElement,
+                        selectedElements = state.selectedElements,
+                        onUpdateElements = onUpdateElements,
+                        onPreviewElements = onPreviewElements,
+                        onReorderElements = onReorderElements,
+                        onSetElementsLocked = onSetElementsLocked,
+                        onFlipElements = onFlipElements,
+                        onGroupElements = onGroupElements,
+                        onUngroupElements = onUngroupElements,
                     )
                 }
             }
