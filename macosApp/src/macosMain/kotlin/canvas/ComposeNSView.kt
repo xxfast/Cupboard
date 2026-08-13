@@ -48,8 +48,10 @@ import platform.AppKit.NSTrackingInVisibleRect
 import platform.AppKit.NSTrackingMouseEnteredAndExited
 import platform.AppKit.NSTrackingMouseMoved
 import platform.AppKit.NSView
+import platform.AppKit.NSViewFrameDidChangeNotification
 import platform.AppKit.NSWindow
 import platform.Foundation.NSMakeRect
+import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSRect
 
 // Same stub as compose's internal MacosTextInputService: enough for plain key-event
@@ -133,6 +135,15 @@ class ComposeNSView(
         if (window != null) {
             scene.density = Density(window.backingScaleFactor.toFloat())
             window.makeFirstResponder(this)
+            // Back in a window, so skiko can safely hear about frames again. The
+            // post is the catch-up for whatever it missed while we were detached.
+            postsFrameChangedNotifications = true
+            if (isAttached) {
+                NSNotificationCenter.defaultCenter.postNotificationName(
+                    aName = NSViewFrameDidChangeNotification,
+                    `object` = this,
+                )
+            }
         }
     }
 
@@ -148,6 +159,11 @@ class ComposeNSView(
 
     override fun viewWillMoveToWindow(newWindow: NSWindow?) {
         super.viewWillMoveToWindow(newWindow)
+        // Skiko's frame observer reads nsView.window!! (MacOsMetalRedrawer.syncContentScale),
+        // so a frame change while we sit between windows crashes it. SwiftUI does
+        // exactly that: re-hosting sets the frame before adding us back, which is
+        // what exiting play mode does. Go quiet until we have a window again.
+        if (newWindow == null) postsFrameChangedNotifications = false
         updateTrackingAreas()
     }
 
