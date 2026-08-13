@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body { margin: 0; background: #EDEBE8; -webkit-font-smoothing: antialiased; }
+  a { color: #7F52FF; text-decoration: none; }
+  a:hover { color: #F0357B; }
+</style>
+</helmet>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="{{ c1 }}"></stop>
+      <stop offset="0.55" stop-color="{{ c2 }}"></stop>
+      <stop offset="1" stop-color="{{ c3 }}"></stop>
+    </linearGradient>
+
+    <mask id="kA"><rect width="128" height="128" fill="#fff"></rect><path d="M55 49 L79 62.5 L55 76 Z" fill="#000"></path></mask>
+    <mask id="kB"><rect width="128" height="128" fill="#fff"></rect>
+      <g fill="#000" stroke="#000"><path d="M96 58 C111 58 111 80 94 80" stroke-width="7" fill="none" stroke-linecap="round"></path><path d="M34 52 H94 A30 30 0 0 1 34 52 Z"></path><rect x="28" y="90" width="72" height="8" rx="4"></rect></g></mask>
+    <mask id="kC"><rect width="128" height="128" fill="#fff"></rect><path d="M55 43 L78 56 L55 69 Z" fill="#000"></path></mask>
+    <mask id="kE"><rect width="128" height="128" fill="#fff"></rect><path d="M51 52 L75 64 L51 76 Z" fill="#000"></path></mask>
+
+    <mask id="kCup" maskUnits="userSpaceOnUse" x="-4" y="-4" width="54" height="36"><rect x="-4" y="-4" width="54" height="36" fill="#fff"></rect><path d="M15 6.5 L29 12.5 L15 18.5 Z" fill="#000"></path></mask>
+    <g id="cupShape">
+      <path d="M38.6 0.3 A10 10 0 0 1 38.6 19.7 L37.6 15.8 A6 6 0 0 0 37.6 4.2 Z" stroke="none"></path>
+      <rect x="2" y="0" width="40" height="4" rx="2" stroke="none"></rect>
+      <path d="M4 4 H40 C40 15 33 20.5 22 20.5 C11 20.5 4 15 4 4 Z" stroke="none" mask="url(#kCup)"></path>
+      <rect x="0" y="22.5" width="44" height="4" rx="2" stroke="none"></rect>
+    </g>
+
+    <g id="cupShapeG" fill="url(#g)">
+      <path d="M38.6 0.3 A10 10 0 0 1 38.6 19.7 L37.6 15.8 A6 6 0 0 0 37.6 4.2 Z" fill="url(#g)"></path>
+      <rect x="2" y="0" width="40" height="4" rx="2" fill="url(#g)"></rect>
+      <path d="M4 4 H40 C40 15 33 20.5 22 20.5 C11 20.5 4 15 4 4 Z" fill="url(#g)" mask="url(#kCup)"></path>
+      <rect x="0" y="22.5" width="44" height="4" rx="2" fill="url(#g)"></rect>
+    </g>
+
+    <mask id="kBoardN"><rect width="128" height="128" fill="#fff"></rect><path d="M47 32 L63 41 L47 50 Z" fill="#000"></path></mask>
+
+    <symbol id="mN" viewBox="0 0 128 128">
+      <rect x="14" y="14" width="100" height="100" rx="20" fill="none" stroke="currentColor" stroke-width="8"></rect>
+      <path d="M18 64 H110" stroke="currentColor" stroke-width="8"></path>
+      <rect x="26" y="26" width="54" height="30" rx="4" fill="url(#g)" mask="url(#kBoardN)"></rect>
+      <path d="M84 78 A11 11 0 0 1 84 100 L84 95.5 A6.5 6.5 0 0 0 84 82.5 Z" fill="url(#g)"></path>
+      <path d="M52 76 H88 L86.5 94 A19 19 0 0 1 53.5 94 Z" fill="url(#g)"></path>
+    </symbol>
+
+    <symbol id="mGrid" viewBox="0 0 128 128">
+      <g fill="none" stroke="#7F52FF" stroke-width="0.6" opacity="0.55">
+        <rect x="4" y="4" width="120" height="120" rx="27"></rect>
+        <circle cx="64" cy="64" r="51"></circle>
+        <circle cx="64" cy="64" r="38"></circle>
+        <rect x="32" y="12" width="64" height="104" rx="12"></rect>
+        <rect x="12" y="32" width="104" height="64" rx="12"></rect>
+        <path d="M4 4 L124 124 M124 4 L4 124"></path>
+      </g>
+      <g stroke="#F0357B" stroke-width="0.6" opacity="0.5">
+        <path d="M64 0 V128 M0 64 H128"></path>
+      </g>
+      <g stroke="#2A2630" stroke-width="0.5" opacity="0.16">
+        <path d="M14 0 V128 M114 0 V128 M0 14 H128 M0 114 H128"></path>
+      </g>
+    </symbol>
+
+    <mask id="kMug"><rect width="128" height="128" fill="#fff"></rect><path d="M62 84 L76 90 L62 96 Z" fill="#000"></path></mask>
+    <mask id="kEsp"><rect width="128" height="128" fill="#fff"></rect><path d="M60 80 L72 85 L60 90 Z" fill="#000"></path></mask>
+    <mask id="kK"><rect width="128" height="128" fill="#fff"></rect>
+      <rect x="20" y="22" width="88" height="38" rx="5" fill="#000"></rect><rect x="20" y="68" width="88" height="38" rx="5" fill="#000"></rect></mask>
+    <mask id="kM"><rect width="128" height="128" fill="#fff"></rect>
+      <rect x="20" y="22" width="88" height="38" rx="5" fill="#000"></rect><rect x="20" y="62" width="88" height="6" rx="3" fill="#000"></rect>
+      <use href="#cupShape" transform="translate(58 76) scale(1.2)" fill="#000"></use></mask>
+
+    <symbol id="mJ" viewBox="0 0 128 128">
+      <rect x="10" y="12" width="108" height="104" rx="16" fill="none" stroke="currentColor" stroke-width="9"></rect>
+      <path d="M14.5 64 H113.5" stroke="currentColor" stroke-width="9"></path>
+      <rect x="26" y="26" width="54" height="28" rx="4" fill="url(#g)"></rect>
+      <path d="M84.6 78.3 A10 10 0 0 1 84.6 97.7 L83.6 93.8 A6 6 0 0 0 83.6 82.2 Z" fill="url(#g)"></path>
+      <path d="M52 77 H86 L84 100 C84 104.5 80.5 107 76 107 H62 C57.5 107 54 104.5 54 100 Z" fill="url(#g)" mask="url(#kMug)"></path>
+    </symbol>
+
+    <symbol id="mK" viewBox="0 0 128 128">
+      <rect x="6" y="8" width="116" height="112" rx="17" fill="url(#g)" mask="url(#kK)"></rect>
+      <rect x="32" y="30" width="52" height="22" rx="3" fill="currentColor"></rect>
+      <path d="M88.6 74.3 A10 10 0 0 1 88.6 93.7 L87.6 89.8 A6 6 0 0 0 87.6 78.2 Z" fill="currentColor"></path>
+      <rect x="48" y="72" width="44" height="4" rx="2" fill="currentColor"></rect>
+      <path d="M50 76 H90 C90 88 84 94 70 94 C56 94 50 88 50 76 Z" fill="currentColor" mask="url(#kEsp)"></path>
+      <rect x="44" y="97" width="52" height="5" rx="2.5" fill="currentColor"></rect>
+    </symbol>
+
+    <symbol id="mL" viewBox="0 0 128 128">
+      <rect x="10" y="12" width="108" height="104" rx="16" fill="none" stroke="currentColor" stroke-width="9"></rect>
+      <path d="M14.5 64 H113.5" stroke="currentColor" stroke-width="9"></path>
+      <rect x="26" y="26" width="54" height="28" rx="4" fill="url(#g)"></rect>
+      <use href="#cupShapeG" transform="translate(57 80) scale(1.45)"></use>
+    </symbol>
+
+    <symbol id="mM" viewBox="0 0 128 128">
+      <rect x="6" y="8" width="116" height="112" rx="17" fill="url(#g)" mask="url(#kM)"></rect>
+      <rect x="30" y="30" width="52" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="5"></rect>
+    </symbol>
+
+    <mask id="kG"><rect width="128" height="128" fill="#fff"></rect>
+      <rect x="28" y="28" width="72" height="32" rx="5" fill="#000"></rect><rect x="28" y="68" width="72" height="32" rx="5" fill="#000"></rect></mask>
+
+    <symbol id="mG" viewBox="0 0 128 128">
+      <g transform="translate(6 8) scale(1.2083 1.2174) translate(-16 -18)">
+        <rect x="16" y="18" width="96" height="92" rx="14" fill="url(#g)" mask="url(#kG)"></rect>
+        <rect x="40" y="34" width="48" height="22" rx="3.5" fill="currentColor"></rect>
+        <use href="#cupShape" transform="translate(44 71)" fill="currentColor"></use>
+      </g>
+    </symbol>
+
+    <symbol id="mH" viewBox="0 0 128 128">
+      <rect x="18" y="20" width="92" height="88" rx="14" fill="none" stroke="currentColor" stroke-width="9"></rect>
+      <path d="M18 64 H110" stroke="currentColor" stroke-width="9"></path>
+      <rect x="30" y="33" width="42" height="24" rx="3.5" fill="url(#g)"></rect>
+      <use href="#cupShapeG" transform="translate(44 71) scale(1.1)"></use>
+    </symbol>
+
+    <symbol id="mI" viewBox="0 0 128 128">
+      <rect x="12" y="58" width="104" height="8" rx="4" fill="currentColor"></rect>
+      <rect x="12" y="104" width="104" height="8" rx="4" fill="currentColor"></rect>
+      <rect x="26" y="30" width="46" height="28" rx="4" fill="url(#g)"></rect>
+      <use href="#cupShapeG" transform="translate(46 69.5) scale(1.15)"></use>
+    </symbol>
+
+    <symbol id="mA" viewBox="0 0 128 128">
+      <path d="M106 54 C124 54 124 82 102 82" stroke="currentColor" stroke-width="9" fill="none" stroke-linecap="round"></path>
+      <path d="M22 44 H106 A42 42 0 0 1 22 44 Z" fill="url(#g)" mask="url(#kA)"></path>
+      <rect x="14" y="94" width="100" height="10" rx="5" fill="currentColor"></rect>
+    </symbol>
+
+    <symbol id="mB" viewBox="0 0 128 128">
+      <circle cx="64" cy="64" r="54" fill="url(#g)" mask="url(#kB)"></circle>
+    </symbol>
+
+    <symbol id="mC" viewBox="0 0 128 128">
+      <rect x="34" y="12" width="60" height="9" rx="4.5" fill="currentColor" opacity="0.45"></rect>
+      <path d="M28 26 H100 A8 8 0 0 1 108 34 V70 A44 24 0 0 1 20 70 V34 A8 8 0 0 1 28 26 Z" fill="url(#g)" mask="url(#kC)"></path>
+      <rect x="16" y="104" width="96" height="10" rx="5" fill="currentColor"></rect>
+    </symbol>
+
+    <symbol id="mD" viewBox="0 0 128 128">
+      <path d="M89.5 34.5 A38 38 0 1 0 89.5 93.5" stroke="url(#g)" stroke-width="14" fill="none" stroke-linecap="round"></path>
+      <path d="M56 48 L82 64 L56 80 Z" fill="currentColor"></path>
+      <rect x="34" y="108" width="60" height="9" rx="4.5" fill="currentColor"></rect>
+    </symbol>
+
+    <symbol id="mE" viewBox="0 0 128 128">
+      <path d="M104 48 A18 18 0 0 1 104 84" stroke="currentColor" stroke-width="9" fill="none" stroke-linecap="round"></path>
+      <circle cx="60" cy="64" r="46" fill="none" stroke="currentColor" stroke-width="9"></circle>
+      <circle cx="60" cy="64" r="30" fill="url(#g)" mask="url(#kE)"></circle>
+    </symbol>
+
+    <symbol id="mF" viewBox="0 0 128 128">
+      <g stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M48 32 V18"></path><path d="M64 28 V10"></path><path d="M80 32 V18"></path></g>
+      <path d="M26 48 H102 A38 38 0 0 1 26 48 Z" fill="none" stroke="url(#g)" stroke-width="9" stroke-linejoin="round"></path>
+      <path d="M104 56 C120 56 120 78 102 78" stroke="url(#g)" stroke-width="9" fill="none" stroke-linecap="round"></path>
+      <rect x="20" y="98" width="88" height="9" rx="4.5" fill="url(#g)"></rect>
+    </symbol>
+  </defs>
+</svg>
+
+<section style="padding: 56px 56px 40px; font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;">
+  <div style="max-width: 1080px; margin: 0 auto;">
+    <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:6px;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880;">Turn 4</div>
+      <div style="height:1px; flex:1; background:#DCD8D2;"></div>
+    </div>
+    <h1 style="font-size:30px; font-weight:640; letter-spacing:-0.02em; color:#2A2630; margin:0 0 8px;">3a on the icon grid</h1>
+    <p style="font-size:14.5px; line-height:1.55; color:#6B6660; margin:0 0 36px; max-width:660px; text-wrap:pretty;">Mug direction redrawn on a 128-unit construction grid: square carcass, shelf on the horizontal axis, board and cup sized off the golden rectangles. Every edge lands on a whole unit.</p>
+
+    <div id="4a" style="display:flex; flex-wrap:wrap; gap:30px; align-items:flex-start;">
+
+      <div style="width:344px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">4a</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Construction</span>
+        </div>
+        <div style="position:relative; width:344px; height:344px; border-radius:78px; background:#FFFFFF; box-shadow:0 10px 30px rgba(40,32,50,0.13), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;">
+          <svg width="344" height="344" style="position:absolute; inset:0;"><use href="#mGrid"></use></svg>
+          <svg width="344" height="344" style="position:absolute; inset:0;"><use href="#mN"></use></svg>
+        </div>
+      </div>
+
+      <div style="width:344px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Clean</span>
+        </div>
+        <div style="width:344px; height:344px; border-radius:78px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 10px 30px rgba(40,32,50,0.13), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="344" height="344"><use href="#mN"></use></svg></div>
+      </div>
+
+      <div style="width:216px; display:flex; flex-direction:column; gap:16px;">
+        <div style="width:216px; height:216px; border-radius:49px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 10px 30px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="216" height="216"><use href="#mN"></use></svg></div>
+        <div style="display:flex; align-items:flex-end; gap:16px; padding:14px 16px; background:#F7F6F4; border-radius:14px; color:#3C2A4D;">
+          <svg width="64" height="64"><use href="#mN"></use></svg><svg width="44" height="44"><use href="#mN"></use></svg><svg width="30" height="30"><use href="#mN"></use></svg><svg width="18" height="18"><use href="#mN"></use></svg>
+        </div>
+        <dl style="margin:0; display:grid; grid-template-columns:auto 1fr; gap:7px 14px; font-size:12px; color:#6B6660; font-family:ui-monospace,'SF Mono',monospace;">
+          <dt style="color:#9A958D;">carcass</dt><dd style="margin:0;">100 × 100, r20, 8 stroke</dd>
+          <dt style="color:#9A958D;">shelf</dt><dd style="margin:0;">y 64 — the center axis</dd>
+          <dt style="color:#9A958D;">board</dt><dd style="margin:0;">54 × 30 ≈ 16:9</dd>
+          <dt style="color:#9A958D;">cup</dt><dd style="margin:0;">rim 36, round base r19</dd>
+        </dl>
+      </div>
+    </div>
+
+    <sc-if value="{{ showContext }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:40px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880; margin-bottom:18px;">In place</div>
+        <div style="display:inline-flex; align-items:flex-end; gap:16px; padding:14px 20px 16px; border-radius:26px; background:rgba(255,255,255,0.55); box-shadow:0 12px 34px rgba(40,32,50,0.16), inset 0 0 0 1px rgba(255,255,255,0.7); backdrop-filter:blur(20px);">
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="62" height="62"><use href="#mN"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="62" height="62"><use href="#mN"></use></svg></div>
+          <div style="width:1px; height:52px; background:rgba(40,32,50,0.18); margin:0 2px;"></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:#D8D4CE; box-shadow:0 3px 8px rgba(40,32,50,0.12);"></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:#CFCAC3; box-shadow:0 3px 8px rgba(40,32,50,0.12);"></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</section>
+
+<section style="padding: 40px 56px 40px; font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;">
+  <div style="max-width: 1080px; margin: 0 auto;">
+    <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:6px;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880;">Turn 3</div>
+      <div style="height:1px; flex:1; background:#DCD8D2;"></div>
+    </div>
+    <h1 style="font-size:30px; font-weight:640; letter-spacing:-0.02em; color:#2A2630; margin:0 0 8px;">Cupboard — four more takes</h1>
+    <p style="font-size:14.5px; line-height:1.55; color:#6B6660; margin:0 0 40px; max-width:640px; text-wrap:pretty;">Same idea, different vessels and carcasses: a straight-walled mug, an espresso cup on a wide saucer, a cup that breaks out of the frame, and the cup as a hole in a solid door.</p>
+
+    <div style="display:flex; flex-wrap:wrap; gap:26px;">
+
+      <div id="3a" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">3a</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Mug, No Saucer</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mJ"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mJ"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mJ"></use></svg><svg width="30" height="30"><use href="#mJ"></use></svg><svg width="18" height="18"><use href="#mJ"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">Straight tapered walls, ring handle, no saucer — the mug sits directly on the shelf. Fewest parts of the set.</p>
+      </div>
+
+      <div id="3b" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">3b</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Espresso &amp; Saucer</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mK"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mK"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mK"></use></svg><svg width="30" height="30"><use href="#mK"></use></svg><svg width="18" height="18"><use href="#mK"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">Closest to CuP: flat rim, shallow bowl, wide saucer, ring handle — all as ink inside the gradient carcass.</p>
+      </div>
+
+      <div id="3c" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">3c</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Breaks the Frame</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mL"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mL"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mL"></use></svg><svg width="30" height="30"><use href="#mL"></use></svg><svg width="18" height="18"><use href="#mL"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">The cup is too big for the shelf and overhangs the right wall. Most energy, least tidy — good for a product mark.</p>
+      </div>
+
+      <div id="3d" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">3d</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Cup as Cutout</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mM"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mM"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mM"></use></svg><svg width="30" height="30"><use href="#mM"></use></svg><svg width="18" height="18"><use href="#mM"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">Lower door stays solid and the cup is punched out of it, play triangle left behind as gradient. Boldest at 18&nbsp;px.</p>
+      </div>
+
+    </div>
+
+    <sc-if value="{{ showContext }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:44px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880; margin-bottom:18px;">In place — Dock, 3a → 3d</div>
+        <div style="display:inline-flex; align-items:flex-end; gap:16px; padding:14px 20px 16px; border-radius:26px; background:rgba(255,255,255,0.55); box-shadow:0 12px 34px rgba(40,32,50,0.16), inset 0 0 0 1px rgba(255,255,255,0.7); backdrop-filter:blur(20px);">
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mJ"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mK"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mL"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mM"></use></svg></div>
+          <div style="width:1px; height:52px; background:rgba(40,32,50,0.18); margin:0 2px;"></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mJ"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mK"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mL"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mM"></use></svg></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</section>
+
+<section style="padding: 40px 56px 40px; font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;">
+  <div style="max-width: 1080px; margin: 0 auto;">
+    <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:6px;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880;">Turn 2</div>
+      <div style="height:1px; flex:1; background:#DCD8D2;"></div>
+    </div>
+    <h1 style="font-size:30px; font-weight:640; letter-spacing:-0.02em; color:#2A2630; margin:0 0 8px;">Cupboard — two shelves, cup bottom-right</h1>
+    <p style="font-size:14.5px; line-height:1.55; color:#6B6660; margin:0 0 40px; max-width:640px; text-wrap:pretty;">Cup + Board, read literally: a two-compartment cupboard with a board on the upper shelf and the cup parked bottom-right. Three constructions — solid box, outlined box, open shelving.</p>
+
+    <div style="display:flex; flex-wrap:wrap; gap:26px;">
+
+      <div id="2a" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">2a</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Solid Cupboard</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mG"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mG"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mG"></use></svg><svg width="30" height="30"><use href="#mG"></use></svg><svg width="18" height="18"><use href="#mG"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">Gradient carcass with two compartments cut out; board and cup sit inside as ink. Heaviest silhouette, holds up smallest.</p>
+      </div>
+
+      <div id="2b" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">2b</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Outlined Cupboard</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mH"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mH"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mH"></use></svg><svg width="30" height="30"><use href="#mH"></use></svg><svg width="18" height="18"><use href="#mH"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">Plum frame and shelf hold the structure; the gradient is spent only on the contents — board above, cup below.</p>
+      </div>
+
+      <div id="2c" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">2c</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Open Shelves</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mI"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mI"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mI"></use></svg><svg width="30" height="30"><use href="#mI"></use></svg><svg width="18" height="18"><use href="#mI"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">No carcass at all — two shelf rails, board resting on the upper, cup on the lower. Lightest and most typographic.</p>
+      </div>
+
+    </div>
+
+    <sc-if value="{{ showContext }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:44px;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880; margin-bottom:18px;">In place — Dock, 2a → 2c</div>
+        <div style="display:inline-flex; align-items:flex-end; gap:16px; padding:14px 20px 16px; border-radius:26px; background:rgba(255,255,255,0.55); box-shadow:0 12px 34px rgba(40,32,50,0.16), inset 0 0 0 1px rgba(255,255,255,0.7); backdrop-filter:blur(20px);">
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mG"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mH"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mI"></use></svg></div>
+          <div style="width:1px; height:52px; background:rgba(40,32,50,0.18); margin:0 2px;"></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mG"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mH"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mI"></use></svg></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</section>
+
+<section style="padding: 40px 56px 96px; font-family: -apple-system, 'SF Pro Text', 'Helvetica Neue', sans-serif;">
+  <div style="max-width: 1080px; margin: 0 auto;">
+    <div style="display:flex; align-items:baseline; gap:14px; margin-bottom:6px;">
+      <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880;">Turn 1</div>
+      <div style="height:1px; flex:1; background:#DCD8D2;"></div>
+    </div>
+    <h1 style="font-size:30px; font-weight:640; letter-spacing:-0.02em; color:#2A2630; margin:0 0 8px;">Cupboard — app icon directions</h1>
+    <p style="font-size:14.5px; line-height:1.55; color:#6B6660; margin:0 0 40px; max-width:640px; text-wrap:pretty;">Six minimalist reductions of the CuP mark: cup, saucer, steam, play triangle. Each keeps the warm gradient body against a plum ink, and is drawn to survive at 16&nbsp;px. Reference the id in chat to go deeper on one.</p>
+
+    <div style="display:flex; flex-wrap:wrap; gap:26px;">
+
+      <div id="1a" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">1a</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Cup &amp; Play</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mA"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mA"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mA"></use></svg><svg width="30" height="30"><use href="#mA"></use></svg><svg width="18" height="18"><use href="#mA"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">The literal translation: half-disc bowl, hooked handle, saucer bar, play knocked out of the body.</p>
+      </div>
+
+      <div id="1b" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">1b</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Negative Disc</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mB"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mB"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mB"></use></svg><svg width="30" height="30"><use href="#mB"></use></svg><svg width="18" height="18"><use href="#mB"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">One solid coin, cup cut out of it. Strongest silhouette of the set and the most forgiving at tiny sizes.</p>
+      </div>
+
+      <div id="1c" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">1c</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Slide → Cup</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mC"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mC"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mC"></use></svg><svg width="30" height="30"><use href="#mC"></use></svg><svg width="18" height="18"><use href="#mC"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">A stacked 16:9 slide whose bottom edge bows into a shallow bowl — no handle, no dome; it reads as a deck first.</p>
+      </div>
+
+      <div id="1d" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">1d</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Monogram C</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mD"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mD"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mD"></use></svg><svg width="30" height="30"><use href="#mD"></use></svg><svg width="18" height="18"><use href="#mD"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">C for Cupboard, play in the aperture, saucer as the baseline. Reads as a brand letter, not a beverage.</p>
+      </div>
+
+      <div id="1e" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">1e</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Top-Down</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mE"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mE"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mE"></use></svg><svg width="30" height="30"><use href="#mE"></use></svg><svg width="18" height="18"><use href="#mE"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">Looking down into the cup: rim ring, gradient surface, play cut into it. Concentric and very stable.</p>
+      </div>
+
+      <div id="1f" style="width:330px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+          <span style="font-family:ui-monospace,'SF Mono',monospace; font-size:11px; font-weight:600; color:#7F52FF; background:#EBE4FF; padding:3px 7px; border-radius:5px;">1f</span>
+          <span style="font-size:14px; font-weight:600; color:#2A2630;">Line &amp; Steam</span>
+        </div>
+        <div style="display:flex; gap:12px;">
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#FFFFFF,#F3F1EE); box-shadow:0 8px 22px rgba(40,32,50,0.12), inset 0 0 0 1px rgba(0,0,0,0.05); display:grid; place-items:center; color:#3C2A4D;"><svg width="98" height="98"><use href="#mF"></use></svg></div>
+          <div style="width:159px; height:159px; border-radius:36px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 8px 22px rgba(40,32,50,0.22); display:grid; place-items:center; color:#FFFFFF;"><svg width="98" height="98"><use href="#mF"></use></svg></div>
+        </div>
+        <sc-if value="{{ showSizes }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:flex-end; gap:14px; margin-top:14px; padding:12px 14px; background:#F7F6F4; border-radius:12px; color:#3C2A4D;">
+            <svg width="44" height="44"><use href="#mF"></use></svg><svg width="30" height="30"><use href="#mF"></use></svg><svg width="18" height="18"><use href="#mF"></use></svg>
+            <span style="margin-left:auto; font-size:11px; color:#9A958D;">44 / 30 / 18</span>
+          </div>
+        </sc-if>
+        <p style="font-size:13px; line-height:1.5; color:#6B6660; margin:12px 0 0;">All stroke, no fill — steam as three risers. The one that also works as a 1&nbsp;px toolbar glyph.</p>
+      </div>
+
+    </div>
+
+    <sc-if value="{{ showContext }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:56px; padding-top:34px; border-top:1px solid #DCD8D2;">
+        <div style="font-size:11px; font-weight:700; letter-spacing:0.14em; text-transform:uppercase; color:#8C8880; margin-bottom:18px;">In place — Dock, 1a → 1f</div>
+        <div style="display:inline-flex; align-items:flex-end; gap:16px; padding:14px 20px 16px; border-radius:26px; background:rgba(255,255,255,0.55); box-shadow:0 12px 34px rgba(40,32,50,0.16), inset 0 0 0 1px rgba(255,255,255,0.7); backdrop-filter:blur(20px);">
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mA"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mB"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#FFFFFF,#F1EFEC); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#3C2A4D;"><svg width="40" height="40"><use href="#mC"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mD"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mE"></use></svg></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:linear-gradient(#3E2C50,#2A1E38); box-shadow:0 3px 8px rgba(40,32,50,0.18); display:grid; place-items:center; color:#FFFFFF;"><svg width="40" height="40"><use href="#mF"></use></svg></div>
+          <div style="width:1px; height:52px; background:rgba(40,32,50,0.18); margin:0 2px;"></div>
+          <div style="width:62px; height:62px; border-radius:15px; background:#D8D4CE; box-shadow:0 3px 8px rgba(40,32,50,0.12);"></div>
+        </div>
+      </div>
+    </sc-if>
+  </div>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;palette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;CuP Warm&quot;,&quot;Kotlin Violet&quot;,&quot;Ember&quot;,&quot;Mono Plum&quot;],&quot;default&quot;:&quot;CuP Warm&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showSizes&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showContext&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const palettes = {
+      'CuP Warm': ['#FFC24B', '#FF7A59', '#F0357B'],
+      'Kotlin Violet': ['#F0357B', '#9C4DFF', '#7F52FF'],
+      'Ember': ['#FFD166', '#F4713B', '#D62246'],
+      'Mono Plum': ['#7A5C90', '#5A3F6E', '#3C2A4D'],
+    };
+    const p = palettes[this.props.palette] || palettes['CuP Warm'];
+    return {
+      c1: p[0], c2: p[1], c3: p[2],
+      showSizes: this.props.showSizes ?? true,
+      showContext: this.props.showContext ?? true,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

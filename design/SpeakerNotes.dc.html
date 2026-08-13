@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Ubuntu:wght@400;500;700&amp;family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; }
+  a { color: #7F52FF; text-decoration: none; }
+  a:hover { color: #a98fff; }
+</style>
+</helmet>
+
+<sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
+  <div style="height: 100%; box-sizing: border-box; padding: 18px {{ padRight }} 20px {{ padLeft }}; display: flex; flex-direction: column; gap: 6px; background: {{ theme.panel }}; border-top: 1px solid {{ theme.border }}; font-family: {{ theme.font }};">
+    <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: {{ theme.faint }};">SPEAKER NOTES</div>
+    <div style="font-size: 13.5px; color: {{ theme.dim }}; line-height: 1.5; text-wrap: pretty;">{{ notes }}</div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ isOther }}" hint-placeholder-val="{{ false }}">
+  <div style="box-sizing: border-box; border-top: 1px solid {{ theme.border }}; background: {{ theme.panel }}; padding: 12px 24px 14px; display: flex; flex-direction: column; gap: 6px; font-family: {{ theme.font }};">
+    <div style="font-size: 10.5px; font-weight: 700; letter-spacing: 1.2px; color: {{ theme.faint }};">SPEAKER NOTES</div>
+    <div style="font-size: 13.5px; color: {{ theme.dim }}; line-height: 1.5; text-wrap: pretty;">{{ notes }}</div>
+  </div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1200,&quot;height&quot;:122},&quot;theme&quot;:{&quot;editor&quot;:null,&quot;tsType&quot;:&quot;object&quot;},&quot;os&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;macOS&quot;,&quot;Windows&quot;,&quot;Linux&quot;],&quot;default&quot;:&quot;macOS&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;notes&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Presenter notes go here — one thought per slide, in the presenter's own voice.&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;sidebarOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;inspectorOpen&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const t = this.props.theme || {};
+    const isMac = (this.props.os || 'macOS') === 'macOS';
+    return {
+      theme: t, isMac, isOther: !isMac,
+      notes: this.props.notes ?? 'Presenter notes go here — one thought per slide, in the presenter\u2019s own voice.',
+      // The macOS bar runs the full window width and passes behind the floating
+      // panels, so its text insets clear whichever panel is open.
+      padLeft: (this.props.sidebarOpen ?? true) ? '256px' : '48px',
+      padRight: (this.props.inspectorOpen ?? true) ? '314px' : '48px',
+      solidBg: t.dark ? '#26262c' : '#ffffff',
+      edge: t.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

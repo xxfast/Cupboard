@@ -10,26 +10,14 @@
 <div style="width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; background: {{ panelBg }}; backdrop-filter: {{ panelBlur }}; border-left: 1px solid {{ borderColor }}; box-shadow: {{ panelInner }};">
 
   <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
-    <div style="height: 52px; flex-shrink: 0; display: flex; align-items: center; padding: 0 14px; gap: 8px;">
-      <div title="Share" style="width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov }};">
-        <svg width="15" height="16" viewBox="0 0 14 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7 10 V1 M3.7 4.3 L7 1 L10.3 4.3"></path><path d="M1 8.5 V13.3 H13 V8.5"></path></svg>
-      </div>
-      <div style="flex: 1;"></div>
-      <div style="display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: {{ theme.segBg }};">
-        <div onClick="{{ onFormat }}" title="Format" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: {{ formatPillBg }}; color: {{ formatPillIcon }}; cursor: pointer;">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M9.5 1.5 L12.5 4.5 L5 12 L1.5 12.5 L2 9 Z"></path></svg>
-        </div>
-        <div onClick="{{ onAnimate }}" title="Animate" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; background: {{ animatePillBg }}; color: {{ animatePillIcon }}; cursor: pointer;">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1" y="1" width="8" height="8" rx="1.5" transform="rotate(45 7 7)"></rect></svg>
-        </div>
-      </div>
-    </div>
-    <div style="flex-shrink: 0; padding: 0 16px 12px; text-align: center; font-size: 13px; color: {{ theme.subtle }};">{{ macTitle }}</div>
+    <div style="height: 52px; flex-shrink: 0;"></div>
+    <div style="flex-shrink: 0; padding: 4px 16px 12px; text-align: center; font-size: 13px; color: {{ theme.subtle }};">{{ macTitle }}</div>
   </sc-if>
   <sc-if value="{{ isWin }}" hint-placeholder-val="{{ false }}">
     <div style="display: flex; gap: 18px; padding: 12px 16px 0; border-bottom: 1px solid {{ theme.div }};">
       <div onClick="{{ onFormat }}" style="padding-bottom: 9px; font-size: 13.5px; font-weight: 600; color: {{ formatTabColor }}; border-bottom: 2.5px solid {{ formatTabLine }}; cursor: pointer;">Format</div>
       <div onClick="{{ onAnimate }}" style="padding-bottom: 9px; font-size: 13.5px; font-weight: 600; color: {{ animateTabColor }}; border-bottom: 2.5px solid {{ animateTabLine }}; cursor: pointer;">Animate</div>
+      <div onClick="{{ onDocument }}" style="padding-bottom: 9px; font-size: 13.5px; font-weight: 600; color: {{ documentTabColor }}; border-bottom: 2.5px solid {{ documentTabLine }}; cursor: pointer;">Slide</div>
     </div>
   </sc-if>
   <sc-if value="{{ isLinux }}" hint-placeholder-val="{{ false }}">
@@ -41,6 +29,10 @@
       <div onClick="{{ onAnimate }}" style="flex: 1; display: flex; flex-direction: column; align-items: center; padding: 13px 0 0; cursor: pointer; color: {{ animateTabColor }};" style-hover="background: {{ theme.hov }};">
         <div style="font-size: 13.5px; font-weight: 600; padding-bottom: 11px;">Animate</div>
         <div style="width: 52px; height: 3px; border-radius: 3px 3px 0 0; background: {{ animateTabLine }};"></div>
+      </div>
+      <div onClick="{{ onDocument }}" style="flex: 1; display: flex; flex-direction: column; align-items: center; padding: 13px 0 0; cursor: pointer; color: {{ documentTabColor }};" style-hover="background: {{ theme.hov }};">
+        <div style="font-size: 13.5px; font-weight: 600; padding-bottom: 11px;">Slide</div>
+        <div style="width: 52px; height: 3px; border-radius: 3px 3px 0 0; background: {{ documentTabLine }};"></div>
       </div>
     </div>
   </sc-if>
@@ -131,6 +123,44 @@
         <dc-import name="BuildOrderRow" os="macOS" theme="{{ theme }}" n="{{ 3 }}" label="Image — placeholder" meta="Dissolve · 0.5s · with 2" hint-size="100%,46px"></dc-import>
         <div style="align-self: center; margin-top: 4px; height: 22px; padding: 0 14px; display: flex; align-items: center; border-radius: 5px; background: {{ theme.btnGrad }}; color: {{ theme.ctrlText }}; font-size: 12px; box-shadow: 0 0.5px 1px rgba(0,0,0,0.4); cursor: pointer;" style-hover="filter: brightness(1.06);">Add Build…</div>
       </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ isDocument }}" hint-placeholder-val="{{ false }}">
+    <div style="flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: {{ docCardR }}; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1px rgba(0,0,0,0.3);">
+        <div style="width: 62px; height: 35px; border-radius: 3px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.12); flex-shrink: 0; padding: 5px 6px; box-sizing: border-box;">
+          <div style="width: 68%; height: 4px; border-radius: 1px; background: #2A2630;"></div>
+          <div style="width: 46%; height: 3px; border-radius: 1px; background: #9A958D; margin-top: 3px;"></div>
+          <div style="width: 34%; height: 2.5px; border-radius: 1px; background: #C9C4BD; margin-top: 10px;"></div>
+        </div>
+        <div style="flex: 1; min-width: 0;">
+          <div style="font-size: 11px; color: {{ theme.subtle }};">Slide Layout</div>
+          <div style="font-size: 13px; font-weight: 600; color: {{ theme.text }};">Title</div>
+        </div>
+        <span style="color: {{ theme.subtle }}; font-size: 10px;">⌄</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Appearance</div>
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{ theme.text }};"><span style="width: {{ docCheckS }}; height: {{ docCheckS }}; border-radius: {{ docCheckR }}; background: {{ theme.accent }}; display: flex; align-items: center; justify-content: center; color: {{ theme.accentText }}; font-size: 10px;">✓</span>Title</div>
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{ theme.text }};"><span style="width: {{ docCheckS }}; height: {{ docCheckS }}; border-radius: {{ docCheckR }}; background: {{ theme.accent }}; display: flex; align-items: center; justify-content: center; color: {{ theme.accentText }}; font-size: 10px;">✓</span>Body</div>
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: {{ theme.text }};"><span style="width: {{ docCheckS }}; height: {{ docCheckS }}; border-radius: {{ docCheckR }}; background: {{ theme.track }};"></span>Slide Number</div>
+      </div>
+      <div style="height: 1px; background: {{ theme.div }};"></div>
+      <div style="display: flex; flex-direction: column; gap: 9px;">
+        <div style="font-size: 11px; font-weight: 700; color: {{ theme.subtle }};">Background</div>
+        <div style="display: flex; height: {{ docSegH }}; border-radius: {{ docSegR }}; background: {{ theme.segBg }}; padding: 2px; gap: 2px; box-sizing: border-box;">
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px; border-radius: {{ docSegOnR }}; background: {{ theme.accent }}; color: {{ theme.accentText }}; font-size: 12px; font-weight: 600; cursor: pointer;">{{ docSegCheck }}Standard</div>
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; border-radius: {{ docSegOnR }}; color: {{ theme.subtle }}; font-size: 12px; cursor: pointer;">Dynamic</div>
+        </div>
+        <div style="display: flex; align-items: center; justify-content: space-between; height: {{ docCtrlH }}; padding: 0 11px; border-radius: {{ docFieldR }}; background: {{ theme.ctrl }}; color: {{ theme.ctrlText }}; font-size: 12.5px; cursor: pointer; box-shadow: {{ docFieldShadow }}; border: {{ docFieldBorder }}; box-sizing: border-box;">Colour Fill <span style="color: {{ theme.subtle }}; font-size: 9px;">⌄</span></div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="flex: 1; height: {{ docCtrlH }}; border-radius: {{ docFieldR }}; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.14);"></div>
+          <div style="width: 22px; height: 22px; border-radius: 50%; background: conic-gradient(#F0357B,#FFC24B,#43C57E,#3FA9F5,#7F52FF,#F0357B); box-shadow: 0 0 0 1px rgba(0,0,0,0.14); cursor: pointer;"></div>
+        </div>
+      </div>
+      <div style="flex: 1;"></div>
+      <div style="height: {{ docBtnH }}; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border-radius: {{ docBtnR }}; background: {{ docBtnBg }}; color: {{ docBtnText }}; font-size: 12.5px; box-shadow: {{ docBtnShadow }}; cursor: pointer;" style-hover="filter: brightness(1.06);">Edit Slide Layout</div>
     </div>
   </sc-if>
 
@@ -312,27 +342,55 @@ class Component extends DCLogic {
     const t = this.props.theme || {};
     const os = this.props.os || 'macOS';
     const isMac = os === 'macOS', isWin = os === 'Windows', isLinux = os === 'Linux';
-    const isFormat = (this.props.tab || 'format') === 'format';
+    const tab = this.props.tab || 'format';
+    const isFormat = tab === 'format', isAnimate = tab === 'animate', isDocument = tab === 'document';
+    const pillShadow = t.dark ? '0 1px 2px rgba(0,0,0,0.5)' : '0 1px 2px rgba(0,0,0,0.16)';
     return {
       theme: t, isMac, isWin, isLinux,
       borderColor: isMac ? (t.dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.10)') : t.div,
       panelBg: isMac ? (t.dark ? 'linear-gradient(rgba(44,44,50,0.56), rgba(32,32,38,0.48))' : 'linear-gradient(rgba(252,251,249,0.64), rgba(244,243,241,0.54))') : t.insBg,
       panelBlur: isMac ? 'blur(34px) saturate(190%)' : 'none',
       panelInner: isMac ? (t.dark ? 'inset 1px 0 0 rgba(255,255,255,0.05)' : 'inset 1px 0 0 rgba(255,255,255,0.7)') : 'none',
-      macTitle: isFormat ? 'Text' : 'Build',
+      macTitle: isFormat ? 'Text' : (isAnimate ? 'Build' : 'Slide'),
       formatPillBg: isFormat ? t.segOn : 'transparent',
-      animatePillBg: isFormat ? 'transparent' : t.segOn,
+      animatePillBg: isAnimate ? t.segOn : 'transparent',
+      documentPillBg: isDocument ? t.segOn : 'transparent',
       formatPillIcon: isFormat ? t.segOnText : t.segOff,
-      animatePillIcon: isFormat ? t.segOff : t.segOnText,
-      macFormat: isMac && isFormat, macAnimate: isMac && !isFormat,
-      winFormat: isWin && isFormat, winAnimate: isWin && !isFormat,
-      linuxFormat: isLinux && isFormat, linuxAnimate: isLinux && !isFormat,
+      animatePillIcon: isAnimate ? t.segOnText : t.segOff,
+      documentPillIcon: isDocument ? t.segOnText : t.segOff,
+      formatPillShadow: isFormat ? pillShadow : 'none',
+      animatePillShadow: isAnimate ? pillShadow : 'none',
+      documentPillShadow: isDocument ? pillShadow : 'none',
+      isDocument,
+      // Document panel metrics follow each platform's control language.
+      docCardR: isMac ? '9px' : (isWin ? '4px' : '12px'),
+      docCheckS: isMac ? '15px' : (isWin ? '16px' : '18px'),
+      docCheckR: isMac ? '4px' : (isWin ? '3px' : '4px'),
+      docSegH: isMac ? '26px' : (isWin ? '32px' : '40px'),
+      docSegR: isMac ? '6px' : (isWin ? '4px' : '20px'),
+      docSegOnR: isMac ? '5px' : (isWin ? '3px' : '20px'),
+      docSegCheck: isLinux ? '✓' : '',
+      docCtrlH: isMac ? '24px' : (isWin ? '32px' : '44px'),
+      docFieldR: isMac ? '5px' : (isWin ? '4px' : '8px'),
+      docFieldShadow: isMac ? '0 0.5px 1px rgba(0,0,0,0.35)' : 'none',
+      docFieldBorder: isWin ? ('1px solid ' + t.ctrlB) : (isLinux ? ('1px solid ' + t.outline) : 'none'),
+      docBtnH: isMac ? '26px' : (isWin ? '32px' : '40px'),
+      docBtnR: isMac ? '6px' : (isWin ? '4px' : '20px'),
+      docBtnBg: isMac ? t.btnGrad : (isWin ? t.accent : t.tonal),
+      docBtnText: isMac ? t.ctrlText : (isWin ? t.accentText : t.tonalText),
+      docBtnShadow: isMac ? '0 0.5px 1px rgba(0,0,0,0.4)' : 'none',
+      macFormat: isMac && isFormat, macAnimate: isMac && isAnimate,
+      winFormat: isWin && isFormat, winAnimate: isWin && isAnimate,
+      linuxFormat: isLinux && isFormat, linuxAnimate: isLinux && isAnimate,
       onFormat: this.props.onFormat,
       onAnimate: this.props.onAnimate,
+      onDocument: this.props.onDocument,
       formatTabColor: isFormat ? t.text : t.dim,
-      animateTabColor: isFormat ? t.dim : t.text,
+      animateTabColor: isAnimate ? t.text : t.dim,
+      documentTabColor: isDocument ? t.text : t.dim,
       formatTabLine: isFormat ? t.accent : 'transparent',
-      animateTabLine: isFormat ? 'transparent' : t.accent,
+      animateTabLine: isAnimate ? t.accent : 'transparent',
+      documentTabLine: isDocument ? t.accent : 'transparent',
     };
   }
 }

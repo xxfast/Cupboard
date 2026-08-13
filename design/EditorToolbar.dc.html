@@ -9,7 +9,7 @@
 <x-dc>
 <div style="flex-shrink: 0; display: flex; flex-direction: column; position: relative;">
   <sc-if value="{{ isMac }}" hint-placeholder-val="{{ true }}">
-    <div style="height: 52px; box-sizing: border-box; flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 18px; background: {{ macBarBg }}; backdrop-filter: {{ macBlur }}; border-bottom: 1px solid {{ macEdge }}; box-shadow: inset 0 1px 0 {{ macTopLight }};">
+    <div style="height: 52px; box-sizing: border-box; flex-shrink: 0; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 18px;">
       <div style="display: flex; flex-direction: column; justify-content: center; flex-shrink: 0;">
         <div style="font-size: 13px; font-weight: 700; color: {{ theme.title }}; line-height: 1.2;">Lorem Ipsum</div>
         <div style="font-size: 11px; color: {{ theme.faint }}; line-height: 1.2;">Edited</div>
@@ -17,14 +17,7 @@
       <div style="flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
         <div title="Play" style="width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="11" height="12" viewBox="0 0 11 12" fill="currentColor"><path d="M0 0 L11 6 L0 12 Z"></path></svg></div>
         <div title="Add slide" style="width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="0.7" y="0.7" width="12.6" height="12.6" rx="3.2"></rect><path d="M7 3.9 V10.1 M3.9 7 H10.1"></path></svg></div>
-        <div style="display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: {{ theme.segBg }}; box-shadow: inset 0 0.5px 1.5px rgba(0,0,0,0.22);">
-          <div title="Add slide from layout" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
-          <div title="Add section" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><path d="M0.7 7 H11.3"></path><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
-          <div title="Add text slide" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><path d="M3.2 4.6 H8.8 M6 4.6 V7.9"></path><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
-          <div title="Add image slide" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="10.6" height="8.6" rx="1.6"></rect><circle cx="3.6" cy="4.6" r="1"></circle><path d="M1 9 L4 6.6 L6.4 8.4 L8.4 7 L11.3 9.2"></path><path d="M11.5 11.5 H14.3 M12.9 10.1 V12.9"></path></svg></div>
-          <div title="Light table" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.accentSoft }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="2.5" cy="2.5" r="1.05"></circle><circle cx="7" cy="2.5" r="1.05"></circle><circle cx="11.5" cy="2.5" r="1.05"></circle><circle cx="2.5" cy="7" r="1.05"></circle><circle cx="7" cy="7" r="1.05"></circle><circle cx="11.5" cy="7" r="1.05"></circle><circle cx="2.5" cy="11.5" r="1.05"></circle><circle cx="7" cy="11.5" r="1.05"></circle><circle cx="11.5" cy="11.5" r="1.05"></circle></svg></div>
-        </div>
-        <div style="display: flex; gap: 2px; padding: 3px; border-radius: 10px; background: {{ theme.segBg }}; box-shadow: inset 0 0.5px 1.5px rgba(0,0,0,0.22);">
+        <div style="display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35);">
           <div title="Table" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="1.7" width="13.6" height="10.6" rx="1.6"></rect><path d="M0.7 5.2 H14.3 M5.4 5.2 V12.3 M9.8 5.2 V12.3"></path></svg></div>
           <div title="Chart" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="7" cy="7" r="6.3"></circle><path d="M7 0.7 V7 L12.4 9.9"></path></svg></div>
           <div title="Text" style="width: 30px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 7px; color: {{ theme.icon }}; cursor: pointer;" style-hover="background: {{ theme.hov2 }};"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0.7" y="2.7" width="12.6" height="8.6" rx="1.6"></rect><path d="M4.4 5.6 H9.6 M7 5.6 V8.7"></path></svg></div>
@@ -33,7 +26,23 @@
         </div>
         <div title="Comment" style="width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="15" height="14" viewBox="0 0 15 14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M0.7 3.3 a2.6 2.6 0 0 1 2.6 -2.6 H11.4 a2.6 2.6 0 0 1 2.6 2.6 V8 a2.6 2.6 0 0 1 -2.6 2.6 H6.2 L2.9 13.3 V10.6 a2.6 2.6 0 0 1 -2.2 -2.6 Z"></path></svg></div>
       </div>
-      <div onClick="{{ onZoomToggle }}" style="flex-shrink: 0; display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); color: {{ theme.ctrlText }}; font-size: 12.5px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">{{ zoomLabel }} <span style="font-size: 8px; color: {{ theme.faint }};">⌄</span></div>
+      <div onClick="{{ onZoomToggle }}" style="flex-shrink: 0; margin-right: {{ zoomGap }}; display: flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); color: {{ theme.ctrlText }}; font-size: 12.5px; cursor: pointer;" style-hover="background: {{ theme.ctrlHov }};">{{ zoomLabel }} <span style="font-size: 8px; color: {{ theme.faint }};">⌄</span></div>
+      <div style="flex-shrink: 0; box-sizing: border-box; width: {{ rightRegionW }}; padding: {{ rightRegionPad }}; display: flex; align-items: center; justify-content: space-between; gap: 14px;">
+      <div title="Share" style="flex-shrink: 0; width: 36px; height: 30px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer; color: {{ theme.icon }};" style-hover="background: {{ theme.ctrlHov }};"><svg width="15" height="16" viewBox="0 0 14 15" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M7 10 V1 M3.7 4.3 L7 1 L10.3 4.3"></path><path d="M1 8.5 V13.3 H13 V8.5"></path></svg></div>
+      <div style="flex-shrink: 0; display: flex; align-items: center; padding: 2px; border-radius: 15px; background: {{ theme.ctrl }}; box-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35);">
+        <div onClick="{{ onFormat }}" title="Format" style="width: 34px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 13px; background: {{ formatPillBg }}; color: {{ formatPillIcon }}; cursor: pointer;">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"><path d="M10.1 2.4 L14.6 6.9"></path><path d="M11.9 4.2 L6.6 9.5 L4 10.4 L3.1 13 L5.7 12.1 L6.6 9.5"></path><path d="M6.6 9.5 L11.9 4.2 L14.6 6.9 L9.3 12.2 Z"></path></svg>
+        </div>
+        <div style="width: 1px; height: 16px; background: {{ div1 }};"></div>
+        <div onClick="{{ onAnimate }}" title="Animate" style="width: 34px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 13px; background: {{ animatePillBg }}; color: {{ animatePillIcon }}; cursor: pointer;">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><rect x="3.6" y="3.6" width="9.8" height="9.8" rx="2.2" transform="rotate(45 8.5 8.5)"></rect><path d="M8.5 2.7 L8.5 14.3"></path></svg>
+        </div>
+        <div style="width: 1px; height: 16px; background: {{ div2 }};"></div>
+        <div onClick="{{ onDocument }}" title="Document" style="width: 34px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 13px; background: {{ documentPillBg }}; color: {{ documentPillIcon }}; cursor: pointer;">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="1.6" y="3.6" width="13.8" height="9.8" rx="2.2" fill="currentColor"></rect><rect x="3.6" y="5.6" width="9.8" height="4.6" rx="1" fill="{{ theme.ctrl }}"></rect></svg>
+        </div>
+      </div>
+      </div>
     </div>
   </sc-if>
 
@@ -127,8 +136,11 @@ class Component extends DCLogic {
   renderVals() {
     const t = this.props.theme || {};
     const os = this.props.os || 'macOS';
-    const isFormat = (this.props.tab || 'format') === 'format';
+    const tab = this.props.tab || 'format';
+    const isFormat = tab === 'format', isAnimate = tab === 'animate', isDocument = tab === 'document';
     const isMac = os === 'macOS', isWin = os === 'Windows';
+    const tabOn = t.dark ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.10)';
+    const tabDiv = t.dark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.14)';
     return {
       theme: t,
       isMac, isWin, isLinux: os === 'Linux',
@@ -151,6 +163,20 @@ class Component extends DCLogic {
       menuHover: t.hov2,
       onFormat: this.props.onFormat,
       onAnimate: this.props.onAnimate,
+      onDocument: this.props.onDocument,
+      // With the inspector open, Share and the tabs ride on top of its 282px column:
+      // Share at the panel's left edge, tabs at its right. Zoom stays out over the canvas.
+      rightRegionW: (this.props.inspectorOpen ?? true) ? '254px' : 'auto',
+      rightRegionPad: '0',
+      zoomGap: (this.props.inspectorOpen ?? true) ? '14px' : '0px',
+      formatPillBg: isFormat ? tabOn : 'transparent',
+      animatePillBg: isAnimate ? tabOn : 'transparent',
+      documentPillBg: isDocument ? tabOn : 'transparent',
+      formatPillIcon: t.ctrlText,
+      animatePillIcon: t.ctrlText,
+      documentPillIcon: t.ctrlText,
+      div1: (isFormat || isAnimate) ? 'transparent' : tabDiv,
+      div2: (isAnimate || isDocument) ? 'transparent' : tabDiv,
       formatBg: isFormat ? t.hov2 : 'transparent',
       animateBg: isFormat ? 'transparent' : t.hov2,
       formatIcon: isFormat ? t.accentSoft : t.label,
