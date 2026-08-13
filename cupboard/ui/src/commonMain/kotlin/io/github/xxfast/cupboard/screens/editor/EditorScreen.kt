@@ -1,5 +1,8 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,9 +29,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
@@ -160,44 +171,87 @@ private fun Navigator(
             .fillMaxHeight()
             .background(Color(0xFF1E1F26))
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         for (entry in entries) {
-            val slide = document.slides[entry.slideIndex]
-            val selected = entry.slideId == selectedSlideId
+            val slide: Slide = document.slides[entry.slideIndex]
+            val selected: Boolean = entry.slideId == selectedSlideId
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = (entry.depth * 18).dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    .clip(RoundedCornerShape(9.dp))
+                    .background(if (selected) Color(0xFF38353F) else Color.Transparent)
+                    .clickable { onSelectSlide(entry.slideId) }
+                    .padding(top = 5.dp, bottom = 5.dp, end = 6.dp),
+                verticalAlignment = Alignment.Top,
             ) {
-                Box(Modifier.width(14.dp), contentAlignment = Alignment.Center) {
-                    if (entry.hasChildren) Text(
-                        text = if (entry.collapsed) "▸" else "▾",
-                        color = Color(0xFF8A8B94),
-                        fontSize = 11.sp,
-                        modifier = Modifier.clickable { onToggleCollapsed(entry.slideId) },
-                    )
-                }
-                Text(
-                    text = "${entry.slideIndex + 1}",
-                    color = Color(0xFF8A8B94),
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    modifier = Modifier.width(16.dp),
-                )
-                SlideThumbnail(
-                    slide = slide,
-                    width = (150 - entry.depth * 18).dp,
+                // Fixed gutter, outside the indent, so every chevron shares one left rail.
+                Box(
                     modifier = Modifier
-                        .clickable { onSelectSlide(entry.slideId) }
+                        .padding(top = 3.dp)
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(3.dp))
                         .let {
-                            if (selected) it.border(2.dp, Color(0xFF7F52FF), RoundedCornerShape(5.dp))
+                            if (entry.hasChildren) it.clickable { onToggleCollapsed(entry.slideId) }
                             else it
                         },
-                )
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (entry.hasChildren) DisclosureChevron(collapsed = entry.collapsed)
+                }
+                Row(
+                    modifier = Modifier.padding(start = (entry.depth * 12).dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = "${entry.slideIndex + 1}",
+                        color = Color(0xFF8A8B94),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.width(14.dp).padding(top = 2.dp),
+                    )
+                    SlideThumbnail(
+                        slide = slide,
+                        width = (136 - 12 * minOf(entry.depth, 3)).dp,
+                        modifier = if (selected) {
+                            Modifier.border(2.dp, Color(0xFF7F52FF), RoundedCornerShape(5.dp))
+                        } else {
+                            Modifier
+                        },
+                    )
+                }
             }
         }
+    }
+}
+
+/**
+ * The navigator's disclosure control: a stroked chevron in a 9x9 dp space,
+ * pointing right when collapsed and rotating down when the children show.
+ */
+@Composable
+private fun DisclosureChevron(collapsed: Boolean) {
+    val rotation: Float by animateFloatAsState(
+        targetValue = if (collapsed) 0f else 90f,
+        animationSpec = tween(durationMillis = 140),
+    )
+    Canvas(Modifier.size(9.dp).rotate(rotation)) {
+        val scale: Float = size.width / 9f
+        val chevron: Path = Path().apply {
+            moveTo(2.6f * scale, 1.1f * scale)
+            lineTo(6.4f * scale, 4.5f * scale)
+            lineTo(2.6f * scale, 7.9f * scale)
+        }
+        drawPath(
+            path = chevron,
+            color = Color(0xFFCBC4D5),
+            style = Stroke(
+                width = 2.dp.toPx(),
+                cap = StrokeCap.Round,
+                join = StrokeJoin.Round,
+            ),
+        )
     }
 }

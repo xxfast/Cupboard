@@ -673,7 +673,12 @@ private struct EditorView: View {
         return ScrollView {
             LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(Array(host.outline().enumerated()), id: \.offset) { _, row in
-                    navigatorRow(row, selected: row.slideIndex == selected)
+                    NavigatorRow(
+                        row: row,
+                        selected: row.slideIndex == selected,
+                        palette: palette,
+                        host: host
+                    )
                 }
             }
             .padding(EdgeInsets(top: 2, leading: 8, bottom: 16, trailing: 8))
@@ -682,78 +687,126 @@ private struct EditorView: View {
         .scrollContentBackground(.hidden)
     }
 
-    /// Keynote's row: number outside the thumbnail, bottom-aligned to it, both
-    /// inside a selection capsule that hugs them. A slide with children carries
-    /// its disclosure chevron on a strip under the row, not in a leading gutter,
-    /// which is what keeps every thumbnail flush to the card's left edge.
-    private func navigatorRow(_ row: OutlineRow, selected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .bottom, spacing: 5) {
-                Text("\(row.slideIndex + 1)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.faint)
-                    .frame(width: 12, alignment: .trailing)
-                    .padding(.bottom, 2)
-                thumbnail(row)
+    /// Keynote's row: a fixed leading gutter, then the thumbnail, both inside a
+    /// selection capsule that hugs them. The gutter runs the thumbnail's height
+    /// and carries the disclosure chevron centred in it plus the slide number
+    /// tucked to its bottom, so every thumbnail starts at the same offset from
+    /// its own row whether or not the slide has children. Depth indents the
+    /// whole capsule and takes the same step off the thumbnail's width.
+    private struct NavigatorRow: View {
+        let row: OutlineRow
+        let selected: Bool
+        let palette: Palette
+        let host: EditorHost
+
+        @State private var hovering = false
+        @State private var chevronHovering = false
+
+        private var thumbWidth: CGFloat { Layout.thumbnail - 12 * CGFloat(min(row.depth, 3)) }
+
+        var body: some View {
+            HStack(spacing: 4) {
+                gutter
+                thumbnail
             }
             .padding(.vertical, 5)
             .padding(.horizontal, 6)
-            .background { selectionCapsule(selected) }
+            .background { capsule }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onTapGesture { host.selectSlide(index: row.slideIndex) }
-            .padding(.leading, CGFloat(row.depth) * 16)
+            .onHover { hovering = $0 }
+            .padding(.leading, CGFloat(row.depth) * 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
 
-            if row.hasChildren {
-                Button { host.toggleCollapsed(index: row.slideIndex) } label: {
-                    Text(row.collapsed ? "\u{203A}" : "\u{2304}")
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.dim)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 22)
-                        .contentShape(RoundedRectangle(cornerRadius: 6))
-                }
-                .buttonStyle(.plain)
-                .help(row.collapsed ? "Expand" : "Collapse")
+        /// Sized off the thumbnail, not the row, so the number sits on the
+        /// thumbnail's lower edge and the chevron on its middle.
+        private var gutter: some View {
+            ZStack {
+                if row.hasChildren { chevron }
+            }
+            .frame(width: 15, height: thumbWidth * 9 / 16)
+            .overlay(alignment: .bottomTrailing) {
+                Text("\(row.slideIndex + 1)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.faint)
+                    .padding(.bottom, 1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
-    @ViewBuilder private func selectionCapsule(_ selected: Bool) -> some View {
-        if selected {
+        private var chevron: some View {
+            Button { host.toggleCollapsed(index: row.slideIndex) } label: {
+                ChevronGlyph()
+                    .stroke(
+                        palette.icon,
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                    )
+                    .frame(width: 9, height: 9)
+                    .rotationEffect(.degrees(row.collapsed ? 0 : 90))
+                    .animation(.easeInOut(duration: 0.14), value: row.collapsed)
+                    .frame(width: 16, height: 20)
+                    .background {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(chevronHovering ? palette.hover2 : .clear)
+                    }
+                    .contentShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .onHover { chevronHovering = $0 }
+            .help(row.collapsed ? "Expand" : "Collapse")
+        }
+
+        @ViewBuilder private var capsule: some View {
             let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-            shape
-                .fill(palette.selection)
-                .overlay {
-                    shape
-                        .inset(by: 0.5)
-                        .stroke(palette.selectionEdge, lineWidth: 1)
-                        .mask(
-                            LinearGradient(
-                                colors: [.white, .clear],
-                                startPoint: .top,
-                                endPoint: .center
+            if selected {
+                shape
+                    .fill(palette.selection)
+                    .overlay {
+                        shape
+                            .inset(by: 0.5)
+                            .stroke(palette.selectionEdge, lineWidth: 1)
+                            .mask(
+                                LinearGradient(
+                                    colors: [.white, .clear],
+                                    startPoint: .top,
+                                    endPoint: .center
+                                )
                             )
-                        )
-                }
+                    }
+            } else if hovering {
+                shape.fill(palette.hover)
+            }
+        }
+
+        /// Rendered by the shared Compose renderer, so a thumbnail is the slide.
+        /// No accent ring and no shadow: the capsule alone marks selection.
+        @ViewBuilder private var thumbnail: some View {
+            let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+            if let image = host.thumbnail(index: row.slideIndex, width: Int32(thumbWidth)) {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: thumbWidth)
+                    .clipShape(shape)
+                    .overlay { shape.inset(by: 0.5).stroke(palette.thumbEdge, lineWidth: 1) }
+            } else {
+                shape
+                    .fill(Color.black.opacity(0.2))
+                    .frame(width: thumbWidth, height: thumbWidth * 9 / 16)
+            }
         }
     }
 
-    /// Rendered by the shared Compose renderer, so a thumbnail is the slide.
-    /// No accent ring and no shadow: the capsule alone marks selection.
-    @ViewBuilder private func thumbnail(_ row: OutlineRow) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
-        if let image = host.thumbnail(index: row.slideIndex, width: Int32(Layout.thumbnail)) {
-            Image(nsImage: image)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: Layout.thumbnail)
-                .clipShape(shape)
-                .overlay { shape.inset(by: 0.5).stroke(palette.thumbEdge, lineWidth: 1) }
-        } else {
-            shape
-                .fill(Color.black.opacity(0.2))
-                .frame(width: Layout.thumbnail, height: Layout.thumbnail * 9 / 16)
+    /// The disclosure glyph: a stroked chevron on a 9x9 box, pointing right.
+    /// A path, not a text character, so it reads as a control at any size.
+    private struct ChevronGlyph: Shape {
+        func path(in rect: CGRect) -> Path {
+            let unit = min(rect.width, rect.height) / 9
+            var path = Path()
+            path.move(to: CGPoint(x: rect.minX + 2.6 * unit, y: rect.minY + 1.1 * unit))
+            path.addLine(to: CGPoint(x: rect.minX + 6.4 * unit, y: rect.minY + 4.5 * unit))
+            path.addLine(to: CGPoint(x: rect.minX + 2.6 * unit, y: rect.minY + 7.9 * unit))
+            return path
         }
     }
 
