@@ -65,7 +65,7 @@ class PlaySession internal constructor(
         )
     }
 
-    val view: NSView = ComposeHostView(composeView)
+    val view: NSView = composeView
 
     fun dispose() {
         composeView.dispose()
@@ -102,7 +102,8 @@ class EditorHost {
     /** The well follows the host's appearance; slide content never does. */
     private val darkChrome = MutableStateFlow(true)
 
-    val view: NSView = ComposeHostView(ComposeNSView {
+    /** The full-bleed content layer: the shell floats its glass panels over this. */
+    val view: NSView = ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
         val scale: Float? by zoom.collectAsState()
         val dark: Boolean by darkChrome.collectAsState()
@@ -124,7 +125,7 @@ class EditorHost {
                 zoom = scale,
             )
         }
-    })
+    }
 
     /** Zoom as a whole percentage, 0 meaning Fit. Kept ObjC-friendly on purpose. */
     fun zoomPercent(): Int = zoom.value?.let { (it * 100).roundToInt() } ?: 0

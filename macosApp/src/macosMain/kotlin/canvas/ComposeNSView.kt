@@ -48,27 +48,9 @@ import platform.AppKit.NSTrackingInVisibleRect
 import platform.AppKit.NSTrackingMouseEnteredAndExited
 import platform.AppKit.NSTrackingMouseMoved
 import platform.AppKit.NSView
-import platform.AppKit.NSViewHeightSizable
-import platform.AppKit.NSViewWidthSizable
 import platform.AppKit.NSWindow
 import platform.Foundation.NSMakeRect
 import platform.Foundation.NSRect
-
-/**
- * Hosting wrapper for [ComposeNSView]. Skiko's MacOsMetalRedrawer.syncBounds() sets
- * the metal layer's frame to the view's frame verbatim, origin included, which is
- * only correct when the view sits at (0,0) in its superview (true for a window
- * contentView, false inside a SwiftUI layout). Keeping the compose view as a
- * full-size subview of this container pins its origin to (0,0), so the layer
- * geometry stays in sync no matter where the host places us.
- */
-class ComposeHostView(private val composeView: ComposeNSView) : NSView(composeView.frame) {
-    init {
-        composeView.setFrame(bounds)
-        composeView.autoresizingMask = NSViewWidthSizable or NSViewHeightSizable
-        addSubview(composeView)
-    }
-}
 
 // Same stub as compose's internal MacosTextInputService: enough for plain key-event
 // typing, no NSTextInputClient/IME integration.
@@ -92,6 +74,16 @@ private class MutableWindowInfo : WindowInfo {
     override var containerSize: IntSize by mutableStateOf(IntSize.Zero)
 }
 
+/**
+ * Compose content as an embeddable NSView, for a SwiftUI host to place via
+ * `NSViewRepresentable`.
+ *
+ * Host it at origin (0,0) in its superview. Skiko's MacOsMetalRedrawer.syncBounds()
+ * copies our frame onto the metal layer verbatim, origin included, and that layer is
+ * our own backing layer, so any offset shifts the canvas and leaves an unpainted band
+ * behind it. The macOS shell hosts us as the full-bleed window content layer, edge to
+ * edge under the glass panels, so the origin is (0,0) for free.
+ */
 class ComposeNSView(
     frame: CValue<NSRect> = NSMakeRect(0.0, 0.0, 640.0, 360.0),
     private val content: @Composable () -> Unit,
@@ -151,9 +143,6 @@ class ComposeNSView(
 
     override fun layout() {
         super.layout()
-        val f = frame.useContents { "(${origin.x}, ${origin.y}) ${size.width}x${size.height}" }
-        val l = layer?.frame?.useContents { "(${origin.x}, ${origin.y}) ${size.width}x${size.height}" }
-        println("[ComposeNSView] layout frame=$f metalLayer=$l")
         skiaLayer.needRender()
     }
 
