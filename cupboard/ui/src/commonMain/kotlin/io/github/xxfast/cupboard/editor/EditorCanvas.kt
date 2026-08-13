@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
@@ -72,6 +73,10 @@ fun EditorCanvas(
     val currentSelection by rememberUpdatedState(selectedElementId)
     var guideX by remember { mutableStateOf(false) }
     var guideY by remember { mutableStateOf(false) }
+    // Cursor only. These two are written from pointer handlers, which the canvas
+    // may not do for anything it draws, but the cursor is the shell's to paint.
+    var hovered by remember { mutableStateOf<ResizeDirection?>(null) }
+    var resizing by remember { mutableStateOf<ResizeDirection?>(null) }
 
     SlideSurface(modifier, zoom = zoom) {
         for (element in slide.elements) ElementView(element)
@@ -85,16 +90,58 @@ fun EditorCanvas(
         fun elementAt(p: Offset): Element? =
             currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
 
+        fun selectedElement(): Element? =
+            currentSlide.elements.firstOrNull { it.id == currentSelection }
+
+        // A locked element has no handles to hit: it neither resizes nor moves.
+        // Selection still happens either way, so the inspector can reach it to
+        // unlock it. Handles live where they are drawn, so the pointer maps into
+        // the element's own space before the test, and [position] converts to doc
+        // units first or the tolerance would shrink with the display's density.
+        // [tolerance] is in screen dp: hovering is the more forgiving of the two,
+        // so the cursor hints just before the grab starts working, never after.
+        fun handleAt(position: Offset, tolerance: Float = 8f): Handle? {
+            val element = selectedElement()?.takeIf { !it.locked } ?: return null
+            val p = toDoc(position)
+            val (localX, localY) = element.toLocal(p.x, p.y)
+            return hitTestHandle(element.frame, localX, localY, tolerance / canvasScale)
+        }
+
         fun placed(elementId: String, frame: Frame): Slide = currentSlide.copy(
             elements = currentSlide.elements.map {
                 if (it.id == elementId) it.update(frame = frame) else it
             }
         )
 
+        // The dragged handle wins over the hovered one: mid-resize the frame
+        // moves under a still pointer, and the cursor must not flicker with it.
+        val cursors: ResizeCursors? = LocalResizeCursors.current
+        val cursorModifier: Modifier = cursors?.cursor(resizing ?: hovered) ?: Modifier
+
         // Input overlay covering the whole slide
         Box(
             Modifier
                 .fillMaxSize()
+                .then(cursorModifier)
+                .pointerInput(Unit) {
+                    // Hover, for the cursor. Nothing is consumed here, so the
+                    // gesture handlers below see every event regardless.
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            when (event.type) {
+                                PointerEventType.Move -> {
+                                    val position = event.changes.firstOrNull()?.position
+                                    hovered = position
+                                        ?.let { handleAt(it, tolerance = 12f) }
+                                        ?.let { resizeDirection(it, selectedElement()?.rotation ?: 0f) }
+                                }
+                                PointerEventType.Exit -> hovered = null
+                                else -> {}
+                            }
+                        }
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures { position ->
                         onSelectElement(elementAt(toDoc(position))?.id)
@@ -120,22 +167,13 @@ fun EditorCanvas(
                         totalDy = 0f
                         guideX = false
                         guideY = false
+                        resizing = null
                     }
                     detectDragGestures(
                         onDragStart = { position ->
                             val p = toDoc(position)
-                            val selected = currentSlide.elements.firstOrNull { it.id == currentSelection }
-                            // A locked element has no handles to hit: it neither
-                            // resizes nor moves. Selection still happens either
-                            // way, so the inspector can reach it to unlock it.
-                            // Handles live where they are drawn, so the pointer
-                            // maps into the element's own space before the test.
-                            val handle = selected
-                                ?.takeIf { !it.locked }
-                                ?.let { element ->
-                                    val (lx, ly) = element.toLocal(p.x, p.y)
-                                    hitTestHandle(element.frame, lx, ly, tolerance = 8f / canvasScale)
-                                }
+                            val selected = selectedElement()
+                            val handle = handleAt(position)
                             target = when {
                                 selected != null && handle != null -> DragTarget.Resize(selected.id, handle)
                                 else -> elementAt(p)
@@ -152,6 +190,8 @@ fun EditorCanvas(
                             draggedFrame = element?.frame
                             startFrame = element?.frame
                             startRotation = element?.rotation ?: 0f
+                            resizing = (target as? DragTarget.Resize)
+                                ?.let { resizeDirection(it.handle, startRotation) }
                         },
                         onDrag = { change, dragAmount ->
                             change.consume()

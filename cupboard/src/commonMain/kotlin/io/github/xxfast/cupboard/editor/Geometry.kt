@@ -5,6 +5,7 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 enum class Handle {
@@ -16,6 +17,37 @@ enum class Handle {
     val affectsRight: Boolean get() = this == TopRight || this == Right || this == BottomRight
     val affectsTop: Boolean get() = this == TopLeft || this == Top || this == TopRight
     val affectsBottom: Boolean get() = this == BottomLeft || this == Bottom || this == BottomRight
+}
+
+/**
+ * The axis a handle drags along, as drawn. [DiagonalDown] is the "\" axis and
+ * [DiagonalUp] the "/" one, named for where they point in the slide's y-down
+ * space. Four, not eight: a resize axis has no direction, both ends of it pull
+ * the same way.
+ */
+enum class ResizeDirection { Horizontal, Vertical, DiagonalDown, DiagonalUp }
+
+/**
+ * Which way [handle] pulls on an element drawn at [rotation] degrees: the
+ * handle's own axis turned by the rotation, then bucketed to the nearest 45.
+ * A box turned 45 degrees therefore offers diagonal cursors on the handles that
+ * are horizontal in its own space, which is where the pointer sees them.
+ */
+fun resizeDirection(handle: Handle, rotation: Float): ResizeDirection {
+    val axis = when (handle) {
+        Handle.Left, Handle.Right -> 0f
+        Handle.TopLeft, Handle.BottomRight -> 45f
+        Handle.Top, Handle.Bottom -> 90f
+        Handle.TopRight, Handle.BottomLeft -> 135f
+    }
+    // mod, not rem: a negative rotation has to land in 0..180 like any other.
+    val degrees = (axis + rotation).mod(180f)
+    return when ((degrees / 45f).roundToInt() % 4) {
+        0 -> ResizeDirection.Horizontal
+        1 -> ResizeDirection.DiagonalDown
+        2 -> ResizeDirection.Vertical
+        else -> ResizeDirection.DiagonalUp
+    }
 }
 
 /** Handle center positions for a frame, in doc units. */

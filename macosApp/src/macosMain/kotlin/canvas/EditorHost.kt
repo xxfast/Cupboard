@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -26,6 +28,9 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor.EditorCanvas
+import io.github.xxfast.cupboard.editor.LocalResizeCursors
+import io.github.xxfast.cupboard.editor.ResizeCursors
+import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.screens.editor.EditorState
@@ -34,6 +39,7 @@ import io.github.xxfast.cupboard.screens.editor.FlipAxis
 import io.github.xxfast.cupboard.screens.editor.InspectorTab
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,10 +48,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import org.jetbrains.skia.EncodedImageFormat
+import platform.AppKit.NSCursor
+import platform.AppKit.NSCursorFrameResizeDirectionsAll
+import platform.AppKit.NSCursorFrameResizePosition
+import platform.AppKit.NSCursorFrameResizePositionBottomRight
+import platform.AppKit.NSCursorFrameResizePositionTopRight
 import platform.AppKit.NSImage
 import platform.AppKit.NSView
 import platform.Foundation.NSData
 import platform.Foundation.NSMakeSize
+import platform.Foundation.NSProcessInfo
 import platform.Foundation.dataWithBytes
 
 /**
@@ -56,6 +68,38 @@ private val SIDEBAR = 212.dp
 private val INSPECTOR = 282.dp
 private val TOOLBAR = 52.dp
 private val NOTES = 122.dp
+
+/** macOS 15 is where the frame-resize cursors landed; the app still runs on 14. */
+private val macOsMajorVersion: Long =
+    NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion }
+
+private fun resizeCursor(direction: ResizeDirection?): NSCursor = when (direction) {
+    ResizeDirection.Horizontal -> NSCursor.resizeLeftRightCursor
+    ResizeDirection.Vertical -> NSCursor.resizeUpDownCursor
+    // Named for a corner, not an axis: BottomRight draws "\", TopRight "/".
+    ResizeDirection.DiagonalDown -> frameResizeCursor(NSCursorFrameResizePositionBottomRight)
+    ResizeDirection.DiagonalUp -> frameResizeCursor(NSCursorFrameResizePositionTopRight)
+    null -> NSCursor.arrowCursor
+}
+
+private fun frameResizeCursor(position: NSCursorFrameResizePosition): NSCursor =
+    if (macOsMajorVersion < 15) NSCursor.crosshairCursor
+    else NSCursor.frameResizeCursorFromPosition(position, NSCursorFrameResizeDirectionsAll)
+
+/**
+ * Resize cursors set straight on AppKit. Compose's macOS backend can only show
+ * its own internal cursor type, so a `PointerIcon` built out here would resolve
+ * to a plain arrow; [NSCursor] is the way in. Putting the arrow back on dispose
+ * is what covers the pointer leaving a handle, since that arrives as a new
+ * direction (null) and disposes the old effect.
+ */
+private val AppKitResizeCursors = ResizeCursors { direction ->
+    DisposableEffect(direction) {
+        resizeCursor(direction).set()
+        onDispose { NSCursor.arrowCursor.set() }
+    }
+    Modifier
+}
 
 /** One row of the navigator outline, for the native (SwiftUI) sidebar. */
 class OutlineRow(
@@ -165,18 +209,20 @@ class EditorHost {
             end = if (state.inspectorOpen) INSPECTOR else 0.dp,
             bottom = if (state.showNotes) NOTES else 0.dp,
         )
-        Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
-            EditorCanvas(
-                slide = state.selectedSlide,
-                selectedElementId = state.selectedElementId,
-                onSelectElement = viewModel::onSelectElement,
-                onSlideChange = viewModel::onUpdateSlide,
-                onSlidePreview = viewModel::onPreviewSlide,
-                onPreviewCancel = viewModel::onCancelPreview,
-                modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
-                else Modifier.fillMaxSize(),
-                zoom = scale,
-            )
+        CompositionLocalProvider(LocalResizeCursors provides AppKitResizeCursors) {
+            Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
+                EditorCanvas(
+                    slide = state.selectedSlide,
+                    selectedElementId = state.selectedElementId,
+                    onSelectElement = viewModel::onSelectElement,
+                    onSlideChange = viewModel::onUpdateSlide,
+                    onSlidePreview = viewModel::onPreviewSlide,
+                    onPreviewCancel = viewModel::onCancelPreview,
+                    modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
+                    else Modifier.fillMaxSize(),
+                    zoom = scale,
+                )
+            }
         }
     }
 

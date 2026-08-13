@@ -21,6 +21,8 @@ import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
@@ -32,12 +34,22 @@ import io.github.xxfast.cupboard.document.ZOrderMove.Backward
 import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
+import io.github.xxfast.cupboard.editor.LocalResizeCursors
+import io.github.xxfast.cupboard.editor.ResizeCursors
+import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.FlipAxis.Horizontal
 import io.github.xxfast.cupboard.screens.editor.FlipAxis.Vertical
+import java.awt.BasicStroke
+import java.awt.Cursor
+import java.awt.Point
+import java.awt.RenderingHints
+import java.awt.Toolkit
+import java.awt.geom.Path2D
+import java.awt.image.BufferedImage
 import kotlinx.coroutines.delay
 import org.jetbrains.skiko.currentSystemTheme
 import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
@@ -69,6 +81,66 @@ private fun systemTheme(): SystemTheme = when (currentSystemTheme) {
     SkikoSystemTheme.DARK -> SystemTheme.Dark
     SkikoSystemTheme.LIGHT -> SystemTheme.Light
     SkikoSystemTheme.UNKNOWN -> SystemTheme.Unknown
+}
+
+/**
+ * A double-headed resize arrow drawn at [degrees], as a custom AWT cursor.
+ *
+ * Drawn rather than predefined: the macOS JDK has no diagonal resize cursors at
+ * all (NW/NE silently fall back to the plain arrow) and its edge cursors are the
+ * single-headed variants, so the eight handle positions read as a grab-bag next
+ * to the native shell's cursors. One drawn arrow, rotated per axis, keeps all
+ * eight consistent on every OS. Black fill with a white outline, like the
+ * system's own artwork, so it survives light and dark canvases alike.
+ */
+private fun drawnResizeCursor(degrees: Double, name: String): Cursor? {
+    val toolkit = Toolkit.getDefaultToolkit()
+    val best = toolkit.getBestCursorSize(24, 24)
+    if (best.width == 0 || best.height == 0) return null
+
+    val image = BufferedImage(best.width, best.height, BufferedImage.TYPE_INT_ARGB)
+    val g = image.createGraphics()
+    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+    // The arrow is authored on a 24-unit grid; scale to whatever AWT wants.
+    g.scale(best.width / 24.0, best.height / 24.0)
+    g.rotate(Math.toRadians(degrees), 12.0, 12.0)
+    val arrow = Path2D.Float().apply {
+        moveTo(3f, 12f); lineTo(8f, 7f); lineTo(8f, 10f)
+        lineTo(16f, 10f); lineTo(16f, 7f); lineTo(21f, 12f)
+        lineTo(16f, 17f); lineTo(16f, 14f); lineTo(8f, 14f); lineTo(8f, 17f)
+        closePath()
+    }
+    g.color = java.awt.Color.WHITE
+    g.stroke = BasicStroke(2f)
+    g.draw(arrow)
+    g.color = java.awt.Color.BLACK
+    g.fill(arrow)
+    g.dispose()
+
+    return toolkit.createCustomCursor(image, Point(best.width / 2, best.height / 2), name)
+}
+
+/** Falls back to AWT's nearest predefined cursor where custom cursors aren't supported. */
+private fun resizeCursor(degrees: Double, name: String, fallback: Int): Cursor =
+    drawnResizeCursor(degrees, name) ?: Cursor.getPredefinedCursor(fallback)
+
+private val ResizeCursorIcons: Map<ResizeDirection, PointerIcon> by lazy {
+    mapOf(
+        ResizeDirection.Horizontal to PointerIcon(resizeCursor(0.0, "resize-ew", Cursor.E_RESIZE_CURSOR)),
+        ResizeDirection.Vertical to PointerIcon(resizeCursor(90.0, "resize-ns", Cursor.S_RESIZE_CURSOR)),
+        ResizeDirection.DiagonalDown to PointerIcon(resizeCursor(45.0, "resize-nwse", Cursor.NW_RESIZE_CURSOR)),
+        ResizeDirection.DiagonalUp to PointerIcon(resizeCursor(135.0, "resize-nesw", Cursor.NE_RESIZE_CURSOR)),
+    )
+}
+
+/**
+ * The modifier stays attached with no handle under the pointer, showing the
+ * arrow, rather than detaching: adding and removing the hover-icon node
+ * mid-hover leaves AWT holding a stale cursor, which shows up as the cursor
+ * vanishing over the canvas.
+ */
+private val AwtResizeCursors = ResizeCursors { direction ->
+    Modifier.pointerHoverIcon(direction?.let { ResizeCursorIcons.getValue(it) } ?: PointerIcon.Default)
 }
 
 fun main() {
@@ -162,7 +234,10 @@ fun main() {
             // default is a one-shot skiko read), so a running app never sees the
             // system switch. Re-providing it from a poll keeps the shared shell's
             // isSystemInDarkTheme() live.
-            CompositionLocalProvider(LocalSystemTheme provides pollSystemTheme()) {
+            CompositionLocalProvider(
+                LocalSystemTheme provides pollSystemTheme(),
+                LocalResizeCursors provides AwtResizeCursors,
+            ) {
                 EditorScreen(
                     viewModel = viewModel,
                     // The document and index the editor has right now: play is a

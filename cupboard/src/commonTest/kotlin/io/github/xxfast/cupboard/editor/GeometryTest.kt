@@ -112,6 +112,46 @@ class GeometryTest {
     }
 
     @Test
+    fun unrotatedHandlesResizeAlongTheirOwnAxis() {
+        assertEquals(ResizeDirection.Horizontal, resizeDirection(Handle.Left, rotation = 0f))
+        assertEquals(ResizeDirection.Horizontal, resizeDirection(Handle.Right, rotation = 0f))
+        assertEquals(ResizeDirection.Vertical, resizeDirection(Handle.Top, rotation = 0f))
+        assertEquals(ResizeDirection.Vertical, resizeDirection(Handle.Bottom, rotation = 0f))
+        assertEquals(ResizeDirection.DiagonalDown, resizeDirection(Handle.TopLeft, rotation = 0f))
+        assertEquals(ResizeDirection.DiagonalDown, resizeDirection(Handle.BottomRight, rotation = 0f))
+        assertEquals(ResizeDirection.DiagonalUp, resizeDirection(Handle.TopRight, rotation = 0f))
+        assertEquals(ResizeDirection.DiagonalUp, resizeDirection(Handle.BottomLeft, rotation = 0f))
+    }
+
+    @Test
+    fun quarterTurnSwapsTheAxes() {
+        assertEquals(ResizeDirection.Vertical, resizeDirection(Handle.Right, rotation = 90f))
+        assertEquals(ResizeDirection.Horizontal, resizeDirection(Handle.Top, rotation = 90f))
+        assertEquals(ResizeDirection.DiagonalUp, resizeDirection(Handle.TopLeft, rotation = 90f))
+    }
+
+    @Test
+    fun eighthTurnMakesEdgeHandlesDiagonal() {
+        assertEquals(ResizeDirection.DiagonalDown, resizeDirection(Handle.Right, rotation = 45f))
+        assertEquals(ResizeDirection.DiagonalUp, resizeDirection(Handle.Bottom, rotation = 45f))
+    }
+
+    @Test
+    fun negativeRotationTurnsTheOtherWay() {
+        assertEquals(ResizeDirection.DiagonalUp, resizeDirection(Handle.Right, rotation = -45f))
+        assertEquals(ResizeDirection.Horizontal, resizeDirection(Handle.Top, rotation = -90f))
+        assertEquals(ResizeDirection.Vertical, resizeDirection(Handle.BottomRight, rotation = -315f))
+    }
+
+    @Test
+    fun rotationBucketsToTheNearestAxis() {
+        assertEquals(ResizeDirection.Horizontal, resizeDirection(Handle.Right, rotation = 20f))
+        assertEquals(ResizeDirection.DiagonalDown, resizeDirection(Handle.Right, rotation = 30f))
+        // 170 is nearer 180 than 135, and 180 is horizontal again.
+        assertEquals(ResizeDirection.Horizontal, resizeDirection(Handle.Right, rotation = 170f))
+    }
+
+    @Test
     fun flippedElementKeepsItsFootprint() {
         val element = TextElement(frame = frame, flippedHorizontally = true, flippedVertically = true)
         assertTrue(element.contains(101f, 101f))
