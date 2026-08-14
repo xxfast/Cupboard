@@ -25,8 +25,11 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +76,10 @@ private fun rectBetween(a: Offset, b: Offset): Frame =
  * writes from pointer handlers proved unreliable for repaint on desktop.
  * [onUpdateElements] fires exactly once, on release: that's the undo and autosave
  * boundary.
+ *
+ * A secondary press only reports itself, through [onContextClick]: the menu it
+ * opens is the shell's, and what the click does to the selection is the state
+ * loop's.
  */
 @Composable
 fun EditorCanvas(
@@ -86,6 +93,13 @@ fun EditorCanvas(
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
     onPreviewCancel: () -> Unit,
+    /**
+     * A right-click, carrying the topmost element under it (null over empty slide
+     * space) and where it landed in this composable's own space, in pixels, for a
+     * shell to anchor its menu at. Defaulted so a shell that has no menu yet still
+     * builds; every shell that grows one passes it.
+     */
+    onContextClick: (elementId: String?, position: Offset) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     zoom: Float? = null,
 ) {
@@ -101,8 +115,16 @@ fun EditorCanvas(
     // read by the drag handler (whose callbacks never see modifiers): a shift
     // gesture edits the selection and nothing else, so drags sit it out.
     var shiftDown by remember { mutableStateOf(false) }
+    // The same latch for the secondary button, which the drag handler can't tell
+    // from the primary one either: a right press is a click and never a gesture.
+    var secondaryDown by remember { mutableStateOf(false) }
+    // Where the slide sits inside this composable, so a right-click can be
+    // reported in the canvas's space rather than the slide's: at any zoom but Fit
+    // the slide is letterboxed, and a menu anchors to the canvas.
+    var canvasBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var slideBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
-    SlideSurface(modifier, zoom = zoom) {
+    SlideSurface(modifier.onGloballyPositioned { canvasBounds = it }, zoom = zoom) {
         for (element in slide.elements) ElementView(element)
 
         // Editing affordances hold constant screen size at any zoom: authored
@@ -113,6 +135,15 @@ fun EditorCanvas(
 
         fun elementAt(p: Offset): Element? =
             currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
+
+        // A pointer position, which arrives in the input overlay's space (the
+        // slide rectangle), moved into the canvas composable's own. Untranslated
+        // until both layouts have reported, which is before the first press.
+        fun toCanvas(position: Offset): Offset {
+            val canvas: LayoutCoordinates = canvasBounds ?: return position
+            val slideRect: LayoutCoordinates = slideBounds ?: return position
+            return canvas.localPositionOf(slideRect, position)
+        }
 
         fun selectedElements(): List<Element> = currentSelection.mapNotNull { id ->
             currentSlide.elements.firstOrNull { it.id == id }
@@ -148,6 +179,7 @@ fun EditorCanvas(
         Box(
             Modifier
                 .fillMaxSize()
+                .onGloballyPositioned { slideBounds = it }
                 .then(cursorModifier)
                 .pointerInput(Unit) {
                     // Hover for the cursor, and the click that selects. One loop
@@ -174,15 +206,28 @@ fun EditorCanvas(
                                 // must not cost the whole selection. Plain
                                 // clicks keep deciding on release, where a click
                                 // and a drag can still be told apart.
+                                //
+                                // A secondary press settles at press time too,
+                                // and settles there for good: it reports what it
+                                // hit and starts nothing. Ctrl-click is left to
+                                // mean ctrl-click; the platforms that spell a
+                                // right-click that way say so in their own
+                                // events, not in this button.
                                 PointerEventType.Press -> {
-                                    shiftDown = event.keyboardModifiers.isShiftPressed
-                                    if (shiftDown) {
-                                        position
+                                    secondaryDown = event.buttons.isSecondaryPressed
+                                    shiftDown =
+                                        !secondaryDown && event.keyboardModifiers.isShiftPressed
+                                    pressedAt = null
+                                    when {
+                                        secondaryDown -> position?.let {
+                                            onContextClick(elementAt(toDoc(it))?.id, toCanvas(it))
+                                        }
+
+                                        shiftDown -> position
                                             ?.let { elementAt(toDoc(it)) }
                                             ?.let { onToggleElementSelection(it.id) }
-                                        pressedAt = null
-                                    } else {
-                                        pressedAt = position
+
+                                        else -> pressedAt = position
                                     }
                                 }
 
@@ -265,8 +310,11 @@ fun EditorCanvas(
 
                     detectDragGestures(
                         onDragStart = { position ->
-                            // The selection was already edited at press time.
-                            if (shiftDown) return@detectDragGestures
+                            // The selection was already edited at press time, and
+                            // a secondary press moves nothing at all: no marquee,
+                            // no move, no resize. Both leave [target] null, so
+                            // there is nothing to commit either.
+                            if (shiftDown || secondaryDown) return@detectDragGestures
                             val p = toDoc(position)
                             val sole: Element? = soleSelected()
                             val handle: Handle? = handleAt(position)

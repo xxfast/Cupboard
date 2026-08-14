@@ -141,6 +141,34 @@ class ElementProps(
 )
 
 /**
+ * What a canvas context menu may offer, decided against the selection the click
+ * that opened it settles on rather than the one in `states`.
+ *
+ * The click sends its event and calls the host back in the same breath, so by
+ * the time the shell builds the menu the reduction may not have roundtripped
+ * yet, and every selection-based can-fact is one step behind. These are the same
+ * facts computed one step ahead, so the menu is never built against the
+ * selection the user just left behind. The items themselves still act through
+ * the selection-based methods: a human picking one is thousands of frames later.
+ *
+ * Plain vals, like [ElementProps]: nothing here is a handle onto the document.
+ */
+class ContextFacts(
+    val canCut: Boolean,
+    val canCopy: Boolean,
+    val canPaste: Boolean,
+    val canDelete: Boolean,
+    /** Z-order, flip and align: one unlocked element is enough for all three. */
+    val canArrange: Boolean,
+    val canGroup: Boolean,
+    val canUngroup: Boolean,
+    val canDistribute: Boolean,
+    val canLock: Boolean,
+    /** "Lock" or "Unlock", following the primary the way the Arrange menu does. */
+    val lockLabel: String,
+)
+
+/**
  * A running presentation: a Compose view playing a snapshot of the document.
  * The host shows [view] full screen and calls [dispose] when it tears it down.
  * Playback keys are the player's own business; it only calls back on exit.
@@ -196,6 +224,9 @@ class EditorHost {
     /** The well follows the host's appearance; slide content never does. */
     private val darkChrome = MutableStateFlow(true)
 
+    /** Where a right-click on the canvas goes once the loop has been told. */
+    private var contextClick: ((String?) -> Unit)? = null
+
     /** The full-bleed content layer: the shell floats its glass panels over this. */
     val view: NSView = ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
@@ -223,6 +254,14 @@ class EditorHost {
                     marquee = state.marquee,
                     onSelectElement = viewModel::onSelectElement,
                     onToggleElementSelection = viewModel::onToggleElementSelection,
+                    // The loop first, the shell second: the event is what settles
+                    // the selection, and the menu the shell opens is only ever a
+                    // reader of it. The position goes no further, the shell pops
+                    // at the mouse event it is already holding.
+                    onContextClick = { elementId, _ ->
+                        viewModel.onContextClick(elementId)
+                        contextClick?.invoke(elementId)
+                    },
                     onPreviewMarquee = viewModel::onPreviewMarquee,
                     onEndMarquee = viewModel::onEndMarquee,
                     onUpdateElements = viewModel::onUpdateElements,
@@ -347,24 +386,70 @@ class EditorHost {
     fun selectionCount(): Int = state.selectedElements.size
 
     /** Two unlocked elements are what a group is made of. */
-    fun canGroup(): Boolean {
-        val elements: List<Element> = state.selectedElements
-        return elements.size >= 2 && elements.count { !it.locked } >= 2
-    }
+    fun canGroup(): Boolean = canGroup(state.selectedElements)
 
     /**
      * Ungrouping is a single-group act: two groups selected is a batch nothing
      * else in the app does, so the menu item goes dead rather than guessing.
      */
-    fun canUngroup(): Boolean {
-        val group: Element = state.selectedElements.singleOrNull() ?: return false
+    fun canUngroup(): Boolean = canUngroup(state.selectedElements)
+
+    // Every can-fact takes the selection it judges, so the same rule serves both
+    // the live selection and the one a right-click is about to settle on.
+    private fun canGroup(elements: List<Element>): Boolean =
+        elements.size >= 2 && elements.count { !it.locked } >= 2
+
+    private fun canUngroup(elements: List<Element>): Boolean {
+        val group: Element = elements.singleOrNull() ?: return false
         return group is GroupElement && !group.locked
     }
 
     // The selection an edit may touch. A locked element answers to nothing but
     // the unlock, which the presenter enforces too; this keeps the shell from
     // sending edits it knows will be dropped.
-    private fun editable(): List<Element> = state.selectedElements.filter { !it.locked }
+    private fun editable(): List<Element> = editable(state.selectedElements)
+
+    private fun editable(elements: List<Element>): List<Element> = elements.filter { !it.locked }
+
+    /**
+     * What a menu opened by a right-click on [elementId] may offer, [elementId]
+     * being null over empty slide space. See [ContextFacts] for why the shell
+     * asks for these instead of reading the selection-based facts.
+     *
+     * The selection it judges is worked out here by the same rule
+     * `EditorEvent.ContextClick` reduces by: an element already in the selection
+     * keeps the whole selection, anything else becomes the selection on its own,
+     * empty space clears it. A deliberate duplicate of the reducer, because the
+     * event has not roundtripped yet when this is called. The two move together.
+     */
+    fun contextFacts(elementId: String?): ContextFacts {
+        val elements: List<Element> = contextSelection(elementId)
+        val unlocked: List<Element> = editable(elements)
+        val primary: Element? = elements.firstOrNull()
+        // The same rule the Arrange menu greys itself out by: one unlocked
+        // primary is enough to reorder, flip, or line up against the slide.
+        val arrangeable: Boolean = primary != null && !primary.locked
+        return ContextFacts(
+            canCut = unlocked.isNotEmpty(),
+            canCopy = elements.isNotEmpty(),
+            canPaste = state.canPaste,
+            canDelete = unlocked.isNotEmpty(),
+            canArrange = arrangeable,
+            canGroup = canGroup(elements),
+            canUngroup = canUngroup(elements),
+            // Two elements have no gap between them to equalize.
+            canDistribute = arrangeable && elements.size >= 3,
+            canLock = primary != null,
+            lockLabel = if (primary?.locked == true) "Unlock" else "Lock",
+        )
+    }
+
+    private fun contextSelection(elementId: String?): List<Element> {
+        if (elementId == null) return emptyList()
+        val selection: List<Element> = state.selectedElements
+        if (selection.any { it.id == elementId }) return selection
+        return listOfNotNull(state.selectedSlide.elements.firstOrNull { it.id == elementId })
+    }
 
     /**
      * Commits a typed frame onto every selected element, the way Keynote's
@@ -560,6 +645,18 @@ class EditorHost {
     fun onChange(callback: () -> Unit): () -> Unit {
         val job = scope.launch { viewModel.states.collect { callback() } }
         return { job.cancel() }
+    }
+
+    /**
+     * Registers [callback], fired on the main thread when the canvas is
+     * right-clicked, carrying the element under it or null for empty slide space.
+     * The loop has already been told by then; this is only the shell's cue to
+     * open a menu, which it builds from [contextFacts] for that same id.
+     *
+     * One registration, like the menu it opens: last in wins.
+     */
+    fun setContextClickCallback(callback: (String?) -> Unit) {
+        contextClick = callback
     }
 
     /**

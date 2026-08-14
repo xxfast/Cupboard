@@ -24,28 +24,22 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.window.MenuBar
+import androidx.compose.ui.window.MenuScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
-import io.github.xxfast.cupboard.document.GroupElement
-import io.github.xxfast.cupboard.document.ZOrderMove.Backward
-import io.github.xxfast.cupboard.document.ZOrderMove.Forward
-import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
-import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
-import io.github.xxfast.cupboard.editor.AlignEdge
-import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
+import io.github.xxfast.cupboard.screens.editor.EditorMenuSection
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
-import io.github.xxfast.cupboard.screens.editor.FlipAxis.Horizontal
-import io.github.xxfast.cupboard.screens.editor.FlipAxis.Vertical
+import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import java.awt.BasicStroke
 import java.awt.Cursor
 import java.awt.Point
@@ -146,6 +140,28 @@ private val AwtResizeCursors = ResizeCursors { direction ->
     Modifier.pointerHoverIcon(direction?.let { ResizeCursorIcons.getValue(it) } ?: PointerIcon.Default)
 }
 
+/**
+ * Menu specs as menu-bar entries: a [Separator] between sections, a nested
+ * [Menu] for anything carrying children. Shortcuts stay out of the specs, so
+ * the menus that carry accelerators (Edit, Slide) still write their own items.
+ */
+@Composable
+private fun MenuScope.MenuItems(sections: List<EditorMenuSection>) {
+    sections.forEachIndexed { index, section ->
+        if (index > 0) Separator()
+
+        for (item in section.items) {
+            if (item.children.isEmpty()) {
+                Item(text = item.label, enabled = item.enabled, onClick = item.onPick)
+            } else {
+                Menu(item.label, enabled = item.enabled) {
+                    for (child in item.children) Item(text = child.label, onClick = child.onPick)
+                }
+            }
+        }
+    }
+}
+
 fun main() {
     // AWT title bars on macOS stay light aqua regardless of the OS appearance
     // unless the app opts into following it. JetBrains Runtime honours this;
@@ -194,10 +210,6 @@ fun main() {
                 // it asks the slide the same question: is there anything
                 // unlocked left to take away.
                 val clearable: Boolean = state.selectedSlide.elements.any { !it.locked }
-                // Ungrouping is a single-group act: two groups selected is a
-                // batch nothing else in the app does.
-                val group: GroupElement? = (primary as? GroupElement)
-                    ?.takeIf { ids.size == 1 && !it.locked }
 
                 Menu("Edit", mnemonic = 'E') {
                     Item(
@@ -302,84 +314,11 @@ fun main() {
                     )
                 }
 
+                // Rendered from the shared specs, not written here: the canvas
+                // context menu offers the same verbs, and a rule written twice
+                // is a rule that drifts.
                 Menu("Arrange", mnemonic = 'A') {
-                    Item(
-                        text = "Bring Forward",
-                        enabled = editable,
-                        onClick = { viewModel.onReorderElements(ids, Forward) },
-                    )
-                    Item(
-                        text = "Send Backward",
-                        enabled = editable,
-                        onClick = { viewModel.onReorderElements(ids, Backward) },
-                    )
-                    Item(
-                        text = "Bring to Front",
-                        enabled = editable,
-                        onClick = { viewModel.onReorderElements(ids, ToFront) },
-                    )
-                    Item(
-                        text = "Send to Back",
-                        enabled = editable,
-                        onClick = { viewModel.onReorderElements(ids, ToBack) },
-                    )
-
-                    Separator()
-
-                    Item(
-                        text = "Flip Horizontally",
-                        enabled = editable,
-                        onClick = { viewModel.onFlipElements(ids, Horizontal) },
-                    )
-                    Item(
-                        text = "Flip Vertically",
-                        enabled = editable,
-                        onClick = { viewModel.onFlipElements(ids, Vertical) },
-                    )
-
-                    Separator()
-
-                    Item(
-                        text = if (primary?.locked == true) "Unlock" else "Lock",
-                        enabled = primary != null,
-                        onClick = { viewModel.onSetElementsLocked(ids, primary?.locked != true) },
-                    )
-
-                    Separator()
-
-                    Item(
-                        text = "Group",
-                        enabled = unlocked.size >= 2,
-                        onClick = { viewModel.onGroupElements(ids) },
-                    )
-                    Item(
-                        text = "Ungroup",
-                        enabled = group != null,
-                        onClick = { group?.let { viewModel.onUngroupElements(it.id) } },
-                    )
-
-                    Separator()
-
-                    // A lone element aligns to the slide, so one is enough.
-                    Menu("Align Objects", enabled = editable) {
-                        Item("Left", onClick = { viewModel.onAlignElements(AlignEdge.Left) })
-                        Item("Center", onClick = { viewModel.onAlignElements(AlignEdge.CenterX) })
-                        Item("Right", onClick = { viewModel.onAlignElements(AlignEdge.Right) })
-                        Item("Top", onClick = { viewModel.onAlignElements(AlignEdge.Top) })
-                        Item("Middle", onClick = { viewModel.onAlignElements(AlignEdge.CenterY) })
-                        Item("Bottom", onClick = { viewModel.onAlignElements(AlignEdge.Bottom) })
-                    }
-                    // Two elements have no gap between them to equalize.
-                    Menu("Distribute Objects", enabled = unlocked.size >= 3) {
-                        Item(
-                            text = "Horizontally",
-                            onClick = { viewModel.onDistributeElements(Axis.Horizontal) },
-                        )
-                        Item(
-                            text = "Vertically",
-                            onClick = { viewModel.onDistributeElements(Axis.Vertical) },
-                        )
-                    }
+                    MenuItems(arrangeSections(state, viewModel))
                 }
             }
 

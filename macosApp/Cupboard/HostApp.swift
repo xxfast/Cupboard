@@ -490,6 +490,12 @@ final class EditorModel {
         // Kotlin notifies synchronously on whichever thread mutated, which is
         // always the main thread here (SwiftUI calls, or Compose input).
         unsubscribe = host.onChange { [weak self] in self?.generation += 1 }
+        // A right-click on the canvas. The event is already away by the time
+        // this fires, so the menu is all that is left to do.
+        host.setContextClickCallback { [weak self] elementId in
+            guard let self else { return }
+            popCanvasMenu(host: self.host, elementId: elementId)
+        }
     }
 
     deinit {
@@ -557,6 +563,225 @@ private struct Selection: Equatable {
         flippedVertically = props.flippedVertically
         locked = props.locked
         kind = props.kind
+    }
+}
+
+// MARK: - Menus
+
+/// One row of a menu: a command, a submenu, or a separator. The Arrange items
+/// are built once as these and rendered twice, as SwiftUI Buttons in the menu
+/// bar and as NSMenuItems in the canvas menu, so the two can only differ in the
+/// facts they were built from.
+private struct MenuEntry: Identifiable {
+    let id = UUID()
+    /// Empty is a separator: nothing else in a menu has no title.
+    let title: String
+    var enabled = true
+    /// Menu bar only. A context menu advertising shortcuts would be repeating
+    /// what the bar above it already says.
+    var shortcut: KeyboardShortcut? = nil
+    var children: [MenuEntry]? = nil
+    var action: (() -> Void)? = nil
+
+    var isSeparator: Bool { title.isEmpty }
+
+    static func separator() -> MenuEntry { MenuEntry(title: "") }
+}
+
+/// What the Arrange items grey themselves out by: either the live selection, or
+/// the effective selection of the right-click opening a menu right now. One
+/// shape, so one builder serves both.
+private struct ArrangeFacts {
+    /// Z-order, flip and align: one unlocked element is enough for all three.
+    let canArrange: Bool
+    let canGroup: Bool
+    let canUngroup: Bool
+    let canDistribute: Bool
+    let canLock: Bool
+    let lockLabel: String
+
+    init(_ ui: Chrome) {
+        canArrange = ui.editable
+        canGroup = ui.canGroup
+        canUngroup = ui.canUngroup
+        // Two elements have no gap between them to equalize.
+        canDistribute = ui.editable && ui.selectionCount >= 3
+        canLock = ui.element != nil
+        lockLabel = ui.element?.locked == true ? "Unlock" : "Lock"
+    }
+
+    /// Kotlin's, computed against the selection a right-click settles on rather
+    /// than the one in `states`, which that click has not reached yet.
+    init(_ facts: ContextFacts) {
+        canArrange = facts.canArrange
+        canGroup = facts.canGroup
+        canUngroup = facts.canUngroup
+        canDistribute = facts.canDistribute
+        canLock = facts.canLock
+        lockLabel = facts.lockLabel
+    }
+}
+
+/// The Arrange menu, stated once. The labels follow the primary element, the
+/// actions carry the whole selection: the host's setters batch, so one pick is
+/// one undo entry however many elements it moved.
+private func arrangeEntries(_ facts: ArrangeFacts, _ host: EditorHost) -> [MenuEntry] {
+    func command(
+        _ title: String,
+        _ enabled: Bool,
+        shortcut: KeyboardShortcut? = nil,
+        _ action: @escaping () -> Void
+    ) -> MenuEntry {
+        MenuEntry(title: title, enabled: enabled, shortcut: shortcut, action: action)
+    }
+
+    func reorder(_ title: String, _ move: ZOrderMove) -> MenuEntry {
+        command(title, facts.canArrange) { host.reorderSelectedElement(move: move) }
+    }
+
+    return [
+        reorder("Bring Forward", ZOrderMove.forward),
+        reorder("Send Backward", ZOrderMove.backward),
+        reorder("Bring to Front", ZOrderMove.tofront),
+        reorder("Send to Back", ZOrderMove.toback),
+
+        .separator(),
+
+        command("Flip Horizontally", facts.canArrange) {
+            host.flipSelectedElement(axis: FlipAxis.horizontal)
+        },
+        command("Flip Vertically", facts.canArrange) {
+            host.flipSelectedElement(axis: FlipAxis.vertical)
+        },
+
+        .separator(),
+
+        command(
+            "Group",
+            facts.canGroup,
+            shortcut: KeyboardShortcut("g", modifiers: [.command, .option])
+        ) { host.groupSelection() },
+        command(
+            "Ungroup",
+            facts.canUngroup,
+            shortcut: KeyboardShortcut("g", modifiers: [.command, .option, .shift])
+        ) { host.ungroupSelection() },
+
+        .separator(),
+
+        // A lone element aligns to the slide, so one is enough.
+        MenuEntry(
+            title: "Align Objects",
+            enabled: facts.canArrange,
+            children: [
+                command("Left", true) { host.alignSelection(edge: AlignEdge.left) },
+                command("Center", true) { host.alignSelection(edge: AlignEdge.centerx) },
+                command("Right", true) { host.alignSelection(edge: AlignEdge.right) },
+                command("Top", true) { host.alignSelection(edge: AlignEdge.top) },
+                command("Middle", true) { host.alignSelection(edge: AlignEdge.centery) },
+                command("Bottom", true) { host.alignSelection(edge: AlignEdge.bottom) },
+            ]
+        ),
+        MenuEntry(
+            title: "Distribute Objects",
+            enabled: facts.canDistribute,
+            children: [
+                command("Horizontally", true) { host.distributeSelection(axis: Axis.horizontal) },
+                command("Vertically", true) { host.distributeSelection(axis: Axis.vertical) },
+            ]
+        ),
+
+        .separator(),
+
+        command(facts.lockLabel, facts.canLock) { host.toggleSelectedElementLock() },
+    ]
+}
+
+/// The entries as SwiftUI. The NSMenu builder walks the same list.
+private struct MenuEntries: View {
+    let entries: [MenuEntry]
+
+    var body: some View {
+        ForEach(entries) { entry in
+            if entry.isSeparator {
+                Divider()
+            } else if let children = entry.children {
+                Menu(entry.title) { MenuEntries(entries: children) }
+                    .disabled(!entry.enabled)
+            } else {
+                Button(entry.title) { entry.action?() }
+                    .keyboardShortcut(entry.shortcut)
+                    .disabled(!entry.enabled)
+            }
+        }
+    }
+}
+
+/// NSMenuItem calls a selector on a target it does not retain, so the closure
+/// rides as the item's represented object, which it does.
+private final class MenuAction: NSObject {
+    private let run: () -> Void
+
+    init(_ run: @escaping () -> Void) { self.run = run }
+
+    @objc func fire() { run() }
+}
+
+/// The entries as an NSMenu. Nothing autoenables: AppKit would ask a responder
+/// chain that knows nothing about the Kotlin selection, and what these were
+/// built from is already a step ahead of it.
+private func nsMenu(_ entries: [MenuEntry]) -> NSMenu {
+    let menu = NSMenu()
+    menu.autoenablesItems = false
+    for entry in entries {
+        guard !entry.isSeparator else {
+            menu.addItem(.separator())
+            continue
+        }
+        let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
+        item.isEnabled = entry.enabled
+        if let children = entry.children {
+            item.submenu = nsMenu(children)
+        } else if let action = entry.action {
+            let handler = MenuAction(action)
+            item.target = handler
+            item.action = #selector(MenuAction.fire)
+            item.representedObject = handler
+        }
+        menu.addItem(item)
+    }
+    return menu
+}
+
+/// The canvas context menu: the clipboard four, then Arrange. Built per click
+/// from that click's own facts, and acting through the selection-based methods,
+/// which have long settled by the time a human picks an item.
+private func popCanvasMenu(host: EditorHost, elementId: String?) {
+    let facts = host.contextFacts(elementId: elementId)
+    let entries: [MenuEntry] = [
+        MenuEntry(title: "Cut", enabled: facts.canCut, action: { host.cutSelection() }),
+        MenuEntry(title: "Copy", enabled: facts.canCopy, action: { host.doCopySelection() }),
+        MenuEntry(title: "Paste", enabled: facts.canPaste, action: { host.paste() }),
+        MenuEntry(title: "Delete", enabled: facts.canDelete, action: { host.deleteSelection() }),
+        .separator(),
+    ] + arrangeEntries(ArrangeFacts(facts), host)
+
+    let menu = nsMenu(entries)
+    let view = host.view
+    guard let window = view.window else { return }
+
+    // Where the click landed, off the event itself; the pointer, converted, for
+    // the case where there is no event to read.
+    var inWindow = window.convertPoint(fromScreen: NSEvent.mouseLocation)
+    if let event = NSApp.currentEvent, event.window === window {
+        inWindow = event.locationInWindow
+    }
+    let location = view.convert(inWindow, from: nil)
+
+    // Compose is still handling the click, so the menu's tracking loop waits for
+    // the next turn of the main queue rather than running from inside it.
+    DispatchQueue.main.async {
+        menu.popUp(positioning: nil, at: location, in: view)
     }
 }
 
@@ -665,66 +890,14 @@ struct CupboardHostApp: App {
         }
     }
 
-    /// The Compose shell's Arrange menu, natively. The labels follow the primary
-    /// element, the actions carry the whole selection: the host's setters batch,
-    /// so one menu pick is one undo entry however many elements it moved.
+    /// The Compose shell's Arrange menu, natively, off the same entry list the
+    /// canvas context menu renders. One statement of the items, two renderings:
+    /// the two menus cannot drift apart, only be built from different facts.
     private var arrangeMenu: some Commands {
         CommandMenu("Arrange") {
             // Reading generation is what keeps these enabled states fresh.
             let _ = model.generation
-            let ui = Chrome(host)
-
-            Button("Bring Forward") { host.reorderSelectedElement(move: ZOrderMove.forward) }
-                .disabled(!ui.editable)
-            Button("Send Backward") { host.reorderSelectedElement(move: ZOrderMove.backward) }
-                .disabled(!ui.editable)
-            Button("Bring to Front") { host.reorderSelectedElement(move: ZOrderMove.tofront) }
-                .disabled(!ui.editable)
-            Button("Send to Back") { host.reorderSelectedElement(move: ZOrderMove.toback) }
-                .disabled(!ui.editable)
-
-            Divider()
-
-            Button("Flip Horizontally") { host.flipSelectedElement(axis: FlipAxis.horizontal) }
-                .disabled(!ui.editable)
-            Button("Flip Vertically") { host.flipSelectedElement(axis: FlipAxis.vertical) }
-                .disabled(!ui.editable)
-
-            Divider()
-
-            Button("Group") { host.groupSelection() }
-                .keyboardShortcut("g", modifiers: [.command, .option])
-                .disabled(!ui.canGroup)
-            Button("Ungroup") { host.ungroupSelection() }
-                .keyboardShortcut("g", modifiers: [.command, .option, .shift])
-                .disabled(!ui.canUngroup)
-
-            Divider()
-
-            // A lone element aligns to the slide, so one is enough.
-            Menu("Align") {
-                Button("Left") { host.alignSelection(edge: AlignEdge.left) }
-                Button("Center") { host.alignSelection(edge: AlignEdge.centerx) }
-                Button("Right") { host.alignSelection(edge: AlignEdge.right) }
-                Button("Top") { host.alignSelection(edge: AlignEdge.top) }
-                Button("Middle") { host.alignSelection(edge: AlignEdge.centery) }
-                Button("Bottom") { host.alignSelection(edge: AlignEdge.bottom) }
-            }
-            .disabled(!ui.editable)
-
-            // Two elements have no gap between them to equalize.
-            Menu("Distribute") {
-                Button("Horizontally") { host.distributeSelection(axis: Axis.horizontal) }
-                Button("Vertically") { host.distributeSelection(axis: Axis.vertical) }
-            }
-            .disabled(!ui.editable || ui.selectionCount < 3)
-
-            Divider()
-
-            Button(ui.element?.locked == true ? "Unlock" : "Lock") {
-                host.toggleSelectedElementLock()
-            }
-            .disabled(ui.element == nil)
+            MenuEntries(entries: arrangeEntries(ArrangeFacts(Chrome(host)), host))
         }
     }
 }

@@ -13,6 +13,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopySlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyStyle
@@ -111,6 +112,7 @@ class EditorViewModel(
     fun onSelectElement(id: String?) { scope.launch { events.emit(SelectElement(id)) } }
     fun onSelectElements(ids: List<String>) { scope.launch { events.emit(SelectElements(ids)) } }
     fun onToggleElementSelection(id: String) { scope.launch { events.emit(ToggleElementSelection(id)) } }
+    fun onContextClick(id: String?) { scope.launch { events.emit(ContextClick(id)) } }
     fun onPreviewMarquee(rect: Frame) { scope.launch { events.emit(PreviewMarquee(rect)) } }
     fun onEndMarquee() { scope.launch { events.emit(EndMarquee) } }
     fun onUpdateSlide(slide: Slide) { scope.launch { events.emit(UpdateSlide(slide)) } }

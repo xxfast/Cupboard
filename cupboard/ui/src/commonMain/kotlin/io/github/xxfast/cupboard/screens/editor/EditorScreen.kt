@@ -8,8 +8,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -20,7 +25,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -55,6 +66,12 @@ fun EditorScreen(
         onToggleCollapsed = viewModel::onToggleCollapsed,
         onSelectElement = viewModel::onSelectElement,
         onToggleElementSelection = viewModel::onToggleElementSelection,
+        // The click settles the selection; the view opens the menu at the
+        // position it came with.
+        onContextClick = { elementId, _ -> viewModel.onContextClick(elementId) },
+        // Rebuilt from every state this screen sees, so the menu that is already
+        // open re-reads its enablement as the click's selection settles.
+        menuSections = canvasMenuSections(state, viewModel),
         onPreviewMarquee = viewModel::onPreviewMarquee,
         onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
@@ -77,6 +94,9 @@ fun EditorView(
     onToggleCollapsed: (String) -> Unit,
     onSelectElement: (String?) -> Unit,
     onToggleElementSelection: (String) -> Unit,
+    /** A right-click on the canvas, and where in the canvas it landed: the screen
+     * owns what happens next, the canvas only forwards it. */
+    onContextClick: (elementId: String?, position: Offset) -> Unit,
     onPreviewMarquee: (Frame) -> Unit,
     onEndMarquee: () -> Unit,
     onCancelPreview: () -> Unit,
@@ -88,6 +108,8 @@ fun EditorView(
     onGroupElements: (List<String>) -> Unit,
     onUngroupElements: (String) -> Unit,
     onSelectInspectorTab: (InspectorTab) -> Unit,
+    /** What the canvas context menu shows, sections in order. Empty hides it. */
+    menuSections: List<EditorMenuSection> = emptyList(),
     onPlay: ((Document, Int) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
@@ -100,6 +122,11 @@ fun EditorView(
             val selectedSlide: Slide = state.selectedSlide
             // Zoom is view-local, like the macOS shell: 0 means Fit.
             var zoomPercent: Int by remember { mutableStateOf(0) }
+            // Where the context menu is open, null when it isn't. View-local like
+            // zoom: what the click does to the selection rides the loop, where the
+            // menu it opens sits is this shell's business alone. A second
+            // right-click while one is open just moves it.
+            var menuAt: Offset? by remember { mutableStateOf(null) }
 
             Column(modifier.fillMaxSize().background(tokens.chrome)) {
                 EditorToolbar(
@@ -138,6 +165,10 @@ fun EditorView(
                                 marquee = state.marquee,
                                 onSelectElement = onSelectElement,
                                 onToggleElementSelection = onToggleElementSelection,
+                                onContextClick = { elementId, position ->
+                                    onContextClick(elementId, position)
+                                    menuAt = position
+                                },
                                 onPreviewMarquee = onPreviewMarquee,
                                 onEndMarquee = onEndMarquee,
                                 onUpdateElements = onUpdateElements,
@@ -145,6 +176,16 @@ fun EditorView(
                                 onPreviewCancel = onCancelPreview,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
                                 modifier = Modifier.fillMaxSize(),
+                            )
+
+                            // The canvas reports in its own space and fills this
+                            // well's content box, so a zero-size anchor pinned to
+                            // the same corner puts the menu under the pointer.
+                            if (menuSections.isNotEmpty()) CanvasContextMenu(
+                                sections = menuSections,
+                                position = menuAt,
+                                onDismiss = { menuAt = null },
+                                modifier = Modifier.align(Alignment.TopStart),
                             )
                         }
 
@@ -173,4 +214,75 @@ fun EditorView(
             }
         }
     }
+}
+
+/**
+ * The canvas context menu: [sections] divided in order, anchored at [position]
+ * in the canvas's own space, in pixels, through a zero-size box offset to it.
+ * A null [position] is a closed menu.
+ *
+ * Material 3 has no submenu, so a child-bearing item renders as a dim,
+ * unclickable header with its children indented under it. The alternative is a
+ * popup opening out of a popup on hover, which is a good deal more machinery
+ * than eight align and distribute verbs are worth.
+ */
+@Composable
+private fun CanvasContextMenu(
+    sections: List<EditorMenuSection>,
+    position: Offset?,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val density: Density = LocalDensity.current
+    val anchor: Offset = position ?: Offset.Zero
+    val x: Dp = with(density) { anchor.x.toDp() }
+    val y: Dp = with(density) { anchor.y.toDp() }
+
+    Box(modifier.offset(x = x, y = y)) {
+        DropdownMenu(expanded = position != null, onDismissRequest = onDismiss) {
+            sections.forEachIndexed { index, section ->
+                if (index > 0) HorizontalDivider(thickness = 1.dp, color = tokens.div)
+
+                for (item in section.items) {
+                    if (item.children.isEmpty()) {
+                        ContextMenuItem(item = item, onDismiss = onDismiss)
+                    } else {
+                        ContextMenuHeader(label = item.label, enabled = item.enabled)
+                        for (child in item.children) {
+                            ContextMenuItem(item = child, onDismiss = onDismiss, indent = 12.dp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContextMenuItem(item: EditorMenuItem, onDismiss: () -> Unit, indent: Dp = 0.dp) {
+    DropdownMenuItem(
+        text = {
+            Text(text = item.label, fontSize = 13.sp, modifier = Modifier.padding(start = indent))
+        },
+        enabled = item.enabled,
+        onClick = {
+            onDismiss()
+            item.onPick()
+        },
+    )
+}
+
+/** The label of a submenu, greyed with the branch it heads. Picks nothing. */
+@Composable
+private fun ContextMenuHeader(label: String, enabled: Boolean) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Text(
+        text = label,
+        color = if (enabled) tokens.dim else tokens.dim.copy(alpha = 0.38f),
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 2.dp),
+    )
 }

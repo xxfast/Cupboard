@@ -33,6 +33,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopySlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyStyle
@@ -301,6 +302,13 @@ fun EditorPresenter(
                         if (event.id in state.selectedElementIds) state.selectedElementIds - event.id
                         else state.selectedElementIds + event.id,
                 )
+
+                // A right-click on something already selected must not shrink the
+                // selection to it: the menu it opens speaks for everything that
+                // was selected. Anything else selects like a plain click.
+                is ContextClick ->
+                    if (event.elementId != null && event.elementId in state.selectedElementIds) state
+                    else state.copy(selectedElementIds = listOfNotNull(event.elementId))
 
                 // The selection follows the rectangle instead of waiting for the
                 // release, so the canvas can ring what is about to be caught.

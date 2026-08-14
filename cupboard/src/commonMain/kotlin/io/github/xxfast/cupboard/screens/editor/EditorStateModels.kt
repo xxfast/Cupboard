@@ -164,6 +164,21 @@ sealed interface EditorEvent {
     /** Shift-click: adds [id] to the selection, or takes it back out. */
     data class ToggleElementSelection(val id: String) : EditorEvent
     /**
+     * A secondary click on the canvas, [elementId] being what it landed on, null
+     * for empty slide space. Settles what the menu about to open will be about,
+     * the way every editor's right-click does: an element outside the selection
+     * takes the selection over, an element already in it leaves the selection
+     * exactly as it is, order included, so a menu can act on all of it, and empty
+     * space clears it. Never a history entry, and it touches no document.
+     *
+     * The menu itself is the shell's business; only the selection rides the loop.
+     * It rides it for the same reason the marquee does: a canvas that answered a
+     * right-click with a selection write of its own would be writing snapshot
+     * state from a pointer handler, which is what the drag-freeze bug was (see
+     * ROADMAP.md).
+     */
+    data class ContextClick(val elementId: String?) : EditorEvent
+    /**
      * An in-flight marquee sample: keeps the rectangle for the canvas to draw
      * and reselects everything it overlaps, so the selection is live under the
      * pointer rather than settled on release. Locked elements included, they
