@@ -787,8 +787,26 @@ private func popCanvasMenu(host: EditorHost, elementId: String?) {
 
 // MARK: - App
 
+/// Activates the app once it finishes launching. Launched by exec'ing the
+/// binary, which is what run.sh does to keep logs on the terminal,
+/// LaunchServices never activates the process, and SwiftUI holds the
+/// WindowGroup's window back until the first activation (instrumented: zero
+/// windows ever exist before it), so the window only appeared after a dock
+/// click sent activate + reopen. A Finder or `open` launch never needed this;
+/// it makes the dev loop behave like one.
+private final class ActivationDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+}
+
 @main
 struct CupboardHostApp: App {
+    @NSApplicationDelegateAdaptor(ActivationDelegate.self) private var activation
     @State private var model = EditorModel()
     @State private var playSession: PlaySession?
 
