@@ -36,18 +36,23 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Copy
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopySlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Cut
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -250,6 +255,44 @@ private fun EditorState.restoring(restored: Document, index: Int): EditorState =
     )
 
 /**
+ * The specific event a generic Edit verb comes down to: [slide] over the
+ * selected slide's id when the navigator holds the focus, [elements] over the
+ * element selection when the canvas does.
+ *
+ * The two are picked apart here so the verbs themselves stay one line each and
+ * the focus rule lives in one place rather than four.
+ */
+private fun EditorState.targeting(
+    slide: (String) -> EditorEvent,
+    elements: (List<String>) -> EditorEvent,
+): EditorEvent = when (focusedPane) {
+    EditorPane.Navigator -> slide(selectedSlide.id)
+    EditorPane.Canvas -> elements(selectedElementIds)
+}
+
+/**
+ * The pane this event puts the keyboard focus in, null when it leaves focus
+ * where it was.
+ *
+ * Focus follows interaction rather than arriving as an event of its own: a
+ * shell that had to report focus alongside every click would be keeping a
+ * second copy of the rule, and the pane an event belongs to is not a shell's
+ * opinion. [EditorEvent.FocusPane] covers what is left over, and reduces
+ * itself. Never a history entry either way.
+ */
+private fun EditorEvent.focusing(): EditorPane? = when (this) {
+    is SelectSlide, is SelectSlideAt, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
+    is CutSlide, is CopySlide, is DeleteSlide,
+        -> EditorPane.Navigator
+
+    is SelectElement, is SelectElements, is ToggleElementSelection, is ContextClick,
+    is PreviewMarquee,
+        -> EditorPane.Canvas
+
+    else -> null
+}
+
+/**
  * The editor screen's logic, once, for every shell.
  *
  * A composable presenter run by Molecule: [events] fold into state, state comes
@@ -286,435 +329,471 @@ fun EditorPresenter(
         var pastes = 0
         var styleSource: Element? = null
 
-        events.collect { event ->
-            state = when (event) {
-                // Selecting a slide drops the element selection: the handles
-                // would otherwise ring an element on a slide you can't see.
-                is SelectSlide ->
-                    state.copy(selectedSlideId = event.id, selectedElementIds = emptyList())
+        // The whole reduction as one function, so the generic Edit verbs can
+        // re-enter it with the specific event they resolve to instead of
+        // carrying a second copy of its body.
+        fun reduce(event: EditorEvent): EditorState = when (event) {
+            // Selecting a slide drops the element selection: the handles
+            // would otherwise ring an element on a slide you can't see.
+            is SelectSlide ->
+                state.copy(selectedSlideId = event.id, selectedElementIds = emptyList())
 
-                is SelectSlideAt -> state.document.allSlides().getOrNull(event.index)
-                    ?.let { state.copy(selectedSlideId = it.id, selectedElementIds = emptyList()) }
-                    ?: state
+            is SelectSlideAt -> state.document.allSlides().getOrNull(event.index)
+                ?.let { state.copy(selectedSlideId = it.id, selectedElementIds = emptyList()) }
+                ?: state
 
-                is SelectElement -> state.copy(selectedElementIds = listOfNotNull(event.id))
+            is SelectElement -> state.copy(selectedElementIds = listOfNotNull(event.id))
 
-                is SelectElements -> state.copy(selectedElementIds = event.ids)
+            is SelectElements -> state.copy(selectedElementIds = event.ids)
 
-                is ToggleElementSelection -> state.copy(
-                    selectedElementIds =
-                        if (event.id in state.selectedElementIds) state.selectedElementIds - event.id
-                        else state.selectedElementIds + event.id,
+            is ToggleElementSelection -> state.copy(
+                selectedElementIds =
+                    if (event.id in state.selectedElementIds) state.selectedElementIds - event.id
+                    else state.selectedElementIds + event.id,
+            )
+
+            // A right-click on something already selected must not shrink the
+            // selection to it: the menu it opens speaks for everything that
+            // was selected. Anything else selects like a plain click.
+            //
+            // The bare copy is the point: it leaves the selection alone but
+            // says the click landed, which is what lets the focus step below
+            // tell an answered event from a turned-away one.
+            is ContextClick ->
+                if (event.elementId != null && event.elementId in state.selectedElementIds) state.copy()
+                else state.copy(selectedElementIds = listOfNotNull(event.elementId))
+
+            // The selection follows the rectangle instead of waiting for the
+            // release, so the canvas can ring what is about to be caught.
+            // Document order, not sweep order: the marquee has no order of
+            // its own, and z-order is the one the slide already agrees on.
+            is PreviewMarquee -> state.copy(
+                marquee = event.rect,
+                selectedElementIds = state.selectedSlide.elements
+                    .filter { it.drawnBounds().overlaps(event.rect) }
+                    .map { it.id },
+            )
+
+            EndMarquee -> state.copy(marquee = null)
+
+            // Previews fold into the document (the canvas renders from
+            // state, nothing else shows them) but leave history alone: the
+            // gesture is one edit, and it isn't done yet.
+            is PreviewSlide -> {
+                if (gestureBase == null) gestureBase = state.document
+                state.copy(
+                    document = state.document.updateSlide(event.slide),
+                    isPreviewing = true,
                 )
+            }
 
-                // A right-click on something already selected must not shrink the
-                // selection to it: the menu it opens speaks for everything that
-                // was selected. Anything else selects like a plain click.
-                is ContextClick ->
-                    if (event.elementId != null && event.elementId in state.selectedElementIds) state
-                    else state.copy(selectedElementIds = listOfNotNull(event.elementId))
-
-                // The selection follows the rectangle instead of waiting for the
-                // release, so the canvas can ring what is about to be caught.
-                // Document order, not sweep order: the marquee has no order of
-                // its own, and z-order is the one the slide already agrees on.
-                is PreviewMarquee -> state.copy(
-                    marquee = event.rect,
-                    selectedElementIds = state.selectedSlide.elements
-                        .filter { it.drawnBounds().overlaps(event.rect) }
-                        .map { it.id },
+            is UpdateSlide -> {
+                undone.push(gestureBase ?: state.document)
+                gestureBase = null
+                redone.clear()
+                state.copy(
+                    document = state.document.updateSlide(event.slide),
+                    isPreviewing = false,
                 )
+            }
 
-                EndMarquee -> state.copy(marquee = null)
-
-                // Previews fold into the document (the canvas renders from
-                // state, nothing else shows them) but leave history alone: the
-                // gesture is one edit, and it isn't done yet.
-                is PreviewSlide -> {
-                    if (gestureBase == null) gestureBase = state.document
-                    state.copy(
-                        document = state.document.updateSlide(event.slide),
-                        isPreviewing = true,
-                    )
+            CancelPreview -> gestureBase
+                ?.let { base ->
+                    gestureBase = null
+                    state.copy(document = base, isPreviewing = false)
                 }
+                ?: state
 
-                is UpdateSlide -> {
+            // The element events below are the slide ones at finer grain, so
+            // they carry the same history rules: one entry per settled edit,
+            // however many elements it moves. All of them skip locked
+            // elements individually, and an edit left with nothing to do is
+            // a no-op rather than an empty history entry.
+            // SetElementsLocked is the only way back into a locked element.
+            is PreviewElements -> state.editable(event.elements)
+                .takeIf { it.isNotEmpty() }
+                ?.let { elements ->
+                    if (gestureBase == null) gestureBase = state.document
+                    state.withElements(elements).copy(isPreviewing = true)
+                }
+                ?: state
+
+            is UpdateElements -> state.editable(event.elements)
+                .takeIf { it.isNotEmpty() }
+                ?.let { elements ->
                     undone.push(gestureBase ?: state.document)
                     gestureBase = null
                     redone.clear()
+                    state.withElements(elements).copy(isPreviewing = false)
+                }
+                ?: state
+
+            is FlipElements -> state.unlockedElements(event.ids)
+                .map { current ->
+                    when (event.axis) {
+                        FlipAxis.Horizontal ->
+                            current.update(flippedHorizontally = !current.flippedHorizontally)
+
+                        FlipAxis.Vertical ->
+                            current.update(flippedVertically = !current.flippedVertically)
+                    }
+                }
+                .takeIf { it.isNotEmpty() }
+                ?.let { flipped ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(flipped)
+                }
+                ?: state
+
+            // Locks are the exception that reads the locked elements too,
+            // and locking what is already locked is not an edit.
+            is SetElementsLocked -> event.ids
+                .mapNotNull { id -> state.element(id) }
+                .filter { it.locked != event.locked }
+                .map { it.update(locked = event.locked) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { relocked ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(relocked)
+                }
+                ?: state
+
+            // Clamped at the ends, so a move that changes nothing comes back
+            // as the same slide and costs no history entry.
+            is ReorderElements -> {
+                val slide: Slide = state.selectedSlide
+                val movable: List<String> = state.unlockedElements(event.ids).map { it.id }
+                val reordered: Slide? = slide.reorderElements(movable, event.move)
+                    .takeIf { it !== slide }
+
+                if (reordered == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.updateSlide(reordered))
+                }
+            }
+
+            // Grouping selects what it made, ungrouping selects what it
+            // freed: either way the selection is the thing now on screen.
+            is GroupElements -> {
+                val slide: Slide = state.selectedSlide
+                val groupId: String = newId()
+                val grouped: Slide? = slide.groupElements(event.ids, groupId)
+                    .takeIf { it !== slide }
+
+                if (grouped == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
                     state.copy(
-                        document = state.document.updateSlide(event.slide),
-                        isPreviewing = false,
+                        document = state.document.updateSlide(grouped),
+                        selectedElementIds = listOf(groupId),
                     )
                 }
+            }
 
-                CancelPreview -> gestureBase
-                    ?.let { base ->
-                        gestureBase = null
-                        state.copy(document = base, isPreviewing = false)
-                    }
-                    ?: state
+            is UngroupElements -> {
+                val slide: Slide = state.selectedSlide
+                val group: GroupElement? = state.unlockedElement(event.id) as? GroupElement
+                val ungrouped: Slide? = group
+                    ?.let { slide.ungroupElement(event.id) }
+                    ?.takeIf { it !== slide }
 
-                // The element events below are the slide ones at finer grain, so
-                // they carry the same history rules: one entry per settled edit,
-                // however many elements it moves. All of them skip locked
-                // elements individually, and an edit left with nothing to do is
-                // a no-op rather than an empty history entry.
-                // SetElementsLocked is the only way back into a locked element.
-                is PreviewElements -> state.editable(event.elements)
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { elements ->
-                        if (gestureBase == null) gestureBase = state.document
-                        state.withElements(elements).copy(isPreviewing = true)
-                    }
-                    ?: state
-
-                is UpdateElements -> state.editable(event.elements)
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { elements ->
-                        undone.push(gestureBase ?: state.document)
-                        gestureBase = null
-                        redone.clear()
-                        state.withElements(elements).copy(isPreviewing = false)
-                    }
-                    ?: state
-
-                is FlipElements -> state.unlockedElements(event.ids)
-                    .map { current ->
-                        when (event.axis) {
-                            FlipAxis.Horizontal ->
-                                current.update(flippedHorizontally = !current.flippedHorizontally)
-
-                            FlipAxis.Vertical ->
-                                current.update(flippedVertically = !current.flippedVertically)
-                        }
-                    }
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { flipped ->
-                        undone.push(state.document)
-                        redone.clear()
-                        state.withElements(flipped)
-                    }
-                    ?: state
-
-                // Locks are the exception that reads the locked elements too,
-                // and locking what is already locked is not an edit.
-                is SetElementsLocked -> event.ids
-                    .mapNotNull { id -> state.element(id) }
-                    .filter { it.locked != event.locked }
-                    .map { it.update(locked = event.locked) }
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { relocked ->
-                        undone.push(state.document)
-                        redone.clear()
-                        state.withElements(relocked)
-                    }
-                    ?: state
-
-                // Clamped at the ends, so a move that changes nothing comes back
-                // as the same slide and costs no history entry.
-                is ReorderElements -> {
-                    val slide: Slide = state.selectedSlide
-                    val movable: List<String> = state.unlockedElements(event.ids).map { it.id }
-                    val reordered: Slide? = slide.reorderElements(movable, event.move)
-                        .takeIf { it !== slide }
-
-                    if (reordered == null) state
-                    else {
-                        undone.push(state.document)
-                        redone.clear()
-                        state.copy(document = state.document.updateSlide(reordered))
-                    }
+                if (group == null || ungrouped == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = state.document.updateSlide(ungrouped),
+                        selectedElementIds = group.children.map { it.id },
+                    )
                 }
+            }
 
-                // Grouping selects what it made, ungrouping selects what it
-                // freed: either way the selection is the thing now on screen.
-                is GroupElements -> {
-                    val slide: Slide = state.selectedSlide
-                    val groupId: String = newId()
-                    val grouped: Slide? = slide.groupElements(event.ids, groupId)
-                        .takeIf { it !== slide }
+            // Both come back with only the elements that actually moved, so
+            // an align that was already aligned makes no history entry.
+            is AlignElements -> alignFrames(
+                elements = state.selectedElements.filter { !it.locked },
+                edge = event.edge,
+                slideWidth = state.document.slideWidth,
+                slideHeight = state.document.slideHeight,
+            )
+                .takeIf { it.isNotEmpty() }
+                ?.let { aligned ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(aligned)
+                }
+                ?: state
 
-                    if (grouped == null) state
-                    else {
+            is DistributeElements ->
+                distributeFrames(state.selectedElements.filter { !it.locked }, event.axis)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { spread ->
                         undone.push(state.document)
                         redone.clear()
-                        state.copy(
-                            document = state.document.updateSlide(grouped),
-                            selectedElementIds = listOf(groupId),
-                        )
+                        state.withElements(spread)
                     }
+                    ?: state
+
+            // Deletion is the one edit that takes ids away for good, so it
+            // is also the one that rewrites the selection instead of
+            // letting it dangle. Locked elements are skipped like anywhere
+            // else, which is what makes a lock worth having.
+            is DeleteElements -> state
+                .withoutElements(state.unlockedElements(event.ids).mapTo(mutableSetOf()) { it.id })
+                ?.let { deleted ->
+                    undone.push(state.document)
+                    redone.clear()
+                    deleted
                 }
+                ?: state
 
-                is UngroupElements -> {
-                    val slide: Slide = state.selectedSlide
-                    val group: GroupElement? = state.unlockedElement(event.id) as? GroupElement
-                    val ungrouped: Slide? = group
-                        ?.let { slide.ungroupElement(event.id) }
-                        ?.takeIf { it !== slide }
-
-                    if (group == null || ungrouped == null) state
-                    else {
-                        undone.push(state.document)
-                        redone.clear()
-                        state.copy(
-                            document = state.document.updateSlide(ungrouped),
-                            selectedElementIds = group.children.map { it.id },
-                        )
-                    }
-                }
-
-                // Both come back with only the elements that actually moved, so
-                // an align that was already aligned makes no history entry.
-                is AlignElements -> alignFrames(
-                    elements = state.selectedElements.filter { !it.locked },
-                    edge = event.edge,
-                    slideWidth = state.document.slideWidth,
-                    slideHeight = state.document.slideHeight,
+            // Everything unlocked, which on a slide with nothing unlocked
+            // is nothing at all, and so no history entry either.
+            ClearAll -> state
+                .withoutElements(
+                    state.selectedSlide.elements
+                        .filterNot { it.locked }
+                        .mapTo(mutableSetOf()) { it.id },
                 )
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { aligned ->
+                ?.let { cleared ->
+                    undone.push(state.document)
+                    redone.clear()
+                    cleared
+                }
+                ?: state
+
+            is DeleteSlide -> state.withoutSlide(event.id)
+                ?.let { deleted ->
+                    undone.push(state.document)
+                    redone.clear()
+                    deleted
+                }
+                ?: state
+
+            // The clipboard events below. Copying is not an edit: it makes
+            // no history entry, reads locked elements like any other, and
+            // leaves both the document and the last copy alone when it
+            // resolves to nothing. Cutting is a copy and a delete at once,
+            // so it plays by the delete rules instead: unlocked only, one
+            // history entry, and no entry when there was nothing to take.
+            is CopyElements -> state.stackedElements(event.ids)
+                .takeIf { it.isNotEmpty() }
+                ?.let { copied ->
+                    clipboard = Clipboard.Elements(copied)
+                    pastes = 0
+                    state
+                }
+                ?: state
+
+            is CutElements -> {
+                val cut: List<Element> = state.stackedElements(event.ids).filterNot { it.locked }
+                state.withoutElements(cut.mapTo(mutableSetOf()) { it.id })
+                    ?.let { removed ->
                         undone.push(state.document)
                         redone.clear()
-                        state.withElements(aligned)
+                        clipboard = Clipboard.Elements(cut)
+                        pastes = 0
+                        removed
                     }
                     ?: state
+            }
 
-                is DistributeElements ->
-                    distributeFrames(state.selectedElements.filter { !it.locked }, event.axis)
-                        .takeIf { it.isNotEmpty() }
-                        ?.let { spread ->
-                            undone.push(state.document)
-                            redone.clear()
-                            state.withElements(spread)
-                        }
-                        ?: state
+            is CopySlide -> state.document.slideGroup(event.id)
+                .takeIf { it.isNotEmpty() }
+                ?.let { copied ->
+                    clipboard = Clipboard.Slides(copied)
+                    pastes = 0
+                    state
+                }
+                ?: state
 
-                // Deletion is the one edit that takes ids away for good, so it
-                // is also the one that rewrites the selection instead of
-                // letting it dangle. Locked elements are skipped like anywhere
-                // else, which is what makes a lock worth having.
-                is DeleteElements -> state
-                    .withoutElements(state.unlockedElements(event.ids).mapTo(mutableSetOf()) { it.id })
-                    ?.let { deleted ->
+            // The group is read before the removal, so a collapsed slide
+            // carries the run it was hiding onto the clipboard and cut then
+            // paste puts the whole group back rather than just its head.
+            is CutSlide -> {
+                val cut: List<Slide> = state.document.slideGroup(event.id)
+                state.withoutSlide(event.id)
+                    ?.let { removed ->
                         undone.push(state.document)
                         redone.clear()
-                        deleted
+                        clipboard = Clipboard.Slides(cut)
+                        pastes = 0
+                        removed
                     }
                     ?: state
+            }
 
-                // Everything unlocked, which on a slide with nothing unlocked
-                // is nothing at all, and so no history entry either.
-                ClearAll -> state
-                    .withoutElements(
-                        state.selectedSlide.elements
-                            .filterNot { it.locked }
-                            .mapTo(mutableSetOf()) { it.id },
+            Paste -> when (val payload: Clipboard? = clipboard) {
+                null -> state
+
+                is Clipboard.Elements -> {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.pasting(payload.elements, PasteOffset * pastes++)
+                }
+
+                // No offset to cascade: a slide has nowhere to land but
+                // between two other slides.
+                is Clipboard.Slides -> {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.pastingSlides(payload.slides)
+                }
+            }
+
+            // Duplicating is a copy and a paste that never touch the
+            // clipboard, so whatever you were carrying survives it.
+            is DuplicateElements -> state.stackedElements(event.ids)
+                .filterNot { it.locked }
+                .takeIf { it.isNotEmpty() }
+                ?.let { originals ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.pasting(originals, PasteOffset)
+                }
+                ?: state
+
+            // The copy goes past the original's deeper run rather than
+            // straight after it: dropped between a slide and the run under
+            // it, the duplicate would take that run for itself, collapsed
+            // or not.
+            is DuplicateSlide -> state.document.slideGroup(event.id)
+                .takeIf { it.isNotEmpty() }
+                ?.let { group ->
+                    val after: Int = state.document.insertionIndexAfter(event.id)
+                    val copies: List<Slide> = group.map { it.duplicated() }
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = state.document.copy(
+                            slides = state.document.slides.take(after) + copies +
+                                state.document.slides.drop(after),
+                        ),
+                        selectedSlideId = copies.first().id,
+                        selectedElementIds = emptyList(),
                     )
-                    ?.let { cleared ->
-                        undone.push(state.document)
-                        redone.clear()
-                        cleared
-                    }
-                    ?: state
-
-                is DeleteSlide -> state.withoutSlide(event.id)
-                    ?.let { deleted ->
-                        undone.push(state.document)
-                        redone.clear()
-                        deleted
-                    }
-                    ?: state
-
-                // The clipboard events below. Copying is not an edit: it makes
-                // no history entry, reads locked elements like any other, and
-                // leaves both the document and the last copy alone when it
-                // resolves to nothing. Cutting is a copy and a delete at once,
-                // so it plays by the delete rules instead: unlocked only, one
-                // history entry, and no entry when there was nothing to take.
-                is CopyElements -> state.stackedElements(event.ids)
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { copied ->
-                        clipboard = Clipboard.Elements(copied)
-                        pastes = 0
-                        state
-                    }
-                    ?: state
-
-                is CutElements -> {
-                    val cut: List<Element> = state.stackedElements(event.ids).filterNot { it.locked }
-                    state.withoutElements(cut.mapTo(mutableSetOf()) { it.id })
-                        ?.let { removed ->
-                            undone.push(state.document)
-                            redone.clear()
-                            clipboard = Clipboard.Elements(cut)
-                            pastes = 0
-                            removed
-                        }
-                        ?: state
                 }
+                ?: state
 
-                is CopySlide -> state.document.slideGroup(event.id)
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { copied ->
-                        clipboard = Clipboard.Slides(copied)
-                        pastes = 0
-                        state
-                    }
-                    ?: state
-
-                // The group is read before the removal, so a collapsed slide
-                // carries the run it was hiding onto the clipboard and cut then
-                // paste puts the whole group back rather than just its head.
-                is CutSlide -> {
-                    val cut: List<Slide> = state.document.slideGroup(event.id)
-                    state.withoutSlide(event.id)
-                        ?.let { removed ->
-                            undone.push(state.document)
-                            redone.clear()
-                            clipboard = Clipboard.Slides(cut)
-                            pastes = 0
-                            removed
-                        }
-                        ?: state
+            // The blank inherits the anchor's depth, so New Slide on a
+            // child makes a sibling, not a top-level slide out of place.
+            is AddSlide -> state.document.slides.firstOrNull { it.id == event.afterId }
+                ?.let { anchor ->
+                    val at: Int = state.document.insertionIndexAfter(anchor.id)
+                    val fresh = Slide(depth = anchor.depth)
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = state.document.copy(
+                            slides = state.document.slides.take(at) + fresh +
+                                state.document.slides.drop(at),
+                        ),
+                        selectedSlideId = fresh.id,
+                        selectedElementIds = emptyList(),
+                    )
                 }
+                ?: state
 
-                Paste -> when (val payload: Clipboard? = clipboard) {
-                    null -> state
-
-                    is Clipboard.Elements -> {
-                        undone.push(state.document)
-                        redone.clear()
-                        state.pasting(payload.elements, PasteOffset * pastes++)
-                    }
-
-                    // No offset to cascade: a slide has nowhere to land but
-                    // between two other slides.
-                    is Clipboard.Slides -> {
-                        undone.push(state.document)
-                        redone.clear()
-                        state.pastingSlides(payload.slides)
-                    }
+            is CopyStyle -> state.element(event.id)
+                ?.let { source ->
+                    styleSource = source
+                    state
                 }
+                ?: state
 
-                // Duplicating is a copy and a paste that never touch the
-                // clipboard, so whatever you were carrying survives it.
-                is DuplicateElements -> state.stackedElements(event.ids)
-                    .filterNot { it.locked }
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { originals ->
-                        undone.push(state.document)
-                        redone.clear()
-                        state.pasting(originals, PasteOffset)
-                    }
-                    ?: state
+            is PasteStyle -> styleSource
+                ?.let { source -> state.unlockedElements(event.ids).map { it.applyingStyle(source) } }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { styled ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(styled)
+                }
+                ?: state
 
-                // The copy goes past the original's deeper run rather than
-                // straight after it: dropped between a slide and the run under
-                // it, the duplicate would take that run for itself, collapsed
-                // or not.
-                is DuplicateSlide -> state.document.slideGroup(event.id)
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { group ->
-                        val after: Int = state.document.insertionIndexAfter(event.id)
-                        val copies: List<Slide> = group.map { it.duplicated() }
-                        undone.push(state.document)
-                        redone.clear()
-                        state.copy(
-                            document = state.document.copy(
-                                slides = state.document.slides.take(after) + copies +
-                                    state.document.slides.drop(after),
-                            ),
-                            selectedSlideId = copies.first().id,
-                            selectedElementIds = emptyList(),
-                        )
-                    }
-                    ?: state
+            // Disclosure is not an edit, so it makes no history entry, the
+            // same way Keynote won't undo a twisty. The document still
+            // changes: collapsed state is stored on the slide.
+            is ToggleCollapsed -> state.copy(document = state.document.toggleCollapsed(event.slideId))
 
-                // The blank inherits the anchor's depth, so New Slide on a
-                // child makes a sibling, not a top-level slide out of place.
-                is AddSlide -> state.document.slides.firstOrNull { it.id == event.afterId }
-                    ?.let { anchor ->
-                        val at: Int = state.document.insertionIndexAfter(anchor.id)
-                        val fresh = Slide(depth = anchor.depth)
-                        undone.push(state.document)
-                        redone.clear()
-                        state.copy(
-                            document = state.document.copy(
-                                slides = state.document.slides.take(at) + fresh +
-                                    state.document.slides.drop(at),
-                            ),
-                            selectedSlideId = fresh.id,
-                            selectedElementIds = emptyList(),
-                        )
-                    }
-                    ?: state
+            // The slide selection is left alone as long as it still
+            // resolves, which is the common case. It can now fail to:
+            // redoing a deletion takes the selected slide away, and undoing
+            // one takes away the blank slide that deleting the last one
+            // left. Where it fails, the selection re-anchors to the index it
+            // sat at, clamped, so it lands on the same slide the deletion
+            // itself would have moved it to rather than silently falling
+            // back to the first slide of the deck.
+            //
+            // Element ids are left to dangle, deliberately: undoing a group
+            // takes the group's id away, redoing an ungroup takes the
+            // children's, EditorState.selectedElements drops ids that no
+            // longer resolve, and a dangling id that comes back on the next
+            // redo is a selection restored rather than a selection lost.
+            Undo -> undone.removeLastOrNull()
+                ?.let { previous ->
+                    redone.push(state.document)
+                    state.restoring(previous, state.selectedSlideIndex())
+                }
+                ?: state
 
-                is CopyStyle -> state.element(event.id)
-                    ?.let { source ->
-                        styleSource = source
-                        state
-                    }
-                    ?: state
+            Redo -> redone.removeLastOrNull()
+                ?.let { next ->
+                    undone.push(state.document)
+                    state.restoring(next, state.selectedSlideIndex())
+                }
+                ?: state
 
-                is PasteStyle -> styleSource
-                    ?.let { source -> state.unlockedElements(event.ids).map { it.applyingStyle(source) } }
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.let { styled ->
-                        undone.push(state.document)
-                        redone.clear()
-                        state.withElements(styled)
-                    }
-                    ?: state
+            ToggleSidebar -> state.copy(sidebarOpen = !state.sidebarOpen)
 
-                // Disclosure is not an edit, so it makes no history entry, the
-                // same way Keynote won't undo a twisty. The document still
-                // changes: collapsed state is stored on the slide.
-                is ToggleCollapsed -> state.copy(document = state.document.toggleCollapsed(event.slideId))
+            ToggleNotes -> state.copy(showNotes = !state.showNotes)
 
-                // The slide selection is left alone as long as it still
-                // resolves, which is the common case. It can now fail to:
-                // redoing a deletion takes the selected slide away, and undoing
-                // one takes away the blank slide that deleting the last one
-                // left. Where it fails, the selection re-anchors to the index it
-                // sat at, clamped, so it lands on the same slide the deletion
-                // itself would have moved it to rather than silently falling
-                // back to the first slide of the deck.
-                //
-                // Element ids are left to dangle, deliberately: undoing a group
-                // takes the group's id away, redoing an ungroup takes the
-                // children's, EditorState.selectedElements drops ids that no
-                // longer resolve, and a dangling id that comes back on the next
-                // redo is a selection restored rather than a selection lost.
-                Undo -> undone.removeLastOrNull()
-                    ?.let { previous ->
-                        redone.push(state.document)
-                        state.restoring(previous, state.selectedSlideIndex())
-                    }
-                    ?: state
+            // A tab always opens the inspector. Whether clicking the tab
+            // that's already showing closes it is the shell's call: it
+            // sends CloseInspector when that's what it means.
+            is SelectInspectorTab -> state.copy(inspectorTab = event.tab, inspectorOpen = true)
 
-                Redo -> redone.removeLastOrNull()
-                    ?.let { next ->
-                        undone.push(state.document)
-                        state.restoring(next, state.selectedSlideIndex())
-                    }
-                    ?: state
+            CloseInspector -> state.copy(inspectorOpen = false)
 
-                ToggleSidebar -> state.copy(sidebarOpen = !state.sidebarOpen)
+            // The Edit-menu verbs, focus resolved: the same reductions again
+            // with the target the focused pane names. Re-entered rather than
+            // repeated, so a generic Cut comes out as a CutSlide or a
+            // CutElements exactly, history entry and no-op included.
+            Cut -> reduce(state.targeting(::CutSlide, ::CutElements))
 
-                ToggleNotes -> state.copy(showNotes = !state.showNotes)
+            Copy -> reduce(state.targeting(::CopySlide, ::CopyElements))
 
-                // A tab always opens the inspector. Whether clicking the tab
-                // that's already showing closes it is the shell's call: it
-                // sends CloseInspector when that's what it means.
-                is SelectInspectorTab -> state.copy(inspectorTab = event.tab, inspectorOpen = true)
+            Duplicate -> reduce(state.targeting(::DuplicateSlide, ::DuplicateElements))
 
-                CloseInspector -> state.copy(inspectorOpen = false)
-            }.copy(
+            Delete -> reduce(state.targeting(::DeleteSlide, ::DeleteElements))
+
+            // Focus on its own. The post-step below moves it for every event
+            // that implies a pane; this is the one that says so outright.
+            is FocusPane -> state.copy(focusedPane = event.pane)
+        }
+
+        events.collect { event ->
+            val reduced: EditorState = reduce(event)
+
+            // Focus follows interaction: an event that speaks for a pane moves
+            // the keyboard focus into it, everything else leaves it where it
+            // was. Only an event the reduction answered, though: a reduction
+            // that turned one away hands back the very state it was given, and
+            // a select that landed on no slide is no interaction with the
+            // navigator.
+            val focused: EditorPane? = if (reduced === state) null else event.focusing()
+
+            state = reduced.copy(
                 canUndo = undone.isNotEmpty(),
                 canRedo = redone.isNotEmpty(),
                 canPaste = clipboard != null,
                 canPasteStyle = styleSource != null,
+                focusedPane = focused ?: reduced.focusedPane,
             )
         }
     }

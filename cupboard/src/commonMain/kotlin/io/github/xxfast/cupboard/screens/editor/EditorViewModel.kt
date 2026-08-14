@@ -15,18 +15,23 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Copy
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopySlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Cut
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -139,6 +144,11 @@ class EditorViewModel(
     fun onPaste() { scope.launch { events.emit(Paste) } }
     fun onDuplicateElements(ids: List<String>) { scope.launch { events.emit(DuplicateElements(ids)) } }
     fun onDuplicateSlide(id: String) { scope.launch { events.emit(DuplicateSlide(id)) } }
+    fun onFocusPane(pane: EditorPane) { scope.launch { events.emit(FocusPane(pane)) } }
+    fun onCut() { scope.launch { events.emit(Cut) } }
+    fun onCopy() { scope.launch { events.emit(Copy) } }
+    fun onDuplicate() { scope.launch { events.emit(Duplicate) } }
+    fun onDelete() { scope.launch { events.emit(Delete) } }
     fun onCopyStyle(id: String) { scope.launch { events.emit(CopyStyle(id)) } }
     fun onPasteStyle(ids: List<String>) { scope.launch { events.emit(PasteStyle(ids)) } }
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }

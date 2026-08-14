@@ -532,16 +532,19 @@ class EditorHost {
     }
 
     /**
-     * One unlocked element in the selection is enough: the delete carries the
-     * whole selection and the presenter skips the locked ones, so the item stays
-     * live as long as it has something to take.
+     * Edit > Delete, focus resolved: the selected slide when the navigator holds
+     * the focus, the unlocked part of the element selection when the canvas
+     * does. The name is the canvas-only one it started as, kept because the verb
+     * only got broader and the shell's menu item is the same item.
+     *
+     * No guard of its own: [EditorState.canDelete] is what the menu greys out
+     * by and what the presenter acts on, and a second copy of the rule out here
+     * could only ever disagree with it.
      */
-    fun canDelete(): Boolean = editable().isNotEmpty()
+    fun canDelete(): Boolean = state.canDelete
 
-    /** Takes the unlocked part of the selection off the slide. One undo entry. */
     fun deleteSelection() {
-        if (!canDelete()) return
-        viewModel.onDeleteElements(state.selectedElementIds)
+        viewModel.onDelete()
     }
 
     /** A slide of nothing but locked elements has nothing left to clear. */
@@ -563,30 +566,32 @@ class EditorHost {
     }
 
     /**
-     * The clipboard, as the Edit menu sees it. It is the app's own, not
-     * NSPasteboard: elements carry style, builds and grouping that no system
-     * flavour describes, so [canPaste] answers off the shared state rather than
-     * off what some other app last copied.
+     * The Edit menu's pasteboard verbs, focus resolved like [deleteSelection]:
+     * the navigator's selected slide when it holds the focus, the canvas's
+     * element selection when it does. The presenter picks the layer off the
+     * same state these can-facts read, so a live item and the edit it fires
+     * can never be about different things, and none of them guards.
      *
-     * Cut and duplicate need something unlocked, the same rule delete follows.
-     * Copy only needs a selection: reading a locked element is always allowed.
+     * The clipboard behind them is the app's own, not NSPasteboard: elements
+     * carry style, builds and grouping that no system flavour describes, so
+     * [canPaste] answers off the shared state rather than off what some other
+     * app last copied. Paste is the one verb focus doesn't split, it lands
+     * whatever the clipboard holds.
      *
      * `copy` is a reserved ObjC method family, so the exporter renames every
      * `copyX` to `doCopyX`, which is what the shell calls. `@ObjCName` doesn't
      * buy the name back: the rename is applied after it.
      */
-    fun canCut(): Boolean = editable().isNotEmpty()
+    fun canCut(): Boolean = state.canCut
 
     fun cutSelection() {
-        if (!canCut()) return
-        viewModel.onCutElements(state.selectedElementIds)
+        viewModel.onCut()
     }
 
-    fun canCopy(): Boolean = state.selectedElements.isNotEmpty()
+    fun canCopy(): Boolean = state.canCopy
 
     fun copySelection() {
-        if (!canCopy()) return
-        viewModel.onCopyElements(state.selectedElementIds)
+        viewModel.onCopy()
     }
 
     fun canPaste(): Boolean = state.canPaste
@@ -596,11 +601,10 @@ class EditorHost {
         viewModel.onPaste()
     }
 
-    fun canDuplicate(): Boolean = editable().isNotEmpty()
+    fun canDuplicate(): Boolean = state.canDuplicate
 
     fun duplicateSelection() {
-        if (!canDuplicate()) return
-        viewModel.onDuplicateElements(state.selectedElementIds)
+        viewModel.onDuplicate()
     }
 
     /** Style comes off the primary alone, the one the inspector speaks for. */

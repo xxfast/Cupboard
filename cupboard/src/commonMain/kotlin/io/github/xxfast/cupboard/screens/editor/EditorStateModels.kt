@@ -61,6 +61,15 @@ data class EditorState(
     val inspectorTab: InspectorTab = InspectorTab.Format,
     val showNotes: Boolean = true,
     /**
+     * Which pane the keyboard is in, and so what the Edit menu's verbs act on:
+     * the navigator's slide or the canvas's elements, the way Keynote's do.
+     *
+     * Serialized like [inspectorTab], not [Transient] like the clipboard flags:
+     * where you were working is part of where you left the editor, so a restored
+     * session comes back to the pane it was in.
+     */
+    val focusedPane: EditorPane = EditorPane.Canvas,
+    /**
      * True between the first preview of a gesture and its commit, so a shell can
      * tell a mid-drag document from a settled one. Anything expensive that only
      * needs the settled document (the navigator's rasterized thumbnails) skips
@@ -100,6 +109,41 @@ data class EditorState(
      * aligns the rest to in every editor that has an opinion.
      */
     val primaryElement: Element? get() = selectedElements.firstOrNull()
+
+    /**
+     * Whether Edit > Cut is live, focus already resolved.
+     *
+     * The navigator always has something to take: deleting the last slide
+     * leaves a blank one rather than an empty document, so the verb never has
+     * nothing to act on. The canvas needs an unlocked element in the selection,
+     * since the lock is what says "not this one" to every edit.
+     *
+     * Computed, unlike the stored [canPaste] and [canPasteStyle] flags next to
+     * it: what those answer for is the presenter's clipboard, what this answers
+     * for is right here in the state.
+     */
+    val canCut: Boolean
+        get() = when (focusedPane) {
+            EditorPane.Navigator -> true
+            EditorPane.Canvas -> selectedElements.any { !it.locked }
+        }
+
+    /** [canCut]'s rule verbatim: what may be taken away may also be copied in place. */
+    val canDuplicate: Boolean get() = canCut
+
+    /** [canCut]'s rule verbatim: cutting is a copy and a delete at once. */
+    val canDelete: Boolean get() = canCut
+
+    /**
+     * Whether Edit > Copy is live. Looser than [canCut] on the canvas: a copy
+     * is not an edit, so a locked element copies like any other and only an
+     * empty selection greys it.
+     */
+    val canCopy: Boolean
+        get() = when (focusedPane) {
+            EditorPane.Navigator -> true
+            EditorPane.Canvas -> selectedElements.isNotEmpty()
+        }
 
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
@@ -149,6 +193,13 @@ data class EditorState(
 /** Which pane of the inspector is showing. */
 @Serializable
 enum class InspectorTab { Format, Animate, Document }
+
+/**
+ * Which pane holds the keyboard focus, and so which layer the Edit menu's
+ * verbs speak for: whole slides in the navigator, elements on the canvas.
+ */
+@Serializable
+enum class EditorPane { Navigator, Canvas }
 
 /** Which way an element flips. Both flips are around the frame's center. */
 enum class FlipAxis { Horizontal, Vertical }
@@ -288,6 +339,32 @@ sealed interface EditorEvent {
      * at the same depth, hidden run and all, and selected. Leaves the clipboard
      * alone; an id this document doesn't hold is a no-op. */
     data class DuplicateSlide(val id: String) : EditorEvent
+    /**
+     * Puts the keyboard focus in [pane] and nothing else.
+     *
+     * Most of the time focus is not sent at all: the events above that speak
+     * for a pane move it themselves, so selecting a slide focuses the navigator
+     * and selecting an element focuses the canvas without a shell saying so.
+     * This is for the interactions none of them cover, a click on the
+     * navigator's empty background or a shell moving focus with the keyboard.
+     * Never a history entry, and no focus change ever is.
+     */
+    data class FocusPane(val pane: EditorPane) : EditorEvent
+    /**
+     * Edit > Cut, focus resolved: [CutSlide] on the selected slide when the
+     * navigator holds the focus, [CutElements] on the element selection when
+     * the canvas does. Cmd+X, in other words.
+     *
+     * [Copy], [Duplicate] and [Delete] below are the same idea over
+     * [CopySlide]/[CopyElements], [DuplicateSlide]/[DuplicateElements] and
+     * [DeleteSlide]/[DeleteElements]. All four are the specific event and
+     * nothing more: the same history entry, and the same no-op when the
+     * pane they land in has nothing to act on.
+     */
+    data object Cut : EditorEvent
+    data object Copy : EditorEvent
+    data object Duplicate : EditorEvent
+    data object Delete : EditorEvent
     /**
      * Remembers [id]'s look for [PasteStyle]. Its own clipboard, independent of
      * the one above: copying an element must not cost you the style you were

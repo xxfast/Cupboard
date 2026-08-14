@@ -258,13 +258,14 @@ fun main() {
             title = "Cupboard",
             // Forward delete, the half the menu accelerator can't carry: Delete
             // shows as Backspace there, which is the delete key on a mac board.
-            // Guarded on the selection having something unlocked in it, so the
-            // key is only ours when there is something to take away. Nothing in
-            // the window takes typing yet, so there is no field to steal from.
+            // Dispatches exactly like the menu item does, focus and all: with the
+            // navigator focused this takes the slide away, which is Keynote's
+            // behaviour. Guarded on the same canDelete, so the key is only ours
+            // when there is something to take away. Nothing in the window takes
+            // typing yet, so there is no field to steal from.
             onKeyEvent = { event ->
-                val deletable: Boolean = state.selectedElements.any { !it.locked }
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Delete && deletable) {
-                    viewModel.onDeleteElements(state.selectedElementIds)
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Delete && state.canDelete) {
+                    viewModel.onDelete()
                     true
                 } else {
                     false
@@ -272,15 +273,14 @@ fun main() {
             },
         ) {
             MenuBar {
-                // Everything below Undo/Redo needs something selected, and
-                // everything but the unlock needs something unlocked: the same
-                // rule the presenter applies, so a greyed item is never a
-                // silently dropped event. The label follows the primary
-                // element, the events carry the whole selection.
+                // What's left of the element-scoped enablement, for the items
+                // that stay element-scoped: the style pair below. The label
+                // follows the primary element, the events carry the whole
+                // selection, and the edit needs something unlocked, the same
+                // rule the presenter applies.
                 val primary: Element? = state.primaryElement
                 val ids: List<String> = state.selectedElementIds
-                val unlocked: List<Element> = state.selectedElements.filter { !it.locked }
-                val editable: Boolean = unlocked.isNotEmpty()
+                val editable: Boolean = state.selectedElements.any { !it.locked }
                 // Clear All speaks for the slide rather than the selection, so
                 // it asks the slide the same question: is there anything
                 // unlocked left to take away.
@@ -302,20 +302,22 @@ fun main() {
 
                     Separator()
 
-                    // Copy takes a locked element like any other, a copy is not
-                    // an edit; everything that moves or removes wants something
-                    // unlocked. Paste follows the clipboard, not the selection.
+                    // These four follow the focus, like Keynote's: the slide in
+                    // the navigator, the elements on the canvas. The core
+                    // resolves which, both in the verb and in what greys it,
+                    // so nothing here asks about the selection. Paste was
+                    // always generic and stays so, it follows the clipboard.
                     Item(
                         text = "Cut",
                         shortcut = editShortcut(Key.X),
-                        enabled = editable,
-                        onClick = { viewModel.onCutElements(ids) },
+                        enabled = state.canCut,
+                        onClick = viewModel::onCut,
                     )
                     Item(
                         text = "Copy",
                         shortcut = editShortcut(Key.C),
-                        enabled = ids.isNotEmpty(),
-                        onClick = { viewModel.onCopyElements(ids) },
+                        enabled = state.canCopy,
+                        onClick = viewModel::onCopy,
                     )
                     Item(
                         text = "Paste",
@@ -326,8 +328,8 @@ fun main() {
                     Item(
                         text = "Duplicate",
                         shortcut = editShortcut(Key.D),
-                        enabled = editable,
-                        onClick = { viewModel.onDuplicateElements(ids) },
+                        enabled = state.canDuplicate,
+                        onClick = viewModel::onDuplicate,
                     )
 
                     Separator()
@@ -335,8 +337,8 @@ fun main() {
                     Item(
                         text = "Delete",
                         shortcut = KeyShortcut(Key.Backspace),
-                        enabled = editable,
-                        onClick = { viewModel.onDeleteElements(ids) },
+                        enabled = state.canDelete,
+                        onClick = viewModel::onDelete,
                     )
                     Item(
                         text = "Clear All",
