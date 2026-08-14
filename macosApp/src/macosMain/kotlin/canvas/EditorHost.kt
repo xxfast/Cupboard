@@ -475,6 +475,80 @@ class EditorHost {
     }
 
     /**
+     * The clipboard, as the Edit menu sees it. It is the app's own, not
+     * NSPasteboard: elements carry style, builds and grouping that no system
+     * flavour describes, so [canPaste] answers off the shared state rather than
+     * off what some other app last copied.
+     *
+     * Cut and duplicate need something unlocked, the same rule delete follows.
+     * Copy only needs a selection: reading a locked element is always allowed.
+     *
+     * `copy` is a reserved ObjC method family, so the exporter renames every
+     * `copyX` to `doCopyX`, which is what the shell calls. `@ObjCName` doesn't
+     * buy the name back: the rename is applied after it.
+     */
+    fun canCut(): Boolean = editable().isNotEmpty()
+
+    fun cutSelection() {
+        if (!canCut()) return
+        viewModel.onCutElements(state.selectedElementIds)
+    }
+
+    fun canCopy(): Boolean = state.selectedElements.isNotEmpty()
+
+    fun copySelection() {
+        if (!canCopy()) return
+        viewModel.onCopyElements(state.selectedElementIds)
+    }
+
+    fun canPaste(): Boolean = state.canPaste
+
+    fun paste() {
+        if (!canPaste()) return
+        viewModel.onPaste()
+    }
+
+    fun canDuplicate(): Boolean = editable().isNotEmpty()
+
+    fun duplicateSelection() {
+        if (!canDuplicate()) return
+        viewModel.onDuplicateElements(state.selectedElementIds)
+    }
+
+    /** Style comes off the primary alone, the one the inspector speaks for. */
+    fun canCopyStyle(): Boolean = state.primaryElement != null
+
+    fun copyStyle() {
+        val primary: Element = state.primaryElement ?: return
+        viewModel.onCopyStyle(primary.id)
+    }
+
+    /** Needs a style on the clipboard and something unlocked to wear it. */
+    fun canPasteStyle(): Boolean = state.canPasteStyle && editable().isNotEmpty()
+
+    fun pasteStyle() {
+        if (!canPasteStyle()) return
+        viewModel.onPasteStyle(state.selectedElementIds)
+    }
+
+    /**
+     * Slide-level clipboard. Always available for the same reason the delete is:
+     * there is always a selected slide, and cutting the last one leaves a blank
+     * one behind.
+     */
+    fun cutSelectedSlide() {
+        viewModel.onCutSlide(state.selectedSlide.id)
+    }
+
+    fun copySelectedSlide() {
+        viewModel.onCopySlide(state.selectedSlide.id)
+    }
+
+    fun duplicateSelectedSlide() {
+        viewModel.onDuplicateSlide(state.selectedSlide.id)
+    }
+
+    /**
      * Registers [callback], fired whenever the editor state changes (including
      * edits made inside the Compose canvas), and returns the unsubscribe for the
      * host to call when it goes away. Swift can't observe a Kotlin StateFlow, so

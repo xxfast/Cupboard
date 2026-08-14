@@ -65,8 +65,8 @@ private data class PlayRequest(val document: Document, val slideIndex: Int)
  */
 private val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac")
 
-private fun editShortcut(shift: Boolean = false): KeyShortcut =
-    KeyShortcut(Key.Z, shift = shift, meta = isMacOs, ctrl = !isMacOs)
+private fun editShortcut(key: Key, shift: Boolean = false, alt: Boolean = false): KeyShortcut =
+    KeyShortcut(key, shift = shift, alt = alt, meta = isMacOs, ctrl = !isMacOs)
 
 /** The OS dark/light setting as a live value, re-read every second. */
 @Composable
@@ -202,15 +202,45 @@ fun main() {
                 Menu("Edit", mnemonic = 'E') {
                     Item(
                         text = "Undo",
-                        shortcut = editShortcut(),
+                        shortcut = editShortcut(Key.Z),
                         enabled = state.canUndo,
                         onClick = viewModel::onUndo,
                     )
                     Item(
                         text = "Redo",
-                        shortcut = editShortcut(shift = true),
+                        shortcut = editShortcut(Key.Z, shift = true),
                         enabled = state.canRedo,
                         onClick = viewModel::onRedo,
+                    )
+
+                    Separator()
+
+                    // Copy takes a locked element like any other, a copy is not
+                    // an edit; everything that moves or removes wants something
+                    // unlocked. Paste follows the clipboard, not the selection.
+                    Item(
+                        text = "Cut",
+                        shortcut = editShortcut(Key.X),
+                        enabled = editable,
+                        onClick = { viewModel.onCutElements(ids) },
+                    )
+                    Item(
+                        text = "Copy",
+                        shortcut = editShortcut(Key.C),
+                        enabled = ids.isNotEmpty(),
+                        onClick = { viewModel.onCopyElements(ids) },
+                    )
+                    Item(
+                        text = "Paste",
+                        shortcut = editShortcut(Key.V),
+                        enabled = state.canPaste,
+                        onClick = viewModel::onPaste,
+                    )
+                    Item(
+                        text = "Duplicate",
+                        shortcut = editShortcut(Key.D),
+                        enabled = editable,
+                        onClick = { viewModel.onDuplicateElements(ids) },
                     )
 
                     Separator()
@@ -226,13 +256,46 @@ fun main() {
                         enabled = clearable,
                         onClick = viewModel::onClearAll,
                     )
+
+                    Separator()
+
+                    // The style clipboard is its own thing, so these two ask
+                    // about it rather than about the one above.
+                    Item(
+                        text = "Copy Style",
+                        shortcut = editShortcut(Key.C, alt = true),
+                        enabled = primary != null,
+                        onClick = { primary?.let { viewModel.onCopyStyle(it.id) } },
+                    )
+                    Item(
+                        text = "Paste Style",
+                        shortcut = editShortcut(Key.V, alt = true),
+                        enabled = state.canPasteStyle && editable,
+                        onClick = { viewModel.onPasteStyle(ids) },
+                    )
                 }
 
-                // One item for now. The rest of the slide verbs (new, duplicate,
-                // the clipboard ones) land here as they arrive.
+                // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
+                // element ones next door. New slide lands here when it arrives.
                 Menu("Slide", mnemonic = 'S') {
-                    // Always live: the presenter keeps the document non-empty,
-                    // so there is no last slide to protect from here.
+                    // Always live: the presenter keeps the document non-empty and
+                    // re-anchors the selection, so there is no last slide to
+                    // protect from here.
+                    Item(
+                        text = "Cut Slide",
+                        onClick = { viewModel.onCutSlide(state.selectedSlide.id) },
+                    )
+                    Item(
+                        text = "Copy Slide",
+                        onClick = { viewModel.onCopySlide(state.selectedSlide.id) },
+                    )
+                    Item(
+                        text = "Duplicate Slide",
+                        onClick = { viewModel.onDuplicateSlide(state.selectedSlide.id) },
+                    )
+
+                    Separator()
+
                     Item(
                         text = "Delete Slide",
                         onClick = { viewModel.onDeleteSlide(state.selectedSlide.id) },

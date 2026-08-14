@@ -47,6 +47,12 @@ data class EditorState(
      * carried its own past would serialize every version of the document. */
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
+    /** Whether Edit > Paste and Edit > Paste Style are live. The clipboard itself
+     * stays in the presenter for the same reasons history does, and it is an
+     * app-session thing rather than a document one: a restored session opens with
+     * nothing to paste, hence [Transient] on both. */
+    @Transient val canPaste: Boolean = false,
+    @Transient val canPasteStyle: Boolean = false,
     /** Whether the navigator is showing. Chrome visibility is view state, but it
      * is the editor's view state: every shell has the same three panels, and a
      * shell that kept its own copy would lose it on the next window it opens. */
@@ -216,6 +222,64 @@ sealed interface EditorEvent {
      * whatever now sits at its index.
      */
     data class DeleteSlide(val id: String) : EditorEvent
+    /**
+     * Puts the elements [ids] resolves to on the clipboard, in z-order rather
+     * than selection order: the slide's order is the one a paste has to keep.
+     * Locked elements copy like any other, a copy is not an edit. Makes no
+     * history entry, and resolving to nothing leaves the clipboard alone.
+     */
+    data class CopyElements(val ids: List<String>) : EditorEvent
+    /**
+     * [CopyElements] and [DeleteElements] as one edit: what it takes is what it
+     * stores, so locked elements are neither cut nor copied. One history entry,
+     * and nothing unlocked to take leaves both the document and the clipboard
+     * as they were.
+     */
+    data class CutElements(val ids: List<String>) : EditorEvent
+    /**
+     * Puts the slide on the clipboard, verbatim. A collapsed slide goes with the
+     * run it hides, the way it goes everywhere else: what the navigator shows as
+     * one row copies as one row. No history entry.
+     */
+    data class CopySlide(val id: String) : EditorEvent
+    /** [CopySlide] and [DeleteSlide] as one edit, selection re-anchored the same
+     * way a deletion re-anchors it. One history entry. */
+    data class CutSlide(val id: String) : EditorEvent
+    /**
+     * Pastes whatever the clipboard holds; an empty clipboard is a no-op.
+     *
+     * Elements land on the selected slide, on top, under fresh ids, and become
+     * the selection. The first paste lands exactly where the copy was taken, so
+     * cut then paste is how an element moves to another slide, and each further
+     * paste of the same clipboard cascades another 24 units down and right.
+     *
+     * Slides land right after the selected slide, under fresh ids all the way
+     * down with their builds remapped, re-based to the selected slide's depth
+     * with their relative depths kept. The first of them becomes the selected
+     * slide. One history entry either way.
+     */
+    data object Paste : EditorEvent
+    /** A copy and a paste in one, without going through the clipboard: fresh
+     * ids, offset 24 units down and right, on top, selected. Locked elements are
+     * skipped, and nothing unlocked to duplicate is a no-op. */
+    data class DuplicateElements(val ids: List<String>) : EditorEvent
+    /** [DuplicateSlide]'s slide equivalent: a deep copy right after the original
+     * at the same depth, hidden run and all, and selected. Leaves the clipboard
+     * alone; an id this document doesn't hold is a no-op. */
+    data class DuplicateSlide(val id: String) : EditorEvent
+    /**
+     * Remembers [id]'s look for [PasteStyle]. Its own clipboard, independent of
+     * the one above: copying an element must not cost you the style you were
+     * carrying, and Keynote keeps the two apart the same way. No history entry.
+     */
+    data class CopyStyle(val id: String) : EditorEvent
+    /**
+     * Dresses the unlocked elements [ids] resolves to in the remembered style.
+     * What transfers is `Element.applyingStyle`'s business: appearance only,
+     * never content, never geometry. One history entry; no style remembered, or
+     * nothing unlocked to dress, is a no-op.
+     */
+    data class PasteStyle(val ids: List<String>) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent

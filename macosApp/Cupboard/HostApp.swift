@@ -607,6 +607,35 @@ struct CupboardHostApp: App {
                 Button("Clear All") { host.clearAll() }
                     .disabled(!host.canClearAll())
             }
+            // Replacing rather than adding: the system Cut/Copy/Paste items own
+            // Cmd+X/C/V and would shadow ours. The clipboard is the app's own,
+            // so nothing here has any business talking to NSPasteboard.
+            // doCopy... is the exporter's doing: copy is a reserved ObjC method
+            // family, so every copyX on the host arrives here as doCopyX.
+            CommandGroup(replacing: .pasteboard) {
+                let _ = model.generation
+                Button("Cut") { host.cutSelection() }
+                    .keyboardShortcut("x", modifiers: .command)
+                    .disabled(!host.canCut())
+                Button("Copy") { host.doCopySelection() }
+                    .keyboardShortcut("c", modifiers: .command)
+                    .disabled(!host.canCopy())
+                Button("Paste") { host.paste() }
+                    .keyboardShortcut("v", modifiers: .command)
+                    .disabled(!host.canPaste())
+                Button("Duplicate") { host.duplicateSelection() }
+                    .keyboardShortcut("d", modifiers: .command)
+                    .disabled(!host.canDuplicate())
+
+                Divider()
+
+                Button("Copy Style") { host.doCopyStyle() }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .disabled(!host.canCopyStyle())
+                Button("Paste Style") { host.pasteStyle() }
+                    .keyboardShortcut("v", modifiers: [.command, .option])
+                    .disabled(!host.canPasteStyle())
+            }
             CommandGroup(after: .sidebar) {
                 let _ = model.generation
                 Toggle("Show Speaker Notes", isOn: Binding(
@@ -619,12 +648,19 @@ struct CupboardHostApp: App {
         }
     }
 
-    /// Acts on the slide as a whole rather than what is on it. One item for now;
-    /// the rest arrive with the clipboard work.
+    /// Acts on the slide as a whole rather than what is on it. No key equivalents:
+    /// Cmd+X/C/V belong to the elements on the canvas, and a slide-level clipboard
+    /// stealing them would make the common case unreachable.
     private var slideMenu: some Commands {
         CommandMenu("Slide") {
-            // Always live: the core keeps the document non-empty, so deleting the
-            // last slide leaves a blank one rather than nothing.
+            // All always live: the core keeps the document non-empty, so cutting
+            // or deleting the last slide leaves a blank one rather than nothing.
+            Button("Cut Slide") { host.cutSelectedSlide() }
+            Button("Copy Slide") { host.doCopySelectedSlide() }
+            Button("Duplicate Slide") { host.duplicateSelectedSlide() }
+
+            Divider()
+
             Button("Delete Slide") { host.deleteSelectedSlide() }
         }
     }

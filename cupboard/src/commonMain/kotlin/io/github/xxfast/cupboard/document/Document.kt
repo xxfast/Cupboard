@@ -67,6 +67,48 @@ private fun Element.subtreeIds(): List<String> =
     listOf(id) + ((this as? GroupElement)?.children?.flatMap { it.subtreeIds() } ?: emptyList())
 
 /**
+ * The same element under a fresh id, its children renamed too all the way down.
+ *
+ * What copy, paste and duplicate are made of: everything else about the element
+ * is kept verbatim, so a pasted copy draws exactly like the one it came from
+ * until something moves it. [renamed] collects old id to new id for a caller
+ * that has to follow the renaming, [Slide.duplicated] being the one that does.
+ */
+fun Element.withNewIds(renamed: MutableMap<String, String> = mutableMapOf()): Element {
+    val fresh: String = newId()
+    renamed[id] = fresh
+    return when (this) {
+        is GroupElement -> copy(id = fresh, children = children.map { it.withNewIds(renamed) })
+        is TextElement -> copy(id = fresh)
+        is ShapeElement -> copy(id = fresh)
+        is ImageElement -> copy(id = fresh)
+        is CodeElement -> copy(id = fresh)
+    }
+}
+
+/**
+ * The same slide under fresh ids: its own, and every element's all the way down.
+ *
+ * Builds follow the renaming rather than being dropped, so a duplicated slide
+ * animates like the one it came from. A build whose element is no longer there
+ * stays dropped, the same way [removeElements] leaves it.
+ */
+fun Slide.duplicated(): Slide {
+    val renamed: MutableMap<String, String> = mutableMapOf()
+    val copies: List<Element> = elements.map { it.withNewIds(renamed) }
+    return copy(
+        id = newId(),
+        elements = copies,
+        builds = builds.mapNotNull { build ->
+            renamed[build.elementId]?.let { build.copy(elementId = it) }
+        },
+    )
+}
+
+/** Appends [added] on top of the z-order, which is where new elements land. */
+fun Slide.addElements(added: List<Element>): Slide = copy(elements = elements + added)
+
+/**
  * Drops the top-level elements [ids] resolves to, and with them every build that
  * pointed at one or at anything nested inside one: a build left behind would
  * hold a step open for an element that is no longer there to reveal.
@@ -261,6 +303,31 @@ fun Document.toggleCollapsed(id: String): Document =
 fun Document.slideAt(index: Int): Slide? = slides.getOrNull(index) ?: slides.lastOrNull()
 
 /**
+ * One past the run of slides deeper than the one at [index]: what a collapsed
+ * slide hides, and what an expanded one lets out when it goes.
+ */
+private fun Document.runEndAfter(index: Int): Int {
+    val depth: Int = slides[index].depth
+    return (index + 1..slides.lastIndex).firstOrNull { slides[it].depth <= depth } ?: slides.size
+}
+
+/**
+ * The slide with [id] and whatever travels with it: a collapsed slide comes with
+ * the run it hides, anything else comes on its own. Empty for an id this document
+ * doesn't hold.
+ *
+ * The unit the navigator treats as one row, so it is also the unit copy, cut and
+ * duplicate work in: a group that goes as a whole has to come back as a whole.
+ */
+fun Document.slideGroup(id: String): List<Slide> {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1) return emptyList()
+
+    val slide: Slide = slides[index]
+    return if (slide.collapsed) slides.subList(index, runEndAfter(index)).toList() else listOf(slide)
+}
+
+/**
  * Removes the slide with [id], and deals with whatever sat beneath it.
  *
  * A collapsed slide goes with the run of deeper slides it was hiding: they are
@@ -278,10 +345,7 @@ fun Document.removeSlide(id: String): Document {
     if (index == -1) return this
 
     val deleted: Slide = slides[index]
-    // The run beneath it: everything deeper, up to the first slide that isn't.
-    val runEnd: Int = (index + 1..slides.lastIndex)
-        .firstOrNull { slides[it].depth <= deleted.depth }
-        ?: slides.size
+    val runEnd: Int = runEndAfter(index)
 
     val remaining: List<Slide> =
         if (deleted.collapsed) slides.take(index) + slides.drop(runEnd)

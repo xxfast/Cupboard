@@ -10,30 +10,44 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.addElements
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.applyingStyle
 import io.github.xxfast.cupboard.document.drawnBounds
+import io.github.xxfast.cupboard.document.duplicated
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.removeElements
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.slideAt
+import io.github.xxfast.cupboard.document.slideGroup
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.updateElements
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopySlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
@@ -67,6 +81,26 @@ private val AutosaveDebounce = 500.milliseconds
  */
 private const val HistoryLimit = 100
 
+/**
+ * How far a pasted copy lands from the one before it, in document units. Only
+ * the second paste of a clipboard onwards is offset: the first lands where the
+ * copy was taken, which is what makes cut then paste a move.
+ */
+private const val PasteOffset = 24f
+
+/**
+ * What the editor is carrying, elements or slides, never both: a copy replaces
+ * whatever was there, the way one system pasteboard would.
+ *
+ * Presenter-local like the history, and app-session-only: this is not the OS
+ * pasteboard, nothing here is persisted, and none of it belongs in EditorState,
+ * which would otherwise serialize a whole second copy of the document.
+ */
+private sealed interface Clipboard {
+    data class Elements(val elements: List<Element>) : Clipboard
+    data class Slides(val slides: List<Slide>) : Clipboard
+}
+
 /** Pushes [document], dropping the oldest entry once [HistoryLimit] is reached. */
 private fun ArrayDeque<Document>.push(document: Document) {
     addLast(document)
@@ -89,6 +123,17 @@ private fun EditorState.unlockedElement(id: String): Element? = element(id)?.tak
 /** The stored, unlocked elements of [ids], in the order asked for. */
 private fun EditorState.unlockedElements(ids: List<String>): List<Element> =
     ids.mapNotNull { id -> unlockedElement(id) }
+
+/**
+ * The stored elements of [ids] in z-order rather than in the order asked for.
+ *
+ * What the clipboard stores in: a selection has an order of its own, made click
+ * by click, and pasting in that order would shuffle what draws over what.
+ */
+private fun EditorState.stackedElements(ids: List<String>): List<Element> {
+    val wanted: Set<String> = ids.toSet()
+    return selectedSlide.elements.filter { it.id in wanted }
+}
 
 /**
  * The incoming elements an edit is allowed to land: locked ones are filtered out
@@ -119,6 +164,70 @@ private fun EditorState.withoutElements(ids: Set<String>): EditorState? {
     return copy(
         document = document.updateSlide(trimmed),
         selectedElementIds = selectedElementIds.filter { it !in ids },
+    )
+}
+
+/**
+ * The slide with [id] taken out, or null when it wasn't there to take.
+ *
+ * The gap closes up, so the selection lands on whatever now holds the removed
+ * slide's index: the slide after it, the one before when it was last, or the
+ * blank slide left behind by removing them all. Testing the selected id rather
+ * than the removed one covers a selected slide that was hidden inside a
+ * collapsed one and went with it.
+ */
+private fun EditorState.withoutSlide(id: String): EditorState? {
+    val index: Int = document.slides.indexOfFirst { it.id == id }
+    val remaining: Document = document.removeSlide(id)
+    if (remaining === document) return null
+
+    return if (remaining.slides.any { it.id == selectedSlideId }) copy(document = remaining)
+    else copy(
+        document = remaining,
+        selectedSlideId = remaining.slideAt(index)?.id ?: selectedSlideId,
+        selectedElementIds = emptyList(),
+    )
+}
+
+/**
+ * Copies of [elements] laid on top of the selected slide, [offset] units down and
+ * right, and selected: what paste and duplicate both come down to. Fresh ids all
+ * the way down, so a group's children are as new as the group.
+ */
+private fun EditorState.pasting(elements: List<Element>, offset: Float): EditorState {
+    val copies: List<Element> = elements.map { element ->
+        val fresh: Element = element.withNewIds()
+        if (offset == 0f) fresh else fresh.update(frame = fresh.frame.translate(offset, offset))
+    }
+
+    return copy(
+        document = document.updateSlide(selectedSlide.addElements(copies)),
+        selectedElementIds = copies.map { it.id },
+    )
+}
+
+/**
+ * Copies of [payload] spliced in right after the selected slide, the first of
+ * them selected.
+ *
+ * Depths are re-based rather than kept: the shallowest slide of the payload
+ * lands at the selected slide's depth and the rest keep their distance from it,
+ * so a copied group pastes as a group wherever it is pasted. [payload] is
+ * expected to be non-empty.
+ */
+private fun EditorState.pastingSlides(payload: List<Slide>): EditorState {
+    val index: Int = document.slides.indexOfFirst { it.id == selectedSlide.id }
+    val shallowest: Int = payload.minOf { it.depth }
+    val copies: List<Slide> = payload.map { slide ->
+        slide.duplicated().copy(depth = selectedSlide.depth + slide.depth - shallowest)
+    }
+
+    return copy(
+        document = document.copy(
+            slides = document.slides.take(index + 1) + copies + document.slides.drop(index + 1),
+        ),
+        selectedSlideId = copies.first().id,
+        selectedElementIds = emptyList(),
     )
 }
 
@@ -164,6 +273,13 @@ fun EditorPresenter(
         // gesture is running. Undo wants the pre-gesture document, and by
         // commit time the previews have already folded into state.
         var gestureBase: Document? = null
+
+        // The clipboard, and how many times what's on it has been pasted: the
+        // count is what cascades repeated pastes instead of stacking them.
+        // Style rides on its own, so copying an element never costs you it.
+        var clipboard: Clipboard? = null
+        var pastes = 0
+        var styleSource: Element? = null
 
         events.collect { event ->
             state = when (event) {
@@ -390,29 +506,135 @@ fun EditorPresenter(
                     }
                     ?: state
 
-                // The gap closes up, so the selection lands on whatever now
-                // holds the deleted slide's index: the slide after it, the one
-                // before when it was last, or the blank slide left behind by
-                // deleting them all. Testing the id rather than the event's
-                // covers a selected slide that was hidden inside a collapsed
-                // one and went with it.
-                is DeleteSlide -> {
-                    val index: Int = state.document.slides.indexOfFirst { it.id == event.id }
-                    val remaining: Document = state.document.removeSlide(event.id)
-
-                    if (remaining === state.document) state
-                    else {
+                is DeleteSlide -> state.withoutSlide(event.id)
+                    ?.let { deleted ->
                         undone.push(state.document)
                         redone.clear()
-                        if (remaining.slides.any { it.id == state.selectedSlideId })
-                            state.copy(document = remaining)
-                        else state.copy(
-                            document = remaining,
-                            selectedSlideId = remaining.slideAt(index)?.id ?: state.selectedSlideId,
+                        deleted
+                    }
+                    ?: state
+
+                // The clipboard events below. Copying is not an edit: it makes
+                // no history entry, reads locked elements like any other, and
+                // leaves both the document and the last copy alone when it
+                // resolves to nothing. Cutting is a copy and a delete at once,
+                // so it plays by the delete rules instead: unlocked only, one
+                // history entry, and no entry when there was nothing to take.
+                is CopyElements -> state.stackedElements(event.ids)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { copied ->
+                        clipboard = Clipboard.Elements(copied)
+                        pastes = 0
+                        state
+                    }
+                    ?: state
+
+                is CutElements -> {
+                    val cut: List<Element> = state.stackedElements(event.ids).filterNot { it.locked }
+                    state.withoutElements(cut.mapTo(mutableSetOf()) { it.id })
+                        ?.let { removed ->
+                            undone.push(state.document)
+                            redone.clear()
+                            clipboard = Clipboard.Elements(cut)
+                            pastes = 0
+                            removed
+                        }
+                        ?: state
+                }
+
+                is CopySlide -> state.document.slideGroup(event.id)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { copied ->
+                        clipboard = Clipboard.Slides(copied)
+                        pastes = 0
+                        state
+                    }
+                    ?: state
+
+                // The group is read before the removal, so a collapsed slide
+                // carries the run it was hiding onto the clipboard and cut then
+                // paste puts the whole group back rather than just its head.
+                is CutSlide -> {
+                    val cut: List<Slide> = state.document.slideGroup(event.id)
+                    state.withoutSlide(event.id)
+                        ?.let { removed ->
+                            undone.push(state.document)
+                            redone.clear()
+                            clipboard = Clipboard.Slides(cut)
+                            pastes = 0
+                            removed
+                        }
+                        ?: state
+                }
+
+                Paste -> when (val payload: Clipboard? = clipboard) {
+                    null -> state
+
+                    is Clipboard.Elements -> {
+                        undone.push(state.document)
+                        redone.clear()
+                        state.pasting(payload.elements, PasteOffset * pastes++)
+                    }
+
+                    // No offset to cascade: a slide has nowhere to land but
+                    // between two other slides.
+                    is Clipboard.Slides -> {
+                        undone.push(state.document)
+                        redone.clear()
+                        state.pastingSlides(payload.slides)
+                    }
+                }
+
+                // Duplicating is a copy and a paste that never touch the
+                // clipboard, so whatever you were carrying survives it.
+                is DuplicateElements -> state.stackedElements(event.ids)
+                    .filterNot { it.locked }
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { originals ->
+                        undone.push(state.document)
+                        redone.clear()
+                        state.pasting(originals, PasteOffset)
+                    }
+                    ?: state
+
+                // The copy goes after the whole group rather than after its
+                // head: dropping it between a collapsed slide and the run it
+                // hides would hand that run to the duplicate.
+                is DuplicateSlide -> state.document.slideGroup(event.id)
+                    .takeIf { it.isNotEmpty() }
+                    ?.let { group ->
+                        val after: Int =
+                            state.document.slides.indexOfFirst { it.id == event.id } + group.size
+                        val copies: List<Slide> = group.map { it.duplicated() }
+                        undone.push(state.document)
+                        redone.clear()
+                        state.copy(
+                            document = state.document.copy(
+                                slides = state.document.slides.take(after) + copies +
+                                    state.document.slides.drop(after),
+                            ),
+                            selectedSlideId = copies.first().id,
                             selectedElementIds = emptyList(),
                         )
                     }
-                }
+                    ?: state
+
+                is CopyStyle -> state.element(event.id)
+                    ?.let { source ->
+                        styleSource = source
+                        state
+                    }
+                    ?: state
+
+                is PasteStyle -> styleSource
+                    ?.let { source -> state.unlockedElements(event.ids).map { it.applyingStyle(source) } }
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { styled ->
+                        undone.push(state.document)
+                        redone.clear()
+                        state.withElements(styled)
+                    }
+                    ?: state
 
                 // Disclosure is not an edit, so it makes no history entry, the
                 // same way Keynote won't undo a twisty. The document still
@@ -457,7 +679,12 @@ fun EditorPresenter(
                 is SelectInspectorTab -> state.copy(inspectorTab = event.tab, inspectorOpen = true)
 
                 CloseInspector -> state.copy(inspectorOpen = false)
-            }.copy(canUndo = undone.isNotEmpty(), canRedo = redone.isNotEmpty())
+            }.copy(
+                canUndo = undone.isNotEmpty(),
+                canRedo = redone.isNotEmpty(),
+                canPaste = clipboard != null,
+                canPasteStyle = styleSource != null,
+            )
         }
     }
 
