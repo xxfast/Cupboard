@@ -197,7 +197,23 @@ class ComposeNSView(
     }
 
     override fun mouseUp(event: NSEvent) = onMouseEvent(event, PointerEventType.Release, PointerButton.Primary)
-    override fun rightMouseDown(event: NSEvent) = onMouseEvent(event, PointerEventType.Press, PointerButton.Secondary)
+
+    /**
+     * The press is forwarded with its release in the same breath, because the
+     * real rightMouseUp may never arrive: the press pops the context menu, and
+     * NSMenu's tracking loop eats the release that dismisses it. A scene left
+     * holding the secondary bit reclassifies every later left click as a right
+     * click (the canvas reads the chord, not the changed button). The canvas
+     * treats a secondary press as a click and never a gesture, so an instant
+     * release is the same click to it.
+     */
+    override fun rightMouseDown(event: NSEvent) {
+        onMouseEvent(event, PointerEventType.Press, PointerButton.Secondary)
+        onMouseEvent(event, PointerEventType.Release, PointerButton.Secondary)
+    }
+
+    /** Usually eaten by the menu; harmless when it does arrive, the scene's
+     * secondary bit is already up and a buttonless release moves nothing. */
     override fun rightMouseUp(event: NSEvent) = onMouseEvent(event, PointerEventType.Release, PointerButton.Secondary)
     override fun mouseMoved(event: NSEvent) = onMouseEvent(event, PointerEventType.Move)
     override fun mouseDragged(event: NSEvent) = onMouseEvent(event, PointerEventType.Move)
