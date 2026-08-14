@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -214,7 +215,16 @@ fun EditorCanvas(
                                 // right-click that way say so in their own
                                 // events, not in this button.
                                 PointerEventType.Press -> {
-                                    secondaryDown = event.buttons.isSecondaryPressed
+                                    // The chord, not the changed button, is all a
+                                    // common pointer event carries, and a native
+                                    // menu's tracking loop can eat a secondary
+                                    // release and leave its bit stuck down. A
+                                    // press with the primary held is a left
+                                    // click whatever the stale rest of the chord
+                                    // says, so a stuck bit can never reclassify
+                                    // ordinary clicks.
+                                    secondaryDown = event.buttons.isSecondaryPressed &&
+                                        !event.buttons.isPrimaryPressed
                                     shiftDown =
                                         !secondaryDown && event.keyboardModifiers.isShiftPressed
                                     pressedAt = null

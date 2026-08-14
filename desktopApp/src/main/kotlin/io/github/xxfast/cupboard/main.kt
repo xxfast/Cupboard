@@ -36,17 +36,27 @@ import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
+import io.github.xxfast.cupboard.screens.editor.EditorMenuItem
 import io.github.xxfast.cupboard.screens.editor.EditorMenuSection
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
+import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
+import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
 import java.awt.BasicStroke
+import java.awt.Component
 import java.awt.Cursor
+import java.awt.EventQueue
 import java.awt.Point
+import java.awt.PopupMenu
 import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
+import java.awt.Menu as AwtMenu
+import java.awt.MenuItem as AwtMenuItem
 import kotlinx.coroutines.delay
 import org.jetbrains.skiko.currentSystemTheme
 import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
@@ -61,6 +71,61 @@ private val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWit
 
 private fun editShortcut(key: Key, shift: Boolean = false, alt: Boolean = false): KeyShortcut =
     KeyShortcut(key, shift = shift, alt = alt, meta = isMacOs, ctrl = !isMacOs)
+
+private val isWindows: Boolean = System.getProperty("os.name").orEmpty().startsWith("Windows")
+
+/**
+ * The canvas context menu as the OS draws it. AWT popups are native menus on
+ * macOS and Windows, which is where the m3 dropdown looked foreign; Linux
+ * keeps the dropdown, M3 being that shell's design language (and AWT's Linux
+ * menus being nobody's).
+ *
+ * Built one step ahead of the loop: the ContextClick event this menu rides in
+ * on has not roundtripped when the menu is built, so the specs derive from the
+ * selection that click settles on, by the reducer's own rule. One `state.copy`
+ * covers both the enablement and the ids the actions carry.
+ */
+private fun showNativeContextMenu(
+    popup: PopupMenu,
+    parent: Component,
+    density: Float,
+    state: EditorState,
+    viewModel: EditorViewModel,
+    elementId: String?,
+    positionInWindow: Offset,
+) {
+    val selection: List<String> =
+        if (elementId != null && elementId in state.selectedElementIds) state.selectedElementIds
+        else listOfNotNull(elementId)
+    val sections: List<EditorMenuSection> =
+        canvasMenuSections(state.copy(selectedElementIds = selection), viewModel)
+
+    popup.removeAll()
+    for ((index, section) in sections.withIndex()) {
+        if (index > 0) popup.addSeparator()
+        for (item in section.items) popup.add(item.toAwtItem())
+    }
+
+    // Deferred a turn so the menu's native tracking loop doesn't start from
+    // inside Compose's handling of the very click that asked for it.
+    EventQueue.invokeLater {
+        popup.show(
+            parent,
+            (positionInWindow.x / density).toInt(),
+            (positionInWindow.y / density).toInt(),
+        )
+    }
+}
+
+/** [EditorMenuItem] rendered into AWT, children as a real submenu. */
+private fun EditorMenuItem.toAwtItem(): AwtMenuItem =
+    if (children.isEmpty()) AwtMenuItem(label).also { item ->
+        item.isEnabled = enabled
+        item.addActionListener { onPick() }
+    } else AwtMenu(label).also { submenu ->
+        submenu.isEnabled = enabled
+        for (child in children) submenu.add(child.toAwtItem())
+    }
 
 /** The OS dark/light setting as a live value, re-read every second. */
 @Composable
@@ -330,11 +395,32 @@ fun main() {
                 LocalSystemTheme provides pollSystemTheme(),
                 LocalResizeCursors provides AwtResizeCursors,
             ) {
+                // Added to the window once; each right-click rebuilds its items.
+                // Null on Linux, which keeps the shared m3 dropdown.
+                val nativeMenu: PopupMenu? = remember {
+                    if (isMacOs || isWindows) PopupMenu().also(window.contentPane::add)
+                    else null
+                }
+                val density: Float = LocalDensity.current.density
+
                 EditorScreen(
                     viewModel = viewModel,
                     // The document and index the editor has right now: play is a
                     // snapshot, later edits don't reach the running presentation.
                     onPlay = { document, index -> playing = PlayRequest(document, index) },
+                    onShowContextMenu = nativeMenu?.let { menu ->
+                        { elementId, positionInWindow ->
+                            showNativeContextMenu(
+                                popup = menu,
+                                parent = window.contentPane,
+                                density = density,
+                                state = state,
+                                viewModel = viewModel,
+                                elementId = elementId,
+                                positionInWindow = positionInWindow,
+                            )
+                        }
+                    },
                 )
             }
         }

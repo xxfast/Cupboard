@@ -26,6 +26,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
@@ -57,6 +59,12 @@ import io.github.xxfast.cupboard.theme.toColorScheme
 fun EditorScreen(
     viewModel: EditorViewModel,
     onPlay: ((Document, Int) -> Unit)? = null,
+    /**
+     * A shell that draws the context menu natively (the desktop app's AWT popup
+     * on macOS and Windows). Called with the click's hit and its position in
+     * window coordinates; when set, the m3 dropdown never composes.
+     */
+    onShowContextMenu: ((elementId: String?, positionInWindow: Offset) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -70,8 +78,11 @@ fun EditorScreen(
         // position it came with.
         onContextClick = { elementId, _ -> viewModel.onContextClick(elementId) },
         // Rebuilt from every state this screen sees, so the menu that is already
-        // open re-reads its enablement as the click's selection settles.
-        menuSections = canvasMenuSections(state, viewModel),
+        // open re-reads its enablement as the click's selection settles. A shell
+        // that draws its own menu gets none: two menus for one click is a bug.
+        menuSections =
+            if (onShowContextMenu == null) canvasMenuSections(state, viewModel) else emptyList(),
+        onShowContextMenu = onShowContextMenu,
         onPreviewMarquee = viewModel::onPreviewMarquee,
         onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
@@ -110,6 +121,9 @@ fun EditorView(
     onSelectInspectorTab: (InspectorTab) -> Unit,
     /** What the canvas context menu shows, sections in order. Empty hides it. */
     menuSections: List<EditorMenuSection> = emptyList(),
+    /** Takes over from [menuSections]: the shell draws the menu, this view only
+     * hands it the click in window coordinates. */
+    onShowContextMenu: ((elementId: String?, positionInWindow: Offset) -> Unit)? = null,
     onPlay: ((Document, Int) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
@@ -159,6 +173,12 @@ fun EditorView(
                                 .padding(28.dp),
                             contentAlignment = Alignment.Center,
                         ) {
+                            // Where the canvas sits in the window, for the shell
+                            // that draws its menu there rather than in here.
+                            var canvasCoords: LayoutCoordinates? by remember {
+                                mutableStateOf(null)
+                            }
+
                             EditorCanvas(
                                 slide = selectedSlide,
                                 selectedElementIds = state.selectedElementIds,
@@ -167,7 +187,12 @@ fun EditorView(
                                 onToggleElementSelection = onToggleElementSelection,
                                 onContextClick = { elementId, position ->
                                     onContextClick(elementId, position)
-                                    menuAt = position
+                                    val native = onShowContextMenu
+                                    if (native == null) menuAt = position
+                                    else native(
+                                        elementId,
+                                        canvasCoords?.localToWindow(position) ?: position,
+                                    )
                                 },
                                 onPreviewMarquee = onPreviewMarquee,
                                 onEndMarquee = onEndMarquee,
@@ -175,7 +200,9 @@ fun EditorView(
                                 onPreviewElements = onPreviewElements,
                                 onPreviewCancel = onCancelPreview,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .onGloballyPositioned { canvasCoords = it },
                             )
 
                             // The canvas reports in its own space and fills this
