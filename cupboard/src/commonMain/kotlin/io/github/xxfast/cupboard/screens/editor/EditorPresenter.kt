@@ -16,6 +16,7 @@ import io.github.xxfast.cupboard.document.applyingStyle
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicated
 import io.github.xxfast.cupboard.document.groupElements
+import io.github.xxfast.cupboard.document.insertionIndexAfter
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.removeElements
 import io.github.xxfast.cupboard.document.removeSlide
@@ -29,6 +30,7 @@ import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
@@ -217,7 +219,9 @@ private fun EditorState.pasting(elements: List<Element>, offset: Float): EditorS
  * expected to be non-empty.
  */
 private fun EditorState.pastingSlides(payload: List<Slide>): EditorState {
-    val index: Int = document.slides.indexOfFirst { it.id == selectedSlide.id }
+    // Past the selected slide's deeper run: pasted between a parent and its
+    // children, the copies would take those children for themselves.
+    val at: Int = document.insertionIndexAfter(selectedSlide.id)
     val shallowest: Int = payload.minOf { it.depth }
     val copies: List<Slide> = payload.map { slide ->
         slide.duplicated().copy(depth = selectedSlide.depth + slide.depth - shallowest)
@@ -225,7 +229,7 @@ private fun EditorState.pastingSlides(payload: List<Slide>): EditorState {
 
     return copy(
         document = document.copy(
-            slides = document.slides.take(index + 1) + copies + document.slides.drop(index + 1),
+            slides = document.slides.take(at) + copies + document.slides.drop(at),
         ),
         selectedSlideId = copies.first().id,
         selectedElementIds = emptyList(),
@@ -605,14 +609,14 @@ fun EditorPresenter(
                     }
                     ?: state
 
-                // The copy goes after the whole group rather than after its
-                // head: dropping it between a collapsed slide and the run it
-                // hides would hand that run to the duplicate.
+                // The copy goes past the original's deeper run rather than
+                // straight after it: dropped between a slide and the run under
+                // it, the duplicate would take that run for itself, collapsed
+                // or not.
                 is DuplicateSlide -> state.document.slideGroup(event.id)
                     .takeIf { it.isNotEmpty() }
                     ?.let { group ->
-                        val after: Int =
-                            state.document.slides.indexOfFirst { it.id == event.id } + group.size
+                        val after: Int = state.document.insertionIndexAfter(event.id)
                         val copies: List<Slide> = group.map { it.duplicated() }
                         undone.push(state.document)
                         redone.clear()
@@ -622,6 +626,25 @@ fun EditorPresenter(
                                     state.document.slides.drop(after),
                             ),
                             selectedSlideId = copies.first().id,
+                            selectedElementIds = emptyList(),
+                        )
+                    }
+                    ?: state
+
+                // The blank inherits the anchor's depth, so New Slide on a
+                // child makes a sibling, not a top-level slide out of place.
+                is AddSlide -> state.document.slides.firstOrNull { it.id == event.afterId }
+                    ?.let { anchor ->
+                        val at: Int = state.document.insertionIndexAfter(anchor.id)
+                        val fresh = Slide(depth = anchor.depth)
+                        undone.push(state.document)
+                        redone.clear()
+                        state.copy(
+                            document = state.document.copy(
+                                slides = state.document.slides.take(at) + fresh +
+                                    state.document.slides.drop(at),
+                            ),
+                            selectedSlideId = fresh.id,
                             selectedElementIds = emptyList(),
                         )
                     }

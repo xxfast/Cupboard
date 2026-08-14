@@ -697,6 +697,56 @@ private func arrangeEntries(_ facts: ArrangeFacts, _ host: EditorHost) -> [MenuE
     ]
 }
 
+/// The slide verbs, stated once. [slideId] nil is the Slide menu, which has no
+/// row to point at and drives the selected-slide methods instead; a navigator
+/// row passes its own id, so the verb acts on that row whatever is selected.
+/// [includePaste] is the context menu's: in the bar, Edit > Paste owns it.
+private func slideEntries(
+    _ host: EditorHost,
+    slideId: String?,
+    includePaste: Bool
+) -> [MenuEntry] {
+    // Everything but Paste is always live: the core keeps the document
+    // non-empty, so cutting or deleting the last slide leaves a blank one.
+    func command(
+        _ title: String,
+        _ byId: @escaping (String) -> Void,
+        _ bySelection: @escaping () -> Void
+    ) -> MenuEntry {
+        MenuEntry(title: title, action: {
+            if let slideId { byId(slideId) } else { bySelection() }
+        })
+    }
+
+    // doCopySlide is the exporter's doing: copy is a reserved ObjC method
+    // family, so the host's copySlide arrives here renamed, the way every other
+    // copyX on it does.
+    var entries: [MenuEntry] = [
+        command("New Slide", host.addSlideAfter(id:), host.addSlideAfterSelection),
+        command("Duplicate Slide", host.duplicateSlide(id:), host.duplicateSelectedSlide),
+
+        .separator(),
+
+        command("Cut Slide", host.cutSlide(id:), host.cutSelectedSlide),
+        command("Copy Slide", host.doCopySlide(id:), host.doCopySelectedSlide),
+    ]
+
+    if includePaste {
+        entries.append(
+            MenuEntry(title: "Paste", enabled: host.canPaste(), action: {
+                if let slideId { host.pasteAfterSlide(id: slideId) } else { host.paste() }
+            })
+        )
+    }
+
+    entries += [
+        .separator(),
+
+        command("Delete Slide", host.deleteSlide(id:), host.deleteSelectedSlide),
+    ]
+    return entries
+}
+
 /// The entries as SwiftUI. The NSMenu builder walks the same list.
 private struct MenuEntries: View {
     let entries: [MenuEntry]
@@ -896,15 +946,11 @@ struct CupboardHostApp: App {
     /// stealing them would make the common case unreachable.
     private var slideMenu: some Commands {
         CommandMenu("Slide") {
-            // All always live: the core keeps the document non-empty, so cutting
-            // or deleting the last slide leaves a blank one rather than nothing.
-            Button("Cut Slide") { host.cutSelectedSlide() }
-            Button("Copy Slide") { host.doCopySelectedSlide() }
-            Button("Duplicate Slide") { host.duplicateSelectedSlide() }
-
-            Divider()
-
-            Button("Delete Slide") { host.deleteSelectedSlide() }
+            // Reading generation is what keeps these acting on the slide that is
+            // selected now. Off the same list the navigator rows render, minus
+            // Paste: in the bar that verb is Edit > Paste's.
+            let _ = model.generation
+            MenuEntries(entries: slideEntries(host, slideId: nil, includePaste: false))
         }
     }
 
@@ -1080,6 +1126,12 @@ private struct EditorView: View {
             .background { capsule }
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onTapGesture { host.selectSlide(index: row.slideIndex) }
+            .contextMenu {
+                // No selecting the row first, unlike the canvas menu: every entry
+                // carries this row's id, and the ones that end in a selection
+                // (new, duplicate, delete, cut, paste) settle it in the core.
+                MenuEntries(entries: slideEntries(host, slideId: row.slideId, includePaste: true))
+            }
             .onHover { hovering = $0 }
             .padding(.leading, CGFloat(row.depth) * 12)
             .frame(maxWidth: .infinity, alignment: .leading)

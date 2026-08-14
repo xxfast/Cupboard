@@ -65,6 +65,11 @@ fun EditorScreen(
      * window coordinates; when set, the m3 dropdown never composes.
      */
     onShowContextMenu: ((elementId: String?, positionInWindow: Offset) -> Unit)? = null,
+    /**
+     * The same for the navigator: the shell draws the slide menu for the row at
+     * [slideId], at a position in window coordinates. Null keeps the m3 dropdown.
+     */
+    onShowSlideContextMenu: ((slideId: String, positionInWindow: Offset) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -83,6 +88,20 @@ fun EditorScreen(
         menuSections =
             if (onShowContextMenu == null) canvasMenuSections(state, viewModel) else emptyList(),
         onShowContextMenu = onShowContextMenu,
+        // The row selects before its menu opens, through the loop, the same rule
+        // the canvas click follows.
+        onSlideContextClick = viewModel::onSelectSlide,
+        // Built per row, since which slide the verbs carry is only known once a
+        // row is clicked, and rebuilt from every state, so an open menu re-reads
+        // its paste gate. A shell drawing its own menu gets none.
+        slideMenuSections = { slideId ->
+            if (onShowSlideContextMenu == null) {
+                slideSections(state, viewModel, slideId, includePaste = true)
+            } else {
+                emptyList()
+            }
+        },
+        onShowSlideContextMenu = onShowSlideContextMenu,
         onPreviewMarquee = viewModel::onPreviewMarquee,
         onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
@@ -124,6 +143,12 @@ fun EditorView(
     /** Takes over from [menuSections]: the shell draws the menu, this view only
      * hands it the click in window coordinates. */
     onShowContextMenu: ((elementId: String?, positionInWindow: Offset) -> Unit)? = null,
+    /** A right-click on a navigator row, before its menu opens. */
+    onSlideContextClick: (slideId: String) -> Unit = {},
+    /** What the navigator's context menu shows for a given row. Empty hides it. */
+    slideMenuSections: (slideId: String) -> List<EditorMenuSection> = { emptyList() },
+    /** [onShowContextMenu]'s counterpart for the navigator. */
+    onShowSlideContextMenu: ((slideId: String, positionInWindow: Offset) -> Unit)? = null,
     onPlay: ((Document, Int) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
@@ -141,6 +166,10 @@ fun EditorView(
             // menu it opens sits is this shell's business alone. A second
             // right-click while one is open just moves it.
             var menuAt: Offset? by remember { mutableStateOf(null) }
+            // The navigator's own pair: where its menu is open, and the row it
+            // opened on, which is what the verbs in it carry.
+            var slideMenuAt: Offset? by remember { mutableStateOf(null) }
+            var slideMenuFor: String? by remember { mutableStateOf(null) }
 
             Column(modifier.fillMaxSize().background(tokens.chrome)) {
                 EditorToolbar(
@@ -152,14 +181,49 @@ fun EditorView(
                 )
 
                 Row(Modifier.weight(1f).fillMaxWidth()) {
-                    if (state.sidebarOpen) EditorNavigator(
-                        document = state.document,
-                        entries = state.fullOutline(),
-                        selectedSlideId = selectedSlide.id,
-                        onSelectSlide = onSelectSlide,
-                        onToggleCollapsed = onToggleCollapsed,
-                        thumbnailRadius = theme.thumbR,
-                    )
+                    // The navigator gets its own anchor rather than the well's:
+                    // the menu belongs over the rows, and a sibling box keeps the
+                    // canvas anchor exactly what it was.
+                    if (state.sidebarOpen) Box {
+                        // The panel scrolls and the rows report in window
+                        // coordinates, so the anchor converts back into this box,
+                        // which sits still: the menu stays where it was clicked.
+                        var navigatorCoords: LayoutCoordinates? by remember {
+                            mutableStateOf(null)
+                        }
+
+                        EditorNavigator(
+                            document = state.document,
+                            entries = state.fullOutline(),
+                            selectedSlideId = selectedSlide.id,
+                            onSelectSlide = onSelectSlide,
+                            onToggleCollapsed = onToggleCollapsed,
+                            thumbnailRadius = theme.thumbR,
+                            onContextClick = { slideId, positionInWindow ->
+                                onSlideContextClick(slideId)
+                                val native = onShowSlideContextMenu
+                                if (native == null) {
+                                    slideMenuFor = slideId
+                                    slideMenuAt = navigatorCoords
+                                        ?.windowToLocal(positionInWindow)
+                                        ?: positionInWindow
+                                } else {
+                                    native(slideId, positionInWindow)
+                                }
+                            },
+                            modifier = Modifier.onGloballyPositioned { navigatorCoords = it },
+                        )
+
+                        val rowSections: List<EditorMenuSection> =
+                            slideMenuFor?.let(slideMenuSections).orEmpty()
+
+                        if (rowSections.isNotEmpty()) ContextMenu(
+                            sections = rowSections,
+                            position = slideMenuAt,
+                            onDismiss = { slideMenuAt = null; slideMenuFor = null },
+                            modifier = Modifier.align(Alignment.TopStart),
+                        )
+                    }
 
                     Column(Modifier.weight(1f).fillMaxHeight()) {
                         Box(
@@ -208,7 +272,7 @@ fun EditorView(
                             // The canvas reports in its own space and fills this
                             // well's content box, so a zero-size anchor pinned to
                             // the same corner puts the menu under the pointer.
-                            if (menuSections.isNotEmpty()) CanvasContextMenu(
+                            if (menuSections.isNotEmpty()) ContextMenu(
                                 sections = menuSections,
                                 position = menuAt,
                                 onDismiss = { menuAt = null },
@@ -244,9 +308,9 @@ fun EditorView(
 }
 
 /**
- * The canvas context menu: [sections] divided in order, anchored at [position]
- * in the canvas's own space, in pixels, through a zero-size box offset to it.
- * A null [position] is a closed menu.
+ * A context menu, the canvas's or the navigator's: [sections] divided in order,
+ * anchored at [position] in its own anchor's space, in pixels, through a
+ * zero-size box offset to it. A null [position] is a closed menu.
  *
  * Material 3 has no submenu, so a child-bearing item renders as a dim,
  * unclickable header with its children indented under it. The alternative is a
@@ -254,7 +318,7 @@ fun EditorView(
  * than eight align and distribute verbs are worth.
  */
 @Composable
-private fun CanvasContextMenu(
+private fun ContextMenu(
     sections: List<EditorMenuSection>,
     position: Offset?,
     onDismiss: () -> Unit,

@@ -45,6 +45,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
+import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
 import java.awt.Component
 import java.awt.Cursor
@@ -75,31 +76,21 @@ private fun editShortcut(key: Key, shift: Boolean = false, alt: Boolean = false)
 private val isWindows: Boolean = System.getProperty("os.name").orEmpty().startsWith("Windows")
 
 /**
- * The canvas context menu as the OS draws it. AWT popups are native menus on
- * macOS and Windows, which is where the m3 dropdown looked foreign; Linux
- * keeps the dropdown, M3 being that shell's design language (and AWT's Linux
- * menus being nobody's).
+ * A context menu as the OS draws it. AWT popups are native menus on macOS and
+ * Windows, which is where the m3 dropdown looked foreign; Linux keeps the
+ * dropdown, M3 being that shell's design language (and AWT's Linux menus being
+ * nobody's).
  *
- * Built one step ahead of the loop: the ContextClick event this menu rides in
- * on has not roundtripped when the menu is built, so the specs derive from the
- * selection that click settles on, by the reducer's own rule. One `state.copy`
- * covers both the enablement and the ids the actions carry.
+ * The verbs come in already built: the canvas and the navigator each have their
+ * own idea of what a right-click means, this only fills the popup and shows it.
  */
-private fun showNativeContextMenu(
+private fun showNativeMenu(
     popup: PopupMenu,
     parent: Component,
     density: Float,
-    state: EditorState,
-    viewModel: EditorViewModel,
-    elementId: String?,
     positionInWindow: Offset,
+    sections: List<EditorMenuSection>,
 ) {
-    val selection: List<String> =
-        if (elementId != null && elementId in state.selectedElementIds) state.selectedElementIds
-        else listOfNotNull(elementId)
-    val sections: List<EditorMenuSection> =
-        canvasMenuSections(state.copy(selectedElementIds = selection), viewModel)
-
     popup.removeAll()
     for ((index, section) in sections.withIndex()) {
         if (index > 0) popup.addSeparator()
@@ -115,6 +106,25 @@ private fun showNativeContextMenu(
             (positionInWindow.y / density).toInt(),
         )
     }
+}
+
+/**
+ * What a right-click on the canvas offers, built one step ahead of the loop:
+ * the ContextClick event this menu rides in on has not roundtripped when the
+ * menu is built, so the specs derive from the selection that click settles on,
+ * by the reducer's own rule. One `state.copy` covers both the enablement and
+ * the ids the actions carry.
+ */
+private fun canvasContextSections(
+    state: EditorState,
+    viewModel: EditorViewModel,
+    elementId: String?,
+): List<EditorMenuSection> {
+    val selection: List<String> =
+        if (elementId != null && elementId in state.selectedElementIds) state.selectedElementIds
+        else listOfNotNull(elementId)
+
+    return canvasMenuSections(state.copy(selectedElementIds = selection), viewModel)
 }
 
 /** [EditorMenuItem] rendered into AWT, children as a real submenu. */
@@ -353,29 +363,18 @@ fun main() {
                 }
 
                 // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
-                // element ones next door. New slide lands here when it arrives.
+                // element ones next door, and Paste is dropped here for the same
+                // reason, Edit already owns it. Rendered from the shared specs,
+                // like Arrange: the navigator's context menu offers the same
+                // verbs against whichever row it opened on.
                 Menu("Slide", mnemonic = 'S') {
-                    // Always live: the presenter keeps the document non-empty and
-                    // re-anchors the selection, so there is no last slide to
-                    // protect from here.
-                    Item(
-                        text = "Cut Slide",
-                        onClick = { viewModel.onCutSlide(state.selectedSlide.id) },
-                    )
-                    Item(
-                        text = "Copy Slide",
-                        onClick = { viewModel.onCopySlide(state.selectedSlide.id) },
-                    )
-                    Item(
-                        text = "Duplicate Slide",
-                        onClick = { viewModel.onDuplicateSlide(state.selectedSlide.id) },
-                    )
-
-                    Separator()
-
-                    Item(
-                        text = "Delete Slide",
-                        onClick = { viewModel.onDeleteSlide(state.selectedSlide.id) },
+                    MenuItems(
+                        slideSections(
+                            state = state,
+                            viewModel = viewModel,
+                            slideId = state.selectedSlide.id,
+                            includePaste = false,
+                        ),
                     )
                 }
 
@@ -410,14 +409,31 @@ fun main() {
                     onPlay = { document, index -> playing = PlayRequest(document, index) },
                     onShowContextMenu = nativeMenu?.let { menu ->
                         { elementId, positionInWindow ->
-                            showNativeContextMenu(
+                            showNativeMenu(
                                 popup = menu,
                                 parent = window.contentPane,
                                 density = density,
-                                state = state,
-                                viewModel = viewModel,
-                                elementId = elementId,
                                 positionInWindow = positionInWindow,
+                                sections = canvasContextSections(state, viewModel, elementId),
+                            )
+                        }
+                    },
+                    // The same popup: two menus can't be open at once anyway, and
+                    // the row's verbs carry its id, so nothing here has to guess
+                    // what the click did to the selection.
+                    onShowSlideContextMenu = nativeMenu?.let { menu ->
+                        { slideId, positionInWindow ->
+                            showNativeMenu(
+                                popup = menu,
+                                parent = window.contentPane,
+                                density = density,
+                                positionInWindow = positionInWindow,
+                                sections = slideSections(
+                                    state = state,
+                                    viewModel = viewModel,
+                                    slideId = slideId,
+                                    includePaste = true,
+                                ),
                             )
                         }
                     },

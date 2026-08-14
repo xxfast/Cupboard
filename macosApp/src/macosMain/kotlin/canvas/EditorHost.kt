@@ -107,6 +107,8 @@ private val AppKitResizeCursors = ResizeCursors { direction ->
 
 /** One row of the navigator outline, for the native (SwiftUI) sidebar. */
 class OutlineRow(
+    /** What the row's own context menu acts on, whatever the selection is. */
+    val slideId: String,
     val title: String,
     val depth: Int,
     val slideIndex: Int,
@@ -289,6 +291,7 @@ class EditorHost {
 
     fun outline(): List<OutlineRow> = state.outline().map { entry ->
         OutlineRow(
+            slideId = entry.slideId,
             title = entry.title,
             depth = entry.depth,
             slideIndex = entry.slideIndex,
@@ -556,7 +559,7 @@ class EditorHost {
      * there is no state where this has nothing to do.
      */
     fun deleteSelectedSlide() {
-        viewModel.onDeleteSlide(state.selectedSlide.id)
+        deleteSlide(state.selectedSlide.id)
     }
 
     /**
@@ -617,20 +620,60 @@ class EditorHost {
     }
 
     /**
-     * Slide-level clipboard. Always available for the same reason the delete is:
-     * there is always a selected slide, and cutting the last one leaves a blank
-     * one behind.
+     * The slide verbs, by id: what a navigator row's context menu acts through,
+     * a row being a slide the selection may not be on. Always available, all of
+     * them: the core keeps the document non-empty, so cutting or deleting the
+     * last slide leaves a blank one behind rather than nothing.
+     *
+     * `copy` is a reserved ObjC method family, so [copySlide] reaches the shell
+     * as `doCopySlide`, the same rename the `doCopy` members above carry.
      */
+    fun addSlideAfter(id: String) {
+        viewModel.onAddSlide(id)
+    }
+
+    fun deleteSlide(id: String) {
+        viewModel.onDeleteSlide(id)
+    }
+
+    fun duplicateSlide(id: String) {
+        viewModel.onDuplicateSlide(id)
+    }
+
+    fun cutSlide(id: String) {
+        viewModel.onCutSlide(id)
+    }
+
+    fun copySlide(id: String) {
+        viewModel.onCopySlide(id)
+    }
+
+    /**
+     * Pastes after [id] rather than after the selection. The select goes first
+     * and the events flow serializes the two, so the paste deterministically
+     * lands after that row however far the selection was from it.
+     */
+    fun pasteAfterSlide(id: String) {
+        if (!canPaste()) return
+        viewModel.onSelectSlide(id)
+        viewModel.onPaste()
+    }
+
+    /** The same verbs against the selected slide, for the Slide menu. */
+    fun addSlideAfterSelection() {
+        addSlideAfter(state.selectedSlide.id)
+    }
+
     fun cutSelectedSlide() {
-        viewModel.onCutSlide(state.selectedSlide.id)
+        cutSlide(state.selectedSlide.id)
     }
 
     fun copySelectedSlide() {
-        viewModel.onCopySlide(state.selectedSlide.id)
+        copySlide(state.selectedSlide.id)
     }
 
     fun duplicateSelectedSlide() {
-        viewModel.onDuplicateSlide(state.selectedSlide.id)
+        duplicateSlide(state.selectedSlide.id)
     }
 
     /**

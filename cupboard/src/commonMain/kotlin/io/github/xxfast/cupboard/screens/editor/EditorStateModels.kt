@@ -238,6 +238,12 @@ sealed interface EditorEvent {
      */
     data class DeleteSlide(val id: String) : EditorEvent
     /**
+     * A fresh blank slide after the one with [afterId], at its depth, past its
+     * deeper run so a parent keeps its children, and selected: what New Slide
+     * means everywhere it appears. An id that doesn't resolve adds nothing.
+     */
+    data class AddSlide(val afterId: String) : EditorEvent
+    /**
      * Puts the elements [ids] resolves to on the clipboard, in z-order rather
      * than selection order: the slide's order is the one a paste has to keep.
      * Locked elements copy like any other, a copy is not an edit. Makes no

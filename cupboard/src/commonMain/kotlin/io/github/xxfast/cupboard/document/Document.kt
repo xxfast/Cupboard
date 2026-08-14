@@ -312,6 +312,17 @@ private fun Document.runEndAfter(index: Int): Int {
 }
 
 /**
+ * Where a slide inserted "after [id]" lands: past the deeper run that follows
+ * [id], not straight after it. A same-depth slide dropped between a parent and
+ * its children would take those children for itself, so adding, duplicating and
+ * pasting all insert here. -1 for an id this document doesn't hold.
+ */
+fun Document.insertionIndexAfter(id: String): Int {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    return if (index == -1) -1 else runEndAfter(index)
+}
+
+/**
  * The slide with [id] and whatever travels with it: a collapsed slide comes with
  * the run it hides, anything else comes on its own. Empty for an id this document
  * doesn't hold.

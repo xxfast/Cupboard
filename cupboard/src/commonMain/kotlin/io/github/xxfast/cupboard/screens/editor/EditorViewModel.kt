@@ -9,6 +9,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
@@ -130,6 +131,7 @@ class EditorViewModel(
     fun onDeleteElements(ids: List<String>) { scope.launch { events.emit(DeleteElements(ids)) } }
     fun onClearAll() { scope.launch { events.emit(ClearAll) } }
     fun onDeleteSlide(id: String) { scope.launch { events.emit(DeleteSlide(id)) } }
+    fun onAddSlide(afterId: String) { scope.launch { events.emit(AddSlide(afterId)) } }
     fun onCopyElements(ids: List<String>) { scope.launch { events.emit(CopyElements(ids)) } }
     fun onCutElements(ids: List<String>) { scope.launch { events.emit(CutElements(ids)) } }
     fun onCopySlide(id: String) { scope.launch { events.emit(CopySlide(id)) } }

@@ -155,6 +155,57 @@ private fun alignItem(
 ): EditorMenuItem = EditorMenuItem(label, enabled) { viewModel.onAlignElements(edge) }
 
 /**
+ * The slide verbs, section by section: [New Slide, Duplicate Slide], then the
+ * clipboard run, then Delete Slide. Both the menu bar's Slide menu and the
+ * navigator's context menu render these.
+ *
+ * Every action carries [slideId] rather than reading the selection, so the row
+ * the menu opened on is the row it acts on, whatever the selection does while
+ * the menu sits open. That is also why nothing here is greyed: the presenter
+ * keeps the document non-empty and re-anchors the selection, so there is no
+ * last slide to protect from, and an id-carrying verb has no selection to be
+ * out of step with. Paste is the one gate, and it asks the clipboard, not the
+ * selection.
+ *
+ * Paste selects [slideId] before it pastes: two events, in that order, and the
+ * events flow serializes them, so the paste lands on the clicked row rather
+ * than wherever the selection happened to be.
+ *
+ * [includePaste] false drops that verb, for the menu bar, where Edit > Paste
+ * already owns it.
+ */
+fun slideSections(
+    state: EditorState,
+    viewModel: EditorViewModel,
+    slideId: String,
+    includePaste: Boolean,
+): List<EditorMenuSection> = listOf(
+    EditorMenuSection(
+        listOf(
+            EditorMenuItem("New Slide", enabled = true) { viewModel.onAddSlide(slideId) },
+            EditorMenuItem("Duplicate Slide", enabled = true) {
+                viewModel.onDuplicateSlide(slideId)
+            },
+        ),
+    ),
+    EditorMenuSection(
+        listOfNotNull(
+            EditorMenuItem("Cut Slide", enabled = true) { viewModel.onCutSlide(slideId) },
+            EditorMenuItem("Copy Slide", enabled = true) { viewModel.onCopySlide(slideId) },
+            EditorMenuItem("Paste", state.canPaste) {
+                viewModel.onSelectSlide(slideId)
+                viewModel.onPaste()
+            }.takeIf { includePaste },
+        ),
+    ),
+    EditorMenuSection(
+        listOf(
+            EditorMenuItem("Delete Slide", enabled = true) { viewModel.onDeleteSlide(slideId) },
+        ),
+    ),
+)
+
+/**
  * What a right-click on the canvas opens: [editSection] then [arrangeSections],
  * without the entries that belong to the menu bar alone.
  */

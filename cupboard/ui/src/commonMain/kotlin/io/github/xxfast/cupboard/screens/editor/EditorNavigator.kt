@@ -26,15 +26,28 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.isPrimaryPressed
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -50,6 +63,10 @@ import io.github.xxfast.cupboard.theme.LocalChromeTokens
  * The 224dp slide navigator: nested thumbnails with disclosure chevrons,
  * selection ring on the selected slide. Colors come from [LocalChromeTokens];
  * [thumbnailRadius] is the theme's thumbR (Linux 10dp).
+ *
+ * [onContextClick] is a right-click on a row, with the row's id and where the
+ * press landed in window coordinates: this panel only reports it, what opens
+ * there is the screen's business.
  */
 @Composable
 fun EditorNavigator(
@@ -59,6 +76,7 @@ fun EditorNavigator(
     onSelectSlide: (String) -> Unit,
     onToggleCollapsed: (String) -> Unit,
     thumbnailRadius: Dp,
+    onContextClick: (slideId: String, positionInWindow: Offset) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -87,6 +105,7 @@ fun EditorNavigator(
                     thumbnailRadius = thumbnailRadius,
                     onSelectSlide = onSelectSlide,
                     onToggleCollapsed = onToggleCollapsed,
+                    onContextClick = onContextClick,
                 )
             }
         }
@@ -101,8 +120,12 @@ private fun NavigatorRow(
     thumbnailRadius: Dp,
     onSelectSlide: (String) -> Unit,
     onToggleCollapsed: (String) -> Unit,
+    onContextClick: (slideId: String, positionInWindow: Offset) -> Unit,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
+    // Each row places itself, so the press it reports is already in the
+    // coordinates a menu anywhere in the window can be hung from.
+    var coordinates: LayoutCoordinates? by remember { mutableStateOf(null) }
 
     Row(
         modifier = Modifier
@@ -110,6 +133,33 @@ private fun NavigatorRow(
             .padding(bottom = 6.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(if (selected) tokens.rowHov else Color.Transparent)
+            .onGloballyPositioned { coordinates = it }
+            .pointerInput(entry.slideId) {
+                awaitPointerEventScope {
+                    while (true) {
+                        // Classified the way the canvas classifies one: the chord
+                        // is all a common pointer event carries, and a press with
+                        // the primary held is a left click whatever the stale rest
+                        // of the chord says, so a bit left down by a native menu's
+                        // tracking loop can never reclassify ordinary clicks.
+                        val event: PointerEvent = awaitPointerEvent(PointerEventPass.Initial)
+                        val secondary: Boolean = event.type == PointerEventType.Press &&
+                            event.buttons.isSecondaryPressed &&
+                            !event.buttons.isPrimaryPressed
+                        if (!secondary) continue
+
+                        val change: PointerInputChange = event.changes.firstOrNull() ?: continue
+                        // Taken on the initial pass so the row's clickable and the
+                        // chevron's never see it: a right-click starts nothing,
+                        // it reports what it hit and settles there.
+                        change.consume()
+                        onContextClick(
+                            entry.slideId,
+                            coordinates?.localToWindow(change.position) ?: change.position,
+                        )
+                    }
+                }
+            }
             .clickable { onSelectSlide(entry.slideId) }
             .padding(top = 5.dp, bottom = 5.dp, end = 6.dp),
         verticalAlignment = Alignment.Top,
