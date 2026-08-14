@@ -108,11 +108,13 @@ class ComposeNSView(
     )
 
     private var isAttached = false
+    private var isDisposed = false
     private var trackingArea: NSTrackingArea? = null
 
     init {
         skiaLayer.renderDelegate = object : SkikoRenderDelegate {
             override fun onRender(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
+                if (isDisposed) return
                 val sizeInPx = IntSize(width, height)
                 windowInfo.containerSize = sizeInPx
                 scene.size = sizeInPx
@@ -128,6 +130,7 @@ class ComposeNSView(
     // SkiaLayer needs a window-backed view; defer attach until AppKit gives us one.
     override fun viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        if (isDisposed) return
         val window = this.window
         if (window != null && !isAttached) {
             skiaLayer.attachTo(this)
@@ -150,11 +153,13 @@ class ComposeNSView(
 
     override fun viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
+        if (isDisposed) return
         window?.let { scene.density = Density(it.backingScaleFactor.toFloat()) }
     }
 
     override fun layout() {
         super.layout()
+        if (isDisposed) return
         skiaLayer.needRender()
     }
 
@@ -170,6 +175,8 @@ class ComposeNSView(
 
     override fun updateTrackingAreas() {
         trackingArea?.let { removeTrackingArea(it) }
+        trackingArea = null
+        if (isDisposed) return
         trackingArea = NSTrackingArea(
             rect = bounds,
             options = NSTrackingActiveAlways or
@@ -197,20 +204,34 @@ class ComposeNSView(
     override fun scrollWheel(event: NSEvent) = onMouseEvent(event, PointerEventType.Scroll)
 
     override fun keyDown(event: NSEvent) {
+        if (isDisposed) return
         val consumed = scene.sendKeyEvent(event.toComposeEvent())
         if (!consumed) super.keyDown(event)
     }
 
     override fun keyUp(event: NSEvent) {
+        if (isDisposed) return
         scene.sendKeyEvent(event.toComposeEvent())
     }
 
+    /**
+     * AppKit keeps delivering to a view after its host drops it: a tracking area
+     * still fires `mouseMoved:` while the pointer is over where we used to be, and
+     * the scene throws once it's closed. Drop the tracking area and gate every
+     * entry point on [isDisposed].
+     */
     fun dispose() {
+        if (isDisposed) return
+        isDisposed = true
+        trackingArea?.let { removeTrackingArea(it) }
+        trackingArea = null
+        postsFrameChangedNotifications = false
         if (isAttached) skiaLayer.detach()
         scene.close()
     }
 
     private fun onMouseEvent(event: NSEvent, eventType: PointerEventType, button: PointerButton? = null) {
+        if (isDisposed) return
         // locationInWindow is bottom-left origin and window-relative; convert to
         // this view's coords and flip to compose's top-left origin.
         val local = convertPoint(event.locationInWindow, fromView = null)
