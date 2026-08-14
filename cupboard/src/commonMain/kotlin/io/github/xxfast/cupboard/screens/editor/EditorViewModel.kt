@@ -11,7 +11,10 @@ import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
@@ -113,6 +116,9 @@ class EditorViewModel(
     fun onUngroupElements(id: String) { scope.launch { events.emit(UngroupElements(id)) } }
     fun onAlignElements(edge: AlignEdge) { scope.launch { events.emit(AlignElements(edge)) } }
     fun onDistributeElements(axis: Axis) { scope.launch { events.emit(DistributeElements(axis)) } }
+    fun onDeleteElements(ids: List<String>) { scope.launch { events.emit(DeleteElements(ids)) } }
+    fun onClearAll() { scope.launch { events.emit(ClearAll) } }
+    fun onDeleteSlide(id: String) { scope.launch { events.emit(DeleteSlide(id)) } }
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }

@@ -596,6 +596,17 @@ struct CupboardHostApp: App {
                     .keyboardShortcut("z", modifiers: [.command, .shift])
                     .disabled(!host.canRedo())
             }
+            // Same menu, below Undo/Redo. Backspace is the key equivalent, which
+            // is also what makes it fire for a selection made on the canvas.
+            CommandGroup(after: .undoRedo) {
+                let _ = model.generation
+                Divider()
+                Button("Delete") { host.deleteSelection() }
+                    .keyboardShortcut(.delete, modifiers: [])
+                    .disabled(!host.canDelete())
+                Button("Clear All") { host.clearAll() }
+                    .disabled(!host.canClearAll())
+            }
             CommandGroup(after: .sidebar) {
                 let _ = model.generation
                 Toggle("Show Speaker Notes", isOn: Binding(
@@ -603,7 +614,18 @@ struct CupboardHostApp: App {
                     set: { _ in host.toggleNotes() }
                 ))
             }
+            slideMenu
             arrangeMenu
+        }
+    }
+
+    /// Acts on the slide as a whole rather than what is on it. One item for now;
+    /// the rest arrive with the clipboard work.
+    private var slideMenu: some Commands {
+        CommandMenu("Slide") {
+            // Always live: the core keeps the document non-empty, so deleting the
+            // last slide leaves a blank one rather than nothing.
+            Button("Delete Slide") { host.deleteSelectedSlide() }
         }
     }
 

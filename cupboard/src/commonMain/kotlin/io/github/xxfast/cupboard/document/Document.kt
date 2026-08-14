@@ -59,6 +59,34 @@ fun Slide.updateElements(updated: List<Element>): Slide {
 }
 
 /**
+ * Every id this element answers for: its own, plus its children's all the way
+ * down when it is a group. Builds key off element ids at any depth, so removing
+ * a group has to know the whole subtree that goes with it.
+ */
+private fun Element.subtreeIds(): List<String> =
+    listOf(id) + ((this as? GroupElement)?.children?.flatMap { it.subtreeIds() } ?: emptyList())
+
+/**
+ * Drops the top-level elements [ids] resolves to, and with them every build that
+ * pointed at one or at anything nested inside one: a build left behind would
+ * hold a step open for an element that is no longer there to reveal.
+ *
+ * Ids this slide doesn't hold change nothing and return this same instance, so a
+ * caller can tell a real deletion from a no-op by identity and skip the history
+ * entry, the same way [reorderElements] does.
+ */
+fun Slide.removeElements(ids: Set<String>): Slide {
+    val removed: List<Element> = elements.filter { it.id in ids }
+    if (removed.isEmpty()) return this
+
+    val gone: Set<String> = removed.flatMapTo(mutableSetOf()) { it.subtreeIds() }
+    return copy(
+        elements = elements.filter { it.id !in gone },
+        builds = builds.filter { it.elementId !in gone },
+    )
+}
+
+/**
  * Wraps everything [ids] resolves to into one [GroupElement] with [groupId].
  *
  * The group lands at the z-position of its topmost member and the children keep
@@ -221,3 +249,46 @@ fun Document.visibleIndices(): List<Int> {
 
 fun Document.toggleCollapsed(id: String): Document =
     copy(slides = slides.map { if (it.id == id) it.copy(collapsed = !it.collapsed) else it })
+
+/**
+ * The slide now sitting at [index], or the last one when the index has fallen
+ * off the end. Null only for a document with no slides at all.
+ *
+ * What a selection anchored to an index resolves to once slides have moved
+ * under it: deleting a slide, and undoing or redoing a deletion, both leave a
+ * selection pointing at a gap rather than at a slide.
+ */
+fun Document.slideAt(index: Int): Slide? = slides.getOrNull(index) ?: slides.lastOrNull()
+
+/**
+ * Removes the slide with [id], and deals with whatever sat beneath it.
+ *
+ * A collapsed slide goes with the run of deeper slides it was hiding: they are
+ * inside it as far as the navigator is concerned, and deleting a row you can see
+ * must never quietly leave rows you couldn't behind. An expanded one gives that
+ * run up instead, each slide in it moving one level out but never shallower than
+ * the deleted slide was, so the run stays where the eye left it.
+ *
+ * The document is never emptied: deleting the last slide leaves one fresh blank
+ * one, because a deck with nothing in it has nowhere to draw and no row to
+ * select. An id this document doesn't hold returns this same instance.
+ */
+fun Document.removeSlide(id: String): Document {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1) return this
+
+    val deleted: Slide = slides[index]
+    // The run beneath it: everything deeper, up to the first slide that isn't.
+    val runEnd: Int = (index + 1..slides.lastIndex)
+        .firstOrNull { slides[it].depth <= deleted.depth }
+        ?: slides.size
+
+    val remaining: List<Slide> =
+        if (deleted.collapsed) slides.take(index) + slides.drop(runEnd)
+        else slides.take(index) +
+            slides.subList(index + 1, runEnd)
+                .map { it.copy(depth = maxOf(deleted.depth, it.depth - 1)) } +
+            slides.drop(runEnd)
+
+    return copy(slides = remaining.ifEmpty { listOf(Slide()) })
+}

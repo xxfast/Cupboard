@@ -14,7 +14,10 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.newId
+import io.github.xxfast.cupboard.document.removeElements
+import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
+import io.github.xxfast.cupboard.document.slideAt
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.updateElements
@@ -23,7 +26,10 @@ import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
@@ -95,6 +101,39 @@ private fun EditorState.editable(elements: List<Element>): List<Element> =
 /** Folds [elements] back into the document through their slide. */
 private fun EditorState.withElements(elements: List<Element>): EditorState =
     copy(document = document.updateSlide(selectedSlide.updateElements(elements)))
+
+/**
+ * Takes [ids] off the selected slide and out of the selection, or null when none
+ * of them was there to take: a caller that gets null skips the history entry,
+ * the same identity test the document helpers hand back.
+ *
+ * The selection is rewritten here rather than left to dangle, unlike an undone
+ * group: a deleted element is gone for good, so there is no later redo for a
+ * kept id to come back to.
+ */
+private fun EditorState.withoutElements(ids: Set<String>): EditorState? {
+    val slide: Slide = selectedSlide
+    val trimmed: Slide = slide.removeElements(ids)
+    if (trimmed === slide) return null
+
+    return copy(
+        document = document.updateSlide(trimmed),
+        selectedElementIds = selectedElementIds.filter { it !in ids },
+    )
+}
+
+/**
+ * [restored] swapped in, with the slide selection re-anchored to [index] when
+ * the swap has taken the selected slide away. [index] is where the selection sat
+ * before the swap, so it lands on the slide that took its place, which is where
+ * a deletion would have left it anyway.
+ */
+private fun EditorState.restoring(restored: Document, index: Int): EditorState =
+    if (restored.slides.any { it.id == selectedSlideId }) copy(document = restored)
+    else copy(
+        document = restored,
+        selectedSlideId = restored.slideAt(index)?.id ?: selectedSlideId,
+    )
 
 /**
  * The editor screen's logic, once, for every shell.
@@ -323,32 +362,88 @@ fun EditorPresenter(
                         }
                         ?: state
 
+                // Deletion is the one edit that takes ids away for good, so it
+                // is also the one that rewrites the selection instead of
+                // letting it dangle. Locked elements are skipped like anywhere
+                // else, which is what makes a lock worth having.
+                is DeleteElements -> state
+                    .withoutElements(state.unlockedElements(event.ids).mapTo(mutableSetOf()) { it.id })
+                    ?.let { deleted ->
+                        undone.push(state.document)
+                        redone.clear()
+                        deleted
+                    }
+                    ?: state
+
+                // Everything unlocked, which on a slide with nothing unlocked
+                // is nothing at all, and so no history entry either.
+                ClearAll -> state
+                    .withoutElements(
+                        state.selectedSlide.elements
+                            .filterNot { it.locked }
+                            .mapTo(mutableSetOf()) { it.id },
+                    )
+                    ?.let { cleared ->
+                        undone.push(state.document)
+                        redone.clear()
+                        cleared
+                    }
+                    ?: state
+
+                // The gap closes up, so the selection lands on whatever now
+                // holds the deleted slide's index: the slide after it, the one
+                // before when it was last, or the blank slide left behind by
+                // deleting them all. Testing the id rather than the event's
+                // covers a selected slide that was hidden inside a collapsed
+                // one and went with it.
+                is DeleteSlide -> {
+                    val index: Int = state.document.slides.indexOfFirst { it.id == event.id }
+                    val remaining: Document = state.document.removeSlide(event.id)
+
+                    if (remaining === state.document) state
+                    else {
+                        undone.push(state.document)
+                        redone.clear()
+                        if (remaining.slides.any { it.id == state.selectedSlideId })
+                            state.copy(document = remaining)
+                        else state.copy(
+                            document = remaining,
+                            selectedSlideId = remaining.slideAt(index)?.id ?: state.selectedSlideId,
+                            selectedElementIds = emptyList(),
+                        )
+                    }
+                }
+
                 // Disclosure is not an edit, so it makes no history entry, the
                 // same way Keynote won't undo a twisty. The document still
                 // changes: collapsed state is stored on the slide.
                 is ToggleCollapsed -> state.copy(document = state.document.toggleCollapsed(event.slideId))
 
-                // Selection is left alone across both. Nothing can delete a
-                // slide yet, so the selected slide id still resolves in the
-                // restored document; deletion has to revisit this.
+                // The slide selection is left alone as long as it still
+                // resolves, which is the common case. It can now fail to:
+                // redoing a deletion takes the selected slide away, and undoing
+                // one takes away the blank slide that deleting the last one
+                // left. Where it fails, the selection re-anchors to the index it
+                // sat at, clamped, so it lands on the same slide the deletion
+                // itself would have moved it to rather than silently falling
+                // back to the first slide of the deck.
                 //
-                // Element ids can already dangle: undoing a group takes the
-                // group's id away, redoing an ungroup takes the children's. The
-                // selection is deliberately not rewritten to match, because
-                // EditorState.selectedElements drops ids that no longer resolve,
-                // and a dangling id that comes back on the next redo is a
-                // selection restored rather than a selection lost.
+                // Element ids are left to dangle, deliberately: undoing a group
+                // takes the group's id away, redoing an ungroup takes the
+                // children's, EditorState.selectedElements drops ids that no
+                // longer resolve, and a dangling id that comes back on the next
+                // redo is a selection restored rather than a selection lost.
                 Undo -> undone.removeLastOrNull()
                     ?.let { previous ->
                         redone.push(state.document)
-                        state.copy(document = previous)
+                        state.restoring(previous, state.selectedSlideIndex())
                     }
                     ?: state
 
                 Redo -> redone.removeLastOrNull()
                     ?.let { next ->
                         undone.push(state.document)
-                        state.copy(document = next)
+                        state.restoring(next, state.selectedSlideIndex())
                     }
                     ?: state
 

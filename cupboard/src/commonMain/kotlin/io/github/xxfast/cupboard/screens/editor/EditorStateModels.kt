@@ -194,6 +194,28 @@ sealed interface EditorEvent {
     data class AlignElements(val edge: AlignEdge) : EditorEvent
     /** Equalizes the gaps across the selection. Needs three unlocked members. */
     data class DistributeElements(val axis: Axis) : EditorEvent
+    /**
+     * Takes the elements [ids] resolves to off the selected slide, along with
+     * every build that pointed at one: a group goes as a whole, children and
+     * their builds included. Locked elements are skipped one by one like every
+     * other batch edit, and a delete left with nothing to remove is a no-op
+     * rather than an empty history entry. Deleted ids leave the selection.
+     */
+    data class DeleteElements(val ids: List<String>) : EditorEvent
+    /**
+     * Empties the selected slide of everything unlocked, builds included. Locked
+     * elements and their builds stay: the lock is what says "not this one", and
+     * clearing the slide is no more allowed around it than any other edit.
+     */
+    data object ClearAll : EditorEvent
+    /**
+     * Removes the slide, and whatever it was hiding: a collapsed slide takes its
+     * run of deeper slides with it, an expanded one lets that run out one level.
+     * Deleting the last slide leaves a fresh blank one rather than a deck with
+     * nothing to show. Deleting the selected slide moves the selection to
+     * whatever now sits at its index.
+     */
+    data class DeleteSlide(val id: String) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent

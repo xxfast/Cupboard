@@ -444,6 +444,37 @@ class EditorHost {
     }
 
     /**
+     * One unlocked element in the selection is enough: the delete carries the
+     * whole selection and the presenter skips the locked ones, so the item stays
+     * live as long as it has something to take.
+     */
+    fun canDelete(): Boolean = editable().isNotEmpty()
+
+    /** Takes the unlocked part of the selection off the slide. One undo entry. */
+    fun deleteSelection() {
+        if (!canDelete()) return
+        viewModel.onDeleteElements(state.selectedElementIds)
+    }
+
+    /** A slide of nothing but locked elements has nothing left to clear. */
+    fun canClearAll(): Boolean = state.selectedSlide.elements.any { !it.locked }
+
+    /** Empties the selected slide of everything unlocked. Locked elements stay. */
+    fun clearAll() {
+        if (!canClearAll()) return
+        viewModel.onClearAll()
+    }
+
+    /**
+     * Removes the selected slide, and the run it was hiding if it was collapsed.
+     * Always available: the last slide out leaves a fresh blank one behind, so
+     * there is no state where this has nothing to do.
+     */
+    fun deleteSelectedSlide() {
+        viewModel.onDeleteSlide(state.selectedSlide.id)
+    }
+
+    /**
      * Registers [callback], fired whenever the editor state changes (including
      * edits made inside the Compose canvas), and returns the unsubscribe for the
      * host to call when it goes away. Swift can't observe a Kotlin StateFlow, so

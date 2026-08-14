@@ -160,13 +160,45 @@ fun main() {
     application {
         var playing by remember { mutableStateOf<PlayRequest?>(null) }
 
+        val state: EditorState by viewModel.states.collectAsState()
+
         Window(
             onCloseRequest = { viewModel.close(); exitApplication() },
             title = "Cupboard",
+            // Forward delete, the half the menu accelerator can't carry: Delete
+            // shows as Backspace there, which is the delete key on a mac board.
+            // Guarded on the selection having something unlocked in it, so the
+            // key is only ours when there is something to take away. Nothing in
+            // the window takes typing yet, so there is no field to steal from.
+            onKeyEvent = { event ->
+                val deletable: Boolean = state.selectedElements.any { !it.locked }
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Delete && deletable) {
+                    viewModel.onDeleteElements(state.selectedElementIds)
+                    true
+                } else {
+                    false
+                }
+            },
         ) {
-            val state: EditorState by viewModel.states.collectAsState()
-
             MenuBar {
+                // Everything below Undo/Redo needs something selected, and
+                // everything but the unlock needs something unlocked: the same
+                // rule the presenter applies, so a greyed item is never a
+                // silently dropped event. The label follows the primary
+                // element, the events carry the whole selection.
+                val primary: Element? = state.primaryElement
+                val ids: List<String> = state.selectedElementIds
+                val unlocked: List<Element> = state.selectedElements.filter { !it.locked }
+                val editable: Boolean = unlocked.isNotEmpty()
+                // Clear All speaks for the slide rather than the selection, so
+                // it asks the slide the same question: is there anything
+                // unlocked left to take away.
+                val clearable: Boolean = state.selectedSlide.elements.any { !it.locked }
+                // Ungrouping is a single-group act: two groups selected is a
+                // batch nothing else in the app does.
+                val group: GroupElement? = (primary as? GroupElement)
+                    ?.takeIf { ids.size == 1 && !it.locked }
+
                 Menu("Edit", mnemonic = 'E') {
                     Item(
                         text = "Undo",
@@ -180,21 +212,32 @@ fun main() {
                         enabled = state.canRedo,
                         onClick = viewModel::onRedo,
                     )
+
+                    Separator()
+
+                    Item(
+                        text = "Delete",
+                        shortcut = KeyShortcut(Key.Backspace),
+                        enabled = editable,
+                        onClick = { viewModel.onDeleteElements(ids) },
+                    )
+                    Item(
+                        text = "Clear All",
+                        enabled = clearable,
+                        onClick = viewModel::onClearAll,
+                    )
                 }
 
-                // Everything here needs something selected, and everything but
-                // the unlock needs something unlocked: the same rule the
-                // presenter applies, so a greyed item is never a silently
-                // dropped event. The label follows the primary element, the
-                // events carry the whole selection.
-                val primary: Element? = state.primaryElement
-                val ids: List<String> = state.selectedElementIds
-                val unlocked: List<Element> = state.selectedElements.filter { !it.locked }
-                val editable: Boolean = unlocked.isNotEmpty()
-                // Ungrouping is a single-group act: two groups selected is a
-                // batch nothing else in the app does.
-                val group: GroupElement? = (primary as? GroupElement)
-                    ?.takeIf { ids.size == 1 && !it.locked }
+                // One item for now. The rest of the slide verbs (new, duplicate,
+                // the clipboard ones) land here as they arrive.
+                Menu("Slide", mnemonic = 'S') {
+                    // Always live: the presenter keeps the document non-empty,
+                    // so there is no last slide to protect from here.
+                    Item(
+                        text = "Delete Slide",
+                        onClick = { viewModel.onDeleteSlide(state.selectedSlide.id) },
+                    )
+                }
 
                 Menu("Arrange", mnemonic = 'A') {
                     Item(
