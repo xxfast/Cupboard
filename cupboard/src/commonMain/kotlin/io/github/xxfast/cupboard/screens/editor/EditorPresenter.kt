@@ -17,10 +17,12 @@ import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicated
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.insertionIndexAfter
+import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.removeElements
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
+import io.github.xxfast.cupboard.document.setSlideSkipped
 import io.github.xxfast.cupboard.document.slideAt
 import io.github.xxfast.cupboard.document.slideGroup
 import io.github.xxfast.cupboard.document.toggleCollapsed
@@ -51,14 +53,17 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
@@ -67,6 +72,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
@@ -282,7 +288,7 @@ private fun EditorState.targeting(
  */
 private fun EditorEvent.focusing(): EditorPane? = when (this) {
     is SelectSlide, is SelectSlideAt, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
-    is CutSlide, is CopySlide, is DeleteSlide,
+    is CutSlide, is CopySlide, is DeleteSlide, is MoveSlide, is SetSlideSkipped,
         -> EditorPane.Navigator
 
     is SelectElement, is SelectElements, is ToggleElementSelection, is ContextClick,
@@ -698,6 +704,42 @@ fun EditorPresenter(
                     )
                 }
                 ?: state
+
+            // A drag shows through the loop and moves nothing until it lands,
+            // so the previews below are the marquee's kind rather than the
+            // element ones': no document, no history, just the gap to draw.
+            is PreviewSlideDrag ->
+                state.copy(slideDrag = SlideDrag(event.slideId, event.afterId))
+
+            EndSlideDrag -> state.copy(slideDrag = null)
+
+            // The drop always ends the drag, whether or not it moved anything:
+            // a row put back where it came from is a finished gesture too, it
+            // just isn't an edit.
+            is MoveSlide -> {
+                val moved: Document = state.document.moveSlide(event.id, event.afterId)
+                if (moved === state.document) state.copy(slideDrag = null)
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = moved,
+                        selectedSlideId = event.id,
+                        selectedElementIds = emptyList(),
+                        slideDrag = null,
+                    )
+                }
+            }
+
+            is SetSlideSkipped -> {
+                val updated: Document = state.document.setSlideSkipped(event.id, event.skipped)
+                if (updated === state.document) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated)
+                }
+            }
 
             is CopyStyle -> state.element(event.id)
                 ?.let { source ->

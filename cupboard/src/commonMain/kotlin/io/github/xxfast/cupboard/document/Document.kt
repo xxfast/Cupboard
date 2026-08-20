@@ -2,6 +2,7 @@
 
 package io.github.xxfast.cupboard.document
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -14,7 +15,7 @@ fun newId(): String = Uuid.random().toString()
  *
  * Slides are a flat ordered list, Keynote-style: nesting is expressed with
  * [Slide.depth], and a slide with deeper slides beneath it can collapse them.
- * Numbering is always the absolute index + 1, collapse never renumbers.
+ * Collapse never renumbers; skipping does, per [presentationNumbers].
  */
 @Serializable
 data class Document(
@@ -39,7 +40,42 @@ data class Slide(
     val notes: String = "",
     val depth: Int = 0,
     val collapsed: Boolean = false,
+    /**
+     * Kept in the deck but left out of the presentation: play walks past it and
+     * the numbering closes up over it, per [Document.presentationNumbers].
+     */
+    val skipped: Boolean = false,
+    /** Whether the slide draws its own presentation number, Keynote's per-slide switch. */
+    val showsSlideNumber: Boolean = false,
+    /** What the slide paints behind its elements; null is the app's dark gradient. */
+    val background: SlideBackground? = null,
 )
+
+/**
+ * A slide's own background, when it wants one other than the deck's default.
+ *
+ * Colors are packed ARGB like everywhere else. There is no image variant yet:
+ * an image background is bytes on the side, and bytes on the side arrive with
+ * the bundle format, the same wait [ImageElement] is in.
+ */
+@Serializable
+sealed interface SlideBackground {
+    @Serializable
+    @SerialName("color")
+    data class Color(val color: Long) : SlideBackground
+
+    /**
+     * Two stops along a line at [angle], in CSS degrees: 0 points up and the
+     * angle turns clockwise, so the deck's own gradient is 140.
+     */
+    @Serializable
+    @SerialName("gradient")
+    data class Gradient(
+        val start: Long,
+        val end: Long,
+        val angle: Float = 140f,
+    ) : SlideBackground
+}
 
 /** Slides in presentation order. Kept for call-site symmetry with the old tree model. */
 fun Document.allSlides(): List<Slide> = slides
@@ -305,10 +341,13 @@ fun Document.slideAt(index: Int): Slide? = slides.getOrNull(index) ?: slides.las
 /**
  * One past the run of slides deeper than the one at [index]: what a collapsed
  * slide hides, and what an expanded one lets out when it goes.
+ *
+ * On the bare list rather than the document, because a move has to ask it of the
+ * list the moved slides have already been lifted out of.
  */
-private fun Document.runEndAfter(index: Int): Int {
-    val depth: Int = slides[index].depth
-    return (index + 1..slides.lastIndex).firstOrNull { slides[it].depth <= depth } ?: slides.size
+private fun List<Slide>.runEndAfter(index: Int): Int {
+    val depth: Int = this[index].depth
+    return (index + 1..lastIndex).firstOrNull { this[it].depth <= depth } ?: size
 }
 
 /**
@@ -319,7 +358,7 @@ private fun Document.runEndAfter(index: Int): Int {
  */
 fun Document.insertionIndexAfter(id: String): Int {
     val index: Int = slides.indexOfFirst { it.id == id }
-    return if (index == -1) -1 else runEndAfter(index)
+    return if (index == -1) -1 else slides.runEndAfter(index)
 }
 
 /**
@@ -335,7 +374,8 @@ fun Document.slideGroup(id: String): List<Slide> {
     if (index == -1) return emptyList()
 
     val slide: Slide = slides[index]
-    return if (slide.collapsed) slides.subList(index, runEndAfter(index)).toList() else listOf(slide)
+    return if (slide.collapsed) slides.subList(index, slides.runEndAfter(index)).toList()
+    else listOf(slide)
 }
 
 /**
@@ -354,16 +394,100 @@ fun Document.slideGroup(id: String): List<Slide> {
 fun Document.removeSlide(id: String): Document {
     val index: Int = slides.indexOfFirst { it.id == id }
     if (index == -1) return this
+    return copy(slides = slides.withoutUnitAt(index).ifEmpty { listOf(Slide()) })
+}
 
-    val deleted: Slide = slides[index]
+/**
+ * The navigator row at [index] lifted out of the list: a collapsed slide comes
+ * away with the run it was hiding, an expanded one leaves that run behind one
+ * level out but never shallower than the slide itself was.
+ *
+ * What removing a row and moving one have in common. The difference between them
+ * is only what happens to the slides that were lifted.
+ */
+private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
+    val lifted: Slide = this[index]
     val runEnd: Int = runEndAfter(index)
+    return if (lifted.collapsed) take(index) + drop(runEnd)
+    else take(index) +
+        subList(index + 1, runEnd).map { it.copy(depth = maxOf(lifted.depth, it.depth - 1)) } +
+        drop(runEnd)
+}
 
-    val remaining: List<Slide> =
-        if (deleted.collapsed) slides.take(index) + slides.drop(runEnd)
-        else slides.take(index) +
-            slides.subList(index + 1, runEnd)
-                .map { it.copy(depth = maxOf(deleted.depth, it.depth - 1)) } +
-            slides.drop(runEnd)
+/**
+ * Moves the row [id] names into the gap under [afterId], null meaning the gap
+ * above the first row.
+ *
+ * The moved unit is [slideGroup]'s: a collapsed slide travels with the run it
+ * hides, an expanded one travels alone and lets its children out one level, the
+ * same way deleting it would. Gaps sit between visible rows, so the landing index
+ * is the end of [afterId]'s own row unit rather than the slot right after it.
+ *
+ * Depth comes from where it lands: the anchor's, except in the gap between a
+ * parent and its first child, where the child's depth wins and the drop joins the
+ * run rather than splitting it. The rest of the unit keeps its distance from its
+ * first slide, so a group lands as the group it was.
+ *
+ * A drop onto the unit's own body, an id this document doesn't hold, and a move
+ * that puts every slide back where it was all return this same instance, so a
+ * caller can skip the history entry the way [reorderElements] lets it.
+ */
+fun Document.moveSlide(id: String, afterId: String?): Document {
+    val unit: List<Slide> = slideGroup(id)
+    if (unit.isEmpty()) return this
 
-    return copy(slides = remaining.ifEmpty { listOf(Slide()) })
+    val remaining: List<Slide> = slides.withoutUnitAt(slides.indexOfFirst { it.id == id })
+
+    val at: Int
+    val depth: Int
+    if (afterId == null) {
+        at = 0
+        depth = 0
+    } else {
+        val anchorIndex: Int = remaining.indexOfFirst { it.id == afterId }
+        // The anchor went with the unit, i.e. the row was dropped on itself.
+        if (anchorIndex == -1) return this
+        val anchor: Slide = remaining[anchorIndex]
+        at = if (anchor.collapsed) remaining.runEndAfter(anchorIndex) else anchorIndex + 1
+        val below: Slide? = remaining.getOrNull(at)
+        depth = if (below != null && below.depth > anchor.depth) below.depth else anchor.depth
+    }
+
+    val base: Int = unit.first().depth
+    val rebased: List<Slide> = unit.map { it.copy(depth = depth + it.depth - base) }
+    val moved: List<Slide> = remaining.take(at) + rebased + remaining.drop(at)
+
+    if (moved == slides) return this
+    return copy(slides = moved)
+}
+
+/**
+ * Each slide's position in the presentation, parallel to [slides]: 1-based over
+ * the slides that will actually be shown, null for a skipped one.
+ *
+ * Skipping renumbers, the way Keynote's does: the numbers a viewer sees have to
+ * count what a viewer gets. Collapsing never renumbers, because it hides rows
+ * from the author and nothing from the audience.
+ */
+fun Document.presentationNumbers(): List<Int?> {
+    var shown = 0
+    return slides.map { slide -> if (slide.skipped) null else ++shown }
+}
+
+/**
+ * Takes the slide with [id] in or out of the presentation.
+ *
+ * Per slide, never per row: a collapsed parent's hidden run does not follow it,
+ * because skip is about what the audience sees and collapse is about what the
+ * author does. An unknown id, or a slide already like this, returns this same
+ * instance so the caller can skip the history entry.
+ */
+fun Document.setSlideSkipped(id: String, skipped: Boolean): Document {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1 || slides[index].skipped == skipped) return this
+    return copy(
+        slides = slides.mapIndexed { at, slide ->
+            if (at == index) slide.copy(skipped = skipped) else slide
+        },
+    )
 }

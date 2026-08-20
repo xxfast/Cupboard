@@ -411,6 +411,133 @@ class DocumentTest {
         assertEquals(4, steps[stageIds[3]])
     }
 
+    /**
+     * A parent with two children between two leaves: enough for a move to have a
+     * run to carry, a run to let out, and a gap between a parent and its first
+     * child to land in.
+     */
+    private fun deck(): Document = Document(
+        id = "doc",
+        slides = listOf(
+            Slide(id = "a", title = "A"),
+            Slide(id = "b", title = "B"),
+            Slide(id = "b1", title = "B.1", depth = 1),
+            Slide(id = "b2", title = "B.2", depth = 1),
+            Slide(id = "c", title = "C"),
+        ),
+    )
+
+    private fun Document.slideIds(): List<String> = slides.map { it.id }
+
+    private fun Document.depths(): List<Int> = slides.map { it.depth }
+
+    @Test
+    fun movingALeafDropsItUnderTheAnchorAtTheAnchorsDepth() {
+        val moved = deck().moveSlide("c", "a")
+        assertEquals(listOf("a", "c", "b", "b1", "b2"), moved.slideIds())
+        assertEquals(listOf(0, 0, 0, 1, 1), moved.depths())
+    }
+
+    @Test
+    fun aNullAnchorMeansTheGapAboveTheFirstRow() {
+        val moved = deck().moveSlide("b1", null)
+        assertEquals(listOf("b1", "a", "b", "b2", "c"), moved.slideIds())
+        // Top of the deck is depth 0, whatever depth the row came from.
+        assertEquals(listOf(0, 0, 0, 1, 0), moved.depths())
+    }
+
+    @Test
+    fun aCollapsedParentTravelsWithTheRunItHides() {
+        val collapsed = deck().toggleCollapsed("b")
+        val moved = collapsed.moveSlide("b", null)
+        assertEquals(listOf("b", "b1", "b2", "a", "c"), moved.slideIds())
+        // The children keep their distance from the parent, so the group lands whole.
+        assertEquals(listOf(0, 1, 1, 0, 0), moved.depths())
+    }
+
+    @Test
+    fun anExpandedParentMovesAloneAndItsChildrenOutdent() {
+        val moved = deck().moveSlide("b", "c")
+        assertEquals(listOf("a", "b1", "b2", "c", "b"), moved.slideIds())
+        assertEquals(listOf(0, 0, 0, 0, 0), moved.depths())
+    }
+
+    @Test
+    fun droppingBetweenAParentAndItsFirstChildJoinsTheChildRun() {
+        val moved = deck().moveSlide("c", "b")
+        assertEquals(listOf("a", "b", "c", "b1", "b2"), moved.slideIds())
+        assertEquals(listOf(0, 0, 1, 1, 1), moved.depths())
+    }
+
+    @Test
+    fun aMoveThatChangesNothingReturnsTheSameDocument() {
+        val deck = deck()
+        // Identity is the signal callers use to skip the history entry.
+        assertTrue(deck === deck.moveSlide("a", null))
+        assertTrue(deck === deck.moveSlide("b1", "b"))
+        assertTrue(deck === deck.moveSlide("nowhere", "a"))
+        assertTrue(deck === deck.moveSlide("a", "nowhere"))
+        // Dropped on its own row, and on a row inside it.
+        assertTrue(deck === deck.moveSlide("a", "a"))
+        val collapsed = deck.toggleCollapsed("b")
+        assertTrue(collapsed === collapsed.moveSlide("b", "b1"))
+    }
+
+    @Test
+    fun skippingRenumbersThePresentationAndCollapsingDoesNot() {
+        val deck = deck()
+        assertEquals(listOf(1, 2, 3, 4, 5), deck.presentationNumbers())
+        assertEquals(listOf(1, 2, 3, 4, 5), deck.toggleCollapsed("b").presentationNumbers())
+
+        val skipped = deck.setSlideSkipped("b", true).setSlideSkipped("b2", true)
+        assertEquals(listOf(1, null, 2, null, 3), skipped.presentationNumbers())
+    }
+
+    @Test
+    fun skippingIsPerSlideAndAnswersNoOpsWithTheSameDocument() {
+        val deck = deck().toggleCollapsed("b")
+        val skipped = deck.setSlideSkipped("b", true)
+        assertTrue(skipped.slides[1].skipped)
+        // The hidden run does not follow the row it hides behind.
+        assertFalse(skipped.slides[2].skipped)
+
+        assertTrue(skipped === skipped.setSlideSkipped("b", true))
+        assertTrue(deck === deck.setSlideSkipped("b", false))
+        assertTrue(deck === deck.setSlideSkipped("nowhere", true))
+    }
+
+    @Test
+    fun serializationRoundTripsSkipNumberingAndBackground() {
+        val document = Document(
+            slides = listOf(
+                Slide(title = "Skipped", skipped = true),
+                Slide(title = "Numbered", showsSlideNumber = true),
+                Slide(title = "Flat", background = SlideBackground.Color(0xFF102030)),
+                Slide(
+                    title = "Graded",
+                    background = SlideBackground.Gradient(0xFF2A2452, 0xFF101223, angle = 90f),
+                ),
+            ),
+        )
+        assertEquals(document, decodeDocument(document.encodeToString()))
+    }
+
+    /** Slide management arrived last, so a file written before it has none of it. */
+    @Test
+    fun aSlideWrittenBeforeSkipAndBackgroundsStillDecodes() {
+        val json = """
+            {
+              "id": "doc",
+              "slides": [{ "id": "slide", "title": "Old" }]
+            }
+        """.trimIndent()
+
+        val slide = decodeDocument(json).slides.single()
+        assertFalse(slide.skipped)
+        assertFalse(slide.showsSlideNumber)
+        assertEquals(null, slide.background)
+    }
+
     @Test
     fun elementsWithoutBuildsAreAlwaysVisible() {
         val slide = sampleDocument().allSlides().first { it.title == "Rendering Pipeline" }

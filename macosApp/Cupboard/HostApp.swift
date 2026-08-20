@@ -169,6 +169,18 @@ private enum Layout {
 }
 
 private extension Color {
+    /// Packed ARGB, the document model's colour format: what the background
+    /// swatches carry, alpha included.
+    init(argb: Int64) {
+        self.init(
+            .sRGB,
+            red: Double((argb >> 16) & 0xFF) / 255,
+            green: Double((argb >> 8) & 0xFF) / 255,
+            blue: Double(argb & 0xFF) / 255,
+            opacity: Double((argb >> 24) & 0xFF) / 255
+        )
+    }
+
     init(rgb: UInt32) {
         self.init(
             .sRGB,
@@ -519,6 +531,8 @@ private struct Chrome {
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
+    /// The selected slide's own properties, what the Document panel edits.
+    let slide: SlideProps
 
     init(_ host: EditorHost) {
         sidebarOpen = host.sidebarOpen()
@@ -530,11 +544,34 @@ private struct Chrome {
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
+        slide = SlideProps(host)
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
     /// presenter applies: a live item is never a silently dropped event.
     var editable: Bool { element.map { !$0.locked } ?? false }
+}
+
+/// The selected slide's own properties as a Swift value: what the Document
+/// panel shows, read the same way the element properties are.
+private struct SlideProps: Equatable {
+    /// Whether the slide draws its place in the presentation on itself.
+    let numberVisible: Bool
+    /// 0 the deck's own background, 1 a flat colour, 2 a gradient.
+    let backgroundKind: Int
+    /// Packed ARGB. When the slide wears another kind these are what switching
+    /// to this one would commit, so the controls never have to invent a value.
+    let color: Int64
+    let gradientStart: Int64
+    let gradientEnd: Int64
+
+    init(_ host: EditorHost) {
+        numberVisible = host.slideNumberVisible()
+        backgroundKind = Int(host.backgroundKind())
+        color = host.backgroundColor()
+        gradientStart = host.backgroundGradientStart()
+        gradientEnd = host.backgroundGradientEnd()
+    }
 }
 
 /// The primary selected element's properties as a Swift value. Kotlin hands back
@@ -718,6 +755,8 @@ private func slideEntries(
         })
     }
 
+    let skipped = slideId.map { host.isSlideSkipped(id: $0) } ?? host.isSelectedSlideSkipped()
+
     // doCopySlide is the exporter's doing: copy is a reserved ObjC method
     // family, so the host's copySlide arrives here renamed, the way every other
     // copyX on it does.
@@ -743,6 +782,18 @@ private func slideEntries(
         .separator(),
 
         command("Delete Slide", host.deleteSlide(id:), host.deleteSelectedSlide),
+
+        .separator(),
+
+        // Keynote's titles, following the slide the menu is about: the row's own
+        // when a row opened it, the selected one in the bar.
+        MenuEntry(title: skipped ? "Don't Skip Slide" : "Skip Slide", action: {
+            if let slideId {
+                host.setSlideSkipped(id: slideId, skipped: !skipped)
+            } else {
+                host.toggleSelectedSlideSkipped()
+            }
+        }),
     ]
     return entries
 }
@@ -968,6 +1019,34 @@ struct CupboardHostApp: App {
 
 // MARK: - Editor
 
+/// The navigator's scroll content, as a coordinate space: row frames, the drag
+/// and the drop line are all measured in it, so they cannot disagree.
+private enum NavigatorSpace {
+    static let name = "navigator"
+}
+
+/// Where each row sits in [NavigatorSpace], keyed by slide id rather than by
+/// index: a reorder moves rows between indices, and the drag has to keep
+/// following the row it picked up.
+private struct RowFrames: PreferenceKey {
+    static let defaultValue: [String: CGRect] = [:]
+
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, latest in latest }
+    }
+}
+
+/// A navigator row on the move, and the gap it is over. SwiftUI state, unlike
+/// the Compose canvas's gestures: this tree redraws off `@State` the way it is
+/// built to, and nothing but the drop is the document's business.
+private struct SlideDrag: Equatable {
+    let slideId: String
+    /// The row the drop lands after, nil for the gap above the first row.
+    let afterId: String?
+    /// Where the drop line draws, in [NavigatorSpace].
+    let lineY: CGFloat
+}
+
 private struct EditorView: View {
     let model: EditorModel
     @Binding var playSession: PlaySession?
@@ -976,6 +1055,9 @@ private struct EditorView: View {
     /// Zoom is view-local in the Kotlin host, outside `states`, so the label
     /// reads from this mirror rather than waiting on a generation bump.
     @State private var zoomPercent: Int = 0
+    /// The row being dragged, and where each row sits for the gap maths.
+    @State private var slideDrag: SlideDrag?
+    @State private var rowFrames: [String: CGRect] = [:]
 
     private var host: EditorHost { model.host }
     private var palette: Palette { Palette.of(colorScheme) }
@@ -1078,25 +1160,67 @@ private struct EditorView: View {
         let selected = host.selectedSlideIndex()
         let rows = host.outline()
         return ScrollView {
-            // Rows are identified by their absolute slide index, so collapsing a
-            // group reads as those rows leaving and everything after sliding up,
-            // not as every row changing in place.
+            // Rows are identified by their slide, so collapsing a group reads as
+            // those rows leaving and everything after sliding up, and a reorder
+            // as one row moving, not as every row changing in place.
             LazyVStack(alignment: .leading, spacing: 2) {
-                ForEach(rows, id: \.slideIndex) { row in
+                ForEach(rows, id: \.slideId) { row in
                     NavigatorRow(
                         row: row,
                         selected: row.slideIndex == selected,
+                        dragging: slideDrag?.slideId == row.slideId,
                         palette: palette,
-                        host: host
+                        host: host,
+                        onDrag: { point in dragSlide(row, to: point, rows: rows) },
+                        onDrop: dropSlide
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .padding(EdgeInsets(top: 2, leading: 8, bottom: 16, trailing: 8))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .animation(.easeInOut(duration: 0.14), value: rows.map(\.slideIndex))
+            .coordinateSpace(name: NavigatorSpace.name)
+            .onPreferenceChange(RowFrames.self) { frames in rowFrames = frames }
+            .overlay(alignment: .topLeading) { dropLine }
+            .animation(.easeInOut(duration: 0.14), value: rows.map(\.slideId))
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// The gap the drop line marks, and the one the drop commits: above the
+    /// first row's midpoint is the front of the deck, otherwise the last row
+    /// whose midpoint the pointer has passed.
+    private func dragSlide(_ row: OutlineRow, to point: CGPoint, rows: [OutlineRow]) {
+        let placed: [(row: OutlineRow, frame: CGRect)] = rows.compactMap { candidate in
+            rowFrames[candidate.slideId].map { (candidate, $0) }
+        }
+        guard let first = placed.first else { return }
+
+        var afterId: String?
+        // Half the 2pt row gap above the first row, so the line sits in the gap
+        // rather than on a row's edge.
+        var lineY: CGFloat = first.frame.minY - 1
+        for (candidate, frame) in placed where frame.midY < point.y {
+            afterId = candidate.slideId
+            lineY = frame.maxY + 1
+        }
+        slideDrag = SlideDrag(slideId: row.slideId, afterId: afterId, lineY: lineY)
+    }
+
+    /// The core no-ops a drop back into the row's own gap, so every drop is sent.
+    private func dropSlide() {
+        guard let drag = slideDrag else { return }
+        slideDrag = nil
+        host.moveSlide(id: drag.slideId, afterId: drag.afterId)
+    }
+
+    @ViewBuilder private var dropLine: some View {
+        if let drag = slideDrag {
+            palette.accent
+                .frame(height: 2)
+                .padding(.horizontal, 8)
+                .offset(y: drag.lineY - 1)
+        }
     }
 
     /// Keynote's row: a fixed leading gutter, then the thumbnail, both inside a
@@ -1108,8 +1232,13 @@ private struct EditorView: View {
     private struct NavigatorRow: View {
         let row: OutlineRow
         let selected: Bool
+        /// This row is the one being dragged, so it steps back while it travels.
+        let dragging: Bool
         let palette: Palette
         let host: EditorHost
+        /// A drag sample, in [NavigatorSpace], and the release that drops it.
+        let onDrag: (CGPoint) -> Void
+        let onDrop: () -> Void
 
         @State private var hovering = false
         @State private var chevronHovering = false
@@ -1119,13 +1248,31 @@ private struct EditorView: View {
         var body: some View {
             HStack(spacing: 4) {
                 gutter
-                thumbnail
+                // Skipped is a slide out of the presentation, not out of the
+                // deck: the gutter keeps its width, the slide reads back.
+                thumbnail.opacity(row.skipped ? 0.4 : 1)
             }
             .padding(.vertical, 5)
             .padding(.horizontal, 6)
             .background { capsule }
+            .opacity(dragging ? 0.4 : 1)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onTapGesture { host.selectSlide(index: row.slideIndex) }
+            // Enough slop that a click is still a click: the drag only takes
+            // over once the pointer has actually travelled.
+            .gesture(
+                DragGesture(minimumDistance: 6, coordinateSpace: .named(NavigatorSpace.name))
+                    .onChanged { value in onDrag(value.location) }
+                    .onEnded { _ in onDrop() }
+            )
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: RowFrames.self,
+                        value: [row.slideId: proxy.frame(in: .named(NavigatorSpace.name))]
+                    )
+                }
+            }
             .contextMenu {
                 // No selecting the row first, unlike the canvas menu: every entry
                 // carries this row's id, and the ones that end in a selection
@@ -1145,7 +1292,8 @@ private struct EditorView: View {
             }
             .frame(width: 15, height: thumbWidth * 9 / 16)
             .overlay(alignment: .bottomTrailing) {
-                Text("\(row.slideIndex + 1)")
+                // The presentation number, which a skipped slide has none of.
+                Text(row.numberLabel)
                     .font(.system(size: 11))
                     .foregroundStyle(palette.faint)
                     .padding(.bottom, 1)
@@ -1458,7 +1606,7 @@ private struct EditorView: View {
             .padding(.bottom, 12)
 
             if ui.tab == InspectorTab.document {
-                documentPanel
+                documentPanel(ui)
             } else if ui.tab == InspectorTab.format {
                 formatPanel(ui)
             } else {
@@ -1757,14 +1905,15 @@ private struct EditorView: View {
 
     // MARK: Document panel
 
-    /// Static for now: the slide's layout, appearance and background are not in
-    /// the document model yet, so every control here is inert.
-    private var documentPanel: some View {
+    /// The selected slide, as far as the document model goes: the number switch
+    /// and the background are real and ride through `states`; the layout card
+    /// above them is still static, layouts not being modelled yet.
+    private func documentPanel(_ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: Layout.panelPadding) {
             slideLayoutCard
-            appearanceSection
+            appearanceSection(ui)
             palette.divider.frame(height: 1)
-            backgroundSection
+            backgroundSection(ui)
             Spacer(minLength: 0)
             editLayoutButton
         }
@@ -1814,12 +1963,16 @@ private struct EditorView: View {
         RoundedRectangle(cornerRadius: 1).fill(color).frame(width: width, height: height)
     }
 
-    private var appearanceSection: some View {
+    /// Title and Body are still inert: what a layout puts on a slide is the
+    /// layout's, and layouts are not modelled yet. The number is the slide's own.
+    private func appearanceSection(_ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Appearance")
             checkRow("Title", on: true)
             checkRow("Body", on: true)
-            checkRow("Slide Number", on: false)
+            checkRow("Slide Number", on: ui.slide.numberVisible) {
+                host.setSlideNumberVisible(visible: !ui.slide.numberVisible)
+            }
         }
     }
 
@@ -1829,8 +1982,14 @@ private struct EditorView: View {
             .foregroundStyle(palette.subtle)
     }
 
-    private func checkRow(_ label: String, on: Bool) -> some View {
-        HStack(spacing: 8) {
+    /// [action] nil is a row that only reports: the ones whose fact the document
+    /// model does not hold yet stay untouchable rather than lying about a toggle.
+    @ViewBuilder private func checkRow(
+        _ label: String,
+        on: Bool,
+        action: (() -> Void)? = nil
+    ) -> some View {
+        let row = HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(on ? palette.accent : palette.track)
                 .frame(width: 15, height: 15)
@@ -1844,72 +2003,123 @@ private struct EditorView: View {
             Text(label)
                 .font(.system(size: 13))
                 .foregroundStyle(palette.text)
+            Spacer(minLength: 0)
+        }
+
+        if let action {
+            Button(action: action) { row.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+        } else {
+            row
         }
     }
 
-    private var backgroundSection: some View {
+    /// What the slide paints behind its elements: the deck's own, a flat colour,
+    /// or a two-stop gradient. Switching to a kind the slide is not wearing
+    /// commits it there and then, so the swatches below always have something to
+    /// mark, and every pick is one edit and one undo entry.
+    @ViewBuilder private func backgroundSection(_ ui: Chrome) -> some View {
+        let slide = ui.slide
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Background")
 
             HStack(spacing: 2) {
-                segment("Standard", on: true)
-                segment("Dynamic", on: false)
+                segment("Default", on: slide.backgroundKind == 0) { host.setBackgroundDefault() }
+                segment("Color", on: slide.backgroundKind == 1) {
+                    host.setBackgroundColor(argb: slide.color)
+                }
+                segment("Gradient", on: slide.backgroundKind == 2) {
+                    host.setBackgroundGradient(start: slide.gradientStart, end: slide.gradientEnd)
+                }
             }
             .padding(2)
             .frame(height: 26)
             .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-            HStack(spacing: 0) {
-                Text("Colour Fill")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(palette.ctrlText)
-                Spacer(minLength: 0)
-                Text("\u{2304}")
-                    .font(.system(size: 9))
-                    .foregroundStyle(palette.subtle)
-            }
-            .padding(.horizontal, 11)
-            .frame(height: 24)
-            .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-
-            HStack(spacing: 8) {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(Color.white)
-                    .frame(height: 24)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 5, style: .continuous)
-                            .inset(by: 0.5)
-                            .stroke(Color.black.opacity(0.14), lineWidth: 1)
-                    }
-                colourWheel
+            switch slide.backgroundKind {
+            case 1:
+                swatchGrid(selected: slide.color) { host.setBackgroundColor(argb: $0) }
+            case 2:
+                stopRow("Start", selected: slide.gradientStart) {
+                    host.setBackgroundGradient(start: $0, end: slide.gradientEnd)
+                }
+                stopRow("End", selected: slide.gradientEnd) {
+                    host.setBackgroundGradient(start: slide.gradientStart, end: $0)
+                }
+            default:
+                Text("The deck's own background.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.faint)
             }
         }
     }
 
-    private func segment(_ label: String, on: Bool) -> some View {
-        Text(label)
-            .font(.system(size: 12, weight: on ? .semibold : .regular))
-            .foregroundStyle(on ? palette.accentText : palette.subtle)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(
-                on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
-                in: RoundedRectangle(cornerRadius: 5, style: .continuous)
-            )
+    /// One end of the gradient: the same swatches, said whose they are.
+    private func stopRow(
+        _ label: String,
+        selected: Int64,
+        onPick: @escaping (Int64) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(palette.subtle)
+            swatchGrid(selected: selected, onPick: onPick)
+        }
     }
 
-    private var colourWheel: some View {
-        Circle()
-            .fill(
-                AngularGradient(
-                    colors: [
-                        Color(rgb: 0xF0357B), Color(rgb: 0xFFC24B), Color(rgb: 0x43C57E),
-                        Color(rgb: 0x3FA9F5), Color(rgb: 0x7F52FF), Color(rgb: 0xF0357B),
-                    ],
-                    center: .center
+    /// The palette, six to a row. No colour panel yet: one tap is one colour and
+    /// one undo entry, which a live picker would spend a hundred entries on.
+    private func swatchGrid(selected: Int64, onPick: @escaping (Int64) -> Void) -> some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 6),
+            spacing: 6
+        ) {
+            ForEach(Self.backgroundSwatches, id: \.self) { argb in
+                swatch(argb, selected: argb == selected, onPick: onPick)
+            }
+        }
+    }
+
+    private func swatch(
+        _ argb: Int64,
+        selected: Bool,
+        onPick: @escaping (Int64) -> Void
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button { onPick(argb) } label: {
+            shape
+                .fill(Color(argb: argb))
+                .frame(height: 22)
+                .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+                .overlay {
+                    if selected { shape.inset(by: -2.5).stroke(palette.accent, lineWidth: 2) }
+                }
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The deck's inks first, then the accents, then two paper tones. Packed
+    /// ARGB, the document model's colour format.
+    private static let backgroundSwatches: [Int64] = [
+        0xFF000000, 0xFF17181C, 0xFF23262E, 0xFF101223, 0xFF2A2452, 0xFF4C2FA8,
+        0xFF0F3B39, 0xFF10391F, 0xFF58151D, 0xFF6B4A0E, 0xFFD7D9DE, 0xFFFFFFFF,
+    ]
+
+    private func segment(_ label: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: on ? .semibold : .regular))
+                .foregroundStyle(on ? palette.accentText : palette.subtle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
+                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
                 )
-            )
-            .frame(width: 22, height: 22)
-            .overlay { Circle().inset(by: 0.5).stroke(Color.black.opacity(0.14), lineWidth: 1) }
+                .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var editLayoutButton: some View {

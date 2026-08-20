@@ -6,6 +6,7 @@ import io.github.xxfast.cupboard.document.ZOrderMove.Backward
 import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
+import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 
@@ -156,8 +157,8 @@ private fun alignItem(
 
 /**
  * The slide verbs, section by section: [New Slide, Duplicate Slide], then the
- * clipboard run, then Delete Slide. Both the menu bar's Slide menu and the
- * navigator's context menu render these.
+ * clipboard run, then Delete Slide, then the skip toggle. Both the menu bar's
+ * Slide menu and the navigator's context menu render these.
  *
  * Every action carries [slideId] rather than reading the selection, so the row
  * the menu opened on is the row it acts on, whatever the selection does while
@@ -203,7 +204,22 @@ fun slideSections(
             EditorMenuItem("Delete Slide", enabled = true) { viewModel.onDeleteSlide(slideId) },
         ),
     ),
+    // Keynote's two titles for the one verb, read off the row the menu opened on
+    // rather than the selection, like everything else here.
+    EditorMenuSection(
+        listOf(
+            EditorMenuItem(
+                label = if (state.isSkipped(slideId)) "Don't Skip Slide" else "Skip Slide",
+                enabled = true,
+            ) { viewModel.onSetSlideSkipped(slideId, !state.isSkipped(slideId)) },
+        ),
+    ),
 )
+
+/** Whether the slide [slideId] names is out of the presentation. An id this
+ * document doesn't hold reads as in it, which keeps the verb's title sane. */
+private fun EditorState.isSkipped(slideId: String): Boolean =
+    document.allSlides().firstOrNull { it.id == slideId }?.skipped == true
 
 /**
  * What a right-click on the canvas opens: [editSection] then [arrangeSections],

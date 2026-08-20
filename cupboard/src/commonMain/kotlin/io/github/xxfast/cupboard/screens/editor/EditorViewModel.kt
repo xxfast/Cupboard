@@ -30,14 +30,17 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
@@ -46,6 +49,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
@@ -137,6 +141,10 @@ class EditorViewModel(
     fun onClearAll() { scope.launch { events.emit(ClearAll) } }
     fun onDeleteSlide(id: String) { scope.launch { events.emit(DeleteSlide(id)) } }
     fun onAddSlide(afterId: String) { scope.launch { events.emit(AddSlide(afterId)) } }
+    fun onMoveSlide(id: String, afterId: String?) { scope.launch { events.emit(MoveSlide(id, afterId)) } }
+    fun onPreviewSlideDrag(slideId: String, afterId: String?) { scope.launch { events.emit(PreviewSlideDrag(slideId, afterId)) } }
+    fun onEndSlideDrag() { scope.launch { events.emit(EndSlideDrag) } }
+    fun onSetSlideSkipped(id: String, skipped: Boolean) { scope.launch { events.emit(SetSlideSkipped(id, skipped)) } }
     fun onCopyElements(ids: List<String>) { scope.launch { events.emit(CopyElements(ids)) } }
     fun onCutElements(ids: List<String>) { scope.launch { events.emit(CutElements(ids)) } }
     fun onCopySlide(id: String) { scope.launch { events.emit(CopySlide(id)) } }

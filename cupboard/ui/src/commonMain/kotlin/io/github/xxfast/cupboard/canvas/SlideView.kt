@@ -1,25 +1,67 @@
 package io.github.xxfast.cupboard.canvas
 
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.isVisibleAt
+
+/** How far the slide number sits off the slide's right and bottom edges, in doc units. */
+private const val SlideNumberInset: Float = 64f
+
+/** The slide number's size in doc units, and its ink: white, well under half opacity. */
+private const val SlideNumberSize: Float = 30f
+private const val SlideNumberColor: Long = 0x99FFFFFF
 
 /**
  * Renders a slide's elements. [step] limits visibility per the build order;
  * null (the editor default) shows everything.
+ *
+ * [number] is this slide's place in the presentation, which only a slide that
+ * asks for it draws. Passed in rather than worked out here: what counts as a
+ * number is the document's business, and a skipped slide has none.
  */
 @Composable
 fun SlideView(
     slide: Slide,
     modifier: Modifier = Modifier,
     step: Int? = null,
+    number: Int? = null,
 ) {
-    SlideSurface(modifier) {
+    SlideSurface(modifier, slideBackground = slide.background) {
         for (element in slide.elements) {
             if (step == null || slide.isVisibleAt(element.id, step)) {
                 ElementView(element)
             }
         }
+        if (slide.showsSlideNumber && number != null) SlideNumberView(number)
     }
+}
+
+/**
+ * The slide number in its corner, over everything the slide draws.
+ *
+ * Internal rather than private: the editor canvas renders its elements itself
+ * and still has to put the same number in the same place.
+ */
+@Composable
+internal fun BoxScope.SlideNumberView(number: Int) {
+    Text(
+        text = number.toString(),
+        style = TextStyle(
+            color = SlideNumberColor.toComposeColor(),
+            fontSize = SlideNumberSize.sp,
+            textAlign = TextAlign.End,
+        ),
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = SlideNumberInset.dp, bottom = SlideNumberInset.dp),
+    )
 }

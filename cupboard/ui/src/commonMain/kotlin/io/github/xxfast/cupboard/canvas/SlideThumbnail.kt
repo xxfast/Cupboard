@@ -23,9 +23,11 @@ fun SlideThumbnail(
     modifier: Modifier = Modifier,
     width: Dp = 150.dp,
     cornerRadius: Dp = 5.dp,
+    number: Int? = null,
 ) {
     SlideView(
         slide = slide,
+        number = number,
         modifier = modifier
             .width(width)
             .aspectRatio(Document.SLIDE_WIDTH / Document.SLIDE_HEIGHT)

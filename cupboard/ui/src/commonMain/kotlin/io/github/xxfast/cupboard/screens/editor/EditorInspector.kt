@@ -42,7 +42,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -64,6 +63,8 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
@@ -76,7 +77,8 @@ import kotlin.math.roundToInt
  * Format is live whenever [selectedElements] isn't empty: the geometry, rotation,
  * opacity, z-order and lock of the selection. With nothing selected it falls back
  * to the design's text mock, which is still a placeholder (text formatting is its
- * own roadmap item). Animate and Slide remain mocks throughout.
+ * own roadmap item). Animate is still a mock, and so is the Slide tab's layout
+ * card; the rest of that tab edits the slide.
  *
  * The "Slide" tab is [InspectorTab.Document]: same pane, per-platform label.
  */
@@ -84,6 +86,9 @@ import kotlin.math.roundToInt
 fun EditorInspector(
     tab: InspectorTab,
     onSelectTab: (InspectorTab) -> Unit,
+    /** The selected slide, which the Slide tab edits. */
+    slide: Slide,
+    onUpdateSlide: (Slide) -> Unit,
     selectedElements: List<Element>,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
@@ -147,7 +152,7 @@ fun EditorInspector(
                 )
 
                 InspectorTab.Animate -> AnimatePanel()
-                InspectorTab.Document -> SlidePanel()
+                InspectorTab.Document -> SlidePanel(slide = slide, onUpdate = onUpdateSlide)
             }
         }
     }
@@ -449,8 +454,16 @@ private fun AnimatePanel() {
     }
 }
 
+/**
+ * The Slide tab: the layout card and its button are still mocks (layouts are
+ * their own roadmap item), the slide number switch and the background are real.
+ *
+ * Every control is stateless against [slide] and commits whole slides through
+ * [onUpdate], one settled edit per tap: there is no continuous colour picker
+ * here, so one tap is one history entry.
+ */
 @Composable
-private fun SlidePanel() {
+private fun SlidePanel(slide: Slide, onUpdate: (Slide) -> Unit) {
     val tokens: ChromeTokens = LocalChromeTokens.current
 
     // Slide layout card.
@@ -482,81 +495,79 @@ private fun SlidePanel() {
     }
 
     SectionLabel("APPEARANCE")
+    // Title and Body are the layout's placeholders, so they wait on layouts.
     AppearanceRow(label = "Title", checked = true)
     AppearanceRow(label = "Body", checked = true)
-    AppearanceRow(label = "Slide Number", checked = false)
+    AppearanceRow(
+        label = "Slide Number",
+        checked = slide.showsSlideNumber,
+        onToggle = { shows -> onUpdate(slide.copy(showsSlideNumber = shows)) },
+    )
 
     PanelDivider()
 
     SectionLabel("BACKGROUND")
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(tokens.segBg)
-            .padding(2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(20.dp))
-                .background(tokens.accent),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp, Alignment.CenterHorizontally),
+    val background: SlideBackground? = slide.background
+    SegmentedRow {
+        Segment(
+            selected = background == null,
+            first = true,
+            onClick = { onUpdate(slide.copy(background = null)) },
         ) {
-            Text("✓", color = tokens.accentText, fontSize = 11.sp)
-            Text("Standard", color = tokens.accentText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            SegmentLabel("Default", selected = background == null, enabled = true)
         }
-        Box(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-            contentAlignment = Alignment.Center,
+        Segment(
+            selected = background is SlideBackground.Color,
+            first = false,
+            // Switching into a mode the slide isn't in yet has to land on some
+            // colour, so it lands on the palette's deep navy.
+            onClick = {
+                if (background !is SlideBackground.Color) {
+                    onUpdate(slide.copy(background = SlideBackground.Color(DEFAULT_FILL)))
+                }
+            },
         ) {
-            Text("Dynamic", color = tokens.subtle, fontSize = 12.sp)
+            SegmentLabel("Color", selected = background is SlideBackground.Color, enabled = true)
         }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .border(1.dp, tokens.outline, RoundedCornerShape(8.dp))
-            .padding(horizontal = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Colour Fill", color = tokens.ctrlText, fontSize = 12.5.sp, modifier = Modifier.weight(1f))
-        Text("⌄", color = tokens.subtle, fontSize = 9.sp)
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Box(
-            Modifier
-                .weight(1f)
-                .height(44.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.White)
-                .border(1.dp, tokens.outline, RoundedCornerShape(8.dp)),
-        )
-        Box(
-            Modifier
-                .size(22.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.sweepGradient(
-                        listOf(
-                            Color(0xFFF0357B),
-                            Color(0xFFFFC24B),
-                            Color(0xFF43C57E),
-                            Color(0xFF3FA9F5),
-                            Color(0xFF7F52FF),
-                            Color(0xFFF0357B),
+        Segment(
+            selected = background is SlideBackground.Gradient,
+            first = false,
+            onClick = {
+                if (background !is SlideBackground.Gradient) {
+                    onUpdate(
+                        slide.copy(
+                            background = SlideBackground.Gradient(DEFAULT_GRADIENT_START, DEFAULT_FILL),
                         ),
-                    ),
-                ),
+                    )
+                }
+            },
+        ) {
+            SegmentLabel("Gradient", selected = background is SlideBackground.Gradient, enabled = true)
+        }
+    }
+
+    when (background) {
+        null -> Unit
+
+        is SlideBackground.Color -> SwatchGrid(
+            selected = background.color,
+            onPick = { color -> onUpdate(slide.copy(background = SlideBackground.Color(color))) },
         )
+
+        is SlideBackground.Gradient -> {
+            // The angle stays at its default: an angle control is a slider, and a
+            // slider is a gesture, which this section has no need of yet.
+            SwatchLabel("Start")
+            SwatchGrid(
+                selected = background.start,
+                onPick = { color -> onUpdate(slide.copy(background = background.copy(start = color))) },
+            )
+            SwatchLabel("End")
+            SwatchGrid(
+                selected = background.end,
+                onPick = { color -> onUpdate(slide.copy(background = background.copy(end = color))) },
+            )
+        }
     }
 
     Row(
@@ -572,12 +583,16 @@ private fun SlidePanel() {
     }
 }
 
-/** One appearance checklist row: an 18dp check square plus its label. */
+/**
+ * One appearance checklist row: an 18dp check square plus its label.
+ * [onToggle] null leaves it inert, which is what the layout placeholders want.
+ */
 @Composable
-private fun AppearanceRow(label: String, checked: Boolean) {
+private fun AppearanceRow(label: String, checked: Boolean, onToggle: ((Boolean) -> Unit)? = null) {
     val tokens: ChromeTokens = LocalChromeTokens.current
 
     Row(
+        modifier = Modifier.clickable(enabled = onToggle != null) { onToggle?.invoke(!checked) },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -592,6 +607,57 @@ private fun AppearanceRow(label: String, checked: Boolean) {
         }
         Text(label, color = tokens.text, fontSize = 13.sp)
     }
+}
+
+/**
+ * The background palette, packed ARGB like the document model: the deck's own
+ * darks first, then the accents it pairs with, then the two lights a slide needs
+ * when it goes inverted. A fixed set, not a picker: the slide is a dark surface
+ * and the point is the handful of colours that still read on it.
+ */
+private val BACKGROUND_SWATCHES: List<Long> = listOf(
+    0xFF000000, 0xFF17181C, 0xFF23262E, 0xFF101223, 0xFF2A2452, 0xFF4C2FA8,
+    0xFF0F3B39, 0xFF10391F, 0xFF58151D, 0xFF6B4A0E, 0xFFD7D9DE, 0xFFFFFFFF,
+)
+
+/** What a slide falls into when it is switched to a background it has no colour for yet. */
+private const val DEFAULT_FILL: Long = 0xFF101223
+private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
+
+/** The palette, six to a row, the current colour ringed. */
+@Composable
+private fun SwatchGrid(selected: Long, onPick: (Long) -> Unit) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (row in BACKGROUND_SWATCHES.chunked(6)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (color in row) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(color))
+                            // The hairline is what keeps a near-black swatch off
+                            // a near-black panel; the ring replaces it when picked.
+                            .border(
+                                width = if (color == selected) 2.dp else 1.dp,
+                                color = if (color == selected) tokens.accent else tokens.outline,
+                                shape = RoundedCornerShape(6.dp),
+                            )
+                            .clickable { onPick(color) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The label over one of the gradient's two grids. */
+@Composable
+private fun SwatchLabel(text: String) {
+    Text(text = text, color = LocalChromeTokens.current.subtle, fontSize = 11.5.sp)
 }
 
 @Composable

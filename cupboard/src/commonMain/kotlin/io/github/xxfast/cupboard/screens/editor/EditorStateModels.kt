@@ -7,6 +7,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
+import io.github.xxfast.cupboard.document.presentationNumbers
 import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
@@ -19,11 +20,28 @@ data class OutlineEntry(
     val title: String,
     val depth: Int,
     val slideIndex: Int,
+    /**
+     * The number the row shows: this slide's place in the presentation, null when
+     * it is skipped and so has no place in one.
+     */
+    val number: Int?,
     val hasChildren: Boolean,
     val collapsed: Boolean,
+    /** Kept in the deck, left out of the presentation. Drawn dimmed, Keynote-style. */
+    val skipped: Boolean = false,
     /** False for a slide hidden inside a collapsed group. Always true in [EditorState.outline]. */
     val visible: Boolean = true,
 )
+
+/**
+ * A navigator row on the move, and the gap the pointer is over: after
+ * [afterId]'s visible row, or above the first row when null.
+ *
+ * View state, but it rides through the loop like the marquee and every other
+ * gesture: a navigator that kept it locally would be writing snapshot state from
+ * a pointer handler, which is what the drag-freeze bug was (see ROADMAP.md).
+ */
+data class SlideDrag(val slideId: String, val afterId: String?)
 
 /**
  * Everything the editor screen shows, as one value.
@@ -87,6 +105,14 @@ data class EditorState(
      * Transient for the same reason as [isPreviewing].
      */
     @Transient val marquee: Frame? = null,
+    /**
+     * The navigator row being dragged and the gap it is over, null when none is.
+     * The marquee's rule at slide granularity: what a drag shows comes back
+     * through the loop, never out of the navigator's own snapshot state.
+     *
+     * Transient for the same reason as [marquee].
+     */
+    @Transient val slideDrag: SlideDrag? = null,
 ) {
     /** The selected slide, falling back to the first one if the id went stale. */
     val selectedSlide: Slide
@@ -149,9 +175,18 @@ data class EditorState(
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
 
     /**
+     * The number the slide with [id] draws on itself: its place in the
+     * presentation, null when it is skipped or when the id doesn't resolve.
+     */
+    fun slideNumber(id: String): Int? {
+        val index: Int = document.slides.indexOfFirst { it.id == id }
+        return if (index == -1) null else document.presentationNumbers()[index]
+    }
+
+    /**
      * Navigator rows, collapse rules already applied: a collapsed slide hides the
      * following run of deeper slides. [OutlineEntry.slideIndex] is the absolute
-     * index, so numbering (index + 1) survives collapsing.
+     * index, so collapsing shuffles no row's place in the deck.
      */
     fun outline(): List<OutlineEntry> = fullOutline().filter { entry -> entry.visible }
 
@@ -162,6 +197,7 @@ data class EditorState(
      */
     fun fullOutline(): List<OutlineEntry> {
         val visibleIndices: Set<Int> = document.visibleIndices().toSet()
+        val numbers: List<Int?> = document.presentationNumbers()
 
         return document.slides.mapIndexed { index, slide ->
             OutlineEntry(
@@ -169,8 +205,10 @@ data class EditorState(
                 title = slide.title,
                 depth = slide.depth,
                 slideIndex = index,
+                number = numbers[index],
                 hasChildren = document.hasChildren(index),
                 collapsed = slide.collapsed,
+                skipped = slide.skipped,
                 visible = index in visibleIndices,
             )
         }
@@ -294,6 +332,31 @@ sealed interface EditorEvent {
      * means everywhere it appears. An id that doesn't resolve adds nothing.
      */
     data class AddSlide(val afterId: String) : EditorEvent
+    /**
+     * A dropped slide drag: the row [id] names lands in the gap under [afterId],
+     * null being the gap above the first row.
+     *
+     * A collapsed row travels with what it hides and an expanded one lets its
+     * children out, per Document.moveSlide, which also decides the depth it
+     * lands at. One history entry, the moved slide selected, and the drag
+     * cleared either way: a drop that changes nothing is still a drop, it just
+     * costs no history entry.
+     */
+    data class MoveSlide(val id: String, val afterId: String?) : EditorEvent
+    /**
+     * An in-flight slide drag sample: keeps the gap for the navigator to draw
+     * its drop line at. Touches no document and makes no history entry, unlike
+     * the element previews: a slide is only moved once, on release.
+     */
+    data class PreviewSlideDrag(val slideId: String, val afterId: String?) : EditorEvent
+    /** The drag is over without a drop, cancelled or let go outside: the gap goes. */
+    data object EndSlideDrag : EditorEvent
+    /**
+     * Takes the slide in or out of the presentation. Per slide, not per row: a
+     * collapsed parent's hidden run keeps its own answer. One history entry, and
+     * a slide already like this is a no-op.
+     */
+    data class SetSlideSkipped(val id: String, val skipped: Boolean) : EditorEvent
     /**
      * Puts the elements [ids] resolves to on the clipboard, in z-order rather
      * than selection order: the slide's order is the one a paste has to keep.

@@ -26,6 +26,7 @@ import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -73,6 +74,15 @@ private val INSPECTOR = 282.dp
 private val TOOLBAR = 52.dp
 private val NOTES = 122.dp
 
+/**
+ * What a background control commits when the slide is not wearing that kind of
+ * background yet: the deck's own ink, so switching kinds shows something
+ * deliberate rather than the first swatch of a palette.
+ */
+private const val DEFAULT_BACKGROUND_COLOR: Long = 0xFF101223
+private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
+private const val DEFAULT_GRADIENT_END: Long = 0xFF101223
+
 /** macOS 15 is where the frame-resize cursors landed; the app still runs on 14. */
 private val macOsMajorVersion: Long =
     NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion }
@@ -114,6 +124,14 @@ class OutlineRow(
     val slideIndex: Int,
     val hasChildren: Boolean,
     val collapsed: Boolean,
+    /**
+     * The row's place in the presentation as the gutter draws it, empty for a
+     * skipped slide: it is in the deck but has no place in the presentation.
+     * Text rather than a number, so the shell has no null to spell.
+     */
+    val numberLabel: String,
+    /** Kept in the deck, left out of the presentation. Drawn dimmed, Keynote-style. */
+    val skipped: Boolean,
 )
 
 /**
@@ -214,7 +232,9 @@ class EditorHost {
      * are the same flow, so an edit made in Compose shows up here too. */
     private val state: EditorState get() = viewModel.states.value
 
-    private class Thumbnail(val slide: Slide, val width: Int, val image: NSImage)
+    // The number is part of the cache key, not just the slide: skipping an
+    // earlier slide renumbers every row after it without touching one of them.
+    private class Thumbnail(val slide: Slide, val number: Int?, val width: Int, val image: NSImage)
 
     private val thumbnails = mutableMapOf<String, Thumbnail>()
 
@@ -272,6 +292,10 @@ class EditorHost {
                     modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
                     else Modifier.fillMaxSize(),
                     zoom = scale,
+                    // What the slide draws on itself, when it asks to: its place
+                    // in the presentation is the document's to work out, not the
+                    // canvas's.
+                    number = state.slideNumber(state.selectedSlide.id),
                 )
             }
         }
@@ -297,6 +321,8 @@ class EditorHost {
             slideIndex = entry.slideIndex,
             hasChildren = entry.hasChildren,
             collapsed = entry.collapsed,
+            numberLabel = entry.number?.toString() ?: "",
+            skipped = entry.skipped,
         )
     }
 
@@ -663,6 +689,23 @@ class EditorHost {
         viewModel.onPaste()
     }
 
+    /**
+     * A dropped navigator drag: the row [id] names lands in the gap under
+     * [afterId], null being the gap above the first row. A drop onto the row's
+     * own gap costs no history entry, so the shell may send every drop.
+     */
+    fun moveSlide(id: String, afterId: String?) {
+        viewModel.onMoveSlide(id, afterId)
+    }
+
+    /** Whether the slide is out of the presentation, for a menu item's title. */
+    fun isSlideSkipped(id: String): Boolean =
+        state.document.slides.firstOrNull { it.id == id }?.skipped == true
+
+    fun setSlideSkipped(id: String, skipped: Boolean) {
+        viewModel.onSetSlideSkipped(id, skipped)
+    }
+
     /** The same verbs against the selected slide, for the Slide menu. */
     fun addSlideAfterSelection() {
         addSlideAfter(state.selectedSlide.id)
@@ -678,6 +721,70 @@ class EditorHost {
 
     fun duplicateSelectedSlide() {
         duplicateSlide(state.selectedSlide.id)
+    }
+
+    fun isSelectedSlideSkipped(): Boolean = state.selectedSlide.skipped
+
+    fun toggleSelectedSlideSkipped() {
+        val slide: Slide = state.selectedSlide
+        setSlideSkipped(slide.id, !slide.skipped)
+    }
+
+    /**
+     * The selected slide's own properties, for the Document inspector. Primitives
+     * rather than the slide itself, the way [ElementProps] is: a shell holding a
+     * [Slide] could edit its way around anything the core decides.
+     *
+     * Every setter commits through `UpdateSlide`, so one click is one history
+     * entry, and each resolves the selected slide at call time.
+     */
+    fun slideNumberVisible(): Boolean = state.selectedSlide.showsSlideNumber
+
+    fun setSlideNumberVisible(visible: Boolean) {
+        val slide: Slide = state.selectedSlide
+        if (slide.showsSlideNumber == visible) return
+        viewModel.onUpdateSlide(slide.copy(showsSlideNumber = visible))
+    }
+
+    /** What the slide paints behind its elements: 0 the deck's own, 1 color, 2 gradient. */
+    fun backgroundKind(): Int = when (state.selectedSlide.background) {
+        null -> 0
+        is SlideBackground.Color -> 1
+        is SlideBackground.Gradient -> 2
+    }
+
+    /**
+     * The colors the background controls show, packed ARGB. A slide wearing
+     * something else answers with the value the shell would commit if it switched
+     * to this kind, so switching never has to invent one of its own.
+     */
+    fun backgroundColor(): Long =
+        (state.selectedSlide.background as? SlideBackground.Color)?.color ?: DEFAULT_BACKGROUND_COLOR
+
+    fun backgroundGradientStart(): Long =
+        (state.selectedSlide.background as? SlideBackground.Gradient)?.start ?: DEFAULT_GRADIENT_START
+
+    fun backgroundGradientEnd(): Long =
+        (state.selectedSlide.background as? SlideBackground.Gradient)?.end ?: DEFAULT_GRADIENT_END
+
+    /** Back to the deck's own background: the slide stops carrying one at all. */
+    fun setBackgroundDefault() {
+        setBackground(null)
+    }
+
+    fun setBackgroundColor(argb: Long) {
+        setBackground(SlideBackground.Color(argb))
+    }
+
+    /** The angle stays the model's, which is the deck's own: only the stops are the shell's. */
+    fun setBackgroundGradient(start: Long, end: Long) {
+        setBackground(SlideBackground.Gradient(start, end))
+    }
+
+    private fun setBackground(background: SlideBackground?) {
+        val slide: Slide = state.selectedSlide
+        if (slide.background == background) return
+        viewModel.onUpdateSlide(slide.copy(background = background))
     }
 
     /**
@@ -729,15 +836,16 @@ class EditorHost {
      */
     fun thumbnail(index: Int, width: Int): NSImage? {
         val slide = state.document.allSlides().getOrNull(index) ?: return null
+        val number: Int? = state.slideNumber(slide.id)
         val cached = thumbnails[slide.id]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
         val usable = cached != null && cached.width == width &&
-            (cached.slide == slide || state.isPreviewing)
+            ((cached.slide == slide && cached.number == number) || state.isPreviewing)
         if (usable) return cached.image
 
         val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
-            SlideView(slide)
+            SlideView(slide, number = number)
         }
         val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: return null
         val nsData = png.usePinned { pinned ->
@@ -747,7 +855,7 @@ class EditorHost {
             setSize(NSMakeSize(width.toDouble(), height.toDouble()))
         } ?: return null
 
-        thumbnails[slide.id] = Thumbnail(slide, width, image)
+        thumbnails[slide.id] = Thumbnail(slide, number, width, image)
         return image
     }
 

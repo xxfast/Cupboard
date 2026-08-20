@@ -102,6 +102,10 @@ fun EditorScreen(
             }
         },
         onShowSlideContextMenu = onShowSlideContextMenu,
+        onPreviewSlideDrag = viewModel::onPreviewSlideDrag,
+        onMoveSlide = viewModel::onMoveSlide,
+        onEndSlideDrag = viewModel::onEndSlideDrag,
+        onUpdateSlide = viewModel::onUpdateSlide,
         onPreviewMarquee = viewModel::onPreviewMarquee,
         onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
@@ -130,6 +134,7 @@ fun EditorView(
     onPreviewMarquee: (Frame) -> Unit,
     onEndMarquee: () -> Unit,
     onCancelPreview: () -> Unit,
+    onUpdateSlide: (Slide) -> Unit,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
     onReorderElements: (List<String>, ZOrderMove) -> Unit,
@@ -149,6 +154,11 @@ fun EditorView(
     slideMenuSections: (slideId: String) -> List<EditorMenuSection> = { emptyList() },
     /** [onShowContextMenu]'s counterpart for the navigator. */
     onShowSlideContextMenu: ((slideId: String, positionInWindow: Offset) -> Unit)? = null,
+    /** A navigator drag reporting the gap it is over, its drop, and its cancel.
+     * What the drag draws is [EditorState.slideDrag], which these three feed. */
+    onPreviewSlideDrag: (slideId: String, afterId: String?) -> Unit = { _, _ -> },
+    onMoveSlide: (slideId: String, afterId: String?) -> Unit = { _, _ -> },
+    onEndSlideDrag: () -> Unit = {},
     onPlay: ((Document, Int) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
@@ -211,6 +221,10 @@ fun EditorView(
                                     native(slideId, positionInWindow)
                                 }
                             },
+                            slideDrag = state.slideDrag,
+                            onPreviewSlideDrag = onPreviewSlideDrag,
+                            onMoveSlide = onMoveSlide,
+                            onEndSlideDrag = onEndSlideDrag,
                             modifier = Modifier.onGloballyPositioned { navigatorCoords = it },
                         )
 
@@ -264,6 +278,7 @@ fun EditorView(
                                 onPreviewElements = onPreviewElements,
                                 onPreviewCancel = onCancelPreview,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
+                                number = state.slideNumber(selectedSlide.id),
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .onGloballyPositioned { canvasCoords = it },
@@ -292,6 +307,8 @@ fun EditorView(
                     if (state.inspectorOpen) EditorInspector(
                         tab = state.inspectorTab,
                         onSelectTab = onSelectInspectorTab,
+                        slide = selectedSlide,
+                        onUpdateSlide = onUpdateSlide,
                         selectedElements = state.selectedElements,
                         onUpdateElements = onUpdateElements,
                         onPreviewElements = onPreviewElements,

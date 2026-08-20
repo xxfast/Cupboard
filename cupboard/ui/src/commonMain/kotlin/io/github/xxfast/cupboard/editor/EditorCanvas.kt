@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
+import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
@@ -103,6 +104,8 @@ fun EditorCanvas(
     onContextClick: (elementId: String?, position: Offset) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     zoom: Float? = null,
+    /** The slide's place in the presentation, drawn only when the slide asks for it. */
+    number: Int? = null,
 ) {
     val currentSlide by rememberUpdatedState(slide)
     val currentSelection by rememberUpdatedState(selectedElementIds)
@@ -125,8 +128,13 @@ fun EditorCanvas(
     var canvasBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var slideBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
-    SlideSurface(modifier.onGloballyPositioned { canvasBounds = it }, zoom = zoom) {
+    SlideSurface(
+        modifier.onGloballyPositioned { canvasBounds = it },
+        slideBackground = slide.background,
+        zoom = zoom,
+    ) {
         for (element in slide.elements) ElementView(element)
+        if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 
         // Editing affordances hold constant screen size at any zoom: authored
         // sizes are divided by the canvas scale, positions stay in doc units.

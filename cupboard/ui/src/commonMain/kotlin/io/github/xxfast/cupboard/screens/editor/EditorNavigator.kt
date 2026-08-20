@@ -11,6 +11,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,16 +29,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -48,6 +53,7 @@ import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -67,6 +73,11 @@ import io.github.xxfast.cupboard.theme.LocalChromeTokens
  * [onContextClick] is a right-click on a row, with the row's id and where the
  * press landed in window coordinates: this panel only reports it, what opens
  * there is the screen's business.
+ *
+ * Rows reorder by drag. What the drag *shows* comes from [slideDrag] alone:
+ * the gesture reports the gap it is over through [onPreviewSlideDrag] and the
+ * answer arrives back through the state, because a navigator that drew from its
+ * own pointer-handler writes is exactly the drag-freeze bug (see ROADMAP.md).
  */
 @Composable
 fun EditorNavigator(
@@ -77,8 +88,35 @@ fun EditorNavigator(
     onToggleCollapsed: (String) -> Unit,
     thumbnailRadius: Dp,
     onContextClick: (slideId: String, positionInWindow: Offset) -> Unit = { _, _ -> },
+    /** The row on the move and the gap it is over, null when nothing is dragging. */
+    slideDrag: SlideDrag? = null,
+    onPreviewSlideDrag: (slideId: String, afterId: String?) -> Unit = { _, _ -> },
+    onMoveSlide: (slideId: String, afterId: String?) -> Unit = { _, _ -> },
+    onEndSlideDrag: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    // Layout data, not gesture state: where each visible row sits, so a drag can
+    // name the gap under the pointer. A plain map on purpose, nothing draws from
+    // it, and a snapshot map here would invalidate the whole panel every layout.
+    val midpoints: MutableMap<String, Float> = remember { mutableMapOf() }
+    // Only visible rows anchor a gap: a row inside a collapsed group has no
+    // place on screen to drop next to.
+    val rows: List<OutlineEntry> = entries.filter { it.visible }
+
+    /** The gap [windowY] is over: after the last visible row whose midpoint it
+     * has passed, null above the first row's midpoint. */
+    fun gapAt(windowY: Float): String? {
+        var afterId: String? = null
+        for (row in rows) {
+            val midpoint: Float = midpoints[row.slideId] ?: continue
+            if (midpoint >= windowY) break
+            afterId = row.slideId
+        }
+        return afterId
+    }
+
+    val firstVisibleId: String? = rows.firstOrNull()?.slideId
+
     Column(
         modifier = modifier
             .width(224.dp)
@@ -103,37 +141,85 @@ fun EditorNavigator(
                     entry = entry,
                     selected = selected,
                     thumbnailRadius = thumbnailRadius,
+                    dragged = slideDrag?.slideId == entry.slideId,
+                    // The gap sits between rows, so the row above it draws its
+                    // half and the topmost row draws the one above itself.
+                    dropAbove = slideDrag != null &&
+                        slideDrag.afterId == null &&
+                        entry.slideId == firstVisibleId,
+                    dropBelow = slideDrag != null && slideDrag.afterId == entry.slideId,
                     onSelectSlide = onSelectSlide,
                     onToggleCollapsed = onToggleCollapsed,
                     onContextClick = onContextClick,
+                    onMidpoint = { midpoint -> midpoints[entry.slideId] = midpoint },
+                    onGapAt = ::gapAt,
+                    onPreviewSlideDrag = onPreviewSlideDrag,
+                    onMoveSlide = onMoveSlide,
+                    onEndSlideDrag = onEndSlideDrag,
                 )
             }
         }
     }
 }
 
+/**
+ * One navigator row. [dropAbove] and [dropBelow] are the drag's drop line, and
+ * [dragged] the picked-up row: all three come from the state, never from this
+ * row's own reading of the pointer.
+ *
+ * [onGapAt] answers what gap a window y is over; [onMidpoint] reports where this
+ * row sits so it can.
+ */
 @Composable
 private fun NavigatorRow(
     slide: Slide,
     entry: OutlineEntry,
     selected: Boolean,
     thumbnailRadius: Dp,
+    dragged: Boolean,
+    dropAbove: Boolean,
+    dropBelow: Boolean,
     onSelectSlide: (String) -> Unit,
     onToggleCollapsed: (String) -> Unit,
     onContextClick: (slideId: String, positionInWindow: Offset) -> Unit,
+    onMidpoint: (windowY: Float) -> Unit,
+    onGapAt: (windowY: Float) -> String?,
+    onPreviewSlideDrag: (slideId: String, afterId: String?) -> Unit,
+    onMoveSlide: (slideId: String, afterId: String?) -> Unit,
+    onEndSlideDrag: () -> Unit,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
     // Each row places itself, so the press it reports is already in the
     // coordinates a menu anywhere in the window can be hung from.
     var coordinates: LayoutCoordinates? by remember { mutableStateOf(null) }
+    // The gesture loop outlives the composition that started it, so it reads the
+    // freshest callbacks rather than the ones the drag began with.
+    val gapAt: (Float) -> String? by rememberUpdatedState(onGapAt)
+    val preview: (String, String?) -> Unit by rememberUpdatedState(onPreviewSlideDrag)
+    val commit: (String, String?) -> Unit by rememberUpdatedState(onMoveSlide)
+    val cancel: () -> Unit by rememberUpdatedState(onEndSlideDrag)
+    // A skipped row keeps its place in the deck but not in the presentation, and
+    // a picked-up one is on its way elsewhere: both read as half-there.
+    val alpha: Float = if (entry.skipped || dragged) 0.4f else 1f
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // Outside the bottom gap's padding, so the drop line can be drawn in
+            // the gap it names without taking a pixel of layout to do it.
+            .drawWithContent {
+                drawContent()
+                val stroke: Float = 2.dp.toPx()
+                if (dropAbove) drawDropLine(tokens.accent, stroke / 2f, stroke)
+                if (dropBelow) drawDropLine(tokens.accent, size.height - 3.dp.toPx(), stroke)
+            }
             .padding(bottom = 6.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(if (selected) tokens.rowHov else Color.Transparent)
-            .onGloballyPositioned { coordinates = it }
+            .onGloballyPositioned {
+                coordinates = it
+                onMidpoint(it.positionInWindow().y + it.size.height / 2f)
+            }
             .pointerInput(entry.slideId) {
                 awaitPointerEventScope {
                     while (true) {
@@ -160,6 +246,35 @@ private fun NavigatorRow(
                     }
                 }
             }
+            // Straight to the drag, no long press: this is a pointer app first.
+            .pointerInput(entry.slideId) {
+                // Plain locals, deliberately: what the drag draws comes back
+                // through the state, this only remembers what it last said, so
+                // there is no snapshot write in a pointer handler to lose.
+                var dragging: Boolean = false
+                var afterId: String? = null
+                detectDragGestures(
+                    onDragEnd = {
+                        if (dragging) commit(entry.slideId, afterId)
+                        dragging = false
+                    },
+                    onDragCancel = {
+                        if (dragging) cancel()
+                        dragging = false
+                    },
+                ) { change, _ ->
+                    change.consume()
+                    val windowY: Float = coordinates?.localToWindow(change.position)?.y
+                        ?: return@detectDragGestures
+                    val gap: String? = gapAt(windowY)
+                    // One preview per gap entered, not per pointer sample.
+                    if (!dragging || gap != afterId) {
+                        dragging = true
+                        afterId = gap
+                        preview(entry.slideId, gap)
+                    }
+                }
+            }
             .clickable { onSelectSlide(entry.slideId) }
             .padding(top = 5.dp, bottom = 5.dp, end = 6.dp),
         verticalAlignment = Alignment.Top,
@@ -179,11 +294,14 @@ private fun NavigatorRow(
             if (entry.hasChildren) DisclosureChevron(collapsed = entry.collapsed)
         }
         Row(
-            modifier = Modifier.padding(start = (entry.depth * 12).dp),
+            modifier = Modifier.padding(start = (entry.depth * 12).dp).alpha(alpha),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "${entry.slideIndex + 1}",
+                // The presentation number, so a skipped row shows none at all.
+                // The gutter keeps its width either way, or every row below a
+                // skipped one would step sideways.
+                text = entry.number?.toString().orEmpty(),
                 color = tokens.subtle,
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
@@ -202,6 +320,17 @@ private fun NavigatorRow(
             )
         }
     }
+}
+
+/** The drop indicator: a 2dp accent rule across the row at [y]. */
+private fun DrawScope.drawDropLine(color: Color, y: Float, stroke: Float) {
+    drawLine(
+        color = color,
+        start = Offset(0f, y),
+        end = Offset(size.width, y),
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+    )
 }
 
 /**
