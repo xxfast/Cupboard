@@ -691,11 +691,12 @@ class EditorHost {
 
     /**
      * A dropped navigator drag: the row [id] names lands in the gap under
-     * [afterId], null being the gap above the first row. A drop onto the row's
-     * own gap costs no history entry, so the shell may send every drop.
+     * [afterId], null being the gap above the first row, or under [afterId]
+     * itself when [nest]. A drop onto the row's own gap costs no history entry,
+     * so the shell may send every drop.
      */
-    fun moveSlide(id: String, afterId: String?) {
-        viewModel.onMoveSlide(id, afterId)
+    fun moveSlide(id: String, afterId: String?, nest: Boolean) {
+        viewModel.onMoveSlide(id, afterId, nest)
     }
 
     /** Whether the slide is out of the presentation, for a menu item's title. */

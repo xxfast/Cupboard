@@ -37,7 +37,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -51,6 +53,7 @@ import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -74,9 +77,10 @@ import io.github.xxfast.cupboard.theme.LocalChromeTokens
  * press landed in window coordinates: this panel only reports it, what opens
  * there is the screen's business.
  *
- * Rows reorder by drag. What the drag *shows* comes from [slideDrag] alone:
- * the gesture reports the gap it is over through [onPreviewSlideDrag] and the
- * answer arrives back through the state, because a navigator that drew from its
+ * Rows reorder by drag. A row's body nests the drop under it, its top and
+ * bottom quarters name the gaps either side. What the drag *shows* comes from
+ * [slideDrag] alone: the gesture reports the spot it is over through
+ * [onPreviewSlideDrag] and the answer arrives back through the state, because a navigator that drew from its
  * own pointer-handler writes is exactly the drag-freeze bug (see ROADMAP.md).
  */
 @Composable
@@ -90,29 +94,37 @@ fun EditorNavigator(
     onContextClick: (slideId: String, positionInWindow: Offset) -> Unit = { _, _ -> },
     /** The row on the move and the gap it is over, null when nothing is dragging. */
     slideDrag: SlideDrag? = null,
-    onPreviewSlideDrag: (slideId: String, afterId: String?) -> Unit = { _, _ -> },
-    onMoveSlide: (slideId: String, afterId: String?) -> Unit = { _, _ -> },
+    onPreviewSlideDrag: (slideId: String, afterId: String?, nest: Boolean) -> Unit = { _, _, _ -> },
+    onMoveSlide: (slideId: String, afterId: String?, nest: Boolean) -> Unit = { _, _, _ -> },
     onEndSlideDrag: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Layout data, not gesture state: where each visible row sits, so a drag can
-    // name the gap under the pointer. A plain map on purpose, nothing draws from
+    // name the spot under the pointer. A plain map on purpose, nothing draws from
     // it, and a snapshot map here would invalidate the whole panel every layout.
-    val midpoints: MutableMap<String, Float> = remember { mutableMapOf() }
-    // Only visible rows anchor a gap: a row inside a collapsed group has no
+    val bounds: MutableMap<String, ClosedFloatingPointRange<Float>> = remember { mutableMapOf() }
+    // Only visible rows anchor a drop: a row inside a collapsed group has no
     // place on screen to drop next to.
     val rows: List<OutlineEntry> = entries.filter { it.visible }
 
-    /** The gap [windowY] is over: after the last visible row whose midpoint it
-     * has passed, null above the first row's midpoint. */
-    fun gapAt(windowY: Float): String? {
+    /**
+     * The spot [windowY] is over. Inside the middle half of a row that is not
+     * itself on the move, the row: the drop nests under it. Otherwise the gap
+     * after the last row whose midpoint it has passed, null above the first.
+     */
+    fun spotAt(windowY: Float, draggedId: String): DropSpot {
+        val dragged: Set<String> = draggedRun(entries, draggedId)
         var afterId: String? = null
         for (row in rows) {
-            val midpoint: Float = midpoints[row.slideId] ?: continue
-            if (midpoint >= windowY) break
+            val range: ClosedFloatingPointRange<Float> = bounds[row.slideId] ?: continue
+            val quarter: Float = (range.endInclusive - range.start) / 4f
+            if (row.slideId !in dragged && windowY in range.start + quarter..range.endInclusive - quarter) {
+                return DropSpot(row.slideId, nest = true)
+            }
+            if (range.start + 2 * quarter >= windowY) break
             afterId = row.slideId
         }
-        return afterId
+        return DropSpot(afterId, nest = false)
     }
 
     val firstVisibleId: String? = rows.firstOrNull()?.slideId
@@ -149,17 +161,23 @@ fun EditorNavigator(
                     // The gap sits between rows, so the row above it draws its
                     // half and the topmost row draws the one above itself.
                     dropAbove = slideDrag != null &&
+                        !slideDrag.nest &&
                         slideDrag.afterId == null &&
                         entry.slideId == firstVisibleId &&
                         entry.slideId !in draggedIds,
                     dropBelow = slideDrag != null &&
+                        !slideDrag.nest &&
+                        slideDrag.afterId == entry.slideId &&
+                        entry.slideId !in draggedIds,
+                    dropOnto = slideDrag != null &&
+                        slideDrag.nest &&
                         slideDrag.afterId == entry.slideId &&
                         entry.slideId !in draggedIds,
                     onSelectSlide = onSelectSlide,
                     onToggleCollapsed = onToggleCollapsed,
                     onContextClick = onContextClick,
-                    onMidpoint = { midpoint -> midpoints[entry.slideId] = midpoint },
-                    onGapAt = ::gapAt,
+                    onBounds = { range -> bounds[entry.slideId] = range },
+                    onSpotAt = ::spotAt,
                     onPreviewSlideDrag = onPreviewSlideDrag,
                     onMoveSlide = onMoveSlide,
                     onEndSlideDrag = onEndSlideDrag,
@@ -168,6 +186,12 @@ fun EditorNavigator(
         }
     }
 }
+
+/**
+ * Where a drag is: the gap under [afterId] (null for the one above the first
+ * row), or [afterId]'s own row when [nest], which drops the slide under it.
+ */
+private data class DropSpot(val afterId: String?, val nest: Boolean)
 
 /** [slideId]'s entry and the run of deeper entries after it; empty for null. */
 private fun draggedRun(entries: List<OutlineEntry>, slideId: String?): Set<String> {
@@ -184,12 +208,12 @@ private fun draggedRun(entries: List<OutlineEntry>, slideId: String?): Set<Strin
 }
 
 /**
- * One navigator row. [dropAbove] and [dropBelow] are the drag's drop line, and
- * [dragged] the picked-up row: all three come from the state, never from this
- * row's own reading of the pointer.
+ * One navigator row. [dropAbove] and [dropBelow] are the drag's drop line,
+ * [dropOnto] its nest ring, and [dragged] the picked-up row: all four come from
+ * the state, never from this row's own reading of the pointer.
  *
- * [onGapAt] answers what gap a window y is over; [onMidpoint] reports where this
- * row sits so it can.
+ * [onSpotAt] answers what spot a window y is over for a given dragged slide;
+ * [onBounds] reports where this row sits so it can.
  */
 @Composable
 private fun NavigatorRow(
@@ -200,24 +224,26 @@ private fun NavigatorRow(
     dragged: Boolean,
     dropAbove: Boolean,
     dropBelow: Boolean,
+    dropOnto: Boolean,
     onSelectSlide: (String) -> Unit,
     onToggleCollapsed: (String) -> Unit,
     onContextClick: (slideId: String, positionInWindow: Offset) -> Unit,
-    onMidpoint: (windowY: Float) -> Unit,
-    onGapAt: (windowY: Float) -> String?,
-    onPreviewSlideDrag: (slideId: String, afterId: String?) -> Unit,
-    onMoveSlide: (slideId: String, afterId: String?) -> Unit,
+    onBounds: (windowRange: ClosedFloatingPointRange<Float>) -> Unit,
+    onSpotAt: (windowY: Float, draggedId: String) -> DropSpot,
+    onPreviewSlideDrag: (slideId: String, afterId: String?, nest: Boolean) -> Unit,
+    onMoveSlide: (slideId: String, afterId: String?, nest: Boolean) -> Unit,
     onEndSlideDrag: () -> Unit,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
+    val gap: Float = with(LocalDensity.current) { 6.dp.toPx() }
     // Each row places itself, so the press it reports is already in the
     // coordinates a menu anywhere in the window can be hung from.
     var coordinates: LayoutCoordinates? by remember { mutableStateOf(null) }
     // The gesture loop outlives the composition that started it, so it reads the
     // freshest callbacks rather than the ones the drag began with.
-    val gapAt: (Float) -> String? by rememberUpdatedState(onGapAt)
-    val preview: (String, String?) -> Unit by rememberUpdatedState(onPreviewSlideDrag)
-    val commit: (String, String?) -> Unit by rememberUpdatedState(onMoveSlide)
+    val spotAt: (Float, String) -> DropSpot by rememberUpdatedState(onSpotAt)
+    val preview: (String, String?, Boolean) -> Unit by rememberUpdatedState(onPreviewSlideDrag)
+    val commit: (String, String?, Boolean) -> Unit by rememberUpdatedState(onMoveSlide)
     val cancel: () -> Unit by rememberUpdatedState(onEndSlideDrag)
     // A skipped row keeps its place in the deck but not in the presentation, and
     // a picked-up one is on its way elsewhere: both read as half-there.
@@ -233,13 +259,25 @@ private fun NavigatorRow(
                 val stroke: Float = 2.dp.toPx()
                 if (dropAbove) drawDropLine(tokens.accent, stroke / 2f, stroke)
                 if (dropBelow) drawDropLine(tokens.accent, size.height - 3.dp.toPx(), stroke)
+                // The nest ring hugs the capsule, inside the bottom gap.
+                if (dropOnto) {
+                    drawRoundRect(
+                        color = tokens.accent,
+                        topLeft = Offset(stroke / 2f, stroke / 2f),
+                        size = Size(size.width - stroke, size.height - 6.dp.toPx() - stroke),
+                        cornerRadius = CornerRadius(9.dp.toPx()),
+                        style = Stroke(stroke),
+                    )
+                }
             }
             .padding(bottom = 6.dp)
             .clip(RoundedCornerShape(9.dp))
             .background(if (selected) tokens.rowHov else Color.Transparent)
             .onGloballyPositioned {
                 coordinates = it
-                onMidpoint(it.positionInWindow().y + it.size.height / 2f)
+                val top: Float = it.positionInWindow().y
+                // The capsule's extent, without the bottom gap the row carries.
+                onBounds(top..top + it.size.height - gap)
             }
             .pointerInput(entry.slideId) {
                 awaitPointerEventScope {
@@ -273,26 +311,28 @@ private fun NavigatorRow(
                 // through the state, this only remembers what it last said, so
                 // there is no snapshot write in a pointer handler to lose.
                 var dragging: Boolean = false
-                var afterId: String? = null
+                var spot: DropSpot? = null
                 detectDragGestures(
                     onDragEnd = {
-                        if (dragging) commit(entry.slideId, afterId)
+                        spot?.let { commit(entry.slideId, it.afterId, it.nest) }
                         dragging = false
+                        spot = null
                     },
                     onDragCancel = {
                         if (dragging) cancel()
                         dragging = false
+                        spot = null
                     },
                 ) { change, _ ->
                     change.consume()
                     val windowY: Float = coordinates?.localToWindow(change.position)?.y
                         ?: return@detectDragGestures
-                    val gap: String? = gapAt(windowY)
-                    // One preview per gap entered, not per pointer sample.
-                    if (!dragging || gap != afterId) {
+                    val here: DropSpot = spotAt(windowY, entry.slideId)
+                    // One preview per spot entered, not per pointer sample.
+                    if (!dragging || here != spot) {
                         dragging = true
-                        afterId = gap
-                        preview(entry.slideId, gap)
+                        spot = here
+                        preview(entry.slideId, here.afterId, here.nest)
                     }
                 }
             }

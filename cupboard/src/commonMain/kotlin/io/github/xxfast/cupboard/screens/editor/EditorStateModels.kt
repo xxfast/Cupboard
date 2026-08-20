@@ -41,7 +41,12 @@ data class OutlineEntry(
  * gesture: a navigator that kept it locally would be writing snapshot state from
  * a pointer handler, which is what the drag-freeze bug was (see ROADMAP.md).
  */
-data class SlideDrag(val slideId: String, val afterId: String?)
+data class SlideDrag(
+    val slideId: String,
+    val afterId: String?,
+    /** Over [afterId]'s row body rather than the gap under it: the drop nests. */
+    val nest: Boolean = false,
+)
 
 /**
  * Everything the editor screen shows, as one value.
@@ -342,13 +347,13 @@ sealed interface EditorEvent {
      * cleared either way: a drop that changes nothing is still a drop, it just
      * costs no history entry.
      */
-    data class MoveSlide(val id: String, val afterId: String?) : EditorEvent
+    data class MoveSlide(val id: String, val afterId: String?, val nest: Boolean = false) : EditorEvent
     /**
      * An in-flight slide drag sample: keeps the gap for the navigator to draw
      * its drop line at. Touches no document and makes no history entry, unlike
      * the element previews: a slide is only moved once, on release.
      */
-    data class PreviewSlideDrag(val slideId: String, val afterId: String?) : EditorEvent
+    data class PreviewSlideDrag(val slideId: String, val afterId: String?, val nest: Boolean = false) : EditorEvent
     /** The drag is over without a drop, cancelled or let go outside: the gap goes. */
     data object EndSlideDrag : EditorEvent
     /**

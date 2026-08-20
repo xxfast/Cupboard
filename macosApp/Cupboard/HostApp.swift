@@ -1043,7 +1043,9 @@ private struct SlideDrag: Equatable {
     let slideId: String
     /// The row the drop lands after, nil for the gap above the first row.
     let afterId: String?
-    /// Where the drop line draws, in [NavigatorSpace].
+    /// Over `afterId`'s own row rather than the gap under it: the drop nests.
+    let nest: Bool
+    /// Where the drop line draws, in [NavigatorSpace]. Unused when nesting.
     let lineY: CGFloat
 }
 
@@ -1170,6 +1172,7 @@ private struct EditorView: View {
                         row: row,
                         selected: row.slideIndex == selected,
                         dragging: dragged.contains(row.slideId),
+                        nestTarget: slideDrag?.nest == true && slideDrag?.afterId == row.slideId,
                         palette: palette,
                         host: host,
                         onDrag: { point in dragSlide(row, to: point, rows: rows) },
@@ -1191,11 +1194,14 @@ private struct EditorView: View {
     /// The dragged row and every row nested under it: a parent drags as a group
     /// (`moveSlide` lands it as one), so the whole run steps back together.
     private func draggedRun(in rows: [OutlineRow]) -> Set<String> {
-        guard let drag = slideDrag,
-              let start = rows.firstIndex(where: { $0.slideId == drag.slideId })
-        else { return [] }
+        guard let drag = slideDrag else { return [] }
+        return draggedRun(in: rows, from: drag.slideId)
+    }
+
+    private func draggedRun(in rows: [OutlineRow], from slideId: String) -> Set<String> {
+        guard let start = rows.firstIndex(where: { $0.slideId == slideId }) else { return [] }
         let depth = rows[start].depth
-        var ids: Set<String> = [drag.slideId]
+        var ids: Set<String> = [slideId]
         for row in rows[(start + 1)...] {
             if row.depth <= depth { break }
             ids.insert(row.slideId)
@@ -1203,35 +1209,44 @@ private struct EditorView: View {
         return ids
     }
 
-    /// The gap the drop line marks, and the one the drop commits: above the
-    /// first row's midpoint is the front of the deck, otherwise the last row
+    /// The spot the drag is over. The middle half of a row that is not itself
+    /// on the move nests the drop under that row. Otherwise a gap: above the
+    /// first row's midpoint is the front of the deck, else after the last row
     /// whose midpoint the pointer has passed.
     private func dragSlide(_ row: OutlineRow, to point: CGPoint, rows: [OutlineRow]) {
         let placed: [(row: OutlineRow, frame: CGRect)] = rows.compactMap { candidate in
             rowFrames[candidate.slideId].map { (candidate, $0) }
         }
         guard let first = placed.first else { return }
+        let dragged = draggedRun(in: rows, from: row.slideId)
 
         var afterId: String?
         // Half the 2pt row gap above the first row, so the line sits in the gap
         // rather than on a row's edge.
         var lineY: CGFloat = first.frame.minY - 1
-        for (candidate, frame) in placed where frame.midY < point.y {
+        for (candidate, frame) in placed {
+            let quarter = frame.height / 4
+            if !dragged.contains(candidate.slideId),
+               (frame.minY + quarter...frame.maxY - quarter).contains(point.y) {
+                slideDrag = SlideDrag(slideId: row.slideId, afterId: candidate.slideId, nest: true, lineY: 0)
+                return
+            }
+            if frame.midY >= point.y { break }
             afterId = candidate.slideId
             lineY = frame.maxY + 1
         }
-        slideDrag = SlideDrag(slideId: row.slideId, afterId: afterId, lineY: lineY)
+        slideDrag = SlideDrag(slideId: row.slideId, afterId: afterId, nest: false, lineY: lineY)
     }
 
     /// The core no-ops a drop back into the row's own gap, so every drop is sent.
     private func dropSlide() {
         guard let drag = slideDrag else { return }
         slideDrag = nil
-        host.moveSlide(id: drag.slideId, afterId: drag.afterId)
+        host.moveSlide(id: drag.slideId, afterId: drag.afterId, nest: drag.nest)
     }
 
     @ViewBuilder private var dropLine: some View {
-        if let drag = slideDrag {
+        if let drag = slideDrag, !drag.nest {
             palette.accent
                 .frame(height: 2)
                 .padding(.horizontal, 8)
@@ -1250,6 +1265,8 @@ private struct EditorView: View {
         let selected: Bool
         /// This row is the one being dragged, so it steps back while it travels.
         let dragging: Bool
+        /// The drag is over this row's body: dropping nests under it.
+        let nestTarget: Bool
         let palette: Palette
         let host: EditorHost
         /// A drag sample, in [NavigatorSpace], and the release that drops it.
@@ -1271,6 +1288,13 @@ private struct EditorView: View {
             .padding(.vertical, 5)
             .padding(.horizontal, 6)
             .background { capsule }
+            .overlay {
+                if nestTarget {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .inset(by: 1)
+                        .stroke(palette.accent, lineWidth: 2)
+                }
+            }
             .opacity(dragging ? 0.4 : 1)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onTapGesture { host.selectSlide(index: row.slideIndex) }

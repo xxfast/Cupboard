@@ -427,11 +427,15 @@ private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
  * run rather than splitting it. The rest of the unit keeps its distance from its
  * first slide, so a group lands as the group it was.
  *
+ * [nest] is a drop onto [afterId]'s row rather than the gap under it: the unit
+ * becomes that slide's first child, and a collapsed anchor opens so the drop is
+ * not swallowed out of sight. Meaningless without an anchor, so ignored for null.
+ *
  * A drop onto the unit's own body, an id this document doesn't hold, and a move
  * that puts every slide back where it was all return this same instance, so a
  * caller can skip the history entry the way [reorderElements] lets it.
  */
-fun Document.moveSlide(id: String, afterId: String?): Document {
+fun Document.moveSlide(id: String, afterId: String?, nest: Boolean = false): Document {
     val index: Int = slides.indexOfFirst { it.id == id }
     if (index == -1) return this
 
@@ -441,6 +445,7 @@ fun Document.moveSlide(id: String, afterId: String?): Document {
 
     val at: Int
     val depth: Int
+    var landing: List<Slide> = remaining
     if (afterId == null) {
         at = 0
         depth = 0
@@ -449,14 +454,22 @@ fun Document.moveSlide(id: String, afterId: String?): Document {
         // The anchor went with the unit, i.e. the row was dropped on itself.
         if (anchorIndex == -1) return this
         val anchor: Slide = remaining[anchorIndex]
-        at = if (anchor.collapsed) remaining.runEndAfter(anchorIndex) else anchorIndex + 1
-        val below: Slide? = remaining.getOrNull(at)
-        depth = if (below != null && below.depth > anchor.depth) below.depth else anchor.depth
+        if (nest) {
+            at = anchorIndex + 1
+            depth = anchor.depth + 1
+            if (anchor.collapsed) {
+                landing = remaining.toMutableList().apply { this[anchorIndex] = anchor.copy(collapsed = false) }
+            }
+        } else {
+            at = if (anchor.collapsed) remaining.runEndAfter(anchorIndex) else anchorIndex + 1
+            val below: Slide? = remaining.getOrNull(at)
+            depth = if (below != null && below.depth > anchor.depth) below.depth else anchor.depth
+        }
     }
 
     val base: Int = unit.first().depth
     val rebased: List<Slide> = unit.map { it.copy(depth = depth + it.depth - base) }
-    val moved: List<Slide> = remaining.take(at) + rebased + remaining.drop(at)
+    val moved: List<Slide> = landing.take(at) + rebased + landing.drop(at)
 
     if (moved == slides) return this
     return copy(slides = moved)

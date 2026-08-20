@@ -470,6 +470,24 @@ class DocumentTest {
     }
 
     @Test
+    fun nestingDropsTheUnitAsTheAnchorsFirstChild() {
+        val moved = deck().moveSlide("c", "a", nest = true)
+        assertEquals(listOf("a", "c", "b", "b1", "b2"), moved.slideIds())
+        assertEquals(listOf(0, 1, 0, 1, 1), moved.depths())
+        // A group nests whole, one level deeper than it was.
+        val nested = deck().moveSlide("b", "c", nest = true)
+        assertEquals(listOf("a", "c", "b", "b1", "b2"), nested.slideIds())
+        assertEquals(listOf(0, 0, 1, 2, 2), nested.depths())
+    }
+
+    @Test
+    fun nestingIntoACollapsedParentOpensIt() {
+        val moved = deck().toggleCollapsed("b").moveSlide("c", "b", nest = true)
+        assertEquals(listOf("a", "b", "c", "b1", "b2"), moved.slideIds())
+        assertFalse(moved.slides[1].collapsed)
+    }
+
+    @Test
     fun aMoveThatChangesNothingReturnsTheSameDocument() {
         val deck = deck()
         // Identity is the signal callers use to skip the history entry.

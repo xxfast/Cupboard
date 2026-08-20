@@ -709,7 +709,7 @@ fun EditorPresenter(
             // so the previews below are the marquee's kind rather than the
             // element ones': no document, no history, just the gap to draw.
             is PreviewSlideDrag ->
-                state.copy(slideDrag = SlideDrag(event.slideId, event.afterId))
+                state.copy(slideDrag = SlideDrag(event.slideId, event.afterId, event.nest))
 
             EndSlideDrag -> state.copy(slideDrag = null)
 
@@ -717,7 +717,7 @@ fun EditorPresenter(
             // a row put back where it came from is a finished gesture too, it
             // just isn't an edit.
             is MoveSlide -> {
-                val moved: Document = state.document.moveSlide(event.id, event.afterId)
+                val moved: Document = state.document.moveSlide(event.id, event.afterId, event.nest)
                 if (moved === state.document) state.copy(slideDrag = null)
                 else {
                     undone.push(state.document)
