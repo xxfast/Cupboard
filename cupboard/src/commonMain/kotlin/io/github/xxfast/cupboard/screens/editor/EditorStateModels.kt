@@ -46,6 +46,12 @@ data class SlideDrag(
     val afterId: String?,
     /** Over [afterId]'s row body rather than the gap under it: the drop nests. */
     val nest: Boolean = false,
+    /**
+     * How far the pointer has carried the row from where it was picked up, in
+     * the navigator's pixels: the row (and its run) draws displaced by this, so
+     * the thumbnail travels with the cursor the way Keynote's does.
+     */
+    val translationY: Float = 0f,
 )
 
 /**
@@ -349,11 +355,17 @@ sealed interface EditorEvent {
      */
     data class MoveSlide(val id: String, val afterId: String?, val nest: Boolean = false) : EditorEvent
     /**
-     * An in-flight slide drag sample: keeps the gap for the navigator to draw
-     * its drop line at. Touches no document and makes no history entry, unlike
-     * the element previews: a slide is only moved once, on release.
+     * An in-flight slide drag sample: the spot for the navigator to mark and
+     * how far the row has been carried. Touches no document and makes no
+     * history entry, unlike the element previews: a slide is only moved once,
+     * on release.
      */
-    data class PreviewSlideDrag(val slideId: String, val afterId: String?, val nest: Boolean = false) : EditorEvent
+    data class PreviewSlideDrag(
+        val slideId: String,
+        val afterId: String?,
+        val nest: Boolean = false,
+        val translationY: Float = 0f,
+    ) : EditorEvent
     /** The drag is over without a drop, cancelled or let go outside: the gap goes. */
     data object EndSlideDrag : EditorEvent
     /**

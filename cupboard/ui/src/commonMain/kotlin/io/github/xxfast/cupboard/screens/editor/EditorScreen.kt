@@ -156,7 +156,7 @@ fun EditorView(
     onShowSlideContextMenu: ((slideId: String, positionInWindow: Offset) -> Unit)? = null,
     /** A navigator drag reporting the gap it is over, its drop, and its cancel.
      * What the drag draws is [EditorState.slideDrag], which these three feed. */
-    onPreviewSlideDrag: (slideId: String, afterId: String?, nest: Boolean) -> Unit = { _, _, _ -> },
+    onPreviewSlideDrag: (slideId: String, afterId: String?, nest: Boolean, translationY: Float) -> Unit = { _, _, _, _ -> },
     onMoveSlide: (slideId: String, afterId: String?, nest: Boolean) -> Unit = { _, _, _ -> },
     onEndSlideDrag: () -> Unit = {},
     onPlay: ((Document, Int) -> Unit)? = null,

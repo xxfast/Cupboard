@@ -1047,6 +1047,8 @@ private struct SlideDrag: Equatable {
     let nest: Bool
     /// Where the drop line draws, in [NavigatorSpace]. Unused when nesting.
     let lineY: CGFloat
+    /// How far the pointer has carried the row: it travels with the cursor.
+    let translationY: CGFloat
 }
 
 private struct EditorView: View {
@@ -1173,9 +1175,10 @@ private struct EditorView: View {
                         selected: row.slideIndex == selected,
                         dragging: dragged.contains(row.slideId),
                         nestTarget: slideDrag?.nest == true && slideDrag?.afterId == row.slideId,
+                        liftY: dragged.contains(row.slideId) ? slideDrag?.translationY ?? 0 : 0,
                         palette: palette,
                         host: host,
-                        onDrag: { point in dragSlide(row, to: point, rows: rows) },
+                        onDrag: { point, translation in dragSlide(row, to: point, by: translation, rows: rows) },
                         onDrop: dropSlide
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -1186,7 +1189,7 @@ private struct EditorView: View {
             .coordinateSpace(name: NavigatorSpace.name)
             .onPreferenceChange(RowFrames.self) { frames in rowFrames = frames }
             .overlay(alignment: .topLeading) { dropLine }
-            .animation(.easeInOut(duration: 0.14), value: rows.map(\.slideId))
+            .animation(.easeInOut(duration: 0.22), value: rows.map(\.slideId))
         }
         .scrollContentBackground(.hidden)
     }
@@ -1213,7 +1216,7 @@ private struct EditorView: View {
     /// on the move nests the drop under that row. Otherwise a gap: above the
     /// first row's midpoint is the front of the deck, else after the last row
     /// whose midpoint the pointer has passed.
-    private func dragSlide(_ row: OutlineRow, to point: CGPoint, rows: [OutlineRow]) {
+    private func dragSlide(_ row: OutlineRow, to point: CGPoint, by translation: CGSize, rows: [OutlineRow]) {
         let placed: [(row: OutlineRow, frame: CGRect)] = rows.compactMap { candidate in
             rowFrames[candidate.slideId].map { (candidate, $0) }
         }
@@ -1228,21 +1231,31 @@ private struct EditorView: View {
             let quarter = frame.height / 4
             if !dragged.contains(candidate.slideId),
                (frame.minY + quarter...frame.maxY - quarter).contains(point.y) {
-                slideDrag = SlideDrag(slideId: row.slideId, afterId: candidate.slideId, nest: true, lineY: 0)
+                slideDrag = SlideDrag(
+                    slideId: row.slideId, afterId: candidate.slideId, nest: true, lineY: 0,
+                    translationY: translation.height
+                )
                 return
             }
             if frame.midY >= point.y { break }
             afterId = candidate.slideId
             lineY = frame.maxY + 1
         }
-        slideDrag = SlideDrag(slideId: row.slideId, afterId: afterId, nest: false, lineY: lineY)
+        slideDrag = SlideDrag(
+            slideId: row.slideId, afterId: afterId, nest: false, lineY: lineY,
+            translationY: translation.height
+        )
     }
 
     /// The core no-ops a drop back into the row's own gap, so every drop is sent.
+    /// The lift and the reorder settle under one animation, so the row glides
+    /// from under the pointer straight into its new slot.
     private func dropSlide() {
         guard let drag = slideDrag else { return }
-        slideDrag = nil
-        host.moveSlide(id: drag.slideId, afterId: drag.afterId, nest: drag.nest)
+        withAnimation(.easeInOut(duration: 0.22)) {
+            slideDrag = nil
+            host.moveSlide(id: drag.slideId, afterId: drag.afterId, nest: drag.nest)
+        }
     }
 
     @ViewBuilder private var dropLine: some View {
@@ -1267,10 +1280,13 @@ private struct EditorView: View {
         let dragging: Bool
         /// The drag is over this row's body: dropping nests under it.
         let nestTarget: Bool
+        /// How far this row has been carried by the drag, 0 when it hasn't.
+        let liftY: CGFloat
         let palette: Palette
         let host: EditorHost
-        /// A drag sample, in [NavigatorSpace], and the release that drops it.
-        let onDrag: (CGPoint) -> Void
+        /// A drag sample, in [NavigatorSpace] plus its travel, and the release
+        /// that drops it.
+        let onDrag: (CGPoint, CGSize) -> Void
         let onDrop: () -> Void
 
         @State private var hovering = false
@@ -1295,14 +1311,18 @@ private struct EditorView: View {
                         .stroke(palette.accent, lineWidth: 2)
                 }
             }
-            .opacity(dragging ? 0.4 : 1)
+            // Lifted: a touch translucent to show the rows it passes over, and
+            // above them while it travels.
+            .opacity(dragging ? 0.85 : 1)
+            .offset(y: liftY)
+            .zIndex(dragging ? 1 : 0)
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onTapGesture { host.selectSlide(index: row.slideIndex) }
             // Enough slop that a click is still a click: the drag only takes
             // over once the pointer has actually travelled.
             .gesture(
                 DragGesture(minimumDistance: 6, coordinateSpace: .named(NavigatorSpace.name))
-                    .onChanged { value in onDrag(value.location) }
+                    .onChanged { value in onDrag(value.location, value.translation) }
                     .onEnded { _ in onDrop() }
             )
             .background {

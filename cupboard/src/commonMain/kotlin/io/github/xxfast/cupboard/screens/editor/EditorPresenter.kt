@@ -709,7 +709,7 @@ fun EditorPresenter(
             // so the previews below are the marquee's kind rather than the
             // element ones': no document, no history, just the gap to draw.
             is PreviewSlideDrag ->
-                state.copy(slideDrag = SlideDrag(event.slideId, event.afterId, event.nest))
+                state.copy(slideDrag = SlideDrag(event.slideId, event.afterId, event.nest, event.translationY))
 
             EndSlideDrag -> state.copy(slideDrag = null)
 
