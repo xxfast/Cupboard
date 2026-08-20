@@ -1159,6 +1159,7 @@ private struct EditorView: View {
         let _ = model.generation
         let selected = host.selectedSlideIndex()
         let rows = host.outline()
+        let dragged = draggedRun(in: rows)
         return ScrollView {
             // Rows are identified by their slide, so collapsing a group reads as
             // those rows leaving and everything after sliding up, and a reorder
@@ -1168,7 +1169,7 @@ private struct EditorView: View {
                     NavigatorRow(
                         row: row,
                         selected: row.slideIndex == selected,
-                        dragging: slideDrag?.slideId == row.slideId,
+                        dragging: dragged.contains(row.slideId),
                         palette: palette,
                         host: host,
                         onDrag: { point in dragSlide(row, to: point, rows: rows) },
@@ -1185,6 +1186,21 @@ private struct EditorView: View {
             .animation(.easeInOut(duration: 0.14), value: rows.map(\.slideId))
         }
         .scrollContentBackground(.hidden)
+    }
+
+    /// The dragged row and every row nested under it: a parent drags as a group
+    /// (`moveSlide` lands it as one), so the whole run steps back together.
+    private func draggedRun(in rows: [OutlineRow]) -> Set<String> {
+        guard let drag = slideDrag,
+              let start = rows.firstIndex(where: { $0.slideId == drag.slideId })
+        else { return [] }
+        let depth = rows[start].depth
+        var ids: Set<String> = [drag.slideId]
+        for row in rows[(start + 1)...] {
+            if row.depth <= depth { break }
+            ids.insert(row.slideId)
+        }
+        return ids
     }
 
     /// The gap the drop line marks, and the one the drop commits: above the

@@ -402,8 +402,6 @@ fun Document.removeSlide(id: String): Document {
  * away with the run it was hiding, an expanded one leaves that run behind one
  * level out but never shallower than the slide itself was.
  *
- * What removing a row and moving one have in common. The difference between them
- * is only what happens to the slides that were lifted.
  */
 private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
     val lifted: Slide = this[index]
@@ -418,10 +416,11 @@ private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
  * Moves the row [id] names into the gap under [afterId], null meaning the gap
  * above the first row.
  *
- * The moved unit is [slideGroup]'s: a collapsed slide travels with the run it
- * hides, an expanded one travels alone and lets its children out one level, the
- * same way deleting it would. Gaps sit between visible rows, so the landing index
- * is the end of [afterId]'s own row unit rather than the slot right after it.
+ * The moved unit is the slide and every deeper slide beneath it, collapsed or
+ * not: a parent is a group in the navigator, and dragging a group anywhere must
+ * land the group, the way Keynote does. Gaps sit between visible rows, so the
+ * landing index is the end of [afterId]'s own row unit rather than the slot
+ * right after it.
  *
  * Depth comes from where it lands: the anchor's, except in the gap between a
  * parent and its first child, where the child's depth wins and the drop joins the
@@ -433,10 +432,12 @@ private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
  * caller can skip the history entry the way [reorderElements] lets it.
  */
 fun Document.moveSlide(id: String, afterId: String?): Document {
-    val unit: List<Slide> = slideGroup(id)
-    if (unit.isEmpty()) return this
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1) return this
 
-    val remaining: List<Slide> = slides.withoutUnitAt(slides.indexOfFirst { it.id == id })
+    val runEnd: Int = slides.runEndAfter(index)
+    val unit: List<Slide> = slides.subList(index, runEnd).toList()
+    val remaining: List<Slide> = slides.take(index) + slides.drop(runEnd)
 
     val at: Int
     val depth: Int

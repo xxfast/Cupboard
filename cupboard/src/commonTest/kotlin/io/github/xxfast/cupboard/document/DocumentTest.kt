@@ -456,10 +456,10 @@ class DocumentTest {
     }
 
     @Test
-    fun anExpandedParentMovesAloneAndItsChildrenOutdent() {
+    fun anExpandedParentTravelsWithItsChildrenToo() {
         val moved = deck().moveSlide("b", "c")
-        assertEquals(listOf("a", "b1", "b2", "c", "b"), moved.slideIds())
-        assertEquals(listOf(0, 0, 0, 0, 0), moved.depths())
+        assertEquals(listOf("a", "c", "b", "b1", "b2"), moved.slideIds())
+        assertEquals(listOf(0, 0, 0, 1, 1), moved.depths())
     }
 
     @Test
@@ -479,6 +479,7 @@ class DocumentTest {
         assertTrue(deck === deck.moveSlide("a", "nowhere"))
         // Dropped on its own row, and on a row inside it.
         assertTrue(deck === deck.moveSlide("a", "a"))
+        assertTrue(deck === deck.moveSlide("b", "b1"))
         val collapsed = deck.toggleCollapsed("b")
         assertTrue(collapsed === collapsed.moveSlide("b", "b1"))
     }

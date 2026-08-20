@@ -116,6 +116,10 @@ fun EditorNavigator(
     }
 
     val firstVisibleId: String? = rows.firstOrNull()?.slideId
+    // The row on the move and everything nested under it: a parent drags as a
+    // group (Document.moveSlide lands it as one), so the whole run reads as
+    // picked up and no gap inside it is a place to drop.
+    val draggedIds: Set<String> = draggedRun(entries, slideDrag?.slideId)
 
     Column(
         modifier = modifier
@@ -141,13 +145,16 @@ fun EditorNavigator(
                     entry = entry,
                     selected = selected,
                     thumbnailRadius = thumbnailRadius,
-                    dragged = slideDrag?.slideId == entry.slideId,
+                    dragged = entry.slideId in draggedIds,
                     // The gap sits between rows, so the row above it draws its
                     // half and the topmost row draws the one above itself.
                     dropAbove = slideDrag != null &&
                         slideDrag.afterId == null &&
-                        entry.slideId == firstVisibleId,
-                    dropBelow = slideDrag != null && slideDrag.afterId == entry.slideId,
+                        entry.slideId == firstVisibleId &&
+                        entry.slideId !in draggedIds,
+                    dropBelow = slideDrag != null &&
+                        slideDrag.afterId == entry.slideId &&
+                        entry.slideId !in draggedIds,
                     onSelectSlide = onSelectSlide,
                     onToggleCollapsed = onToggleCollapsed,
                     onContextClick = onContextClick,
@@ -158,6 +165,20 @@ fun EditorNavigator(
                     onEndSlideDrag = onEndSlideDrag,
                 )
             }
+        }
+    }
+}
+
+/** [slideId]'s entry and the run of deeper entries after it; empty for null. */
+private fun draggedRun(entries: List<OutlineEntry>, slideId: String?): Set<String> {
+    val start: Int = entries.indexOfFirst { it.slideId == slideId }
+    if (start == -1) return emptySet()
+    val depth: Int = entries[start].depth
+    return buildSet {
+        add(slideId!!)
+        for (entry in entries.drop(start + 1)) {
+            if (entry.depth <= depth) break
+            add(entry.slideId)
         }
     }
 }
