@@ -11,6 +11,7 @@ import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
@@ -31,6 +32,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
@@ -130,6 +132,8 @@ class EditorViewModel(
     fun onCancelPreview() { scope.launch { events.emit(CancelPreview) } }
     fun onUpdateElements(elements: List<Element>) { scope.launch { events.emit(UpdateElements(elements)) } }
     fun onPreviewElements(elements: List<Element>) { scope.launch { events.emit(PreviewElements(elements)) } }
+    fun onBeginTextEdit(id: String) { scope.launch { events.emit(BeginTextEdit(id)) } }
+    fun onEndTextEdit() { scope.launch { events.emit(EndTextEdit) } }
     fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
     fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
     fun onFlipElements(ids: List<String>, axis: FlipAxis) { scope.launch { events.emit(FlipElements(ids, axis)) } }

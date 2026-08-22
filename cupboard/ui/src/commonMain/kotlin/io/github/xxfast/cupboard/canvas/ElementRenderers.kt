@@ -80,29 +80,39 @@ fun ElementView(
     }
 }
 
+/**
+ * The style the element's text draws in.
+ *
+ * Internal rather than private: the editor's in-place text field styles itself
+ * from this too, so the text under the caret is the same text that was there
+ * before it, to the pixel.
+ */
+internal fun TextElement.textStyle(): TextStyle = TextStyle(
+    color = color.toComposeColor(),
+    fontSize = fontSize.sp,
+    fontWeight = FontWeight(fontWeight),
+    lineHeight = (fontSize * lineHeight).sp,
+    letterSpacing = letterSpacing.sp,
+    textAlign = when (align) {
+        TextAlign.Start -> androidx.compose.ui.text.style.TextAlign.Start
+        TextAlign.Center -> androidx.compose.ui.text.style.TextAlign.Center
+        TextAlign.End -> androidx.compose.ui.text.style.TextAlign.End
+    },
+)
+
+/** Where in its frame the text sits. Shared with the editor for the same reason. */
+internal fun TextElement.alignment(): Alignment = when (align) {
+    TextAlign.Start -> Alignment.TopStart
+    TextAlign.Center -> Alignment.TopCenter
+    TextAlign.End -> Alignment.TopEnd
+}
+
 @Composable
 private fun androidx.compose.foundation.layout.BoxScope.TextElementView(element: TextElement) {
     Text(
         text = element.text,
-        style = TextStyle(
-            color = element.color.toComposeColor(),
-            fontSize = element.fontSize.sp,
-            fontWeight = FontWeight(element.fontWeight),
-            lineHeight = (element.fontSize * element.lineHeight).sp,
-            letterSpacing = element.letterSpacing.sp,
-            textAlign = when (element.align) {
-                TextAlign.Start -> androidx.compose.ui.text.style.TextAlign.Start
-                TextAlign.Center -> androidx.compose.ui.text.style.TextAlign.Center
-                TextAlign.End -> androidx.compose.ui.text.style.TextAlign.End
-            },
-        ),
-        modifier = Modifier.align(
-            when (element.align) {
-                TextAlign.Start -> Alignment.TopStart
-                TextAlign.Center -> Alignment.TopCenter
-                TextAlign.End -> Alignment.TopEnd
-            }
-        ),
+        style = element.textStyle(),
+        modifier = Modifier.align(element.alignment()),
     )
 }
 

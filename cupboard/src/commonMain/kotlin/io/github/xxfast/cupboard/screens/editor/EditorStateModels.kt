@@ -4,6 +4,7 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
@@ -124,6 +125,15 @@ data class EditorState(
      * Transient for the same reason as [marquee].
      */
     @Transient val slideDrag: SlideDrag? = null,
+    /**
+     * The text element the caret is in, null when nothing is being edited in
+     * place. The typing itself rides the loop as ordinary element previews; this
+     * only says which element the caret sits in.
+     *
+     * Transient for the same reason as [marquee]: a restored session is not
+     * mid-edit, however it was left.
+     */
+    @Transient val editingElementId: String? = null,
 ) {
     /** The selected slide, falling back to the first one if the id went stale. */
     val selectedSlide: Slide
@@ -148,6 +158,19 @@ data class EditorState(
     val primaryElement: Element? get() = selectedElements.firstOrNull()
 
     /**
+     * The element the caret is in, null when none is: an id that no longer
+     * resolves, or one that resolves to something with no text to edit, is no
+     * more an edit session than no id at all.
+     */
+    val editingElement: TextElement?
+        get() = editingElementId
+            ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+            as? TextElement
+
+    /** Whether the caret is in an element, and so whether keys are text rather than commands. */
+    val isEditingText: Boolean get() = editingElement != null
+
+    /**
      * Whether Edit > Cut is live, focus already resolved.
      *
      * The navigator always has something to take: deleting the last slide
@@ -158,11 +181,16 @@ data class EditorState(
      * Computed, unlike the stored [canPaste] and [canPasteStyle] flags next to
      * it: what those answer for is the presenter's clipboard, what this answers
      * for is right here in the state.
+     *
+     * A caret in an element greys it, and greys [canCopy], [canDuplicate] and
+     * [canDelete] with it: mid-edit those verbs belong to the text, so the menu
+     * item and the Delete key fall through to the field instead of taking the
+     * element out from under it.
      */
     val canCut: Boolean
         get() = when (focusedPane) {
             EditorPane.Navigator -> true
-            EditorPane.Canvas -> selectedElements.any { !it.locked }
+            EditorPane.Canvas -> !isEditingText && selectedElements.any { !it.locked }
         }
 
     /** [canCut]'s rule verbatim: what may be taken away may also be copied in place. */
@@ -179,7 +207,7 @@ data class EditorState(
     val canCopy: Boolean
         get() = when (focusedPane) {
             EditorPane.Navigator -> true
-            EditorPane.Canvas -> selectedElements.isNotEmpty()
+            EditorPane.Canvas -> !isEditingText && selectedElements.isNotEmpty()
         }
 
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
@@ -458,6 +486,25 @@ sealed interface EditorEvent {
      * nothing unlocked to dress, is a no-op.
      */
     data class PasteStyle(val ids: List<String>) : EditorEvent
+    /**
+     * Puts the caret in the text element [id], the way a double click does:
+     * it becomes the whole selection, the canvas takes the focus, and the keys
+     * that follow are text rather than commands.
+     *
+     * Nothing in the document changes, so no history entry. A locked element
+     * refuses the caret like it refuses every other edit, and an id that is not
+     * an unlocked text element on the selected slide begins nothing.
+     */
+    data class BeginTextEdit(val id: String) : EditorEvent
+    /**
+     * The caret leaves, and whatever was typed settles: the previews the typing
+     * streamed are committed as one history entry, or discarded when the text
+     * came back the way it started. One edit session is one undo.
+     *
+     * Sent by the shell (Escape, a click elsewhere), and folded in first by
+     * every event that isn't allowed to land mid-edit.
+     */
+    data object EndTextEdit : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent

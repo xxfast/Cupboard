@@ -10,6 +10,7 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.addElements
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingStyle
@@ -34,6 +35,7 @@ import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
@@ -54,6 +56,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
@@ -296,6 +299,26 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
         -> EditorPane.Canvas
 
     else -> null
+}
+
+/**
+ * Whether this event may land while the caret is in an element.
+ *
+ * The list is the typing itself, the two events that bracket it, and the chrome,
+ * which touches no document and no selection. Everything else ends the session
+ * first: one edit session is one undo entry, so it has to be closed before the
+ * next edit, selection or history step opens.
+ */
+private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
+    is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview,
+    ToggleSidebar, ToggleNotes, is SelectInspectorTab, CloseInspector,
+        -> true
+
+    // Focus arriving on the pane the caret is already in says nothing new;
+    // focus leaving for the navigator is the caret leaving too.
+    is FocusPane -> pane == EditorPane.Canvas
+
+    else -> false
 }
 
 /**
@@ -758,6 +781,43 @@ fun EditorPresenter(
                 }
                 ?: state
 
+            // A caret is not an edit: no document changes, so no history
+            // entry. Selecting the element is part of placing it, the way a
+            // double click both selects and opens the text for typing.
+            is BeginTextEdit -> (state.unlockedElement(event.id) as? TextElement)
+                ?.let {
+                    state.copy(
+                        selectedElementIds = listOf(event.id),
+                        focusedPane = EditorPane.Canvas,
+                        editingElementId = event.id,
+                    )
+                }
+                ?: state
+
+            // The typing streamed through PreviewElements, so ending the
+            // session is settling that gesture: UpdateElements' commit when
+            // the text actually changed, CancelPreview's rollback when it
+            // came back the way it started. Either way one session costs one
+            // history entry, never one per keystroke.
+            EndTextEdit -> {
+                val base: Document? = gestureBase
+                val settled: EditorState = when {
+                    base == null -> state
+                    base != state.document -> {
+                        gestureBase = null
+                        undone.push(base)
+                        redone.clear()
+                        state.copy(isPreviewing = false)
+                    }
+
+                    else -> {
+                        gestureBase = null
+                        state.copy(document = base, isPreviewing = false)
+                    }
+                }
+                settled.copy(editingElementId = null)
+            }
+
             // Disclosure is not an edit, so it makes no history entry, the
             // same way Keynote won't undo a twisty. The document still
             // changes: collapsed state is stored on the slide.
@@ -820,6 +880,14 @@ fun EditorPresenter(
         }
 
         events.collect { event ->
+            // The one guard the caret needs, rather than a branch in every
+            // reduction: an event that isn't on the keep-editing list closes the
+            // session before it lands, so the typed text is committed as its own
+            // history entry and the event that follows acts on a settled
+            // document. The re-entrant reduce calls below skip the guard on
+            // purpose, the session is already closed by the time they run.
+            if (state.isEditingText && !event.keepsTextEditing()) state = reduce(EndTextEdit)
+
             val reduced: EditorState = reduce(event)
 
             // Focus follows interaction: an event that speaks for a pane moves

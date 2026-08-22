@@ -289,6 +289,9 @@ class EditorHost {
                     onUpdateElements = viewModel::onUpdateElements,
                     onPreviewElements = viewModel::onPreviewElements,
                     onPreviewCancel = viewModel::onCancelPreview,
+                    editingElementId = state.editingElementId,
+                    onBeginTextEdit = viewModel::onBeginTextEdit,
+                    onEndTextEdit = viewModel::onEndTextEdit,
                     modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
                     else Modifier.fillMaxSize(),
                     zoom = scale,

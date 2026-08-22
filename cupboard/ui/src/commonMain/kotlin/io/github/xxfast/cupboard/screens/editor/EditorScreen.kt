@@ -111,6 +111,8 @@ fun EditorScreen(
         onCancelPreview = viewModel::onCancelPreview,
         onUpdateElements = viewModel::onUpdateElements,
         onPreviewElements = viewModel::onPreviewElements,
+        onBeginTextEdit = viewModel::onBeginTextEdit,
+        onEndTextEdit = viewModel::onEndTextEdit,
         onReorderElements = viewModel::onReorderElements,
         onSetElementsLocked = viewModel::onSetElementsLocked,
         onFlipElements = viewModel::onFlipElements,
@@ -137,6 +139,9 @@ fun EditorView(
     onUpdateSlide: (Slide) -> Unit,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
+    /** A double click on a text element on the canvas, and what ends that edit. */
+    onBeginTextEdit: (String) -> Unit,
+    onEndTextEdit: () -> Unit,
     onReorderElements: (List<String>, ZOrderMove) -> Unit,
     onSetElementsLocked: (List<String>, Boolean) -> Unit,
     onFlipElements: (List<String>, FlipAxis) -> Unit,
@@ -277,6 +282,9 @@ fun EditorView(
                                 onUpdateElements = onUpdateElements,
                                 onPreviewElements = onPreviewElements,
                                 onPreviewCancel = onCancelPreview,
+                                editingElementId = state.editingElementId,
+                                onBeginTextEdit = onBeginTextEdit,
+                                onEndTextEdit = onEndTextEdit,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
                                 number = state.slideNumber(selectedSlide.id),
                                 modifier = Modifier

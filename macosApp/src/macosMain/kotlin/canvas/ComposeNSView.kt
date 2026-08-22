@@ -1,6 +1,8 @@
 // Adapted from androidx.compose.ui.window.ComposeWindow (compose-multiplatform-core,
 // Apache-2.0). That class owns its own NSWindow; this variant is an embeddable NSView
-// so a SwiftUI app can host Compose content via NSViewRepresentable.
+// so a SwiftUI app can host Compose content via NSViewRepresentable. Text input goes
+// further than the upstream macOS support: this view is a real NSTextInputClient, so dead
+// keys and input methods reach compose's text fields.
 @file:OptIn(ExperimentalForeignApi::class, InternalComposeUiApi::class)
 
 package io.github.xxfast.cupboard.canvas
@@ -11,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -21,14 +24,22 @@ import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.CanvasLayersComposeScene
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.CommitTextCommand
 import androidx.compose.ui.text.input.EditCommand
+import androidx.compose.ui.text.input.FinishComposingTextCommand
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.ImeOptions
+import androidx.compose.ui.text.input.PlatformTextInputService
+import androidx.compose.ui.text.input.SetComposingTextCommand
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
+import kotlinx.cinterop.COpaquePointer
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.pointed
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.Canvas
@@ -41,6 +52,7 @@ import platform.AppKit.NSEventModifierFlagOption
 import platform.AppKit.NSEventModifierFlagShift
 import platform.AppKit.NSKeyDown
 import platform.AppKit.NSKeyUp
+import platform.AppKit.NSTextInputClientProtocol
 import platform.AppKit.NSTrackingActiveAlways
 import platform.AppKit.NSTrackingActiveInKeyWindow
 import platform.AppKit.NSTrackingArea
@@ -51,26 +63,79 @@ import platform.AppKit.NSTrackingMouseMoved
 import platform.AppKit.NSView
 import platform.AppKit.NSViewFrameDidChangeNotification
 import platform.AppKit.NSWindow
+import platform.CoreGraphics.CGPoint
+import platform.Foundation.NSAttributedString
+import platform.Foundation.NSMakeRange
 import platform.Foundation.NSMakeRect
+import platform.Foundation.NSNotFound
 import platform.Foundation.NSNotificationCenter
+import platform.Foundation.NSRange
 import platform.Foundation.NSRect
+import platform.Foundation.create
 
-// Same stub as compose's internal MacosTextInputService: enough for plain key-event
-// typing, no NSTextInputClient/IME integration.
-private class StubTextInputService : androidx.compose.ui.text.input.PlatformTextInputService {
-    private var current: TextFieldValue? = null
+/**
+ * The compose half of the text input bridge. Compose's internal MacosTextInputService is a
+ * stub that drops every edit command, which is why the canvas could only ever type whatever
+ * a raw key event carried. This one keeps the callback, so [ComposeNSView] can feed compose
+ * the text AppKit's input method produced: dead keys (option-e then e), CJK candidates,
+ * anything else an input source composes before it commits.
+ *
+ * It also mirrors what compose knows about the field, because NSTextInputClient asks: the
+ * current value answers the range and substring queries, and the focused rect places the
+ * candidate window.
+ */
+private class CanvasTextInputService : PlatformTextInputService {
+    /** True between [startInput] and [stopInput], i.e. while a text field holds focus. */
+    var isActive = false
+        private set
+
+    var value: TextFieldValue = TextFieldValue()
+        private set
+
+    /** Where the focused field sits, in compose pixels with a top-left origin. */
+    var focusedRect: Rect? = null
+        private set
+
+    /** Set by the view, so a composition in flight is dropped when the field loses focus. */
+    var onStopInput: () -> Unit = {}
+
+    private var onEditCommand: ((List<EditCommand>) -> Unit)? = null
+
     override fun startInput(
         value: TextFieldValue,
         imeOptions: ImeOptions,
         onEditCommand: (List<EditCommand>) -> Unit,
         onImeActionPerformed: (ImeAction) -> Unit,
-    ) { current = value }
+    ) {
+        this.value = value
+        this.onEditCommand = onEditCommand
+        isActive = true
+    }
 
-    override fun stopInput() { current = null }
+    override fun stopInput() {
+        isActive = false
+        onEditCommand = null
+        focusedRect = null
+        value = TextFieldValue()
+        onStopInput()
+    }
+
     override fun showSoftwareKeyboard() {}
     override fun hideSoftwareKeyboard() {}
-    override fun updateState(oldValue: TextFieldValue?, newValue: TextFieldValue) { current = newValue }
+
+    override fun updateState(oldValue: TextFieldValue?, newValue: TextFieldValue) { value = newValue }
+
+    override fun notifyFocusedRect(rect: Rect) { focusedRect = rect }
+
+    fun send(vararg commands: EditCommand) {
+        onEditCommand?.invoke(commands.toList())
+    }
 }
+
+/** AppKit ranges are unsigned and use NSNotFound for "there isn't one". */
+private fun TextRange?.toNSRange(): CValue<NSRange> =
+    if (this == null) NSMakeRange(NSNotFound.toULong(), 0uL)
+    else NSMakeRange(min.toULong(), (max - min).toULong())
 
 private class MutableWindowInfo : WindowInfo {
     override var isWindowFocused: Boolean by mutableStateOf(true)
@@ -90,9 +155,13 @@ private class MutableWindowInfo : WindowInfo {
 class ComposeNSView(
     frame: CValue<NSRect> = NSMakeRect(0.0, 0.0, 640.0, 360.0),
     private val content: @Composable () -> Unit,
-) : NSView(frame) {
+) : NSView(frame), NSTextInputClientProtocol {
     private val windowInfo = MutableWindowInfo()
-    private val textInputService = StubTextInputService()
+    private val textInputService = CanvasTextInputService()
+
+    // Set by the NSTextInputClient callbacks below, read by keyDown to decide whether the
+    // input method already turned this keystroke into text.
+    private var didHandleKeyAsText = false
 
     private val platformContext: PlatformContext =
         object : PlatformContext by PlatformContext.Empty() {
@@ -122,6 +191,9 @@ class ComposeNSView(
             }
         }
         scene.setContent(content)
+        // A composition left hanging when the field loses focus would keep painting an
+        // underline AppKit no longer knows about, so throw it away with the field.
+        textInputService.onStopInput = { inputContext?.discardMarkedText() }
     }
 
     override fun wantsUpdateLayer() = true
@@ -221,13 +293,119 @@ class ComposeNSView(
 
     override fun keyDown(event: NSEvent) {
         if (isDisposed) return
-        val consumed = scene.sendKeyEvent(event.toComposeEvent())
-        if (!consumed) super.keyDown(event)
+        if (!textInputService.isActive) {
+            val consumed = scene.sendKeyEvent(event.toComposeEvent())
+            if (!consumed) super.keyDown(event)
+            return
+        }
+        // While a field has focus the input method gets first look: it is what turns a dead
+        // key or a CJK candidate into insertText:/setMarkedText: calls back on us. Whatever
+        // it did not turn into text (arrows, backspace, enter, tab, escape, shortcuts the
+        // menu left alone) goes on to compose, which handles those itself. Forwarding only
+        // in that case is what stops a typed character landing twice.
+        didHandleKeyAsText = false
+        interpretKeyEvents(listOf(event))
+        if (!didHandleKeyAsText) scene.sendKeyEvent(event.toComposeEvent())
     }
 
     override fun keyUp(event: NSEvent) {
         if (isDisposed) return
         scene.sendKeyEvent(event.toComposeEvent())
+    }
+
+    // NSTextInputClient. AppKit hands us the text an input source produced; we turn it into
+    // the edit commands compose's text field speaks, and answer the queries the candidate
+    // window needs to place itself.
+
+    /** Committed text: replaces the composing region, if there is one. */
+    override fun insertText(string: Any, replacementRange: CValue<NSRange>) {
+        if (isDisposed) return
+        val text: String = string.asPlainText() ?: return
+        didHandleKeyAsText = true
+        textInputService.send(CommitTextCommand(text, 1))
+    }
+
+    /** Text still being composed, drawn underlined until it commits. */
+    override fun setMarkedText(
+        string: Any,
+        selectedRange: CValue<NSRange>,
+        replacementRange: CValue<NSRange>,
+    ) {
+        if (isDisposed) return
+        val text: String = string.asPlainText() ?: return
+        didHandleKeyAsText = true
+        // Empty marked text is the input method cancelling: empty the composing region,
+        // then let go of it, or compose keeps an empty composition around forever.
+        if (text.isEmpty()) textInputService.send(SetComposingTextCommand("", 1), FinishComposingTextCommand())
+        else textInputService.send(SetComposingTextCommand(text, 1))
+    }
+
+    override fun unmarkText() {
+        if (isDisposed) return
+        textInputService.send(FinishComposingTextCommand())
+    }
+
+    override fun hasMarkedText(): Boolean = textInputService.value.composition != null
+
+    override fun markedRange(): CValue<NSRange> = textInputService.value.composition.toNSRange()
+
+    override fun selectedRange(): CValue<NSRange> = textInputService.value.selection.toNSRange()
+
+    override fun attributedSubstringForProposedRange(
+        range: CValue<NSRange>,
+        actualRange: CPointer<NSRange>?,
+    ): NSAttributedString? {
+        val text: String = textInputService.value.text
+        val (location, length) = range.useContents { location.toLong() to length.toLong() }
+        val start = location.coerceIn(0L, text.length.toLong()).toInt()
+        val end = (location + length).coerceIn(start.toLong(), text.length.toLong()).toInt()
+        actualRange?.pointed?.let { actual ->
+            actual.location = start.toULong()
+            actual.length = (end - start).toULong()
+        }
+        if (start == end) return null
+        return NSAttributedString.create(string = text.substring(start, end))
+    }
+
+    /** We draw the composition ourselves, so no attribute of AppKit's is honoured. */
+    override fun validAttributesForMarkedText(): List<*> = emptyList<Any>()
+
+    /** Where the candidate window hangs itself: screen coords, bottom-left origin. */
+    override fun firstRectForCharacterRange(
+        range: CValue<NSRange>,
+        actualRange: CPointer<NSRange>?,
+    ): CValue<NSRect> {
+        val focused: Rect? = textInputService.focusedRect
+        val height = bounds.useContents { size.height }
+        val density = scene.density.density
+        // Compose measures in pixels from the top-left; AppKit wants points from the bottom
+        // -left. No focused rect yet (nothing has typed) means anywhere in the view will do.
+        val local: CValue<NSRect> = if (focused == null) bounds else NSMakeRect(
+            x = (focused.left / density).toDouble(),
+            y = height - (focused.bottom / density).toDouble(),
+            w = (focused.width / density).toDouble(),
+            h = (focused.height / density).toDouble(),
+        )
+        val inWindow: CValue<NSRect> = convertRect(local, toView = null)
+        return window?.convertRectToScreen(inWindow) ?: inWindow
+    }
+
+    /** Only used for mouse-driven candidate selection, which we do not offer. */
+    override fun characterIndexForPoint(point: CValue<CGPoint>): ULong = NSNotFound.toULong()
+
+    /**
+     * Deliberately empty, and deliberately no super call: NSResponder's default beeps at
+     * every selector it cannot service. Leaving [didHandleKeyAsText] false is the whole
+     * point, it sends the raw event on to compose, which owns the editing and navigation
+     * keys the input method just told us it does not want.
+     */
+    override fun doCommandBySelector(selector: COpaquePointer?) = Unit
+
+    /** AppKit passes NSString or NSAttributedString; the former bridges to String already. */
+    private fun Any.asPlainText(): String? = when (this) {
+        is NSAttributedString -> string
+        is String -> this
+        else -> null
     }
 
     /**

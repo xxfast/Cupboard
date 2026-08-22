@@ -6,23 +6,35 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
@@ -32,18 +44,24 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
+import io.github.xxfast.cupboard.canvas.alignment
+import io.github.xxfast.cupboard.canvas.textStyle
+import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TextElement
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -102,6 +120,15 @@ fun EditorCanvas(
      * builds; every shell that grows one passes it.
      */
     onContextClick: (elementId: String?, position: Offset) -> Unit = { _, _ -> },
+    /**
+     * The element the caret is in, null when none is: it draws as a text field
+     * in place of its text, on top of everything, and takes the keys.
+     */
+    editingElementId: String? = null,
+    /** A double click on a text element: the caret goes in it. */
+    onBeginTextEdit: (String) -> Unit = {},
+    /** Escape, or a press anywhere else on the slide: the caret leaves. */
+    onEndTextEdit: () -> Unit = {},
     modifier: Modifier = Modifier,
     zoom: Float? = null,
     /** The slide's place in the presentation, drawn only when the slide asks for it. */
@@ -109,6 +136,12 @@ fun EditorCanvas(
 ) {
     val currentSlide by rememberUpdatedState(slide)
     val currentSelection by rememberUpdatedState(selectedElementIds)
+    // Read from the pointer handlers, which are set up once: a press outside the
+    // field has to know whether there is a caret to take away.
+    val currentEditingId by rememberUpdatedState(editingElementId)
+    // Whatever the id resolves to right now, and only when there is text to edit.
+    val editing: TextElement? =
+        slide.elements.firstOrNull { it.id == editingElementId } as? TextElement
     var guideX by remember { mutableStateOf(false) }
     var guideY by remember { mutableStateOf(false) }
     // Cursor only. These two are written from pointer handlers, which the canvas
@@ -133,7 +166,12 @@ fun EditorCanvas(
         slideBackground = slide.background,
         zoom = zoom,
     ) {
-        for (element in slide.elements) ElementView(element)
+        // The element under the caret keeps its place in the layout but paints
+        // nothing: the text field below draws it, and two copies of the same
+        // text half a pixel apart is what an editor must never show.
+        for (element in slide.elements) {
+            ElementView(element, modifier = if (element.id == editing?.id) Modifier.alpha(0f) else Modifier)
+        }
         if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 
         // Editing affordances hold constant screen size at any zoom: authored
@@ -198,8 +236,13 @@ fun EditorCanvas(
                     // event; a press that becomes a drag has its changes consumed
                     // there, which is what takes it out of the running as a click.
                     val slop: Float = viewConfiguration.touchSlop
+                    val doubleClick: Long = viewConfiguration.doubleTapTimeoutMillis
                     awaitPointerEventScope {
                         var pressedAt: Offset? = null
+                        // What the last click landed on and when, so the next one
+                        // can tell itself a second click on the same element.
+                        var clickedId: String? = null
+                        var clickedAt = 0L
                         while (true) {
                             val event: PointerEvent = awaitPointerEvent()
                             val position: Offset? = event.changes.firstOrNull()?.position
@@ -223,6 +266,11 @@ fun EditorCanvas(
                                 // right-click that way say so in their own
                                 // events, not in this button.
                                 PointerEventType.Press -> {
+                                    // A caret in flight ends here, before the
+                                    // press is classified: the field sits above
+                                    // this overlay, so anything that reaches it
+                                    // landed somewhere else on the slide.
+                                    if (currentEditingId != null) onEndTextEdit()
                                     // The chord, not the changed button, is all a
                                     // common pointer event carries, and a native
                                     // menu's tracking loop can eat a secondary
@@ -264,8 +312,23 @@ fun EditorCanvas(
                                         (position - start).getDistance() <= slop
                                     ) {
                                         val hit: Element? = elementAt(toDoc(start))
-                                        if (hit == null) onSelectElement(null)
-                                        else onSelectElement(hit.id)
+                                        val now: Long =
+                                            event.changes.firstOrNull()?.uptimeMillis ?: 0L
+                                        // A second click on the same text
+                                        // element opens it for typing, the way
+                                        // every editor's does. Anything else
+                                        // selects, first click or not.
+                                        val again: Boolean = hit != null &&
+                                            hit.id == clickedId && now - clickedAt <= doubleClick
+                                        clickedId = hit?.id
+                                        clickedAt = now
+                                        when {
+                                            hit == null -> onSelectElement(null)
+                                            again && hit is TextElement && !hit.locked ->
+                                                onBeginTextEdit(hit.id)
+
+                                            else -> onSelectElement(hit.id)
+                                        }
                                     }
                                 }
 
@@ -419,7 +482,10 @@ fun EditorCanvas(
         // Selection rings, one per selected element; handles only for a lone one.
         val selected: List<Element> = slide.elements.filter { it.id in selectedElementIds }
         for (element in selected) {
-            SelectionOverlay(element, canvasScale, handles = selected.size == 1)
+            // The ring stays while the caret is in the element, the handles go:
+            // the field covers them, so a handle there would be a target you
+            // can see and never hit.
+            SelectionOverlay(element, canvasScale, handles = selected.size == 1 && editing == null)
         }
 
         // The marquee, drawn from state rather than from the gesture's own vars.
@@ -428,6 +494,81 @@ fun EditorCanvas(
         // Alignment guides
         if (guideX) VerticalCenterGuide(canvasScale)
         if (guideY) HorizontalCenterGuide(canvasScale)
+
+        // Last, and so on top of the input overlay: the field has to see its own
+        // clicks and drags to place a caret and sweep a selection with them.
+        if (editing != null) {
+            TextEditor(editing, onPreviewElements = onPreviewElements, onEndTextEdit = onEndTextEdit)
+        }
+    }
+}
+
+/**
+ * [element] as an editable text field, sitting exactly where its text draws.
+ *
+ * The value is held here rather than read back out of the state loop: a caret,
+ * a selection and an in-flight composition have to move with the very key that
+ * moved them, and a field that waited a roundtrip for them would drop
+ * characters. Every change still goes through the loop as an ordinary element
+ * preview, so the thumbnails, the inspector and every other shell see the text
+ * as it is typed, and the commit is whatever the last preview left, settled by
+ * [onEndTextEdit].
+ *
+ * This is not the drag-freeze pattern (see ROADMAP.md). That was a pointer
+ * handler writing snapshot state the canvas then drew from, where the
+ * invalidation could go missing. This is a composable callback driven by key
+ * events, on the same path any text field in Compose takes.
+ */
+@Composable
+private fun TextEditor(
+    element: TextElement,
+    onPreviewElements: (List<Element>) -> Unit,
+    onEndTextEdit: () -> Unit,
+) {
+    // Re-seeded when the caret moves to another element, with everything
+    // selected: entering an edit and typing replaces the text, Keynote-style.
+    var value: TextFieldValue by remember(element.id) {
+        mutableStateOf(TextFieldValue(element.text, TextRange(0, element.text.length)))
+    }
+    val focusRequester: FocusRequester = remember { FocusRequester() }
+    LaunchedEffect(element.id) { focusRequester.requestFocus() }
+
+    Box(
+        Modifier
+            .offset(element.frame.x.dp, element.frame.y.dp)
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .graphicsLayer {
+                alpha = element.opacity
+                rotationZ = element.rotation
+                scaleX = if (element.flippedHorizontally) -1f else 1f
+                scaleY = if (element.flippedVertically) -1f else 1f
+                transformOrigin = TransformOrigin.Center
+            }
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = { edited ->
+                val typed: Boolean = edited.text != value.text
+                value = edited
+                if (typed) onPreviewElements(listOf(element.copy(text = edited.text)))
+            },
+            textStyle = element.textStyle(),
+            cursorBrush = SolidColor(element.color.toComposeColor()),
+            modifier = Modifier
+                .align(element.alignment())
+                .fillMaxWidth()
+                .focusRequester(focusRequester)
+                // Escape leaves the text where it is and the caret behind.
+                // Enter is the field's, it inserts a newline.
+                .onPreviewKeyEvent { key ->
+                    if (key.type == KeyEventType.KeyDown && key.key == Key.Escape) {
+                        onEndTextEdit()
+                        true
+                    } else {
+                        false
+                    }
+                },
+        )
     }
 }
 
