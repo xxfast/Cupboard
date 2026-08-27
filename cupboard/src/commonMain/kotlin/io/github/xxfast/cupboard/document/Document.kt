@@ -24,11 +24,49 @@ data class Document(
     val slideWidth: Float = SLIDE_WIDTH,
     val slideHeight: Float = SLIDE_HEIGHT,
     val slides: List<Slide> = emptyList(),
+    /**
+     * The user's own guides, shared by every slide the way Keynote's are: a
+     * guide is a property of the deck, not of the slide it was pulled out on.
+     */
+    val guides: List<Guide> = emptyList(),
 ) {
     companion object {
         const val SLIDE_WIDTH: Float = 1920f
         const val SLIDE_HEIGHT: Float = 1080f
     }
+}
+
+/**
+ * Which way a line runs, and so which coordinate goes with it: [Vertical] is a
+ * vertical line at an x, [Horizontal] a horizontal line at a y.
+ *
+ * Not `editor.Axis`, which answers a different question: that one is the axis a
+ * distribute spreads along, where Horizontal means "across x".
+ */
+@Serializable
+enum class GuideAxis { Vertical, Horizontal }
+
+/** One user guide, in document units: an x for a vertical one, a y for a horizontal one. */
+@Serializable
+data class Guide(
+    val id: String = newId(),
+    val axis: GuideAxis,
+    val position: Float,
+)
+
+/** Adds [guide], or moves the one already under its id. */
+fun Document.putGuide(guide: Guide): Document =
+    if (guides.none { it.id == guide.id }) copy(guides = guides + guide)
+    else copy(guides = guides.map { if (it.id == guide.id) guide else it })
+
+/**
+ * Drops the guide with [id]. An id this document doesn't hold returns this same
+ * instance, so a caller can skip the history entry the way [reorderElements]
+ * lets it.
+ */
+fun Document.removeGuide(id: String): Document {
+    if (guides.none { it.id == id }) return this
+    return copy(guides = guides.filterNot { it.id == id })
 }
 
 @Serializable

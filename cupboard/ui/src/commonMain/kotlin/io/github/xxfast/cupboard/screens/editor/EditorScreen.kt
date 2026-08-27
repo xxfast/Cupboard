@@ -39,6 +39,7 @@ import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -124,6 +125,10 @@ fun EditorScreen(
         onGroupElements = viewModel::onGroupElements,
         onUngroupElements = viewModel::onUngroupElements,
         onSelectInspectorTab = viewModel::onSelectInspectorTab,
+        onPreviewGuide = viewModel::onPreviewGuide,
+        onCommitGuide = viewModel::onCommitGuide,
+        onRemoveGuide = viewModel::onRemoveGuide,
+        onEndGuideDrag = viewModel::onEndGuideDrag,
         onPlay = onPlay,
     )
 }
@@ -156,6 +161,13 @@ fun EditorView(
     onGroupElements: (List<String>) -> Unit,
     onUngroupElements: (String) -> Unit,
     onSelectInspectorTab: (InspectorTab) -> Unit,
+    /** A guide drag on the canvas: its samples, its drop, the guide it throws
+     * away off the slide, and its cancel. What the drag draws is
+     * [EditorState.guideDrag], which these four feed. */
+    onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
+    onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
+    onRemoveGuide: (id: String) -> Unit = {},
+    onEndGuideDrag: () -> Unit = {},
     /** What the canvas context menu shows, sections in order. Empty hides it. */
     menuSections: List<EditorMenuSection> = emptyList(),
     /** Takes over from [menuSections]: the shell draws the menu, this view only
@@ -309,6 +321,15 @@ fun EditorView(
                                 onEndTextEdit = onEndTextEdit,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
                                 number = state.slideNumber(selectedSlide.id),
+                                guides = state.document.guides,
+                                showRulers = state.showRulers,
+                                showGuides = state.showGuides,
+                                guideDrag = state.guideDrag,
+                                snapTargets = { ids -> state.snapTargets(ids) },
+                                onPreviewGuide = onPreviewGuide,
+                                onCommitGuide = onCommitGuide,
+                                onRemoveGuide = onRemoveGuide,
+                                onEndGuideDrag = onEndGuideDrag,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .onGloballyPositioned { canvasCoords = it },

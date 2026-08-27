@@ -541,6 +541,35 @@ class DocumentTest {
         assertEquals(document, decodeDocument(document.encodeToString()))
     }
 
+    @Test
+    fun serializationRoundTripsGuides() {
+        val document = Document(
+            id = "doc",
+            slides = listOf(Slide(id = "slide")),
+            guides = listOf(
+                Guide("gx", GuideAxis.Vertical, 960f),
+                Guide("gy", GuideAxis.Horizontal, 540f),
+            ),
+        )
+
+        val decoded = decodeDocument(document.encodeToString())
+        assertEquals(document, decoded)
+        assertEquals(GuideAxis.Vertical, decoded.guides.first().axis)
+    }
+
+    /** Guides arrived last too, so a file written before them carries none. */
+    @Test
+    fun aDocumentWrittenBeforeGuidesStillDecodes() {
+        val json = """
+            {
+              "id": "doc",
+              "slides": [{ "id": "slide", "title": "Old" }]
+            }
+        """.trimIndent()
+
+        assertTrue(decodeDocument(json).guides.isEmpty())
+    }
+
     /** Slide management arrived last, so a file written before it has none of it. */
     @Test
     fun aSlideWrittenBeforeSkipAndBackgroundsStillDecodes() {

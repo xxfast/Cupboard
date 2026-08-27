@@ -5,11 +5,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -25,6 +28,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
@@ -53,8 +57,11 @@ import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.toSize
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideNumberView
@@ -65,6 +72,8 @@ import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.Guide
+import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
@@ -74,6 +83,9 @@ import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.outdentLine
+import io.github.xxfast.cupboard.screens.editor.GuideDrag
+import io.github.xxfast.cupboard.theme.ChromeTokens
+import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -86,6 +98,16 @@ private val GuideYellow = Color(0xFFF5C518)
  */
 private const val SpacesPerLevel: Int = 4
 
+/** How wide the ruler strips are, in screen dp: constant size at every zoom. */
+private val RulerThickness: Dp = 18.dp
+
+/** Doc units between ruler ticks; every second one is drawn long and labelled. */
+private const val RulerMinorStep: Float = 50f
+private const val RulerMajorStep: Float = 100f
+
+/** How close a press has to come to a guide to grab it, in screen dp. */
+private const val GuideGrab: Float = 4f
+
 private sealed interface DragTarget {
     /**
      * A move of the whole selection. [draggedId] is the one under the pointer:
@@ -96,6 +118,8 @@ private sealed interface DragTarget {
     data class Resize(val elementId: String, val handle: Handle) : DragTarget
     /** A sweep over empty slide space. [start] is in doc units. */
     data class Marquee(val start: Offset) : DragTarget
+    /** A user guide on the move, [id] being the one it has in the document. */
+    data class GuideMove(val id: String, val axis: GuideAxis) : DragTarget
 }
 
 /** The rectangle two corners span, in either order, so a rect always has positive extent. */
@@ -151,6 +175,19 @@ fun EditorCanvas(
     zoom: Float? = null,
     /** The slide's place in the presentation, drawn only when the slide asks for it. */
     number: Int? = null,
+    /** The deck's user guides. Document-owned and shared by every slide. */
+    guides: List<Guide> = emptyList(),
+    /** The strips around the slide, and whether [guides] draw and can be grabbed. */
+    showRulers: Boolean = false,
+    showGuides: Boolean = true,
+    /** The guide the pointer is carrying, drawn full strength over the settled ones. */
+    guideDrag: GuideDrag? = null,
+    /** The lines a move may settle on, the dragged elements' own excluded. */
+    snapTargets: (exclude: Set<String>) -> List<SnapLine> = { emptyList() },
+    onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
+    onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
+    onRemoveGuide: (id: String) -> Unit = {},
+    onEndGuideDrag: () -> Unit = {},
 ) {
     val currentSlide by rememberUpdatedState(slide)
     val currentSelection by rememberUpdatedState(selectedElementIds)
@@ -160,8 +197,13 @@ fun EditorCanvas(
     // Whatever the id resolves to right now, and only when there is text to edit.
     val editing: TextElement? =
         slide.elements.firstOrNull { it.id == editingElementId } as? TextElement
-    var guideX by remember { mutableStateOf(false) }
-    var guideY by remember { mutableStateOf(false) }
+    val currentGuides by rememberUpdatedState(guides)
+    val currentShowGuides by rememberUpdatedState(showGuides)
+    val currentSnapTargets by rememberUpdatedState(snapTargets)
+    // The lines the move in flight has settled on, one per axis, null when that
+    // axis is free. Written from the drag the way the two center flags were.
+    var snappedX by remember { mutableStateOf<SnapLine?>(null) }
+    var snappedY by remember { mutableStateOf<SnapLine?>(null) }
     // Cursor only. These two are written from pointer handlers, which the canvas
     // may not do for anything it draws, but the cursor is the shell's to paint.
     var hovered by remember { mutableStateOf<ResizeDirection?>(null) }
@@ -178,345 +220,615 @@ fun EditorCanvas(
     // the slide is letterboxed, and a menu anchors to the canvas.
     var canvasBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var slideBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // The slide rectangle in this composable's own space, in pixels: what the
+    // rulers graduate against, and what tells a guide dragged out of one where it
+    // has landed. A plain value rather than the coordinates themselves, which
+    // arrive as the same instance every pass and so would notify nothing.
+    var slideInCanvas by remember { mutableStateOf<Rect?>(null) }
+    fun measured() {
+        val canvas: LayoutCoordinates = canvasBounds ?: return
+        val slideRect: LayoutCoordinates = slideBounds ?: return
+        if (!canvas.isAttached || !slideRect.isAttached) return
+        slideInCanvas =
+            Rect(canvas.localPositionOf(slideRect, Offset.Zero), slideRect.size.toSize())
+    }
 
-    SlideSurface(
-        modifier.onGloballyPositioned { canvasBounds = it },
-        slideBackground = slide.background,
-        zoom = zoom,
-    ) {
-        // The element under the caret keeps its place in the layout but paints
-        // nothing: the text field below draws it, and two copies of the same
-        // text half a pixel apart is what an editor must never show.
-        for (element in slide.elements) {
-            ElementView(element, modifier = if (element.id == editing?.id) Modifier.alpha(0f) else Modifier)
-        }
-        if (slide.showsSlideNumber && number != null) SlideNumberView(number)
+    // A wrapper, so the rulers have somewhere to sit that is not the slide: the
+    // surface below is the slide rectangle itself, and clips to it.
+    Box(modifier.onGloballyPositioned { canvasBounds = it; measured() }) {
+        val rulerInset: Dp = if (showRulers) RulerThickness else 0.dp
 
-        // Editing affordances hold constant screen size at any zoom: authored
-        // sizes are divided by the canvas scale, positions stay in doc units.
-        val canvasScale = LocalCanvasScale.current
-        val docDensity = LocalDensity.current.density
-        fun toDoc(position: Offset) = Offset(position.x / docDensity, position.y / docDensity)
+        SlideSurface(
+            modifier = Modifier.fillMaxSize().padding(start = rulerInset, top = rulerInset),
+            slideBackground = slide.background,
+            zoom = zoom,
+        ) {
+            // The element under the caret keeps its place in the layout but paints
+            // nothing: the text field below draws it, and two copies of the same
+            // text half a pixel apart is what an editor must never show.
+            for (element in slide.elements) {
+                ElementView(
+                    element = element,
+                    modifier = if (element.id == editing?.id) Modifier.alpha(0f) else Modifier,
+                )
+            }
+            if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 
-        fun elementAt(p: Offset): Element? =
-            currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
+            // Editing affordances hold constant screen size at any zoom: authored
+            // sizes are divided by the canvas scale, positions stay in doc units.
+            val canvasScale = LocalCanvasScale.current
+            val docDensity = LocalDensity.current.density
+            fun toDoc(position: Offset) = Offset(position.x / docDensity, position.y / docDensity)
 
-        // A pointer position, which arrives in the input overlay's space (the
-        // slide rectangle), moved into the canvas composable's own. Untranslated
-        // until both layouts have reported, which is before the first press.
-        fun toCanvas(position: Offset): Offset {
-            val canvas: LayoutCoordinates = canvasBounds ?: return position
-            val slideRect: LayoutCoordinates = slideBounds ?: return position
-            return canvas.localPositionOf(slideRect, position)
-        }
+            fun elementAt(p: Offset): Element? =
+                currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
 
-        fun selectedElements(): List<Element> = currentSelection.mapNotNull { id ->
-            currentSlide.elements.firstOrNull { it.id == id }
-        }
+            // A pointer position, which arrives in the input overlay's space (the
+            // slide rectangle), moved into the canvas composable's own. Untranslated
+            // until both layouts have reported, which is before the first press.
+            fun toCanvas(position: Offset): Offset {
+                val canvas: LayoutCoordinates = canvasBounds ?: return position
+                val slideRect: LayoutCoordinates = slideBounds ?: return position
+                return canvas.localPositionOf(slideRect, position)
+            }
 
-        // Handles belong to a lone selection: with two or more selected there is
-        // no one frame to resize, so every drag there is a move.
-        fun soleSelected(): Element? =
-            currentSelection.singleOrNull()?.let { id ->
+            fun selectedElements(): List<Element> = currentSelection.mapNotNull { id ->
                 currentSlide.elements.firstOrNull { it.id == id }
             }
 
-        // A locked element has no handles to hit: it neither resizes nor moves.
-        // Selection still happens either way, so the inspector can reach it to
-        // unlock it. Handles live where they are drawn, so the pointer maps into
-        // the element's own space before the test, and [position] converts to doc
-        // units first or the tolerance would shrink with the display's density.
-        // [tolerance] is in screen dp: hovering is the more forgiving of the two,
-        // so the cursor hints just before the grab starts working, never after.
-        fun handleAt(position: Offset, tolerance: Float = 8f): Handle? {
-            val element = soleSelected()?.takeIf { !it.locked } ?: return null
-            val p = toDoc(position)
-            val (localX, localY) = element.toLocal(p.x, p.y)
-            return hitTestHandle(element.frame, localX, localY, tolerance / canvasScale)
-        }
+            // Handles belong to a lone selection: with two or more selected there is
+            // no one frame to resize, so every drag there is a move.
+            fun soleSelected(): Element? =
+                currentSelection.singleOrNull()?.let { id ->
+                    currentSlide.elements.firstOrNull { it.id == id }
+                }
 
-        // The dragged handle wins over the hovered one: mid-resize the frame
-        // moves under a still pointer, and the cursor must not flicker with it.
-        val cursors: ResizeCursors? = LocalResizeCursors.current
-        val cursorModifier: Modifier = cursors?.cursor(resizing ?: hovered) ?: Modifier
+            // A locked element has no handles to hit: it neither resizes nor moves.
+            // Selection still happens either way, so the inspector can reach it to
+            // unlock it. Handles live where they are drawn, so the pointer maps into
+            // the element's own space before the test, and [position] converts to doc
+            // units first or the tolerance would shrink with the display's density.
+            // [tolerance] is in screen dp: hovering is the more forgiving of the two,
+            // so the cursor hints just before the grab starts working, never after.
+            fun handleAt(position: Offset, tolerance: Float = 8f): Handle? {
+                val element = soleSelected()?.takeIf { !it.locked } ?: return null
+                val p = toDoc(position)
+                val (localX, localY) = element.toLocal(p.x, p.y)
+                return hitTestHandle(element.frame, localX, localY, tolerance / canvasScale)
+            }
 
-        // Input overlay covering the whole slide
-        Box(
-            Modifier
-                .fillMaxSize()
-                .onGloballyPositioned { slideBounds = it }
-                .then(cursorModifier)
-                .pointerInput(Unit) {
-                    // Hover for the cursor, and the click that selects. One loop
-                    // because the click needs the modifiers of its own press,
-                    // which detectTapGestures doesn't hand out. Nothing is
-                    // consumed here, so the drag handler below still sees every
-                    // event; a press that becomes a drag has its changes consumed
-                    // there, which is what takes it out of the running as a click.
-                    val slop: Float = viewConfiguration.touchSlop
-                    val doubleClick: Long = viewConfiguration.doubleTapTimeoutMillis
-                    awaitPointerEventScope {
-                        var pressedAt: Offset? = null
-                        // What the last click landed on and when, so the next one
-                        // can tell itself a second click on the same element.
-                        var clickedId: String? = null
-                        var clickedAt = 0L
-                        while (true) {
-                            val event: PointerEvent = awaitPointerEvent()
-                            val position: Offset? = event.changes.firstOrNull()?.position
-                            if (event.changes.any { it.isConsumed }) pressedAt = null
+            // The guide under the pointer, when guides are showing at all: a press
+            // that lands on one grabs it, and only a handle outranks that. The
+            // tolerance is screen dp, converted into doc units so the target is the
+            // same size at every zoom, exactly as [handleAt] does it.
+            fun guideAt(p: Offset): Guide? {
+                if (!currentShowGuides) return null
+                val tolerance: Float = GuideGrab / canvasScale
+                return currentGuides.firstOrNull { guide ->
+                    val distance: Float =
+                        if (guide.axis == GuideAxis.Vertical) abs(p.x - guide.position)
+                        else abs(p.y - guide.position)
+                    distance <= tolerance
+                }
+            }
 
-                            when (event.type) {
-                                // A shift press settles at press time, the way
-                                // editors do: toggling on release let a jitter
-                                // past the drag slop swallow the click, and the
-                                // drag it became would replace the selection the
-                                // user was building. Shift over empty space is a
-                                // no-op, not a clear: a near-miss while adding
-                                // must not cost the whole selection. Plain
-                                // clicks keep deciding on release, where a click
-                                // and a drag can still be told apart.
-                                //
-                                // A secondary press settles at press time too,
-                                // and settles there for good: it reports what it
-                                // hit and starts nothing. Ctrl-click is left to
-                                // mean ctrl-click; the platforms that spell a
-                                // right-click that way say so in their own
-                                // events, not in this button.
-                                PointerEventType.Press -> {
-                                    // A caret in flight ends here, before the
-                                    // press is classified: the field sits above
-                                    // this overlay, so anything that reaches it
-                                    // landed somewhere else on the slide.
-                                    if (currentEditingId != null) onEndTextEdit()
-                                    // The chord, not the changed button, is all a
-                                    // common pointer event carries, and a native
-                                    // menu's tracking loop can eat a secondary
-                                    // release and leave its bit stuck down. A
-                                    // press with the primary held is a left
-                                    // click whatever the stale rest of the chord
-                                    // says, so a stuck bit can never reclassify
-                                    // ordinary clicks.
-                                    secondaryDown = event.buttons.isSecondaryPressed &&
-                                        !event.buttons.isPrimaryPressed
-                                    shiftDown =
-                                        !secondaryDown && event.keyboardModifiers.isShiftPressed
-                                    pressedAt = null
-                                    when {
-                                        secondaryDown -> position?.let {
-                                            onContextClick(elementAt(toDoc(it))?.id, toCanvas(it))
-                                        }
+            // The dragged handle wins over the hovered one: mid-resize the frame
+            // moves under a still pointer, and the cursor must not flicker with it.
+            val cursors: ResizeCursors? = LocalResizeCursors.current
+            val cursorModifier: Modifier = cursors?.cursor(resizing ?: hovered) ?: Modifier
 
-                                        shiftDown -> position
-                                            ?.let { elementAt(toDoc(it)) }
-                                            ?.let { onToggleElementSelection(it.id) }
+            // Input overlay covering the whole slide
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .onGloballyPositioned { slideBounds = it; measured() }
+                    .then(cursorModifier)
+                    .pointerInput(Unit) {
+                        // Hover for the cursor, and the click that selects. One loop
+                        // because the click needs the modifiers of its own press,
+                        // which detectTapGestures doesn't hand out. Nothing is
+                        // consumed here, so the drag handler below still sees every
+                        // event; a press that becomes a drag has its changes consumed
+                        // there, which is what takes it out of the running as a click.
+                        val slop: Float = viewConfiguration.touchSlop
+                        val doubleClick: Long = viewConfiguration.doubleTapTimeoutMillis
+                        awaitPointerEventScope {
+                            var pressedAt: Offset? = null
+                            // What the last click landed on and when, so the next one
+                            // can tell itself a second click on the same element.
+                            var clickedId: String? = null
+                            var clickedAt = 0L
+                            while (true) {
+                                val event: PointerEvent = awaitPointerEvent()
+                                val position: Offset? = event.changes.firstOrNull()?.position
+                                if (event.changes.any { it.isConsumed }) pressedAt = null
 
-                                        else -> pressedAt = position
-                                    }
-                                }
-
-                                PointerEventType.Move -> {
-                                    hovered = position
-                                        ?.let { handleAt(it, tolerance = 12f) }
-                                        ?.let { resizeDirection(it, soleSelected()?.rotation ?: 0f) }
-                                }
-
-                                PointerEventType.Release -> {
-                                    val start: Offset? = pressedAt
-                                    pressedAt = null
-                                    // A click, not a drag: the pointer came back
-                                    // up where it went down.
-                                    if (start != null && position != null &&
-                                        (position - start).getDistance() <= slop
-                                    ) {
-                                        val hit: Element? = elementAt(toDoc(start))
-                                        val now: Long =
-                                            event.changes.firstOrNull()?.uptimeMillis ?: 0L
-                                        // A second click on the same text
-                                        // element opens it for typing, the way
-                                        // every editor's does. Anything else
-                                        // selects, first click or not.
-                                        val again: Boolean = hit != null &&
-                                            hit.id == clickedId && now - clickedAt <= doubleClick
-                                        clickedId = hit?.id
-                                        clickedAt = now
+                                when (event.type) {
+                                    // A shift press settles at press time, the way
+                                    // editors do: toggling on release let a jitter
+                                    // past the drag slop swallow the click, and the
+                                    // drag it became would replace the selection the
+                                    // user was building. Shift over empty space is a
+                                    // no-op, not a clear: a near-miss while adding
+                                    // must not cost the whole selection. Plain
+                                    // clicks keep deciding on release, where a click
+                                    // and a drag can still be told apart.
+                                    //
+                                    // A secondary press settles at press time too,
+                                    // and settles there for good: it reports what it
+                                    // hit and starts nothing. Ctrl-click is left to
+                                    // mean ctrl-click; the platforms that spell a
+                                    // right-click that way say so in their own
+                                    // events, not in this button.
+                                    PointerEventType.Press -> {
+                                        // A caret in flight ends here, before the
+                                        // press is classified: the field sits above
+                                        // this overlay, so anything that reaches it
+                                        // landed somewhere else on the slide.
+                                        if (currentEditingId != null) onEndTextEdit()
+                                        // The chord, not the changed button, is all a
+                                        // common pointer event carries, and a native
+                                        // menu's tracking loop can eat a secondary
+                                        // release and leave its bit stuck down. A
+                                        // press with the primary held is a left
+                                        // click whatever the stale rest of the chord
+                                        // says, so a stuck bit can never reclassify
+                                        // ordinary clicks.
+                                        secondaryDown = event.buttons.isSecondaryPressed &&
+                                            !event.buttons.isPrimaryPressed
+                                        shiftDown =
+                                            !secondaryDown && event.keyboardModifiers.isShiftPressed
+                                        pressedAt = null
                                         when {
-                                            hit == null -> onSelectElement(null)
-                                            again && hit is TextElement && !hit.locked ->
-                                                onBeginTextEdit(hit.id)
+                                            secondaryDown -> position?.let {
+                                                val at: Element? = elementAt(toDoc(it))
+                                                onContextClick(at?.id, toCanvas(it))
+                                            }
 
-                                            else -> onSelectElement(hit.id)
+                                            shiftDown -> position
+                                                ?.let { elementAt(toDoc(it)) }
+                                                ?.let { onToggleElementSelection(it.id) }
+
+                                            else -> pressedAt = position
                                         }
                                     }
-                                }
 
-                                PointerEventType.Exit -> hovered = null
-                                else -> {}
+                                    PointerEventType.Move -> {
+                                        val rotation: Float = soleSelected()?.rotation ?: 0f
+                                        hovered = position
+                                            ?.let { handleAt(it, tolerance = 12f) }
+                                            ?.let { resizeDirection(it, rotation) }
+                                    }
+
+                                    PointerEventType.Release -> {
+                                        val start: Offset? = pressedAt
+                                        pressedAt = null
+                                        // A click, not a drag: the pointer came back
+                                        // up where it went down.
+                                        if (start != null && position != null &&
+                                            (position - start).getDistance() <= slop
+                                        ) {
+                                            val hit: Element? = elementAt(toDoc(start))
+                                            val now: Long =
+                                                event.changes.firstOrNull()?.uptimeMillis ?: 0L
+                                            // A second click on the same text
+                                            // element opens it for typing, the way
+                                            // every editor's does. Anything else
+                                            // selects, first click or not.
+                                            val again: Boolean = hit != null &&
+                                                hit.id == clickedId &&
+                                                now - clickedAt <= doubleClick
+                                            clickedId = hit?.id
+                                            clickedAt = now
+                                            when {
+                                                hit == null -> onSelectElement(null)
+                                                again && hit is TextElement && !hit.locked ->
+                                                    onBeginTextEdit(hit.id)
+
+                                                else -> onSelectElement(hit.id)
+                                            }
+                                        }
+                                    }
+
+                                    PointerEventType.Exit -> hovered = null
+                                    else -> {}
+                                }
                             }
                         }
                     }
+                    .pointerInput(Unit) {
+                        // Plain vars, not snapshot state: each sample recomputes from
+                        // the frames the gesture started with, so every emission
+                        // carries the whole gesture and a slow roundtrip can delay a
+                        // repaint but never lose movement.
+                        var target: DragTarget? = null
+                        var startFrames: Map<String, Frame> = emptyMap()
+                        var startFrame: Frame? = null
+                        var startRotation = 0f
+                        var totalDx = 0f
+                        var totalDy = 0f
+                        var marqueeOrigin: Offset? = null
+                        // Where a guide drag was picked up, in doc units.
+                        var guideStart: Offset? = null
+                        fun reset() {
+                            target = null
+                            startFrames = emptyMap()
+                            startFrame = null
+                            startRotation = 0f
+                            totalDx = 0f
+                            totalDy = 0f
+                            marqueeOrigin = null
+                            guideStart = null
+                            snappedX = null
+                            snappedY = null
+                            resizing = null
+                        }
+
+                        // The whole selection moved by this gesture: the dragged
+                        // element snaps to whatever the settings offer and hands the
+                        // delta it settled on to the rest. The guides ride that same
+                        // snap. The dragged elements' own lines are left out, or the
+                        // selection would stick to where it started.
+                        fun moved(draggedId: String): List<Element> {
+                            val start: Frame = startFrames[draggedId] ?: return emptyList()
+                            val snapped: SnapResult = snapFrame(
+                                frame = start.translate(totalDx, totalDy),
+                                lines = currentSnapTargets(startFrames.keys),
+                            )
+                            snappedX = snapped.snappedX
+                            snappedY = snapped.snappedY
+                            val dx: Float = snapped.frame.x - start.x
+                            val dy: Float = snapped.frame.y - start.y
+                            return currentSlide.elements
+                                .filter { it.id in startFrames }
+                                .map { element ->
+                                    val from: Frame = startFrames.getValue(element.id)
+                                    element.update(frame = from.translate(dx, dy))
+                                }
+                        }
+
+                        // Where the guide drag has got to, in doc units, and whether
+                        // that is still on the slide: one let go off the slide is one
+                        // thrown away, the way every editor's rulers work.
+                        fun guidePoint(): Offset {
+                            val start: Offset = guideStart ?: Offset.Zero
+                            return Offset(start.x + totalDx, start.y + totalDy)
+                        }
+
+                        fun guidePosition(axis: GuideAxis): Float =
+                            if (axis == GuideAxis.Vertical) guidePoint().x else guidePoint().y
+
+                        fun onSlide(): Boolean {
+                            val at: Offset = guidePoint()
+                            return at.x in 0f..Document.SLIDE_WIDTH &&
+                                at.y in 0f..Document.SLIDE_HEIGHT
+                        }
+
+                        fun resized(t: DragTarget.Resize): List<Element> {
+                            val start: Frame = startFrame ?: return emptyList()
+                            val element: Element = currentSlide.elements
+                                .firstOrNull { it.id == t.elementId }
+                                ?: return emptyList()
+                            val frame: Frame =
+                                resizeFrame(start, startRotation, t.handle, totalDx, totalDy)
+                            return listOf(element.update(frame = frame))
+                        }
+
+                        detectDragGestures(
+                            onDragStart = { position ->
+                                // The selection was already edited at press time, and
+                                // a secondary press moves nothing at all: no marquee,
+                                // no move, no resize. Both leave [target] null, so
+                                // there is nothing to commit either.
+                                if (shiftDown || secondaryDown) return@detectDragGestures
+                                val p = toDoc(position)
+                                val sole: Element? = soleSelected()
+                                val handle: Handle? = handleAt(position)
+                                val hit: Element? = elementAt(p)
+                                val guide: Guide? = guideAt(p)
+                                target = when {
+                                    sole != null && handle != null -> {
+                                        startFrame = sole.frame
+                                        startRotation = sole.rotation
+                                        DragTarget.Resize(sole.id, handle)
+                                    }
+
+                                    // A guide outranks whatever is drawn under it,
+                                    // but never a handle: a handle is the smaller
+                                    // target and the one you went looking for.
+                                    guide != null -> {
+                                        guideStart = p
+                                        DragTarget.GuideMove(guide.id, guide.axis)
+                                    }
+
+                                    // Empty space sweeps a marquee instead.
+                                    hit == null -> DragTarget.Marquee(p)
+
+                                    else -> {
+                                        // A press on something outside the selection
+                                        // takes the selection with it, exactly as a
+                                        // plain click would; a press inside it drags
+                                        // everything already selected.
+                                        val selected: Boolean = hit.id in currentSelection
+                                        if (!selected) onSelectElement(hit.id)
+                                        val movers: List<Element> =
+                                            if (selected) selectedElements() else listOf(hit)
+                                        startFrames = movers
+                                            .filter { !it.locked }
+                                            .associate { it.id to it.frame }
+                                        if (hit.locked) null else DragTarget.Move(hit.id)
+                                    }
+                                }
+                                resizing = (target as? DragTarget.Resize)
+                                    ?.let { resizeDirection(it.handle, startRotation) }
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                val delta =
+                                    Offset(dragAmount.x / docDensity, dragAmount.y / docDensity)
+                                totalDx += delta.x
+                                totalDy += delta.y
+                                when (val t = target) {
+                                    is DragTarget.Move -> onPreviewElements(moved(t.draggedId))
+                                    is DragTarget.Resize -> onPreviewElements(resized(t))
+                                    is DragTarget.GuideMove ->
+                                        onPreviewGuide(t.id, t.axis, guidePosition(t.axis))
+
+                                    is DragTarget.Marquee -> {
+                                        // The rectangle starts at the press, not at
+                                        // where the slop was crossed: the first
+                                        // sample carries that gap, so it comes back
+                                        // off the start position once.
+                                        val origin: Offset = marqueeOrigin
+                                            ?: (t.start - delta).also { marqueeOrigin = it }
+                                        val corner = Offset(origin.x + totalDx, origin.y + totalDy)
+                                        onPreviewMarquee(rectBetween(origin, corner))
+                                    }
+
+                                    null -> {}
+                                }
+                            },
+                            // Commit only when this gesture had a target: an empty
+                            // drag must never publish anything.
+                            onDragEnd = {
+                                when (val t = target) {
+                                    is DragTarget.Move -> onUpdateElements(moved(t.draggedId))
+                                    is DragTarget.Resize -> onUpdateElements(resized(t))
+                                    // What a half-swept marquee caught, it keeps.
+                                    is DragTarget.Marquee -> onEndMarquee()
+
+                                    is DragTarget.GuideMove -> {
+                                        val at: Float = guidePosition(t.axis)
+                                        if (onSlide()) onCommitGuide(t.id, t.axis, at)
+                                        else onRemoveGuide(t.id)
+                                    }
+                                    null -> {}
+                                }
+                                reset()
+                            },
+                            // A cancelled gesture never happened: the presenter rolls
+                            // the document back to its pre-gesture state. A marquee
+                            // changed no document, so it only has its rectangle to
+                            // put away.
+                            onDragCancel = {
+                                when (target) {
+                                    is DragTarget.Marquee -> onEndMarquee()
+                                    is DragTarget.GuideMove -> onEndGuideDrag()
+                                    null -> {}
+                                    else -> onPreviewCancel()
+                                }
+                                reset()
+                            },
+                        )
+                    }
+            )
+
+            // Selection rings, one per selected element; handles only for a lone one.
+            val selected: List<Element> = slide.elements.filter { it.id in selectedElementIds }
+            for (element in selected) {
+                // The ring stays while the caret is in the element, the handles go:
+                // the field covers them, so a handle there would be a target you
+                // can see and never hit.
+                val handles: Boolean = selected.size == 1 && editing == null
+                SelectionOverlay(element, canvasScale, handles = handles)
+            }
+
+            // The marquee, drawn from state rather than from the gesture's own vars.
+            if (marquee != null) MarqueeOverlay(marquee, canvasScale)
+
+            // The user's guides, settled ones first and the one the pointer is
+            // carrying over them. The dragged line comes back through the loop like
+            // everything else a gesture shows.
+            if (showGuides) {
+                for (guide in guides) {
+                    GuideLine(guide.axis, guide.position, canvasScale, alpha = 0.7f)
                 }
-                .pointerInput(Unit) {
-                    // Plain vars, not snapshot state: each sample recomputes from
-                    // the frames the gesture started with, so every emission
-                    // carries the whole gesture and a slow roundtrip can delay a
-                    // repaint but never lose movement.
-                    var target: DragTarget? = null
-                    var startFrames: Map<String, Frame> = emptyMap()
-                    var startFrame: Frame? = null
-                    var startRotation = 0f
-                    var totalDx = 0f
-                    var totalDy = 0f
-                    var marqueeOrigin: Offset? = null
-                    fun reset() {
-                        target = null
-                        startFrames = emptyMap()
-                        startFrame = null
-                        startRotation = 0f
-                        totalDx = 0f
-                        totalDy = 0f
-                        marqueeOrigin = null
-                        guideX = false
-                        guideY = false
-                        resizing = null
-                    }
+            }
+            if (guideDrag != null) {
+                GuideLine(guideDrag.axis, guideDrag.position, canvasScale, alpha = 1f)
+            }
 
-                    // The whole selection moved by this gesture: the dragged
-                    // element snaps to the slide center and hands the delta it
-                    // settled on to the rest. The guides ride that same snap.
-                    fun moved(draggedId: String): List<Element> {
-                        val start: Frame = startFrames[draggedId] ?: return emptyList()
-                        val snapped: SnapResult =
-                            snapToSlideCenter(start.translate(totalDx, totalDy))
-                        guideX = snapped.snappedX
-                        guideY = snapped.snappedY
-                        val dx: Float = snapped.frame.x - start.x
-                        val dy: Float = snapped.frame.y - start.y
-                        return currentSlide.elements
-                            .filter { it.id in startFrames }
-                            .map { it.update(frame = startFrames.getValue(it.id).translate(dx, dy)) }
-                    }
+            // Alignment guides: drawn only while the move in flight sits on one,
+            // which is what makes the layout guides layout guides rather than lines.
+            snappedX?.let { SnapGuide(it, canvasScale) }
+            snappedY?.let { SnapGuide(it, canvasScale) }
 
-                    fun resized(t: DragTarget.Resize): List<Element> {
-                        val start: Frame = startFrame ?: return emptyList()
-                        val element: Element = currentSlide.elements
-                            .firstOrNull { it.id == t.elementId }
-                            ?: return emptyList()
-                        val frame: Frame =
-                            resizeFrame(start, startRotation, t.handle, totalDx, totalDy)
-                        return listOf(element.update(frame = frame))
+            // Last, and so on top of the input overlay: the field has to see its own
+            // clicks and drags to place a caret and sweep a selection with them.
+            if (editing != null) {
+                TextEditor(
+                    element = editing,
+                    onPreviewElements = onPreviewElements,
+                    onEndTextEdit = onEndTextEdit,
+                )
+            }
+        }
+
+        val ruled: Rect? = slideInCanvas
+        if (showRulers && ruled != null) Rulers(
+            slide = ruled,
+            onPreviewGuide = onPreviewGuide,
+            onCommitGuide = onCommitGuide,
+            onEndGuideDrag = onEndGuideDrag,
+        )
+    }
+}
+
+/**
+ * The two ruler strips, in the canvas' own space around the slide: the top one
+ * graduated in x, the left one in y, ticked every [RulerMinorStep] doc units and
+ * labelled every [RulerMajorStep].
+ *
+ * Pressing a strip and dragging into the slide pulls a fresh guide out of it, the
+ * way every editor's rulers do. Only the strips take pointers: the box they sit
+ * in has none of its own, so the slide underneath still sees its own clicks.
+ *
+ * [slide] is the slide rectangle in that same space, in pixels, which is all the
+ * ticks and the drag need to convert between the two.
+ */
+@Composable
+private fun Rulers(
+    slide: Rect,
+    onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
+    onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
+    onEndGuideDrag: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Box(Modifier.fillMaxSize()) {
+        RulerStrip(
+            horizontal = true,
+            slide = slide,
+            tokens = tokens,
+            onPreviewGuide = onPreviewGuide,
+            onCommitGuide = onCommitGuide,
+            onEndGuideDrag = onEndGuideDrag,
+            modifier = Modifier.fillMaxWidth().height(RulerThickness),
+        )
+        RulerStrip(
+            horizontal = false,
+            slide = slide,
+            tokens = tokens,
+            onPreviewGuide = onPreviewGuide,
+            onCommitGuide = onCommitGuide,
+            onEndGuideDrag = onEndGuideDrag,
+            modifier = Modifier.fillMaxHeight().width(RulerThickness),
+        )
+    }
+}
+
+/**
+ * One ruler strip. [horizontal] is the top one: it graduates in x and pulls
+ * horizontal guides down out of itself, which is the pairing rulers have
+ * everywhere. The left strip is the mirror of it.
+ */
+@Composable
+private fun RulerStrip(
+    horizontal: Boolean,
+    slide: Rect,
+    tokens: ChromeTokens,
+    onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
+    onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
+    onEndGuideDrag: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val density: Density = LocalDensity.current
+    // What the strip graduates: the span it covers in pixels, and in doc units.
+    val span: Float = if (horizontal) slide.width else slide.height
+    val units: Float = if (horizontal) Document.SLIDE_WIDTH else Document.SLIDE_HEIGHT
+    val origin: Float = if (horizontal) slide.left else slide.top
+    // What it pulls out, which is the other axis: a horizontal ruler makes
+    // horizontal guides, and a horizontal guide is placed by its y.
+    val pulls: GuideAxis = if (horizontal) GuideAxis.Horizontal else GuideAxis.Vertical
+
+    fun tickAt(unit: Float): Float = origin + unit / units * span
+
+    Box(modifier) {
+        Canvas(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(slide) {
+                    var pointer: Offset = Offset.Zero
+                    fun position(): Float = if (horizontal) {
+                        (pointer.y - slide.top) / slide.height * Document.SLIDE_HEIGHT
+                    } else {
+                        (pointer.x - slide.left) / slide.width * Document.SLIDE_WIDTH
                     }
 
                     detectDragGestures(
-                        onDragStart = { position ->
-                            // The selection was already edited at press time, and
-                            // a secondary press moves nothing at all: no marquee,
-                            // no move, no resize. Both leave [target] null, so
-                            // there is nothing to commit either.
-                            if (shiftDown || secondaryDown) return@detectDragGestures
-                            val p = toDoc(position)
-                            val sole: Element? = soleSelected()
-                            val handle: Handle? = handleAt(position)
-                            val hit: Element? = elementAt(p)
-                            target = when {
-                                sole != null && handle != null -> {
-                                    startFrame = sole.frame
-                                    startRotation = sole.rotation
-                                    DragTarget.Resize(sole.id, handle)
-                                }
-
-                                // Empty space sweeps a marquee instead.
-                                hit == null -> DragTarget.Marquee(p)
-
-                                else -> {
-                                    // A press on something outside the selection
-                                    // takes the selection with it, exactly as a
-                                    // plain click would; a press inside it drags
-                                    // everything already selected.
-                                    val selected: Boolean = hit.id in currentSelection
-                                    if (!selected) onSelectElement(hit.id)
-                                    val movers: List<Element> =
-                                        if (selected) selectedElements() else listOf(hit)
-                                    startFrames = movers
-                                        .filter { !it.locked }
-                                        .associate { it.id to it.frame }
-                                    if (hit.locked) null else DragTarget.Move(hit.id)
-                                }
-                            }
-                            resizing = (target as? DragTarget.Resize)
-                                ?.let { resizeDirection(it.handle, startRotation) }
-                        },
-                        onDrag = { change, dragAmount ->
+                        onDragStart = { pointer = it },
+                        onDrag = { change, amount ->
                             change.consume()
-                            val delta = Offset(dragAmount.x / docDensity, dragAmount.y / docDensity)
-                            totalDx += delta.x
-                            totalDy += delta.y
-                            when (val t = target) {
-                                is DragTarget.Move -> onPreviewElements(moved(t.draggedId))
-                                is DragTarget.Resize -> onPreviewElements(resized(t))
-
-                                is DragTarget.Marquee -> {
-                                    // The rectangle starts at the press, not at
-                                    // where the slop was crossed: the first
-                                    // sample carries that gap, so it comes back
-                                    // off the start position once.
-                                    val origin: Offset = marqueeOrigin
-                                        ?: (t.start - delta).also { marqueeOrigin = it }
-                                    val corner = Offset(origin.x + totalDx, origin.y + totalDy)
-                                    onPreviewMarquee(rectBetween(origin, corner))
-                                }
-
-                                null -> {}
-                            }
+                            pointer += amount
+                            onPreviewGuide(null, pulls, position())
                         },
-                        // Commit only when this gesture had a target: an empty
-                        // drag must never publish anything.
+                        // A guide dropped anywhere but on the slide was never
+                        // pulled out at all.
                         onDragEnd = {
-                            when (val t = target) {
-                                is DragTarget.Move -> onUpdateElements(moved(t.draggedId))
-                                is DragTarget.Resize -> onUpdateElements(resized(t))
-                                // What a half-swept marquee caught, it keeps.
-                                is DragTarget.Marquee -> onEndMarquee()
-                                null -> {}
-                            }
-                            reset()
+                            if (slide.contains(pointer)) onCommitGuide(null, pulls, position())
+                            else onEndGuideDrag()
                         },
-                        // A cancelled gesture never happened: the presenter rolls
-                        // the document back to its pre-gesture state. A marquee
-                        // changed no document, so it only has its rectangle to
-                        // put away.
-                        onDragCancel = {
-                            when (target) {
-                                is DragTarget.Marquee -> onEndMarquee()
-                                null -> {}
-                                else -> onPreviewCancel()
-                            }
-                            reset()
-                        },
+                        onDragCancel = { onEndGuideDrag() },
                     )
                 }
-        )
+        ) {
+            val hair: Float = 1.dp.toPx()
+            val minor: Float = 5.dp.toPx()
+            val major: Float = 9.dp.toPx()
+            drawRect(tokens.panel)
 
-        // Selection rings, one per selected element; handles only for a lone one.
-        val selected: List<Element> = slide.elements.filter { it.id in selectedElementIds }
-        for (element in selected) {
-            // The ring stays while the caret is in the element, the handles go:
-            // the field covers them, so a handle there would be a target you
-            // can see and never hit.
-            SelectionOverlay(element, canvasScale, handles = selected.size == 1 && editing == null)
+            if (horizontal) {
+                drawLine(
+                    color = tokens.border,
+                    start = Offset(0f, size.height - hair),
+                    end = Offset(size.width, size.height - hair),
+                    strokeWidth = hair,
+                )
+            } else {
+                drawLine(
+                    color = tokens.border,
+                    start = Offset(size.width - hair, 0f),
+                    end = Offset(size.width - hair, size.height),
+                    strokeWidth = hair,
+                )
+            }
+
+            var unit = 0f
+            while (unit <= units) {
+                val at: Float = tickAt(unit)
+                val length: Float = if (unit % RulerMajorStep == 0f) major else minor
+                if (horizontal) {
+                    drawLine(
+                        color = tokens.dim,
+                        start = Offset(at, size.height - length),
+                        end = Offset(at, size.height),
+                        strokeWidth = hair,
+                    )
+                } else {
+                    drawLine(
+                        color = tokens.dim,
+                        start = Offset(size.width - length, at),
+                        end = Offset(size.width, at),
+                        strokeWidth = hair,
+                    )
+                }
+                unit += RulerMinorStep
+            }
         }
 
-        // The marquee, drawn from state rather than from the gesture's own vars.
-        if (marquee != null) MarqueeOverlay(marquee, canvasScale)
-
-        // Alignment guides
-        if (guideX) VerticalCenterGuide(canvasScale)
-        if (guideY) HorizontalCenterGuide(canvasScale)
-
-        // Last, and so on top of the input overlay: the field has to see its own
-        // clicks and drags to place a caret and sweep a selection with them.
-        if (editing != null) {
-            TextEditor(editing, onPreviewElements = onPreviewElements, onEndTextEdit = onEndTextEdit)
+        var unit = 0f
+        while (unit <= units) {
+            val at: Dp = with(density) { tickAt(unit).toDp() }
+            Text(
+                text = unit.toInt().toString(),
+                color = tokens.dim,
+                fontSize = 8.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier =
+                    if (horizontal) Modifier.offset(x = at + 2.dp, y = 1.dp)
+                    else Modifier.offset(x = 1.dp, y = at + 2.dp),
+            )
+            unit += RulerMajorStep
         }
     }
 }
@@ -735,44 +1047,93 @@ private fun MarqueeOverlay(rect: Frame, scale: Float) {
     )
 }
 
+/**
+ * One user guide across the slide: a hairline in the document accent, drawn at
+ * constant screen width whatever the zoom. [alpha] separates the settled guides
+ * from the one the pointer is carrying.
+ */
 @Composable
-private fun VerticalCenterGuide(scale: Float) {
+private fun GuideLine(axis: GuideAxis, position: Float, scale: Float, alpha: Float) {
     Canvas(Modifier.fillMaxSize()) {
-        val x = size.width / 2
-        drawLine(
-            color = GuideYellow,
-            start = Offset(x, -(12f / scale).dp.toPx()),
-            end = Offset(x, size.height + (12f / scale).dp.toPx()),
-            strokeWidth = (1f / scale).dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf((5f / scale).dp.toPx(), (4f / scale).dp.toPx())),
-        )
-    }
-    Box(
-        Modifier.offset((Document.SLIDE_WIDTH / 2 - 24f / scale).dp, (8f / scale).dp)
-            .background(GuideYellow, RoundedCornerShape((3f / scale).dp))
-            .padding(horizontal = (6f / scale).dp, vertical = (1f / scale).dp)
-    ) {
-        Text("center x", color = Color(0xFF17181C), fontSize = (10f / scale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        val stroke: Float = (1f / scale).dp.toPx()
+        val at: Float = position.dp.toPx()
+        if (axis == GuideAxis.Vertical) {
+            drawLine(
+                color = Accent.copy(alpha = alpha),
+                start = Offset(at, 0f),
+                end = Offset(at, size.height),
+                strokeWidth = stroke,
+            )
+        } else {
+            drawLine(
+                color = Accent.copy(alpha = alpha),
+                start = Offset(0f, at),
+                end = Offset(size.width, at),
+                strokeWidth = stroke,
+            )
+        }
     }
 }
 
+/** What the chip over a snapped line says. Short: it sits on the slide. */
+private fun SnapLine.label(): String = when (kind) {
+    SnapKind.Center -> if (axis == GuideAxis.Vertical) "center x" else "center y"
+    SnapKind.Edges -> "edge"
+    SnapKind.Objects -> "object"
+    SnapKind.Guides -> "guide"
+}
+
+/**
+ * The alignment guide over the line a drag has settled on: 1px dashed yellow
+ * running 12dp past both slide edges, with a label chip at the near edge. Screen
+ * space, like every other editing affordance, so it holds its size at any zoom.
+ */
 @Composable
-private fun HorizontalCenterGuide(scale: Float) {
+private fun SnapGuide(line: SnapLine, scale: Float) {
     Canvas(Modifier.fillMaxSize()) {
-        val y = size.height / 2
-        drawLine(
-            color = GuideYellow,
-            start = Offset(-(12f / scale).dp.toPx(), y),
-            end = Offset(size.width + (12f / scale).dp.toPx(), y),
-            strokeWidth = (1f / scale).dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf((5f / scale).dp.toPx(), (4f / scale).dp.toPx())),
+        val stroke: Float = (1f / scale).dp.toPx()
+        val over: Float = (12f / scale).dp.toPx()
+        val dash: PathEffect = PathEffect.dashPathEffect(
+            floatArrayOf((5f / scale).dp.toPx(), (4f / scale).dp.toPx()),
         )
+        val at: Float = line.position.dp.toPx()
+        if (line.axis == GuideAxis.Vertical) {
+            drawLine(
+                color = GuideYellow,
+                start = Offset(at, -over),
+                end = Offset(at, size.height + over),
+                strokeWidth = stroke,
+                pathEffect = dash,
+            )
+        } else {
+            drawLine(
+                color = GuideYellow,
+                start = Offset(-over, at),
+                end = Offset(size.width + over, at),
+                strokeWidth = stroke,
+                pathEffect = dash,
+            )
+        }
     }
+
+    val chip: Modifier =
+        if (line.axis == GuideAxis.Vertical) {
+            Modifier.offset((line.position - 24f / scale).dp, (8f / scale).dp)
+        } else {
+            Modifier.offset((8f / scale).dp, (line.position - 18f / scale).dp)
+        }
+
     Box(
-        Modifier.offset((8f / scale).dp, (Document.SLIDE_HEIGHT / 2 - 18f / scale).dp)
+        chip
             .background(GuideYellow, RoundedCornerShape((3f / scale).dp))
             .padding(horizontal = (6f / scale).dp, vertical = (1f / scale).dp)
     ) {
-        Text("center y", color = Color(0xFF17181C), fontSize = (10f / scale).sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text(
+            text = line.label(),
+            color = Color(0xFF17181C),
+            fontSize = (10f / scale).sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+        )
     }
 }

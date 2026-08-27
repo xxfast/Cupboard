@@ -34,6 +34,7 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
+import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import androidx.compose.ui.geometry.Offset
@@ -215,6 +216,22 @@ private val ResizeCursorIcons: Map<ResizeDirection, PointerIcon> by lazy {
  */
 private val AwtResizeCursors = ResizeCursors { direction ->
     Modifier.pointerHoverIcon(direction?.let { ResizeCursorIcons.getValue(it) } ?: PointerIcon.Default)
+}
+
+/** The Snap submenu's rows, each the label for the [SnapKind] it switches. */
+private val SnapLabels: List<Pair<SnapKind, String>> = listOf(
+    SnapKind.Center to "Center",
+    SnapKind.Edges to "Edges",
+    SnapKind.Objects to "Objects",
+    SnapKind.Guides to "Guides",
+)
+
+/** Whether a dragged element currently settles onto [kind]'s lines. */
+private fun EditorState.snapsTo(kind: SnapKind): Boolean = when (kind) {
+    SnapKind.Center -> snapToCenter
+    SnapKind.Edges -> snapToEdges
+    SnapKind.Objects -> snapToObjects
+    SnapKind.Guides -> snapToGuides
 }
 
 /**
@@ -419,6 +436,54 @@ fun main() {
                 // is a rule that drifts.
                 Menu("Arrange", mnemonic = 'A') {
                     MenuItems(arrangeSections(state, viewModel))
+                }
+
+                // Written here rather than as a shared spec: every entry is a
+                // switch showing its own state, and [EditorMenuItem] has no
+                // checkmark to carry. Nothing is ever greyed, a view toggle
+                // asks nothing of the selection. The state these read is the
+                // editor's, not this window's, so a reopened window comes back
+                // the way it was left.
+                Menu("View", mnemonic = 'V') {
+                    CheckboxItem(
+                        text = "Show Navigator",
+                        checked = state.sidebarOpen,
+                        onCheckedChange = { viewModel.onToggleSidebar() },
+                    )
+                    CheckboxItem(
+                        text = "Show Presenter Notes",
+                        checked = state.showNotes,
+                        onCheckedChange = { viewModel.onToggleNotes() },
+                    )
+
+                    Separator()
+
+                    CheckboxItem(
+                        text = "Show Rulers",
+                        checked = state.showRulers,
+                        shortcut = editShortcut(Key.R),
+                        onCheckedChange = { viewModel.onToggleRulers() },
+                    )
+                    CheckboxItem(
+                        text = "Show Guides",
+                        checked = state.showGuides,
+                        onCheckedChange = { viewModel.onToggleGuides() },
+                    )
+
+                    Separator()
+
+                    // The parent already says Snap, so the rows don't repeat it.
+                    // Driven off [SnapLabels] so a fifth kind is one line there
+                    // and nothing here.
+                    Menu("Snap") {
+                        for ((kind, label) in SnapLabels) {
+                            CheckboxItem(
+                                text = label,
+                                checked = state.snapsTo(kind),
+                                onCheckedChange = { enabled -> viewModel.onSetSnap(kind, enabled) },
+                            )
+                        }
+                    }
                 }
             }
 

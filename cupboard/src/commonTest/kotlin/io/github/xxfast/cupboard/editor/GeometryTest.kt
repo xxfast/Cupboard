@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
@@ -52,17 +53,54 @@ class GeometryTest {
         // slide center x = 960; frame width 200 → centered x = 860
         val near = frame.copy(x = 866f)
         val snapped = snapToSlideCenter(near)
-        assertTrue(snapped.snappedX)
+        assertEquals(SnapKind.Center, snapped.snappedX?.kind)
         assertEquals(860f, snapped.frame.x)
-        assertFalse(snapped.snappedY)
+        assertNull(snapped.snappedY)
     }
 
     @Test
     fun noSnapOutsideThreshold() {
         val far = frame.copy(x = 845f)
         val result = snapToSlideCenter(far)
-        assertFalse(result.snappedX)
+        assertNull(result.snappedX)
         assertEquals(845f, result.frame.x)
+    }
+
+    @Test
+    fun snapFramePicksTheNearestLineOnEachAxis() {
+        // 200x100 at (100,100): left 100, center 200, right 300, and top 100,
+        // middle 150, bottom 200.
+        val lines = listOf(
+            SnapLine(GuideAxis.Vertical, 306f, SnapKind.Guides),
+            SnapLine(GuideAxis.Vertical, 296f, SnapKind.Objects),
+            SnapLine(GuideAxis.Horizontal, 148f, SnapKind.Guides),
+        )
+        val snapped = snapFrame(frame, lines)
+
+        // The right edge is 4 from one line and 6 from the other: nearest wins.
+        assertEquals(96f, snapped.frame.x)
+        assertEquals(SnapKind.Objects, snapped.snappedX?.kind)
+        assertEquals(296f, snapped.snappedX?.position)
+        assertEquals(98f, snapped.frame.y)
+        assertEquals(SnapKind.Guides, snapped.snappedY?.kind)
+    }
+
+    @Test
+    fun snapFrameSnapsAnEdgeNotJustTheCenter() {
+        // The left edge, 100, is 3 off the line; no center is anywhere near it.
+        val snapped = snapFrame(frame, listOf(SnapLine(GuideAxis.Vertical, 103f, SnapKind.Guides)))
+        assertEquals(103f, snapped.frame.x)
+    }
+
+    @Test
+    fun snapFrameLeavesAnAxisFreeBeyondTheThreshold() {
+        val near = snapFrame(frame, listOf(SnapLine(GuideAxis.Vertical, 308f, SnapKind.Guides)))
+        assertEquals(SnapKind.Guides, near.snappedX?.kind)
+
+        val far = snapFrame(frame, listOf(SnapLine(GuideAxis.Vertical, 340f, SnapKind.Guides)))
+        assertNull(far.snappedX)
+        assertNull(far.snappedY)
+        assertEquals(frame, far.frame)
     }
 
     @Test

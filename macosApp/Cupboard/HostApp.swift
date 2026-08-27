@@ -105,12 +105,32 @@ struct CupboardHostApp: App {
                     .keyboardShortcut("v", modifiers: [.command, .option])
                     .disabled(!host.canPasteStyle())
             }
+            // The View menu, below the system sidebar item: what the chrome
+            // shows, then what the canvas draws over the slide. Reading
+            // generation is what keeps the checkmarks fresh; one snapshot below
+            // it, so every item in the menu is answering about the same state.
             CommandGroup(after: .sidebar) {
                 let _ = model.generation
+                let ui = Chrome(host)
                 Toggle("Show Speaker Notes", isOn: Binding(
-                    get: { host.showNotes() },
+                    get: { ui.showNotes },
                     set: { _ in host.toggleNotes() }
                 ))
+
+                Divider()
+
+                Toggle("Show Rulers", isOn: Binding(
+                    get: { ui.showRulers },
+                    set: { _ in host.toggleRulers() }
+                ))
+                .keyboardShortcut("r", modifiers: .command)
+                Toggle("Show Guides", isOn: Binding(
+                    get: { ui.showGuides },
+                    set: { _ in host.toggleGuides() }
+                ))
+                Menu("Snap to") {
+                    SnapToggles(host: host, snap: ui.snap)
+                }
             }
             insertMenu
             slideMenu

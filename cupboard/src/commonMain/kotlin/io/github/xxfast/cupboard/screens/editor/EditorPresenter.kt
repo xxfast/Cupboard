@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.addElements
@@ -20,7 +21,9 @@ import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.insertionIndexAfter
 import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.newId
+import io.github.xxfast.cupboard.document.putGuide
 import io.github.xxfast.cupboard.document.removeElements
+import io.github.xxfast.cupboard.document.removeGuide
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.setSlideSkipped
@@ -31,6 +34,7 @@ import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.updateElements
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.document.withNewIds
+import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -39,6 +43,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Copy
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
@@ -54,6 +59,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
@@ -65,10 +71,12 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
@@ -77,9 +85,12 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
@@ -312,7 +323,8 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
  */
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview,
-    ToggleSidebar, ToggleNotes, is SelectInspectorTab, CloseInspector,
+    ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
+    is SelectInspectorTab, CloseInspector,
         -> true
 
     // Focus arriving on the pane the caret is already in says nothing new;
@@ -868,6 +880,48 @@ fun EditorPresenter(
             ToggleSidebar -> state.copy(sidebarOpen = !state.sidebarOpen)
 
             ToggleNotes -> state.copy(showNotes = !state.showNotes)
+
+            ToggleRulers -> state.copy(showRulers = !state.showRulers)
+
+            ToggleGuides -> state.copy(showGuides = !state.showGuides)
+
+            is SetSnap -> when (event.kind) {
+                SnapKind.Center -> state.copy(snapToCenter = event.enabled)
+                SnapKind.Edges -> state.copy(snapToEdges = event.enabled)
+                SnapKind.Objects -> state.copy(snapToObjects = event.enabled)
+                SnapKind.Guides -> state.copy(snapToGuides = event.enabled)
+            }
+
+            // The guide events, the slide drag's shape at guide granularity: the
+            // previews touch no document, so the commit is the whole edit and
+            // there is nothing for a cancel to roll back. A drop that leaves the
+            // guide exactly where it was is still a finished drag, it just costs
+            // no history entry.
+            is PreviewGuide ->
+                state.copy(guideDrag = GuideDrag(event.id, event.axis, event.position))
+
+            EndGuideDrag -> state.copy(guideDrag = null)
+
+            is CommitGuide -> {
+                val guide = Guide(event.id ?: newId(), event.axis, event.position)
+                val updated: Document = state.document.putGuide(guide)
+                if (updated == state.document) state.copy(guideDrag = null)
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated, guideDrag = null)
+                }
+            }
+
+            is RemoveGuide -> {
+                val updated: Document = state.document.removeGuide(event.id)
+                if (updated === state.document) state.copy(guideDrag = null)
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated, guideDrag = null)
+                }
+            }
 
             // A tab always opens the inspector. Whether clicking the tab
             // that's already showing closes it is the shell's call: it

@@ -54,6 +54,7 @@ import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
+import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.screens.editor.EditorState
@@ -459,6 +460,39 @@ class EditorHost {
 
     fun toggleNotes() {
         viewModel.onToggleNotes()
+    }
+
+    /** Canvas overlays, read the same way the panel toggles are: one owner. */
+    fun showRulers(): Boolean = state.showRulers
+
+    fun showGuides(): Boolean = state.showGuides
+
+    fun toggleRulers() {
+        viewModel.onToggleRulers()
+    }
+
+    fun toggleGuides() {
+        viewModel.onToggleGuides()
+    }
+
+    /**
+     * The four snap switches by [SnapKind] ordinal: 0 Center, 1 Edges, 2 Objects,
+     * 3 Guides. An Int rather than the enum keeps the ObjC surface plain and lets
+     * the menu render the lot as one loop, the way the shape catalog's index does.
+     * A kind the enum doesn't have reads as off and writes nothing, since the
+     * number crosses a language boundary on the way back.
+     */
+    fun snapEnabled(kind: Int): Boolean = when (SnapKind.entries.getOrNull(kind)) {
+        SnapKind.Center -> state.snapToCenter
+        SnapKind.Edges -> state.snapToEdges
+        SnapKind.Objects -> state.snapToObjects
+        SnapKind.Guides -> state.snapToGuides
+        null -> false
+    }
+
+    fun setSnap(kind: Int, enabled: Boolean) {
+        val snap: SnapKind = SnapKind.entries.getOrNull(kind) ?: return
+        viewModel.onSetSnap(snap, enabled)
     }
 
     fun selectInspectorTab(tab: InspectorTab) {

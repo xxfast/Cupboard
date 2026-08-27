@@ -13,6 +13,13 @@ struct Chrome {
     let tab: InspectorTab
     let showNotes: Bool
     let notes: String
+    /// Whether the canvas draws its rulers, and whether the user's guides show
+    /// at all. View toggles like `showNotes`, and read the same way.
+    let showRulers: Bool
+    let showGuides: Bool
+    /// One switch per `SnapKind`, in the order `snapTitles` names them. An array
+    /// rather than four fields: the submenu renders it as one loop.
+    let snap: [Bool]
     /// The primary of the selection, nil when nothing is selected.
     let element: Selection?
     /// The primary's text style, nil unless the primary is a text box.
@@ -36,6 +43,9 @@ struct Chrome {
         tab = host.inspectorTab()
         showNotes = host.showNotes()
         notes = host.slideNotes()
+        showRulers = host.showRulers()
+        showGuides = host.showGuides()
+        snap = snapTitles.indices.map { host.snapEnabled(kind: Int32($0)) }
         element = host.selectedElement().map(Selection.init)
         text = host.selectedText().map(TextFormat.init)
         shape = host.selectedShape().map(ShapeFormat.init)

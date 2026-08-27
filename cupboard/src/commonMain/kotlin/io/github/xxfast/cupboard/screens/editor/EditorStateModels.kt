@@ -3,6 +3,8 @@ package io.github.xxfast.cupboard.screens.editor
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.Guide
+import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove
@@ -12,8 +14,16 @@ import io.github.xxfast.cupboard.document.presentationNumbers
 import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
+import io.github.xxfast.cupboard.editor.SnapKind
+import io.github.xxfast.cupboard.editor.SnapLine
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
+
+/**
+ * How far the layout margins sit in from the slide's edges, as a fraction of the
+ * slide: 5%, which on the native 1920x1080 slide is 96 by 54 units.
+ */
+private const val LayoutMarginFraction: Float = 0.05f
 
 /** One navigator row, already resolved for the shell that renders it. */
 data class OutlineEntry(
@@ -56,6 +66,16 @@ data class SlideDrag(
 )
 
 /**
+ * A user guide on the move and where it currently sits, in doc units: an x for a
+ * vertical guide, a y for a horizontal one. [id] is null while a fresh guide is
+ * still being pulled out of a ruler and has nothing in the document yet.
+ *
+ * [SlideDrag]'s rule at guide granularity: what a drag shows comes back through
+ * the loop, never out of the canvas's own snapshot state.
+ */
+data class GuideDrag(val id: String?, val axis: GuideAxis, val position: Float)
+
+/**
  * Everything the editor screen shows, as one value.
  *
  * Serializable on purpose: the whole screen is this state plus pure derivations
@@ -90,6 +110,17 @@ data class EditorState(
     val inspectorOpen: Boolean = true,
     val inspectorTab: InspectorTab = InspectorTab.Format,
     val showNotes: Boolean = true,
+    /** Whether the canvas draws its rulers, and whether the user's guides show
+     * at all. View toggles like [showNotes], and stored next to it for the same
+     * reason: they belong to the editor, not to whichever shell is drawing. */
+    val showRulers: Boolean = false,
+    val showGuides: Boolean = true,
+    /** What a dragged element settles onto, one switch per [SnapKind]. All four
+     * on by default, which is where Keynote leaves them. */
+    val snapToCenter: Boolean = true,
+    val snapToEdges: Boolean = true,
+    val snapToObjects: Boolean = true,
+    val snapToGuides: Boolean = true,
     /**
      * Which pane the keyboard is in, and so what the Edit menu's verbs act on:
      * the navigator's slide or the canvas's elements, the way Keynote's do.
@@ -125,6 +156,15 @@ data class EditorState(
      * Transient for the same reason as [marquee].
      */
     @Transient val slideDrag: SlideDrag? = null,
+    /**
+     * The guide being dragged out of a ruler or along the slide, null when none
+     * is. [marquee]'s rule again: the line the pointer is carrying is drawn from
+     * what comes back through the loop.
+     *
+     * Transient for the same reason as [marquee]. The guides themselves live in
+     * the document, which is where a saved deck keeps them.
+     */
+    @Transient val guideDrag: GuideDrag? = null,
     /**
      * The text element the caret is in, null when nothing is being edited in
      * place. The typing itself rides the loop as ordinary element previews; this
@@ -223,6 +263,59 @@ data class EditorState(
         width = width,
         height = height,
     )
+
+    /**
+     * Every line a dragged frame may settle on right now, per the four snap
+     * settings. [exclude] is the ids being dragged: an element's own edges are no
+     * snap target for itself, or it would stick to where it started.
+     *
+     * The layout guides are in here rather than in the document: the slide's two
+     * center lines and its 5% margins are a property of the slide's shape, they
+     * are drawn only while something snaps to them, and nothing about them is
+     * worth saving to a file.
+     */
+    fun snapTargets(exclude: Set<String> = emptySet()): List<SnapLine> {
+        val width: Float = document.slideWidth
+        val height: Float = document.slideHeight
+        val lines: MutableList<SnapLine> = mutableListOf()
+
+        if (snapToCenter) {
+            lines += SnapLine(GuideAxis.Vertical, width / 2, SnapKind.Center)
+            lines += SnapLine(GuideAxis.Horizontal, height / 2, SnapKind.Center)
+        }
+
+        if (snapToEdges) {
+            val insetX: Float = width * LayoutMarginFraction
+            val insetY: Float = height * LayoutMarginFraction
+            for (x in listOf(0f, insetX, width - insetX, width)) {
+                lines += SnapLine(GuideAxis.Vertical, x, SnapKind.Edges)
+            }
+            for (y in listOf(0f, insetY, height - insetY, height)) {
+                lines += SnapLine(GuideAxis.Horizontal, y, SnapKind.Edges)
+            }
+        }
+
+        if (snapToObjects) {
+            for (element in selectedSlide.elements) {
+                if (element.id in exclude) continue
+                val frame: Frame = element.frame
+                lines += SnapLine(GuideAxis.Vertical, frame.x, SnapKind.Objects)
+                lines += SnapLine(GuideAxis.Vertical, frame.centerX, SnapKind.Objects)
+                lines += SnapLine(GuideAxis.Vertical, frame.x + frame.width, SnapKind.Objects)
+                lines += SnapLine(GuideAxis.Horizontal, frame.y, SnapKind.Objects)
+                lines += SnapLine(GuideAxis.Horizontal, frame.centerY, SnapKind.Objects)
+                lines += SnapLine(GuideAxis.Horizontal, frame.y + frame.height, SnapKind.Objects)
+            }
+        }
+
+        if (snapToGuides) {
+            for (guide: Guide in document.guides) {
+                lines += SnapLine(guide.axis, guide.position, SnapKind.Guides)
+            }
+        }
+
+        return lines
+    }
 
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
@@ -535,6 +628,32 @@ sealed interface EditorEvent {
     data object Redo : EditorEvent
     data object ToggleSidebar : EditorEvent
     data object ToggleNotes : EditorEvent
+    /** View toggles, [ToggleNotes]' kind: no document, no history entry. */
+    data object ToggleRulers : EditorEvent
+    data object ToggleGuides : EditorEvent
+    /** Turns one snap rule on or off. What it changes is what [EditorState.snapTargets]
+     * offers the next drag; nothing already placed moves. */
+    data class SetSnap(val kind: SnapKind, val enabled: Boolean) : EditorEvent
+    /**
+     * An in-flight guide drag sample: the line for the canvas to draw, and where
+     * it currently sits. [id] is null for a guide being pulled out of a ruler,
+     * which is nowhere in the document until it lands.
+     *
+     * [PreviewSlideDrag]'s kind rather than [PreviewElements]': it touches no
+     * document and makes no history entry, because a guide moves once, on release.
+     */
+    data class PreviewGuide(val id: String?, val axis: GuideAxis, val position: Float) : EditorEvent
+    /**
+     * A dropped guide drag: a null [id] adds a guide, an id that resolves moves
+     * that one. One history entry however many samples the drag streamed, and the
+     * drag is cleared either way, the way [MoveSlide] clears its own.
+     */
+    data class CommitGuide(val id: String?, val axis: GuideAxis, val position: Float) : EditorEvent
+    /** A guide dragged off the slide is a guide thrown away: one history entry,
+     * and the drag cleared. An id the document doesn't hold only clears it. */
+    data class RemoveGuide(val id: String) : EditorEvent
+    /** The guide drag is over without a drop: the line goes, nothing else does. */
+    data object EndGuideDrag : EditorEvent
     /** Picking a tab shows the inspector: a tab you can't see is not a choice. */
     data class SelectInspectorTab(val tab: InspectorTab) : EditorEvent
     data object CloseInspector : EditorEvent

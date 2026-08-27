@@ -5,16 +5,19 @@ import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
+import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Copy
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
@@ -30,6 +33,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
@@ -41,10 +45,12 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
@@ -53,9 +59,12 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
@@ -170,6 +179,13 @@ class EditorViewModel(
     fun onRedo() { scope.launch { events.emit(Redo) } }
     fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }
     fun onToggleNotes() { scope.launch { events.emit(ToggleNotes) } }
+    fun onToggleRulers() { scope.launch { events.emit(ToggleRulers) } }
+    fun onToggleGuides() { scope.launch { events.emit(ToggleGuides) } }
+    fun onSetSnap(kind: SnapKind, enabled: Boolean) { scope.launch { events.emit(SetSnap(kind, enabled)) } }
+    fun onPreviewGuide(id: String?, axis: GuideAxis, position: Float) { scope.launch { events.emit(PreviewGuide(id, axis, position)) } }
+    fun onCommitGuide(id: String?, axis: GuideAxis, position: Float) { scope.launch { events.emit(CommitGuide(id, axis, position)) } }
+    fun onRemoveGuide(id: String) { scope.launch { events.emit(RemoveGuide(id)) } }
+    fun onEndGuideDrag() { scope.launch { events.emit(EndGuideDrag) } }
     fun onSelectInspectorTab(tab: InspectorTab) { scope.launch { events.emit(SelectInspectorTab(tab)) } }
     fun onCloseInspector() { scope.launch { events.emit(CloseInspector) } }
 

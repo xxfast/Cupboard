@@ -4,8 +4,10 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.boundingFrame
 import io.github.xxfast.cupboard.document.rotateVector
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 enum class Handle {
@@ -215,35 +217,78 @@ fun resizeFrame(
     return resized.translate(drawnShiftX - shiftX, drawnShiftY - shiftY)
 }
 
+/**
+ * Where a snap line came from, which is both the setting that switches it on and
+ * what the guide drawn over it is called.
+ */
+enum class SnapKind { Center, Edges, Objects, Guides }
+
+/**
+ * One line a dragged frame may settle on. [position] is an x for a
+ * [GuideAxis.Vertical] line and a y for a horizontal one.
+ */
+data class SnapLine(val axis: GuideAxis, val position: Float, val kind: SnapKind)
+
 data class SnapResult(
     val frame: Frame,
-    val snappedX: Boolean,
-    val snappedY: Boolean,
+    /** The line each axis settled on, null when that axis came down free. */
+    val snappedX: SnapLine?,
+    val snappedY: SnapLine?,
 )
 
 /**
- * Snaps the frame's center to the slide center when within [threshold] doc units,
- * per the design's alignment guides.
+ * Slides [frame] onto whichever of [lines] is nearest, per axis, when one is
+ * within [threshold] doc units.
+ *
+ * Three edges snap on each axis, not just the center: left, center and right
+ * against every vertical line, top, middle and bottom against every horizontal
+ * one. Nearest wins, so a frame near two lines settles on the one it is closest
+ * to rather than on whichever came first in the list.
+ */
+fun snapFrame(frame: Frame, lines: List<SnapLine>, threshold: Float = 10f): SnapResult {
+    // The shift that axis wants, and the line asking for it. Written as one pass
+    // per axis so a tie is broken by distance alone, never by list order.
+    fun settle(axis: GuideAxis, edges: List<Float>): Pair<Float, SnapLine?> {
+        var shift = 0f
+        var nearest: SnapLine? = null
+        var best: Float = threshold
+
+        for (line in lines) {
+            if (line.axis != axis) continue
+            for (edge in edges) {
+                val distance: Float = line.position - edge
+                if (abs(distance) > best) continue
+                best = abs(distance)
+                shift = distance
+                nearest = line
+            }
+        }
+
+        return shift to nearest
+    }
+
+    val (dx: Float, snappedX: SnapLine?) =
+        settle(GuideAxis.Vertical, listOf(frame.centerX, frame.x, frame.x + frame.width))
+    val (dy: Float, snappedY: SnapLine?) =
+        settle(GuideAxis.Horizontal, listOf(frame.centerY, frame.y, frame.y + frame.height))
+
+    return SnapResult(frame.translate(dx, dy), snappedX, snappedY)
+}
+
+/**
+ * [snapFrame] against the slide's two center lines and nothing else: the narrow
+ * case the canvas had before user guides, kept for callers that want only it.
  */
 fun snapToSlideCenter(
     frame: Frame,
     slideWidth: Float = Document.SLIDE_WIDTH,
     slideHeight: Float = Document.SLIDE_HEIGHT,
     threshold: Float = 10f,
-): SnapResult {
-    var result = frame
-    var snappedX = false
-    var snappedY = false
-
-    val slideCenterX = slideWidth / 2
-    if (kotlin.math.abs(frame.centerX - slideCenterX) <= threshold) {
-        result = result.copy(x = slideCenterX - frame.width / 2)
-        snappedX = true
-    }
-    val slideCenterY = slideHeight / 2
-    if (kotlin.math.abs(frame.centerY - slideCenterY) <= threshold) {
-        result = result.copy(y = slideCenterY - frame.height / 2)
-        snappedY = true
-    }
-    return SnapResult(result, snappedX, snappedY)
-}
+): SnapResult = snapFrame(
+    frame = frame,
+    lines = listOf(
+        SnapLine(GuideAxis.Vertical, slideWidth / 2, SnapKind.Center),
+        SnapLine(GuideAxis.Horizontal, slideHeight / 2, SnapKind.Center),
+    ),
+    threshold = threshold,
+)

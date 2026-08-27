@@ -266,6 +266,28 @@ func slideEntries(
     return entries
 }
 
+/// What each snap switch is called, in the order Kotlin's `SnapKind` lists them.
+/// The position is the whole protocol: an index goes back to `setSnap`, so this
+/// list is also what says how many switches there are.
+let snapTitles = ["Center", "Edges", "Objects", "Guides"]
+
+/// The snap switches as a submenu, checkmarked from the snapshot they were built
+/// with. Toggles rather than `MenuEntry` rows: a `MenuEntry` renders as a plain
+/// Button, and these are settings, so they show their state.
+struct SnapToggles: View {
+    let host: EditorHost
+    let snap: [Bool]
+
+    var body: some View {
+        ForEach(Array(snapTitles.enumerated()), id: \.offset) { index, title in
+            Toggle(title, isOn: Binding(
+                get: { snap.indices.contains(index) ? snap[index] : false },
+                set: { host.setSnap(kind: Int32(index), enabled: $0) }
+            ))
+        }
+    }
+}
+
 /// The entries as SwiftUI. The NSMenu builder walks the same list.
 struct MenuEntries: View {
     let entries: [MenuEntry]
