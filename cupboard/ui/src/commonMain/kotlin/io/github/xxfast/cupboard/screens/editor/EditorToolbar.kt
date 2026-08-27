@@ -39,6 +39,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.ShapeCatalog
+import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 
@@ -49,14 +51,17 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * The stacked layout's 60dp M3 toolbar, per the design's Linux variant: filled
  * Play pill, tonal Add slide, circular insert icon buttons, outlined zoom pill.
  *
- * Add slide and the insert buttons are placeholders until the document gains
- * those operations; [onPlay] null (android/web shells) hides Play entirely.
+ * Text inserts a box, Shape drops the catalog down; Add slide, image and media
+ * stay placeholders until the document gains those operations. [onPlay] null
+ * (android/web shells) hides Play entirely.
  */
 @Composable
 fun EditorToolbar(
     zoomPercent: Int,
     onZoomPercentChange: (Int) -> Unit,
     onPlay: (() -> Unit)?,
+    onInsertText: () -> Unit,
+    onInsertShape: (ShapeCatalogEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -120,8 +125,8 @@ fun EditorToolbar(
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                InsertButton { TextGlyph(color = tokens.icon) }
-                InsertButton { ShapeGlyph(color = tokens.icon) }
+                InsertButton(onClick = onInsertText) { TextGlyph(color = tokens.icon) }
+                ShapeInsertButton(onPick = onInsertShape)
                 InsertButton { ImageGlyph(color = tokens.icon) }
                 InsertButton { MediaGlyph(color = tokens.icon) }
             }
@@ -135,17 +140,45 @@ fun EditorToolbar(
     }
 }
 
-/** 40dp circular icon button; a placeholder until element insertion lands. */
+/** 40dp circular icon button. [onClick] null leaves it inert, for the placeholders. */
 @Composable
-private fun InsertButton(glyph: @Composable () -> Unit) {
+private fun InsertButton(onClick: (() -> Unit)? = null, glyph: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .clickable {},
+            .clickable(enabled = onClick != null) { onClick?.invoke() },
         contentAlignment = Alignment.Center,
     ) {
         glyph()
+    }
+}
+
+/**
+ * The shape button: the catalog under it, in menu order, one insertion per pick.
+ *
+ * No tick column, unlike the zoom menu. Nothing here is a mode, so there is
+ * never a live entry to mark.
+ */
+@Composable
+private fun ShapeInsertButton(onPick: (ShapeCatalogEntry) -> Unit) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var menuOpen: Boolean by remember { mutableStateOf(false) }
+
+    Box {
+        InsertButton(onClick = { menuOpen = true }) { ShapeGlyph(color = tokens.icon) }
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            for (entry in ShapeCatalog.entries) {
+                DropdownMenuItem(
+                    text = { Text(entry.title, fontSize = 13.sp) },
+                    onClick = {
+                        menuOpen = false
+                        onPick(entry)
+                    },
+                )
+            }
+        }
     }
 }
 

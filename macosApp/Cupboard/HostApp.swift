@@ -112,9 +112,20 @@ struct CupboardHostApp: App {
                     set: { _ in host.toggleNotes() }
                 ))
             }
+            insertMenu
             slideMenu
             formatMenu
             arrangeMenu
+        }
+    }
+
+    /// What can go on a slide. The shape submenu is the catalog's, in its order:
+    /// the list is stated in Kotlin and only rendered here, so a shape added to
+    /// the document model shows up with nothing to change. Nothing reads
+    /// generation: an insertion needs no selection, and every item is always live.
+    private var insertMenu: some Commands {
+        CommandMenu("Insert") {
+            MenuEntries(entries: insertEntries(host))
         }
     }
 

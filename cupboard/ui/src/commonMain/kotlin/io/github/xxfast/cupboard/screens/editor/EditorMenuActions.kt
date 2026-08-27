@@ -1,8 +1,13 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
+import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.ShapeCatalog
+import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove.Backward
@@ -10,7 +15,9 @@ import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
@@ -216,6 +223,41 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
             ).map { (style, label) ->
                 EditorMenuItem(label, formattable, onPick = format { it.copy(listStyle = style) })
             },
+        ),
+    )
+}
+
+/**
+ * The Insert verbs: a text box, then the shape catalog as one submenu.
+ *
+ * Nothing is ever greyed. An insertion asks nothing of the selection, and a
+ * locked element on the slide is no reason not to add another one next to it.
+ *
+ * Where an insertion lands is [EditorState.insertionFrame]'s business and how
+ * big it starts is the catalog's, so a shell renders this without knowing
+ * either the slide's size or that a line wants a different box to a rectangle.
+ */
+fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorMenuSection> {
+    fun insert(entry: ShapeCatalogEntry): EditorMenuItem =
+        EditorMenuItem(entry.title, enabled = true) {
+            val frame: Frame = state.insertionFrame(entry.width, entry.height)
+            viewModel.onInsertElement(entry.element(frame))
+        }
+
+    return listOf(
+        EditorMenuSection(
+            listOf(
+                EditorMenuItem("Text Box", enabled = true) {
+                    val frame: Frame =
+                        state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight)
+                    viewModel.onInsertElement(textBoxElement(frame))
+                },
+                EditorMenuItem(
+                    label = "Shape",
+                    enabled = true,
+                    children = ShapeCatalog.entries.map(::insert),
+                ),
+            ),
         ),
     )
 }

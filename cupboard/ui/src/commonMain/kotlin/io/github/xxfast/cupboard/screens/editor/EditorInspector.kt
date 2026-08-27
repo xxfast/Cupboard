@@ -66,6 +66,10 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.ShapeGradient
+import io.github.xxfast.cupboard.document.ShapeKind
+import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TextAlign
@@ -87,7 +91,8 @@ import kotlin.math.roundToInt
  * Clicking the active tab does nothing (close-on-reclick is macOS-only).
  *
  * Format is live whenever [selectedElements] isn't empty: the text styling where
- * the primary element is a text box, then the geometry, rotation, opacity,
+ * the primary element is a text box, the shape styling where it is a shape,
+ * then the geometry, rotation, opacity,
  * z-order and lock of the selection. With nothing selected it falls back to the
  * design's text mock. Animate is still a mock, and so is the Slide tab's layout
  * card; the rest of that tab edits the slide.
@@ -157,6 +162,12 @@ fun EditorInspector(
                     // design has it, and only where there is text to style.
                     val primary: Element = selectedElements.first()
                     if (primary is TextElement) TextSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                    )
+
+                    if (primary is ShapeElement) ShapeSection(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
@@ -511,6 +522,235 @@ private fun <T> DropdownField(
         }
     }
 }
+
+/**
+ * [transform] over the selection's shapes, the way `formatText` does its text:
+ * locked elements and everything that isn't a [ShapeElement] drop out, and so
+ * does any shape the transform left alone. An empty result is an edit that
+ * changed nothing, which is no event and no history entry.
+ *
+ * Here rather than in the document module because the inspector is the only
+ * caller: no menu verb formats a shape yet.
+ */
+private fun List<Element>.formatShapes(
+    transform: (ShapeElement) -> ShapeElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is ShapeElement || element.locked) return@mapNotNull null
+    val formatted: ShapeElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+/**
+ * The live SHAPE section, shown when the primary element is a shape.
+ *
+ * Reads [primary] and writes the whole selection through [formatShapes], like
+ * the text section: a mixed selection styles its shapes and leaves the rest
+ * alone. Every control is discrete, so none of them preview: there is no
+ * gesture here, only committed values.
+ *
+ * What shows follows the kind. A corner radius means nothing to an oval, an
+ * arrowhead nothing to a rectangle, and a line has no inside to write a label
+ * in, so each of those appears only where it does something.
+ */
+@Composable
+private fun ShapeSection(
+    primary: ShapeElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+    val gradient: ShapeGradient? = primary.gradient
+    val shadow: ShapeShadow? = primary.shadow
+
+    // False when the transform changed nothing anywhere, so a field that typed
+    // its way to the value the document already holds puts itself back.
+    fun format(transform: (ShapeElement) -> ShapeElement): Boolean {
+        val formatted: List<Element> = elements.formatShapes(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    SectionLabel("SHAPE")
+    SegmentedRow {
+        Segment(
+            selected = gradient == null,
+            first = true,
+            // Dropping the gradient is all it takes to go back to the solid:
+            // the fill was never overwritten, so it is still the one to return to.
+            onClick = if (enabled) ({ format { it.copy(gradient = null) } }) else null,
+        ) {
+            SegmentLabel("Color", selected = gradient == null, enabled = enabled)
+        }
+        Segment(
+            selected = gradient != null,
+            first = false,
+            // A shape switched into a gradient has none yet, so it starts from
+            // its own fill and runs to the palette's deep indigo.
+            onClick = if (enabled) ({
+                format {
+                    if (it.gradient != null) it
+                    else it.copy(gradient = ShapeGradient(it.fill, SHAPE_GRADIENT_END))
+                }
+            }) else null,
+        ) {
+            SegmentLabel("Gradient", selected = gradient != null, enabled = enabled)
+        }
+    }
+
+    if (gradient == null) {
+        SwatchLabel("Fill")
+        SwatchRow(
+            colors = TEXT_SWATCHES,
+            selected = primary.fill,
+            enabled = enabled,
+            onPick = { color -> format { it.copy(fill = color) } },
+        )
+        HexField(
+            label = "Hex",
+            color = primary.fill,
+            enabled = enabled,
+            onCommit = { color -> format { it.copy(fill = color) } },
+        )
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HexField(
+                label = "Start",
+                color = gradient.start,
+                enabled = enabled,
+                onCommit = { color ->
+                    format { it.copy(gradient = it.gradient?.copy(start = color)) }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            HexField(
+                label = "End",
+                color = gradient.end,
+                enabled = enabled,
+                onCommit = { color ->
+                    format { it.copy(gradient = it.gradient?.copy(end = color)) }
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        NumberField(
+            label = "Angle",
+            value = gradient.angle,
+            enabled = enabled,
+            onCommit = { angle ->
+                format { it.copy(gradient = it.gradient?.copy(angle = angle)) }
+            },
+            modifier = Modifier.width(96.dp),
+        )
+    }
+
+    SwatchLabel("Border")
+    SwatchRow(
+        colors = TEXT_SWATCHES,
+        selected = primary.strokeColor,
+        enabled = enabled,
+        onPick = { color -> format { it.copy(strokeColor = color) } },
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        HexField(
+            label = "Hex",
+            color = primary.strokeColor,
+            enabled = enabled,
+            onCommit = { color -> format { it.copy(strokeColor = color) } },
+            modifier = Modifier.weight(1f),
+        )
+        NumberField(
+            label = "Width",
+            value = primary.strokeWidth,
+            enabled = enabled,
+            onCommit = { width -> format { it.copy(strokeWidth = width) } },
+            modifier = Modifier.width(74.dp),
+            minimum = 0f,
+            fractional = true,
+        )
+    }
+
+    // Off is no shadow at all rather than a transparent one, so switching it
+    // back on lands on the document's own default every time.
+    AppearanceRow(
+        label = "Shadow",
+        checked = shadow != null,
+        onToggle = if (!enabled) null else ({ on ->
+            format { it.copy(shadow = if (on) ShapeShadow() else null) }
+        }),
+    )
+    if (shadow != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            HexField(
+                label = "Shadow",
+                color = shadow.color,
+                enabled = enabled,
+                onCommit = { color ->
+                    format { it.copy(shadow = it.shadow?.copy(color = color)) }
+                },
+                modifier = Modifier.weight(1f),
+            )
+            NumberField(
+                label = "Blur",
+                value = shadow.blur,
+                enabled = enabled,
+                onCommit = { blur -> format { it.copy(shadow = it.shadow?.copy(blur = blur)) } },
+                modifier = Modifier.width(74.dp),
+                minimum = 0f,
+            )
+        }
+    }
+
+    if (primary.kind == ShapeKind.Rectangle) NumberField(
+        label = "Corner Radius",
+        value = primary.cornerRadius,
+        enabled = enabled,
+        onCommit = { radius -> format { it.copy(cornerRadius = radius) } },
+        modifier = Modifier.width(130.dp),
+        minimum = 0f,
+    )
+
+    if (primary.kind == ShapeKind.Line) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            AppearanceRow(
+                label = "Start Arrow",
+                checked = primary.startArrow,
+                onToggle = if (!enabled) null else ({ on ->
+                    format { it.copy(startArrow = on) }
+                }),
+            )
+            AppearanceRow(
+                label = "End Arrow",
+                checked = primary.endArrow,
+                onToggle = if (!enabled) null else ({ on -> format { it.copy(endArrow = on) } }),
+            )
+        }
+    } else {
+        // Empty is no label: a shape nobody typed into draws nothing over itself.
+        EntryField(
+            label = "Label",
+            display = primary.label,
+            enabled = enabled,
+            monospace = false,
+        ) { entered ->
+            if (entered == primary.label) false else format { it.copy(label = entered) }
+        }
+        NumberField(
+            label = "Label Size",
+            value = primary.labelSize,
+            enabled = enabled,
+            onCommit = { size -> format { it.copy(labelSize = size) } },
+            modifier = Modifier.width(110.dp),
+            minimum = 1f,
+        )
+    }
+
+    PanelDivider()
+}
+
+/** Where a shape's gradient runs to when it is switched on and has none yet. */
+private const val SHAPE_GRADIENT_END: Long = 0xFF2A2452
 
 /**
  * The live property editor for the selection.

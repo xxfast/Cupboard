@@ -160,8 +160,71 @@ data class TextElement(
     )
 }
 
-enum class ShapeKind { Rectangle, Ellipse }
+/**
+ * The dozen shapes the catalog offers, drawn inside the element's frame.
+ *
+ * [Rectangle] and [Ellipse] keep their names because documents on disk already
+ * carry them. "Rounded rectangle" is no kind of its own: it is a [Rectangle]
+ * with a corner radius, which is also why [ShapeElement.cornerRadius] means
+ * nothing to any other kind.
+ *
+ * [Triangle] points up, [Arrow] points right, [Star] has five points and
+ * [Polygon] is a regular hexagon. [QuoteBubble] and [Callout] are rounded boxes
+ * with a tail, bottom-left and bottom-center. [Line] is the odd one out: it runs
+ * corner to corner across its frame and draws no fill, only its stroke and
+ * whichever arrowheads are on.
+ */
+enum class ShapeKind {
+    Rectangle,
+    Ellipse,
+    Triangle,
+    Arrow,
+    Diamond,
+    Star,
+    Polygon,
+    QuoteBubble,
+    Callout,
+    Line,
+}
 
+/**
+ * A two-stop fill along a line at [angle], in CSS degrees like
+ * [SlideBackground.Gradient]: 0 points up and the angle turns clockwise.
+ *
+ * Set on a shape it paints instead of [ShapeElement.fill] rather than over it,
+ * so switching back to a solid is a matter of dropping this rather than of
+ * remembering what the solid used to be.
+ */
+@Serializable
+data class ShapeGradient(
+    val start: Long,
+    val end: Long,
+    val angle: Float = 140f,
+)
+
+/**
+ * The drop shadow under a shape. Colors are packed ARGB like everywhere else,
+ * and [blur], [dx] and [dy] are document units.
+ *
+ * [dx] and [dy] are stored whether or not a given renderer honours them: Compose
+ * draws an elevation shadow, which has an offset of its own, so the document
+ * keeps the intent and the canvas gets as close to it as its toolkit allows.
+ */
+@Serializable
+data class ShapeShadow(
+    val color: Long = 0x80000000,
+    val blur: Float = 12f,
+    val dx: Float = 0f,
+    val dy: Float = 6f,
+)
+
+/**
+ * A shape on a slide.
+ *
+ * There is no image fill: image bytes live on the side, and bytes on the side
+ * arrive with the bundle format, the same wait [ImageElement] and
+ * [SlideBackground] are in.
+ */
 @Serializable
 @SerialName("shape")
 data class ShapeElement(
@@ -173,10 +236,17 @@ data class ShapeElement(
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
     val kind: ShapeKind = ShapeKind.Rectangle,
+    /** Only [ShapeKind.Rectangle] rounds by this; every other kind ignores it. */
     val cornerRadius: Float = 10f,
     val fill: Long = 0x387F52FF,
+    /** Painted instead of [fill] when set. */
+    val gradient: ShapeGradient? = null,
     val strokeColor: Long = 0xB3A98FFF,
     val strokeWidth: Float = 1.5f,
+    val shadow: ShapeShadow? = null,
+    /** Only [ShapeKind.Line] draws arrowheads; every other kind ignores both. */
+    val startArrow: Boolean = false,
+    val endArrow: Boolean = true,
     val label: String = "",
     val labelSize: Float = 15f,
     val labelColor: Long = 0xFFD9CFFF,

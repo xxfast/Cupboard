@@ -34,12 +34,16 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
+import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.element
+import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.theme.ChromeTheme
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -111,6 +115,7 @@ fun EditorScreen(
         onCancelPreview = viewModel::onCancelPreview,
         onUpdateElements = viewModel::onUpdateElements,
         onPreviewElements = viewModel::onPreviewElements,
+        onInsertElement = viewModel::onInsertElement,
         onBeginTextEdit = viewModel::onBeginTextEdit,
         onEndTextEdit = viewModel::onEndTextEdit,
         onReorderElements = viewModel::onReorderElements,
@@ -139,6 +144,9 @@ fun EditorView(
     onUpdateSlide: (Slide) -> Unit,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
+    /** A toolbar insertion, already sized and placed: the element goes on the
+     * selected slide and takes the selection. */
+    onInsertElement: (Element) -> Unit,
     /** A double click on a text element on the canvas, and what ends that edit. */
     onBeginTextEdit: (String) -> Unit,
     onEndTextEdit: () -> Unit,
@@ -192,6 +200,20 @@ fun EditorView(
                     onZoomPercentChange = { zoomPercent = it },
                     onPlay = if (onPlay == null) null else {
                         { onPlay(state.document, state.selectedSlideIndex().coerceAtLeast(0)) }
+                    },
+                    // The toolbar picks what to insert; where it lands and how
+                    // big it starts is the state's and the catalog's business.
+                    onInsertText = {
+                        onInsertElement(
+                            textBoxElement(
+                                state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight),
+                            ),
+                        )
+                    },
+                    onInsertShape = { entry ->
+                        onInsertElement(
+                            entry.element(state.insertionFrame(entry.width, entry.height)),
+                        )
                     },
                 )
 

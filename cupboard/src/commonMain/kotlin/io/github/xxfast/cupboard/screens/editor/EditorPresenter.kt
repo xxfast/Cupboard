@@ -60,6 +60,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -295,7 +296,7 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
         -> EditorPane.Navigator
 
     is SelectElement, is SelectElements, is ToggleElementSelection, is ContextClick,
-    is PreviewMarquee,
+    is PreviewMarquee, is InsertElement,
         -> EditorPane.Canvas
 
     else -> null
@@ -491,6 +492,19 @@ fun EditorPresenter(
 
             // Clamped at the ends, so a move that changes nothing comes back
             // as the same slide and costs no history entry.
+            // On top and selected alone, the way every editor leaves what it
+            // just made: the next thing you do is to the new element.
+            is InsertElement -> {
+                undone.push(state.document)
+                redone.clear()
+                state.copy(
+                    document = state.document.updateSlide(
+                        state.selectedSlide.addElements(listOf(event.element)),
+                    ),
+                    selectedElementIds = listOf(event.element.id),
+                )
+            }
+
             is ReorderElements -> {
                 val slide: Slide = state.selectedSlide
                 val movable: List<String> = state.unlockedElements(event.ids).map { it.id }

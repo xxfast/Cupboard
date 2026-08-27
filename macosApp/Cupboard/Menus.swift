@@ -183,6 +183,25 @@ func formatEntries(_ host: EditorHost, enabled: Bool) -> [MenuEntry] {
     ]
 }
 
+/// The shape catalog as menu rows, in the order Kotlin lists it. The index is
+/// what goes back, so what a shape is called and what it inserts as are both
+/// the document's to say and neither is restated here.
+func shapeEntries(_ host: EditorHost) -> [MenuEntry] {
+    host.shapeCatalog().enumerated().map { index, title in
+        MenuEntry(title: title, action: { host.insertShape(index: Int32(index)) })
+    }
+}
+
+/// The Insert menu: what can go on a slide. Always live, and nothing to grey
+/// out, since an insertion needs no selection and the document is never without
+/// a slide to take one.
+func insertEntries(_ host: EditorHost) -> [MenuEntry] {
+    [
+        MenuEntry(title: "Text Box", action: { host.insertTextBox() }),
+        MenuEntry(title: "Shape", children: shapeEntries(host)),
+    ]
+}
+
 /// The slide verbs, stated once. [slideId] nil is the Slide menu, which has no
 /// row to point at and drives the selected-slide methods instead; a navigator
 /// row passes its own id, so the verb acts on that row whatever is selected.

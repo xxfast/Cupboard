@@ -19,13 +19,20 @@ import androidx.compose.ui.renderComposeScene
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
+import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.ShapeCatalog
+import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.ShapeGradient
+import io.github.xxfast.cupboard.document.ShapeKind
+import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TextAlign
@@ -33,8 +40,10 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
@@ -194,6 +203,45 @@ class TextProps(
     val lineHeight: Float,
     val listStyle: ListStyle,
     val link: String?,
+)
+
+/**
+ * The primary selected element's shape style, flattened for the native
+ * inspector, and null unless that element is a [ShapeElement]. [TextProps]'s
+ * opposite number, with the same contract: what the panel shows, never a handle
+ * onto the document.
+ *
+ * The optional parts of the model arrive as a flag plus the values a shell would
+ * commit if it turned them on, the way the slide background does: [hasGradient]
+ * false still carries stops, so switching to a gradient never has to invent one.
+ *
+ * [isRectangle] and [isLine] are what the panel hides controls by: a corner
+ * radius means nothing to any kind but a rectangle, and only a line draws
+ * arrowheads.
+ */
+class ShapeProps(
+    /** What the shape is, spelled the way [ShapeKind] spells it. */
+    val kindName: String,
+    val isRectangle: Boolean,
+    val isLine: Boolean,
+    val cornerRadius: Float,
+    /** Packed ARGB, the document model's color format. So is every color below. */
+    val fill: Long,
+    /** Whether the gradient is what paints, [fill] being what paints when it is not. */
+    val hasGradient: Boolean,
+    val gradientStart: Long,
+    val gradientEnd: Long,
+    /** CSS degrees: 0 points up and the angle turns clockwise. */
+    val gradientAngle: Float,
+    val strokeColor: Long,
+    val strokeWidth: Float,
+    val hasShadow: Boolean,
+    val shadowColor: Long,
+    val shadowBlur: Float,
+    val startArrow: Boolean,
+    val endArrow: Boolean,
+    val label: String,
+    val labelSize: Float,
 )
 
 /**
@@ -422,6 +470,30 @@ class EditorHost {
     }
 
     /**
+     * The shapes the insert menus offer, in the catalog's order. Titles alone:
+     * what the shell needs is a list to draw and an index to hand back, and the
+     * kinds themselves are the document's business.
+     */
+    fun shapeCatalog(): List<String> = ShapeCatalog.entries.map { it.title }
+
+    /**
+     * Puts the [index]th catalog shape on the selected slide, in the middle of
+     * it, sized the way that entry inserts. An index the catalog doesn't have is
+     * no insertion rather than a crash: the list came from [shapeCatalog], but it
+     * crosses a language boundary on the way back.
+     */
+    fun insertShape(index: Int) {
+        val entry: ShapeCatalogEntry = ShapeCatalog.entries.getOrNull(index) ?: return
+        viewModel.onInsertElement(entry.element(state.insertionFrame(entry.width, entry.height)))
+    }
+
+    /** A text box in the middle of the slide, carrying the placeholder to type over. */
+    fun insertTextBox() {
+        val frame: Frame = state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight)
+        viewModel.onInsertElement(textBoxElement(frame))
+    }
+
+    /**
      * What the Format inspector shows, or null when nothing is selected: the
      * primary element, with the rest of the selection behind it.
      *
@@ -543,6 +615,113 @@ class EditorHost {
     // that was set to what it already said.
     private fun formatSelection(transform: (TextElement) -> TextElement) {
         val edits: List<Element> = state.selectedElements.formatText(transform)
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The shape style the Format inspector shows, null when the primary element
+     * is not a shape. Read off the primary alone; the setters below write to
+     * every unlocked shape in the selection, the way the text ones do.
+     *
+     * A shape wearing no gradient and no shadow still answers with both, filled
+     * in with what turning them on would commit: the stops start where the solid
+     * fill is, so switching kinds changes nothing the eye can see until a stop
+     * moves.
+     */
+    fun selectedShape(): ShapeProps? = (state.primaryElement as? ShapeElement)?.let { shape ->
+        val gradient: ShapeGradient = shape.gradient ?: ShapeGradient(shape.fill, shape.fill)
+        val shadow: ShapeShadow = shape.shadow ?: ShapeShadow()
+        ShapeProps(
+            kindName = shape.kind.name,
+            isRectangle = shape.kind == ShapeKind.Rectangle,
+            isLine = shape.kind == ShapeKind.Line,
+            cornerRadius = shape.cornerRadius,
+            fill = shape.fill,
+            hasGradient = shape.gradient != null,
+            gradientStart = gradient.start,
+            gradientEnd = gradient.end,
+            gradientAngle = gradient.angle,
+            strokeColor = shape.strokeColor,
+            strokeWidth = shape.strokeWidth,
+            hasShadow = shape.shadow != null,
+            shadowColor = shadow.color,
+            shadowBlur = shadow.blur,
+            startArrow = shape.startArrow,
+            endArrow = shape.endArrow,
+            label = shape.label,
+            labelSize = shape.labelSize,
+        )
+    }
+
+    /** One unlocked shape in the selection is enough for the shape controls. */
+    fun canFormatShapes(): Boolean =
+        state.selectedElements.any { it is ShapeElement && !it.locked }
+
+    /** A solid fill. It only paints once the gradient is off; see [clearSelectedShapeGradient]. */
+    fun setSelectedShapeFill(argb: Long) {
+        formatShapes { it.copy(fill = argb) }
+    }
+
+    /** Paints instead of the fill, from [start] to [end] along [angle] CSS degrees. */
+    fun setSelectedShapeGradient(start: Long, end: Long, angle: Float) {
+        formatShapes { it.copy(gradient = ShapeGradient(start, end, angle)) }
+    }
+
+    /** Back to the solid fill, which the shape was carrying all along. */
+    fun clearSelectedShapeGradient() {
+        formatShapes { it.copy(gradient = null) }
+    }
+
+    /** The outline, or the whole of a line. Zero width is no outline at all. */
+    fun setSelectedShapeStroke(color: Long, width: Float) {
+        formatShapes { it.copy(strokeColor = color, strokeWidth = width.coerceAtLeast(0f)) }
+    }
+
+    /**
+     * [enabled] false drops the shadow rather than clearing its numbers, so the
+     * document says "no shadow" the one way the model spells it. On, a shape that
+     * already had one keeps its offset: the panel has no control for that, and
+     * losing it to a toggle would be a change nobody asked for.
+     */
+    fun setSelectedShapeShadow(enabled: Boolean, color: Long, blur: Float) {
+        formatShapes { shape ->
+            val shadow: ShapeShadow? = if (!enabled) null else {
+                (shape.shadow ?: ShapeShadow()).copy(color = color, blur = blur.coerceAtLeast(0f))
+            }
+            return@formatShapes shape.copy(shadow = shadow)
+        }
+    }
+
+    /** Rectangles only; every other kind stores it and ignores it. */
+    fun setSelectedShapeCornerRadius(radius: Float) {
+        formatShapes { it.copy(cornerRadius = radius.coerceAtLeast(0f)) }
+    }
+
+    /** Lines only, for the same reason. */
+    fun setSelectedShapeArrows(start: Boolean, end: Boolean) {
+        formatShapes { it.copy(startArrow = start, endArrow = end) }
+    }
+
+    /** The text drawn in the middle of the shape. Blank is no label. */
+    fun setSelectedShapeLabel(label: String) {
+        formatShapes { it.copy(label = label) }
+    }
+
+    /** Floors at a point, like the text box's: type with no size can't be clicked back into. */
+    fun setSelectedShapeLabelSize(size: Float) {
+        formatShapes { it.copy(labelSize = size.coerceIn(1f, 400f)) }
+    }
+
+    // The shape setters' [formatSelection]: the unlocked shapes of the selection,
+    // minus the ones the change left where they were, committed as one edit and
+    // so as one history entry. Nothing moved is nothing to commit.
+    private fun formatShapes(transform: (ShapeElement) -> ShapeElement) {
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is ShapeElement || element.locked) return@mapNotNull null
+            val formatted: ShapeElement = transform(element)
+            return@mapNotNull if (formatted == element) null else formatted
+        }
         if (edits.isEmpty()) return
         viewModel.onUpdateElements(edits)
     }

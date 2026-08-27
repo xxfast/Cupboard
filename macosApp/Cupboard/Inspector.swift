@@ -76,6 +76,12 @@ extension EditorView {
                         textSection(text)
                         palette.divider.frame(height: 1)
                     }
+                    // Same rule for the shape's own: a shape has these and
+                    // nothing else does.
+                    if let shape = ui.shape {
+                        shapeSection(shape)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -196,7 +202,7 @@ extension EditorView {
                 host.setSelectedTextList(style: Self.lists[index])
             }
 
-            LinkField(link: text.link, palette: palette) {
+            StringField(placeholder: "Link", value: text.link, palette: palette) {
                 host.setSelectedTextLink(link: $0.isEmpty ? nil : $0)
             }
         }
@@ -294,6 +300,178 @@ extension EditorView {
 
     static func listIndex(_ style: CupboardCanvas.ListStyle) -> Int {
         lists.firstIndex { $0 == style } ?? 0
+    }
+
+    // MARK: Shape
+
+    /// The shape's own look, above Position & Size: what paints it, what outlines
+    /// it, and the parts only some kinds have. Same contract as the Text section,
+    /// read off the primary and written to every unlocked shape in the selection.
+    ///
+    /// The colour wells are the system panel, and it is live: it commits every
+    /// sample it sends, so a slow drag through it spends an undo entry per
+    /// sample. The text colour takes the same deal, with the same mitigation:
+    /// the core drops a write that changes nothing.
+    @ViewBuilder func shapeSection(_ shape: ShapeFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Shape")
+
+            // Switching to a kind the shape is not wearing commits it there and
+            // then, off the values it came back with, so the wells below always
+            // have something to show and never have to invent a colour.
+            HStack(spacing: 2) {
+                segment("Color", on: !shape.hasGradient) { host.clearSelectedShapeGradient() }
+                segment("Gradient", on: shape.hasGradient) {
+                    setGradient(shape)
+                }
+            }
+            .padding(2)
+            .frame(height: 26)
+            .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            if shape.hasGradient {
+                HStack(spacing: 8) {
+                    colorWell("Start", argb: shape.gradientStart) { setGradient(shape, start: $0) }
+                    colorWell("End", argb: shape.gradientEnd) { setGradient(shape, end: $0) }
+                    Spacer(minLength: 0)
+                    ValueField(label: "\u{00B0}", value: shape.gradientAngle, palette: palette) {
+                        setGradient(shape, angle: $0)
+                    }
+                    .frame(width: 74)
+                    .help("Gradient Angle")
+                }
+            } else {
+                colorWell("Fill", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
+            }
+
+            HStack(spacing: 8) {
+                colorWell("Border", argb: shape.strokeColor) {
+                    host.setSelectedShapeStroke(color: $0, width: Float(shape.strokeWidth))
+                }
+                Spacer(minLength: 0)
+                ValueField(
+                    label: "",
+                    value: shape.strokeWidth,
+                    palette: palette,
+                    unit: "pt",
+                    decimals: 1
+                ) { host.setSelectedShapeStroke(color: shape.strokeColor, width: Float($0)) }
+                .frame(width: 74)
+                .help("Border Width")
+            }
+
+            checkRow("Shadow", on: shape.hasShadow) {
+                host.setSelectedShapeShadow(
+                    enabled: !shape.hasShadow,
+                    color: shape.shadowColor,
+                    blur: Float(shape.shadowBlur)
+                )
+            }
+
+            if shape.hasShadow {
+                HStack(spacing: 8) {
+                    colorWell("Colour", argb: shape.shadowColor) {
+                        host.setSelectedShapeShadow(
+                            enabled: true,
+                            color: $0,
+                            blur: Float(shape.shadowBlur)
+                        )
+                    }
+                    Spacer(minLength: 0)
+                    ValueField(label: "", value: shape.shadowBlur, palette: palette, unit: "pt") {
+                        host.setSelectedShapeShadow(
+                            enabled: true,
+                            color: shape.shadowColor,
+                            blur: Float($0)
+                        )
+                    }
+                    .frame(width: 74)
+                    .help("Blur")
+                }
+            }
+
+            // A corner radius means nothing to any other kind, so the field is
+            // not there to be typed into rather than there and inert.
+            if shape.isRectangle {
+                HStack(spacing: 8) {
+                    Text("Corner")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.subtle)
+                    Spacer(minLength: 0)
+                    ValueField(label: "", value: shape.cornerRadius, palette: palette, unit: "pt") {
+                        host.setSelectedShapeCornerRadius(radius: Float($0))
+                    }
+                    .frame(width: 74)
+                }
+            }
+
+            // Only a line has ends to cap, and a line has no label: it is all
+            // stroke, with nothing to write on.
+            if shape.isLine {
+                HStack(spacing: 8) {
+                    checkRow("Start", on: shape.startArrow) {
+                        host.setSelectedShapeArrows(start: !shape.startArrow, end: shape.endArrow)
+                    }
+                    checkRow("End", on: shape.endArrow) {
+                        host.setSelectedShapeArrows(start: shape.startArrow, end: !shape.endArrow)
+                    }
+                }
+            } else {
+                StringField(placeholder: "Label", value: shape.label, palette: palette) {
+                    host.setSelectedShapeLabel(label: $0)
+                }
+
+                HStack(spacing: 8) {
+                    Text("Label Size")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.subtle)
+                    Spacer(minLength: 0)
+                    ValueField(label: "", value: shape.labelSize, palette: palette, unit: "pt") {
+                        host.setSelectedShapeLabelSize(size: Float($0))
+                    }
+                    .frame(width: 74)
+                }
+            }
+        }
+    }
+
+    /// A gradient commits whole, so a control that edits one of its three sends
+    /// the other two back as they stand. No argument at all is the segment
+    /// turning one on, which commits what the shape came back carrying.
+    func setGradient(
+        _ shape: ShapeFormat,
+        start: Int64? = nil,
+        end: Int64? = nil,
+        angle: Double? = nil
+    ) {
+        host.setSelectedShapeGradient(
+            start: start ?? shape.gradientStart,
+            end: end ?? shape.gradientEnd,
+            angle: Float(angle ?? shape.gradientAngle)
+        )
+    }
+
+    /// A labelled colour well, the system picker at small size.
+    func colorWell(
+        _ label: String,
+        argb: Int64,
+        onPick: @escaping (Int64) -> Void
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(palette.subtle)
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { Color(argb: argb) },
+                    set: { onPick(packedArgb($0)) }
+                ),
+                supportsOpacity: true
+            )
+            .labelsHidden()
+            .controlSize(.small)
+        }
     }
 
     func positionSection(_ element: Selection) -> some View {
@@ -543,11 +721,12 @@ extension EditorView {
         }
     }
 
-    /// The whole box as one hyperlink, which is what the document model holds.
-    /// Committed on Enter or on losing focus, like the value fields; empty
-    /// clears the link rather than storing a blank one.
-    private struct LinkField: View {
-        let link: String
+    /// A line of text the document holds as one string: the text box's link, the
+    /// shape's label. Committed on Enter or on losing focus, like the value
+    /// fields; empty commits empty, and what that means is the setter's to say.
+    private struct StringField: View {
+        let placeholder: String
+        let value: String
         let palette: Palette
         let onCommit: (String) -> Void
 
@@ -559,7 +738,7 @@ extension EditorView {
         }
 
         var body: some View {
-            TextField("Link", text: $text)
+            TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
                 .foregroundStyle(palette.ctrlText)
@@ -570,8 +749,8 @@ extension EditorView {
                 .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
                 .onSubmit { commit() }
                 .onChange(of: focused) { _, now in if !now { commit() } }
-                .onAppear { text = link }
-                .onChange(of: link) { _, latest in if !focused { text = latest } }
+                .onAppear { text = value }
+                .onChange(of: value) { _, latest in if !focused { text = latest } }
         }
 
         private func commit() {

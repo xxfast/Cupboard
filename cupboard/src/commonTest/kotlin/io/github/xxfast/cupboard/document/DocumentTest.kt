@@ -626,4 +626,76 @@ class DocumentTest {
         assertEquals(ListStyle.None, element.listStyle)
         assertEquals(null, element.link)
     }
+
+    @Test
+    fun serializationRoundTripsAShapesGradientShadowAndArrowheads() {
+        val document = Document(
+            slides = listOf(
+                Slide(
+                    elements = listOf(
+                        ShapeElement(
+                            frame = Frame(0f, 0f, 240f, 160f),
+                            kind = ShapeKind.Star,
+                            gradient = ShapeGradient(start = 0xFF7F52FF, end = 0xFF101223, angle = 40f),
+                            shadow = ShapeShadow(color = 0x66000000, blur = 20f, dx = 4f, dy = 8f),
+                        ),
+                        ShapeElement(
+                            frame = Frame(0f, 0f, 320f, 120f),
+                            kind = ShapeKind.Line,
+                            startArrow = true,
+                            endArrow = false,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val decoded = decodeDocument(document.encodeToString())
+        assertEquals(document, decoded)
+
+        val star = decoded.slides.single().elements[0] as ShapeElement
+        assertEquals(40f, star.gradient?.angle)
+        assertEquals(8f, star.shadow?.dy)
+
+        val line = decoded.slides.single().elements[1] as ShapeElement
+        assertTrue(line.startArrow)
+        assertFalse(line.endArrow)
+    }
+
+    /**
+     * Same story as the transform fields: shapes on disk predate the catalog,
+     * and a file written before it has to open with the plain solid rectangle
+     * it always was.
+     */
+    @Test
+    fun aShapeWrittenBeforeTheCatalogStillDecodes() {
+        val json = """
+            {
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "shape",
+                      "id": "shape",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "kind": "Ellipse",
+                      "fill": 123
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val element = decodeDocument(json).slides.single().elements.single() as ShapeElement
+        assertEquals(ShapeKind.Ellipse, element.kind)
+        assertEquals(123L, element.fill)
+        assertEquals(null, element.gradient)
+        assertEquals(null, element.shadow)
+        assertFalse(element.startArrow)
+        assertTrue(element.endArrow)
+    }
 }

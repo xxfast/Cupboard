@@ -46,6 +46,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
 import io.github.xxfast.cupboard.screens.editor.formatSections
+import io.github.xxfast.cupboard.screens.editor.insertSections
 import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
 import java.awt.Component
@@ -374,6 +375,13 @@ fun main() {
                         enabled = state.canPasteStyle && editable,
                         onClick = { viewModel.onPasteStyle(ids) },
                     )
+                }
+
+                // Insert takes no accelerators either: nothing here is a
+                // verb the user reaches for mid-gesture, and the toolbar's
+                // Text and Shape buttons render the same catalog.
+                Menu("Insert", mnemonic = 'I') {
+                    MenuItems(insertSections(state, viewModel))
                 }
 
                 // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the

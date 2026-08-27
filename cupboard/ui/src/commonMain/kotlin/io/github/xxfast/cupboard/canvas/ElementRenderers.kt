@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.canvas
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,10 +18,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
@@ -37,13 +48,16 @@ import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
+import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
+import kotlin.math.hypot
 
 fun Long.toComposeColor(): Color = Color(this)
 
@@ -184,28 +198,115 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(element:
     }
 }
 
+/** The fill a shape paints: its gradient when it has one, its solid colour otherwise. */
+private fun ShapeElement.brush(): Brush {
+    val gradient: ShapeGradient = gradient ?: return SolidColor(fill.toComposeColor())
+
+    // A shader brush rather than Brush.linearGradient: the angle's endpoints are
+    // a function of the box, and the box isn't known until the fill is drawn.
+    return object : ShaderBrush() {
+        override fun createShader(size: Size): Shader = LinearGradientShader(
+            from = gradientStop(size, gradient.angle, -1f),
+            to = gradientStop(size, gradient.angle, 1f),
+            colors = listOf(
+                gradient.start.toComposeColor(),
+                gradient.end.toComposeColor(),
+            ),
+        )
+    }
+}
+
 @Composable
 private fun ShapeElementView(element: ShapeElement) {
-    val shape: Shape = when (element.kind) {
-        ShapeKind.Rectangle -> RoundedCornerShape(element.cornerRadius.dp)
-        ShapeKind.Ellipse -> CircleShape
+    // A line is a stroke between two corners rather than an outline with a
+    // fill, so none of the shape modifiers below have anything to say about it.
+    if (element.kind == ShapeKind.Line) {
+        LineElementView(element)
+        return
     }
+
+    val shape: Shape = element.shape()
     Box(
         modifier = Modifier
             .size(element.frame.width.dp, element.frame.height.dp)
-            .background(element.fill.toComposeColor(), shape)
+            .let { base ->
+                val shadow: ShapeShadow = element.shadow ?: return@let base
+                // Compose draws an elevation shadow, which carries its own
+                // offset: the document's dx/dy are kept but not honoured here.
+                base.shadow(
+                    elevation = shadow.blur.dp,
+                    shape = shape,
+                    clip = false,
+                    ambientColor = shadow.color.toComposeColor(),
+                    spotColor = shadow.color.toComposeColor(),
+                )
+            }
+            .background(element.brush(), shape)
             .border(element.strokeWidth.dp, element.strokeColor.toComposeColor(), shape),
         contentAlignment = Alignment.Center,
     ) {
-        if (element.label.isNotEmpty()) {
-            Text(
-                text = element.label,
-                color = element.labelColor.toComposeColor(),
-                fontSize = element.labelSize.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
+        ShapeLabel(element)
     }
+}
+
+/** How far an arrowhead reaches back from its tip, against the line's weight. */
+private const val ArrowHeadScale: Float = 4f
+
+@Composable
+private fun LineElementView(element: ShapeElement) {
+    Box(
+        modifier = Modifier.size(element.frame.width.dp, element.frame.height.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.matchParentSize()) {
+            val color: Color = element.strokeColor.toComposeColor()
+            val width: Float = element.strokeWidth.dp.toPx()
+
+            // Corner to corner. The other diagonal is a flip away, and the flip
+            // rides the element's graphics layer like every other transform.
+            val start = Offset.Zero
+            val end = Offset(size.width, size.height)
+            drawLine(color, start, end, strokeWidth = width, cap = StrokeCap.Round)
+
+            if (element.startArrow) drawArrowHead(color, tip = start, from = end, weight = width)
+            if (element.endArrow) drawArrowHead(color, tip = end, from = start, weight = width)
+        }
+
+        ShapeLabel(element)
+    }
+}
+
+/** A filled triangle pointing at [tip], away from [from]. */
+private fun DrawScope.drawArrowHead(color: Color, tip: Offset, from: Offset, weight: Float) {
+    val length: Float = hypot(tip.x - from.x, tip.y - from.y)
+    if (length == 0f) return
+
+    val reach: Float = ArrowHeadScale * weight
+    val dx: Float = (tip.x - from.x) / length
+    val dy: Float = (tip.y - from.y) / length
+    val baseX: Float = tip.x - dx * reach
+    val baseY: Float = tip.y - dy * reach
+
+    // The base's two ends, one half-reach either side of the line's own direction.
+    val head: Path = Path().apply {
+        moveTo(tip.x, tip.y)
+        lineTo(baseX - dy * reach / 2, baseY + dx * reach / 2)
+        lineTo(baseX + dy * reach / 2, baseY - dx * reach / 2)
+        close()
+    }
+    drawPath(head, color)
+}
+
+@Composable
+private fun ShapeLabel(element: ShapeElement) {
+    if (element.label.isEmpty()) return
+
+    Text(
+        text = element.label,
+        color = element.labelColor.toComposeColor(),
+        fontSize = element.labelSize.sp,
+        fontWeight = FontWeight.SemiBold,
+    )
 }
 
 @Composable

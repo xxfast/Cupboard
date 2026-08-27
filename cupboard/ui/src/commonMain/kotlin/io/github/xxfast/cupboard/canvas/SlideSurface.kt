@@ -21,11 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.SlideBackground
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 /** The scale factor SlideSurface applied: screen px per document unit, over base density. */
 val LocalCanvasScale = compositionLocalOf { 1f }
@@ -94,29 +90,9 @@ private fun DrawScope.drawSlideBackground(background: SlideBackground?) {
                     background.start.toComposeColor(),
                     background.end.toComposeColor(),
                 ),
-                start = gradientStop(background.angle, -1f),
-                end = gradientStop(background.angle, 1f),
+                start = gradientStop(size, background.angle, -1f),
+                end = gradientStop(size, background.angle, 1f),
             )
         )
     }
-}
-
-/**
- * One end of a CSS gradient line at [angle] degrees, [direction] -1 for the start
- * and 1 for the end.
- *
- * The line runs through the slide's center, 0 degrees pointing up and the angle
- * turning clockwise, and is long enough that the corners project onto its ends,
- * which is what makes a 45-degree gradient reach corner to corner rather than
- * stopping short of it.
- */
-private fun DrawScope.gradientStop(angle: Float, direction: Float): Offset {
-    val radians: Float = angle * PI.toFloat() / 180f
-    val dx: Float = sin(radians)
-    val dy: Float = -cos(radians)
-    val length: Float = abs(size.width * dx) + abs(size.height * dy)
-    return Offset(
-        size.width / 2 + dx * length / 2 * direction,
-        size.height / 2 + dy * length / 2 * direction,
-    )
 }

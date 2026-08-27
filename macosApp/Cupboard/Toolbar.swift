@@ -96,32 +96,52 @@ extension EditorView {
         .help(help)
     }
 
-    /// The one insert cluster: raised capsule, 30x24 items. Placeholders until
-    /// the element library lands.
+    /// The one insert cluster: raised capsule, 30x24 items. Text and Shape are
+    /// live; Table, Chart and Media wait on element types the document model
+    /// does not hold yet.
     var insertCapsule: some View {
         HStack(spacing: 2) {
-            let items = [
-                ("tablecells", "Table"),
-                ("chart.pie", "Chart"),
-                ("textformat", "Text"),
-                ("square.on.circle", "Shape"),
-                ("paperclip", "Media"),
-            ]
-            ForEach(items, id: \.0) { symbol, help in
-                Button {} label: {
-                    Image(systemName: symbol)
-                        .font(.system(size: 13))
-                        .foregroundStyle(palette.icon.opacity(0.45))
-                        .frame(width: 30, height: 24)
-                        .contentShape(RoundedRectangle(cornerRadius: 7))
-                }
-                .buttonStyle(.plain)
-                .disabled(true)
-                .help(help)
+            insertPlaceholder("tablecells", help: "Table")
+            insertPlaceholder("chart.pie", help: "Chart")
+
+            Button { host.insertTextBox() } label: {
+                insertIcon("textformat")
             }
+            .buttonStyle(.plain)
+            .help("Text Box")
+
+            // A popup rather than a button: what a shape is comes off the
+            // catalog, so picking one is picking a row of it.
+            Menu {
+                MenuEntries(entries: shapeEntries(host))
+            } label: {
+                insertIcon("square.on.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .frame(width: 30, height: 24)
+            .help("Shape")
+
+            insertPlaceholder("paperclip", help: "Media")
         }
         .padding(3)
         .background(palette.ctrl, in: Capsule())
+    }
+
+    /// One item of the cluster: the same 30x24 cell whether it acts or not.
+    func insertIcon(_ symbol: String, dim: Bool = false) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 13))
+            .foregroundStyle(palette.icon.opacity(dim ? 0.45 : 1))
+            .frame(width: 30, height: 24)
+            .contentShape(RoundedRectangle(cornerRadius: 7))
+    }
+
+    func insertPlaceholder(_ symbol: String, help: String) -> some View {
+        Button {} label: { insertIcon(symbol, dim: true) }
+            .buttonStyle(.plain)
+            .disabled(true)
+            .help(help)
     }
 
     // MARK: Inspector tabs

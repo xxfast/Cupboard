@@ -17,6 +17,8 @@ struct Chrome {
     let element: Selection?
     /// The primary's text style, nil unless the primary is a text box.
     let text: TextFormat?
+    /// The primary's shape style, nil unless the primary is a shape.
+    let shape: ShapeFormat?
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
@@ -36,6 +38,7 @@ struct Chrome {
         notes = host.slideNotes()
         element = host.selectedElement().map(Selection.init)
         text = host.selectedText().map(TextFormat.init)
+        shape = host.selectedShape().map(ShapeFormat.init)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
@@ -107,6 +110,61 @@ struct TextFormat {
         lineHeight = Double(props.lineHeight)
         list = props.listStyle
         link = props.link ?? ""
+    }
+}
+
+/// The primary selected element's shape style as a Swift value: what the Shape
+/// section of the Format panel shows. Read off the primary, written to the whole
+/// selection, like every other Format control.
+///
+/// A shape with no gradient and no shadow still carries both sets of numbers:
+/// they are what turning one on would commit, so a segment or a checkbox never
+/// has to invent a colour. Same trick the slide background uses.
+struct ShapeFormat {
+    /// What the shape is, the way the document model spells it.
+    let kind: String
+    /// Only a rectangle rounds, and only a line caps its ends.
+    let isRectangle: Bool
+    let isLine: Bool
+    let cornerRadius: Double
+    /// Packed ARGB, the document model's colour format. So is every colour below.
+    let fill: Int64
+    /// Whether the gradient paints. The fill is what paints when it does not.
+    let hasGradient: Bool
+    let gradientStart: Int64
+    let gradientEnd: Int64
+    /// CSS degrees: 0 points up and the angle turns clockwise.
+    let gradientAngle: Double
+    let strokeColor: Int64
+    let strokeWidth: Double
+    let hasShadow: Bool
+    let shadowColor: Int64
+    let shadowBlur: Double
+    let startArrow: Bool
+    let endArrow: Bool
+    /// "" is no label: the field has no null to spell, the way the link field has none.
+    let label: String
+    let labelSize: Double
+
+    init(_ props: ShapeProps) {
+        kind = props.kindName
+        isRectangle = props.isRectangle
+        isLine = props.isLine
+        cornerRadius = Double(props.cornerRadius)
+        fill = props.fill
+        hasGradient = props.hasGradient
+        gradientStart = props.gradientStart
+        gradientEnd = props.gradientEnd
+        gradientAngle = Double(props.gradientAngle)
+        strokeColor = props.strokeColor
+        strokeWidth = Double(props.strokeWidth)
+        hasShadow = props.hasShadow
+        shadowColor = props.shadowColor
+        shadowBlur = Double(props.shadowBlur)
+        startArrow = props.startArrow
+        endArrow = props.endArrow
+        label = props.label
+        labelSize = Double(props.labelSize)
     }
 }
 

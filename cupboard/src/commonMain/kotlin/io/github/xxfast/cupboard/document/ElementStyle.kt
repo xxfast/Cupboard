@@ -16,6 +16,10 @@ package io.github.xxfast.cupboard.document
  * Copying a style is not copying an element, and pasting one onto a laid-out
  * slide must not move anything. A link is where the box points, which is what it
  * says rather than how it looks, however much of its look follows from it.
+ *
+ * A line's arrowheads travel with the rest of the shape's look: which ends are
+ * capped is how the line is drawn, not what it joins. The kind stays behind
+ * regardless, so a line's style pasted onto a rectangle leaves a rectangle.
  */
 fun Element.applyingStyle(source: Element): Element = when {
     this is TextElement && source is TextElement -> copy(
@@ -37,8 +41,12 @@ fun Element.applyingStyle(source: Element): Element = when {
         opacity = source.opacity,
         cornerRadius = source.cornerRadius,
         fill = source.fill,
+        gradient = source.gradient,
         strokeColor = source.strokeColor,
         strokeWidth = source.strokeWidth,
+        shadow = source.shadow,
+        startArrow = source.startArrow,
+        endArrow = source.endArrow,
         labelSize = source.labelSize,
         labelColor = source.labelColor,
     )

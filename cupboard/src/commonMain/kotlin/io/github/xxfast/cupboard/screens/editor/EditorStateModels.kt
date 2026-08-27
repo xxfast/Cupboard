@@ -210,6 +210,20 @@ data class EditorState(
             EditorPane.Canvas -> !isEditingText && selectedElements.isNotEmpty()
         }
 
+    /**
+     * A [width] by [height] box in the middle of the slide: where an insertion
+     * that was not pointed at a spot lands.
+     *
+     * The document's own slide size, not the constant, so a deck that ever
+     * carries another aspect ratio still inserts in the middle of its own slide.
+     */
+    fun insertionFrame(width: Float, height: Float): Frame = Frame(
+        x = (document.slideWidth - width) / 2,
+        y = (document.slideHeight - height) / 2,
+        width = width,
+        height = height,
+    )
+
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
 
@@ -330,6 +344,17 @@ sealed interface EditorEvent {
      * at element granularity: it folds into the document, makes no history entry
      * and is undone wholesale by [CancelPreview]. */
     data class PreviewElements(val elements: List<Element>) : EditorEvent
+    /**
+     * Puts [element] on top of the selected slide and selects it, alone: what a
+     * shape from the catalog, a text box or a code block comes down to, whichever
+     * button reached for it.
+     *
+     * The element arrives fully built, frame included, so the loop has no opinion
+     * on where an insertion lands or what it looks like. `EditorState.insertionFrame`
+     * is there for the common case of dropping one in the middle of the slide.
+     * One history entry, and the canvas takes the focus.
+     */
+    data class InsertElement(val element: Element) : EditorEvent
     data class ReorderElements(val ids: List<String>, val move: ZOrderMove) : EditorEvent
     /** The only event a locked element answers to. Undoable, like Keynote's.
      * The shell decides what the toggle means for a mixed selection. */

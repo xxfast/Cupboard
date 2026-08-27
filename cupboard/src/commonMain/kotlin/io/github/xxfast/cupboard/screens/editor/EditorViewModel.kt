@@ -36,6 +36,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -134,6 +135,7 @@ class EditorViewModel(
     fun onPreviewElements(elements: List<Element>) { scope.launch { events.emit(PreviewElements(elements)) } }
     fun onBeginTextEdit(id: String) { scope.launch { events.emit(BeginTextEdit(id)) } }
     fun onEndTextEdit() { scope.launch { events.emit(EndTextEdit) } }
+    fun onInsertElement(element: Element) { scope.launch { events.emit(InsertElement(element)) } }
     fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
     fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
     fun onFlipElements(ids: List<String>, axis: FlipAxis) { scope.launch { events.emit(FlipElements(ids, axis)) } }
