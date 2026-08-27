@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -44,10 +45,14 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.OffsetMapping
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.ElementView
@@ -60,13 +65,26 @@ import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.indentLine
+import io.github.xxfast.cupboard.document.lineIndexOf
+import io.github.xxfast.cupboard.document.listBody
+import io.github.xxfast.cupboard.document.listIndentLevel
+import io.github.xxfast.cupboard.document.listMarkers
+import io.github.xxfast.cupboard.document.outdentLine
 import kotlin.math.abs
 import kotlin.math.min
 
 private val Accent = Color(0xFF7F52FF)
 private val GuideYellow = Color(0xFFF5C518)
+
+/**
+ * What one nesting level of a list indents by inside the text field. A field
+ * cannot lay out the canvas' 24 doc units of tab stop, so it counts in spaces.
+ */
+private const val SpacesPerLevel: Int = 4
 
 private sealed interface DragTarget {
     /**
@@ -533,6 +551,11 @@ private fun TextEditor(
     val focusRequester: FocusRequester = remember { FocusRequester() }
     LaunchedEffect(element.id) { focusRequester.requestFocus() }
 
+    val markers: VisualTransformation = remember(element.listStyle) {
+        if (element.listStyle == ListStyle.None) VisualTransformation.None
+        else ListMarkerTransformation(element.listStyle)
+    }
+
     Box(
         Modifier
             .offset(element.frame.x.dp, element.frame.y.dp)
@@ -554,6 +577,7 @@ private fun TextEditor(
             },
             textStyle = element.textStyle(),
             cursorBrush = SolidColor(element.color.toComposeColor()),
+            visualTransformation = markers,
             modifier = Modifier
                 .align(element.alignment())
                 .fillMaxWidth()
@@ -561,15 +585,107 @@ private fun TextEditor(
                 // Escape leaves the text where it is and the caret behind.
                 // Enter is the field's, it inserts a newline.
                 .onPreviewKeyEvent { key ->
-                    if (key.type == KeyEventType.KeyDown && key.key == Key.Escape) {
-                        onEndTextEdit()
-                        true
-                    } else {
-                        false
+                    if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                    when {
+                        key.key == Key.Escape -> {
+                            onEndTextEdit()
+                            true
+                        }
+
+                        // In a list, Tab is nesting rather than focus traversal.
+                        // The line the caret sits on moves; a selection across
+                        // lines moves the line it started on.
+                        key.key == Key.Tab && element.listStyle != ListStyle.None -> {
+                            val line: Int = value.text.lineIndexOf(value.selection.start)
+                            val edited: String =
+                                if (key.isShiftPressed) value.text.outdentLine(line)
+                                else value.text.indentLine(line)
+
+                            if (edited != value.text) {
+                                val moved: Int = value.selection.start +
+                                    (edited.length - value.text.length)
+                                value = TextFieldValue(
+                                    text = edited,
+                                    selection = TextRange(moved.coerceIn(0, edited.length)),
+                                )
+                                onPreviewElements(listOf(element.copy(text = edited)))
+                            }
+                            true
+                        }
+
+                        else -> false
                     }
                 },
         )
     }
+}
+
+/**
+ * The markers the canvas draws in front of a list's lines, drawn into the field
+ * the same way without ever being in the text.
+ *
+ * The text stays plain: a line's nesting is its leading tabs, and a marker is
+ * worked out from them by [listMarkers], the very call the renderer makes. Tabs
+ * come out as spaces here because a field cannot lay out a tab stop, which is
+ * the one place the caret's text and the drawn text part company.
+ *
+ * The mapping is the fiddly half: every offset in the text has to land somewhere
+ * in what is drawn and back again, or the caret ends up a marker's width away
+ * from the character it is on.
+ */
+internal class ListMarkerTransformation(private val style: ListStyle) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val lines: List<String> = text.text.split("\n")
+        val markers: List<String> = listMarkers(text.text, style)
+
+        // Per line: where it starts in each string, how many tabs it opens with,
+        // and how long everything before its body is once drawn.
+        val levels: List<Int> = lines.map { it.listIndentLevel() }
+        val prefixes: List<String> = lines.mapIndexed { index, line ->
+            val indent: String = " ".repeat(line.listIndentLevel() * SpacesPerLevel)
+            if (markers[index].isEmpty()) indent else "$indent${markers[index]} "
+        }
+        val drawn: List<String> = lines.mapIndexed { index, line ->
+            "${prefixes[index]}${line.listBody()}"
+        }
+
+        val starts: List<Int> = lines.runningFold(0) { start, line -> start + line.length + 1 }
+        val drawnStarts: List<Int> = drawn.runningFold(0) { start, line -> start + line.length + 1 }
+
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                val line: Int = lineAt(starts, lines, offset)
+                val within: Int = offset.coerceIn(0, text.text.length) - starts[line]
+                if (within < levels[line]) return drawnStarts[line] + within * SpacesPerLevel
+
+                val body: Int = within - levels[line]
+                return drawnStarts[line] + prefixes[line].length + body
+            }
+
+            override fun transformedToOriginal(offset: Int): Int {
+                val line: Int = lineAt(drawnStarts, drawn, offset)
+                val within: Int = offset.coerceIn(0, drawn.sumLength()) - drawnStarts[line]
+                val indent: Int = levels[line] * SpacesPerLevel
+                if (within < indent) return starts[line] + within / SpacesPerLevel
+                if (within <= prefixes[line].length) return starts[line] + levels[line]
+
+                return starts[line] + levels[line] + (within - prefixes[line].length)
+            }
+        }
+
+        return TransformedText(AnnotatedString(drawn.joinToString("\n")), mapping)
+    }
+
+    /** The line an offset falls on: the first whose end it has not passed. */
+    private fun lineAt(starts: List<Int>, lines: List<String>, offset: Int): Int {
+        for (index in lines.indices) {
+            if (offset <= starts[index] + lines[index].length) return index
+        }
+        return lines.lastIndex
+    }
+
+    private fun List<String>.sumLength(): Int = sumOf { it.length } + size - 1
 }
 
 /**

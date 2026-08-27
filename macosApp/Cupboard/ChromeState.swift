@@ -15,9 +15,16 @@ struct Chrome {
     let notes: String
     /// The primary of the selection, nil when nothing is selected.
     let element: Selection?
+    /// The primary's text style, nil unless the primary is a text box.
+    let text: TextFormat?
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
+    /// Whether the Format menu has anything to act on. Not `text != nil`: the
+    /// primary may be a shape sitting in front of the text box the menu would
+    /// format, and a locked primary greys nothing the rest of the selection can
+    /// still take.
+    let canFormatText: Bool
     /// The selected slide's own properties, what the Document panel edits.
     let slide: SlideProps
 
@@ -28,9 +35,11 @@ struct Chrome {
         showNotes = host.showNotes()
         notes = host.slideNotes()
         element = host.selectedElement().map(Selection.init)
+        text = host.selectedText().map(TextFormat.init)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
+        canFormatText = host.canFormatText()
         slide = SlideProps(host)
     }
 
@@ -58,6 +67,46 @@ struct SlideProps: Equatable {
         color = host.backgroundColor()
         gradientStart = host.backgroundGradientStart()
         gradientEnd = host.backgroundGradientEnd()
+    }
+}
+
+/// The primary selected element's text style as a Swift value: what the Text
+/// section of the Format panel shows. Read off the primary, written to the whole
+/// selection, the way every other Format control works.
+///
+/// `ListStyle` is spelled out: SwiftUI has one of its own, and the document
+/// model's is the one meant here.
+struct TextFormat {
+    let font: TextFont
+    /// The raw weight the popup marks. `isBold` is the same number read as a flag.
+    let weight: Int
+    let isBold: Bool
+    let italic: Bool
+    let underline: Bool
+    let strikethrough: Bool
+    let size: Double
+    /// Packed ARGB, the document model's colour format.
+    let color: Int64
+    let align: TextAlign
+    /// A multiple of the font size, not points.
+    let lineHeight: Double
+    let list: CupboardCanvas.ListStyle
+    /// "" is no link: the field has no null to spell, and blank commits nil.
+    let link: String
+
+    init(_ props: TextProps) {
+        font = props.fontFamily
+        weight = Int(props.weightValue)
+        isBold = props.isBold
+        italic = props.italic
+        underline = props.underline
+        strikethrough = props.strikethrough
+        size = Double(props.size)
+        color = props.color
+        align = props.align
+        lineHeight = Double(props.lineHeight)
+        list = props.listStyle
+        link = props.link ?? ""
     }
 }
 

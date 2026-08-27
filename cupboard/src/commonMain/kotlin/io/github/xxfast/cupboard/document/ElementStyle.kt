@@ -11,9 +11,11 @@ package io.github.xxfast.cupboard.document
  * better than one that quietly changed the wrong thing.
  *
  * What is deliberately left out is the content ([TextElement.text],
- * [ShapeElement.label], [CodeElement.code], [ShapeElement.kind]), the geometry
- * (frame, rotation, flips) and the lock. Copying a style is not copying an
- * element, and pasting one onto a laid-out slide must not move anything.
+ * [TextElement.link], [ShapeElement.label], [CodeElement.code],
+ * [ShapeElement.kind]), the geometry (frame, rotation, flips) and the lock.
+ * Copying a style is not copying an element, and pasting one onto a laid-out
+ * slide must not move anything. A link is where the box points, which is what it
+ * says rather than how it looks, however much of its look follows from it.
  */
 fun Element.applyingStyle(source: Element): Element = when {
     this is TextElement && source is TextElement -> copy(
@@ -24,6 +26,11 @@ fun Element.applyingStyle(source: Element): Element = when {
         letterSpacing = source.letterSpacing,
         color = source.color,
         align = source.align,
+        fontFamily = source.fontFamily,
+        italic = source.italic,
+        underline = source.underline,
+        strikethrough = source.strikethrough,
+        listStyle = source.listStyle,
     )
 
     this is ShapeElement && source is ShapeElement -> copy(

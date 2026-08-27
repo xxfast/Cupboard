@@ -113,7 +113,19 @@ struct CupboardHostApp: App {
                 ))
             }
             slideMenu
+            formatMenu
             arrangeMenu
+        }
+    }
+
+    /// Text style, for whatever text is selected. Cmd+B/I/U work with the caret
+    /// up as well: formatting is a property of the whole box, and the menu bar
+    /// sees key equivalents before the in-place editor does.
+    private var formatMenu: some Commands {
+        CommandMenu("Format") {
+            // Reading generation is what keeps these enabled states fresh.
+            let _ = model.generation
+            MenuEntries(entries: formatEntries(host, enabled: host.canFormatText()))
         }
     }
 

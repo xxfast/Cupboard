@@ -97,6 +97,22 @@ sealed interface Element {
 
 enum class TextAlign { Start, Center, End }
 
+/**
+ * Generic families only, and deliberately so: the canvas draws on every target
+ * from the same document, and nothing bundles or resolves font files yet. A
+ * document that named "Inter" would render as one thing on macOS and another
+ * wherever the face is missing.
+ */
+enum class TextFont { Sans, Serif, Monospace }
+
+/**
+ * A list is a property of the whole box, not of a range: every line of
+ * [TextElement.text] is one item, and its nesting is the count of leading tabs.
+ * That keeps the text one plain string, so typing, undo and the file format all
+ * stay as they were.
+ */
+enum class ListStyle { None, Bullet, Numbered }
+
 @Serializable
 @SerialName("text")
 data class TextElement(
@@ -109,11 +125,23 @@ data class TextElement(
     override val locked: Boolean = false,
     val text: String = "",
     val fontSize: Float = 15f,
+    /** Bold is a point on this scale rather than a flag of its own; see `isBold`. */
     val fontWeight: Int = 400,
     val lineHeight: Float = 1.3f,
     val letterSpacing: Float = 0f,
     val color: Long = 0xFFFFFFFF,
     val align: TextAlign = TextAlign.Start,
+    val fontFamily: TextFont = TextFont.Sans,
+    val italic: Boolean = false,
+    val underline: Boolean = false,
+    val strikethrough: Boolean = false,
+    val listStyle: ListStyle = ListStyle.None,
+    /**
+     * The whole box as one hyperlink. Ranges inside the text come with the
+     * attributed-string work; until then a link is a property of the element,
+     * which is enough for the shape it takes on a slide. Nothing opens it yet.
+     */
+    val link: String? = null,
 ) : Element {
     override fun update(
         frame: Frame,

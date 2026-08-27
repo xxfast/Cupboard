@@ -566,4 +566,64 @@ class DocumentTest {
         assertFalse(slide.isVisibleAt(firstStageId, step = 0))
         assertTrue(slide.isVisibleAt(firstStageId, step = 1))
     }
+
+    @Test
+    fun serializationRoundTripsTextFormatting() {
+        val document = Document(
+            slides = listOf(
+                Slide(
+                    title = "Formatted",
+                    elements = listOf(
+                        TextElement(
+                            id = "text",
+                            frame = Frame(0f, 0f, 100f, 40f),
+                            text = "Alpha\n\tBeta",
+                            fontWeight = BoldWeight,
+                            fontFamily = TextFont.Monospace,
+                            italic = true,
+                            underline = true,
+                            strikethrough = true,
+                            listStyle = ListStyle.Numbered,
+                            link = "https://kotlinlang.org",
+                        ),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(document, decodeDocument(document.encodeToString()))
+    }
+
+    /**
+     * Formatting arrived after the first documents were written, so a text box
+     * from before it opens plain rather than not at all.
+     */
+    @Test
+    fun aTextElementWrittenBeforeTheFormattingFieldsStillDecodes() {
+        val json = """
+            {
+              "id": "doc",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "text",
+                      "id": "text",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "text": "Old"
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val element = decodeDocument(json).slides.single().elements.single() as TextElement
+        assertEquals(TextFont.Sans, element.fontFamily)
+        assertFalse(element.italic)
+        assertFalse(element.underline)
+        assertFalse(element.strikethrough)
+        assertEquals(ListStyle.None, element.listStyle)
+        assertEquals(null, element.link)
+    }
 }

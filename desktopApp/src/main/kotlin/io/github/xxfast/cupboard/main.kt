@@ -45,6 +45,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
+import io.github.xxfast.cupboard.screens.editor.formatSections
 import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
 import java.awt.Component
@@ -217,17 +218,28 @@ private val AwtResizeCursors = ResizeCursors { direction ->
 
 /**
  * Menu specs as menu-bar entries: a [Separator] between sections, a nested
- * [Menu] for anything carrying children. Shortcuts stay out of the specs, so
- * the menus that carry accelerators (Edit, Slide) still write their own items.
+ * [Menu] for anything carrying children.
+ *
+ * Accelerators stay out of the specs, which are shared with the context menus
+ * and have nowhere to put a Compose [KeyShortcut]. [shortcut] hangs them back on
+ * per menu, so the Format menu renders from the same spec the canvas will.
  */
 @Composable
-private fun MenuScope.MenuItems(sections: List<EditorMenuSection>) {
+private fun MenuScope.MenuItems(
+    sections: List<EditorMenuSection>,
+    shortcut: (EditorMenuItem) -> KeyShortcut? = { null },
+) {
     sections.forEachIndexed { index, section ->
         if (index > 0) Separator()
 
         for (item in section.items) {
             if (item.children.isEmpty()) {
-                Item(text = item.label, enabled = item.enabled, onClick = item.onPick)
+                Item(
+                    text = item.label,
+                    shortcut = shortcut(item),
+                    enabled = item.enabled,
+                    onClick = item.onPick,
+                )
             } else {
                 Menu(item.label, enabled = item.enabled) {
                     for (child in item.children) Item(text = child.label, onClick = child.onPick)
@@ -378,6 +390,20 @@ fun main() {
                             includePaste = false,
                         ),
                     )
+                }
+
+                // Whole-box text styling. Bold, Italic and Underline take the
+                // accelerators every editor gives them; Strikethrough has no
+                // conventional one, so it goes without rather than inventing one.
+                Menu("Format", mnemonic = 'F') {
+                    MenuItems(formatSections(state, viewModel)) { item ->
+                        when (item.label) {
+                            "Bold" -> editShortcut(Key.B)
+                            "Italic" -> editShortcut(Key.I)
+                            "Underline" -> editShortcut(Key.U)
+                            else -> null
+                        }
+                    }
                 }
 
                 // Rendered from the shared specs, not written here: the canvas

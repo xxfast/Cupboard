@@ -133,6 +133,56 @@ func arrangeEntries(_ facts: ArrangeFacts, _ host: EditorHost) -> [MenuEntry] {
     ]
 }
 
+/// The Format menu. Whole-box formatting, so every item is live while the caret
+/// is up in a text box too: the menu bar gets key equivalents before the
+/// responder chain, so Cmd+B reaches here rather than the in-place editor.
+///
+/// [enabled] is one fact for the lot: the host's setters each walk the selection
+/// themselves and drop what cannot take the change, so there is nothing finer to
+/// grey out per item.
+func formatEntries(_ host: EditorHost, enabled: Bool) -> [MenuEntry] {
+    func command(
+        _ title: String,
+        shortcut: KeyboardShortcut? = nil,
+        _ action: @escaping () -> Void
+    ) -> MenuEntry {
+        MenuEntry(title: title, enabled: enabled, shortcut: shortcut, action: action)
+    }
+
+    func align(_ title: String, _ value: TextAlign) -> MenuEntry {
+        command(title) { host.setSelectedTextAlign(align: value) }
+    }
+
+    func list(_ title: String, _ value: CupboardCanvas.ListStyle) -> MenuEntry {
+        command(title) { host.setSelectedTextList(style: value) }
+    }
+
+    return [
+        command("Bold", shortcut: KeyboardShortcut("b", modifiers: .command)) {
+            host.toggleSelectedTextBold()
+        },
+        command("Italic", shortcut: KeyboardShortcut("i", modifiers: .command)) {
+            host.toggleSelectedTextItalic()
+        },
+        command("Underline", shortcut: KeyboardShortcut("u", modifiers: .command)) {
+            host.toggleSelectedTextUnderline()
+        },
+        command("Strikethrough") { host.toggleSelectedTextStrikethrough() },
+
+        .separator(),
+
+        align("Align Left", TextAlign.start),
+        align("Align Center", TextAlign.center),
+        align("Align Right", TextAlign.end),
+
+        .separator(),
+
+        list("Bullet List", CupboardCanvas.ListStyle.bullet),
+        list("Numbered List", CupboardCanvas.ListStyle.numbered),
+        list("No List", CupboardCanvas.ListStyle.none),
+    ]
+}
+
 /// The slide verbs, stated once. [slideId] nil is the Slide menu, which has no
 /// row to point at and drives the selected-slide methods instead; a navigator
 /// row passes its own id, so the verb acts on that row whatever is selected.

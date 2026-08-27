@@ -4,6 +4,18 @@ import CupboardCanvas
 
 // MARK: - Inspector
 
+/// A SwiftUI colour as the document model's packed ARGB, the other way round
+/// from `Color(argb:)`. Through sRGB on the way, since that is the space the
+/// stored number means and a picked colour may arrive in another.
+func packedArgb(_ color: Color) -> Int64 {
+    let srgb = NSColor(color).usingColorSpace(.sRGB) ?? .white
+    func channel(_ value: CGFloat) -> Int64 { Int64((value * 255).rounded()) }
+    return channel(srgb.alphaComponent) << 24
+        | channel(srgb.redComponent) << 16
+        | channel(srgb.greenComponent) << 8
+        | channel(srgb.blueComponent)
+}
+
 extension EditorView {
     /// Header is bare: Share and the tabs moved to the toolbar, which floats
     /// over this glass, so the panel only owns the title under them.
@@ -58,6 +70,12 @@ extension EditorView {
         if let element = ui.element {
             VStack(alignment: .leading, spacing: Layout.panelPadding) {
                 VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                    // Only a text box has these, so the section is here or it is
+                    // not; everything below it belongs to every element.
+                    if let text = ui.text {
+                        textSection(text)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -93,6 +111,189 @@ extension EditorView {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(Layout.panelPadding)
         }
+    }
+
+    // MARK: Text
+
+    /// The text box's own style, above Position & Size. Every control writes to
+    /// the whole selection and reads back off the primary, so what it shows is
+    /// what the document holds and never a local copy.
+    ///
+    /// Whole-box, all of it: a list, a weight and a colour are properties of the
+    /// element, not of a range, which is what the document model says and what
+    /// keeps the caret's text one plain string.
+    func textSection(_ text: TextFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Text")
+
+            stylePopup(Self.fontTitles, selected: Self.fontIndex(text.font)) { index in
+                host.setSelectedTextFont(font: Self.fonts[index])
+            }
+
+            HStack(spacing: 8) {
+                stylePopup(Self.weightTitles, selected: Self.weightIndex(text.weight)) { index in
+                    host.setSelectedTextWeight(weight: Int32(Self.weights[index]))
+                }
+
+                ValueField(label: "", value: text.size, palette: palette, unit: "pt") {
+                    host.setSelectedTextSize(size: Float($0))
+                }
+                .frame(width: 78)
+            }
+
+            HStack(spacing: 6) {
+                styleToggle("bold", on: text.isBold, help: "Bold") {
+                    host.toggleSelectedTextBold()
+                }
+                styleToggle("italic", on: text.italic, help: "Italic") {
+                    host.toggleSelectedTextItalic()
+                }
+                styleToggle("underline", on: text.underline, help: "Underline") {
+                    host.toggleSelectedTextUnderline()
+                }
+                styleToggle("strikethrough", on: text.strikethrough, help: "Strikethrough") {
+                    host.toggleSelectedTextStrikethrough()
+                }
+
+                // The system colour panel is live: it commits on every sample it
+                // sends, so a slow drag through it spends an undo entry per
+                // sample. Same-colour writes cost nothing (the core drops an edit
+                // that changes nothing), which takes the worst of it off.
+                ColorPicker(
+                    "",
+                    selection: Binding(
+                        get: { Color(argb: text.color) },
+                        set: { host.setSelectedTextColor(argb: packedArgb($0)) }
+                    ),
+                    supportsOpacity: true
+                )
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(width: 40)
+                .help("Text Colour")
+            }
+
+            HStack(spacing: 8) {
+                HStack(spacing: 2) {
+                    alignSegment("text.alignleft", on: text.align, is: TextAlign.start)
+                    alignSegment("text.aligncenter", on: text.align, is: TextAlign.center)
+                    alignSegment("text.alignright", on: text.align, is: TextAlign.end)
+                }
+                .padding(2)
+                .frame(height: 26)
+                .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                ValueField(
+                    label: "\u{2195}",
+                    value: text.lineHeight,
+                    palette: palette,
+                    decimals: 2
+                ) { host.setSelectedTextLineHeight(lineHeight: Float($0)) }
+                .help("Line Spacing")
+            }
+
+            stylePopup(Self.listTitles, selected: Self.listIndex(text.list)) { index in
+                host.setSelectedTextList(style: Self.lists[index])
+            }
+
+            LinkField(link: text.link, palette: palette) {
+                host.setSelectedTextLink(link: $0.isEmpty ? nil : $0)
+            }
+        }
+    }
+
+    /// One alignment icon. The row it sits in is the same raised well the
+    /// background segments use, so the two read as the same control.
+    func alignSegment(_ symbol: String, on: TextAlign, is value: TextAlign) -> some View {
+        let selected = on == value
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button { host.setSelectedTextAlign(align: value) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 11))
+                .foregroundStyle(selected ? palette.accentText : palette.subtle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    selected ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
+                    in: shape
+                )
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// B/I/U/S: a raised square that fills with the accent while it is on.
+    func styleToggle(
+        _ symbol: String,
+        on: Bool,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11.5))
+                .foregroundStyle(on ? palette.accentText : palette.ctrlText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .background(
+                    on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(palette.ctrl),
+                    in: shape
+                )
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    /// An AppKit popup button over a fixed list. Indices rather than the Kotlin
+    /// enums: a tag has to be Hashable, and what these pick from is a list this
+    /// file states anyway.
+    func stylePopup(
+        _ titles: [String],
+        selected: Int,
+        onPick: @escaping (Int) -> Void
+    ) -> some View {
+        Picker("", selection: Binding(get: { selected }, set: onPick)) {
+            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
+                Text(title).tag(index)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .controlSize(.small)
+        .tint(palette.accent)
+    }
+
+    /// Generic families only, the document model's: nothing bundles font files
+    /// yet, so a named face would render as one thing here and another wherever
+    /// it is missing.
+    static let fonts: [TextFont] = [TextFont.sans, TextFont.serif, TextFont.monospace]
+    static let fontTitles = ["Sans", "Serif", "Monospace"]
+
+    static func fontIndex(_ font: TextFont) -> Int {
+        fonts.firstIndex { $0 == font } ?? 0
+    }
+
+    /// The five the popup offers. Bold is a point on this scale, so the B toggle
+    /// and this popup are two views of one number.
+    static let weights = [300, 400, 500, 600, 700]
+    static let weightTitles = ["Light", "Regular", "Medium", "Semibold", "Bold"]
+
+    /// The nearest offered weight, so a 450 imported from elsewhere marks
+    /// something rather than leaving the popup blank.
+    static func weightIndex(_ weight: Int) -> Int {
+        weights.indices.min { abs(weights[$0] - weight) < abs(weights[$1] - weight) } ?? 1
+    }
+
+    static let lists: [CupboardCanvas.ListStyle] = [
+        CupboardCanvas.ListStyle.none,
+        CupboardCanvas.ListStyle.bullet,
+        CupboardCanvas.ListStyle.numbered,
+    ]
+    static let listTitles = ["No List", "Bullet List", "Numbered List"]
+
+    static func listIndex(_ style: CupboardCanvas.ListStyle) -> Int {
+        lists.firstIndex { $0 == style } ?? 0
     }
 
     func positionSection(_ element: Selection) -> some View {
@@ -279,6 +480,11 @@ extension EditorView {
         let label: String
         let value: Double
         let palette: Palette
+        /// Drawn after the field, for a number that means something ("pt").
+        var unit: String? = nil
+        /// 0 is the document-unit default: whole numbers, the way a frame reads.
+        /// Line spacing is a multiplier, so it keeps its fraction.
+        var decimals: Int = 0
         let onCommit: (Double) -> Void
 
         @State private var text: String = ""
@@ -290,10 +496,12 @@ extension EditorView {
 
         var body: some View {
             HStack(spacing: 6) {
-                Text(label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.subtle)
-                    .frame(width: 11, alignment: .leading)
+                if !label.isEmpty {
+                    Text(label)
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.subtle)
+                        .frame(width: 11, alignment: .leading)
+                }
 
                 TextField("", text: $text)
                     .textFieldStyle(.plain)
@@ -307,23 +515,70 @@ extension EditorView {
                     .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
                     .onSubmit { commit() }
                     .onChange(of: focused) { _, now in if !now { commit() } }
+
+                if let unit {
+                    Text(unit)
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.subtle)
+                }
             }
-            .onAppear { text = Self.whole(value) }
+            .onAppear { text = formatted(value) }
             // A canvas drag or an undo moves the element under the field. The
             // one being typed in is left alone until it loses focus.
-            .onChange(of: value) { _, latest in if !focused { text = Self.whole(latest) } }
+            .onChange(of: value) { _, latest in if !focused { text = formatted(latest) } }
         }
 
         private func commit() {
             guard let typed = Double(text.trimmingCharacters(in: .whitespaces)) else {
-                text = Self.whole(value)
+                text = formatted(value)
                 return
             }
-            text = Self.whole(typed)
+            text = formatted(typed)
             onCommit(typed)
         }
 
-        private static func whole(_ value: Double) -> String { String(Int(value.rounded())) }
+        private func formatted(_ value: Double) -> String {
+            if decimals == 0 { return String(Int(value.rounded())) }
+            return String(format: "%.\(decimals)f", value)
+        }
+    }
+
+    /// The whole box as one hyperlink, which is what the document model holds.
+    /// Committed on Enter or on losing focus, like the value fields; empty
+    /// clears the link rather than storing a blank one.
+    private struct LinkField: View {
+        let link: String
+        let palette: Palette
+        let onCommit: (String) -> Void
+
+        @State private var text: String = ""
+        @FocusState private var focused: Bool
+
+        private var shape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+        }
+
+        var body: some View {
+            TextField("Link", text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.ctrlText)
+                .focused($focused)
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(palette.ctrl, in: shape)
+                .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+                .onSubmit { commit() }
+                .onChange(of: focused) { _, now in if !now { commit() } }
+                .onAppear { text = link }
+                .onChange(of: link) { _, latest in if !focused { text = latest } }
+        }
+
+        private func commit() {
+            let typed = text.trimmingCharacters(in: .whitespaces)
+            text = typed
+            onCommit(typed)
+        }
     }
 
     // MARK: Document panel

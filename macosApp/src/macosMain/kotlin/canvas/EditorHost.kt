@@ -24,12 +24,21 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.toggleBold
+import io.github.xxfast.cupboard.document.toggleItalic
+import io.github.xxfast.cupboard.document.toggleStrikethrough
+import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.EditorCanvas
@@ -158,6 +167,33 @@ class ElementProps(
     val locked: Boolean,
     /** "Text", "Shape", "Image", "Code" or "Group": what the inspector titles itself. */
     val kind: String,
+)
+
+/**
+ * The primary selected element's text style, flattened for the native inspector,
+ * and null unless that element is a [TextElement]. [ElementProps]'s companion:
+ * the same "what the panel shows" contract, for the controls that only a text
+ * box has.
+ *
+ * The setters it feeds edit every unlocked text box in the selection, so a mixed
+ * selection shows the primary's style and formats all of them.
+ */
+class TextProps(
+    val fontFamily: TextFont,
+    /** The raw weight, for the popup. [isBold] is the same number read as a flag. */
+    val weightValue: Int,
+    val isBold: Boolean,
+    val italic: Boolean,
+    val underline: Boolean,
+    val strikethrough: Boolean,
+    val size: Float,
+    /** Packed ARGB, the document model's color format. */
+    val color: Long,
+    val align: TextAlign,
+    /** A multiple of the font size, not points. */
+    val lineHeight: Float,
+    val listStyle: ListStyle,
+    val link: String?,
 )
 
 /**
@@ -416,6 +452,100 @@ class EditorHost {
 
     /** How many elements are selected, for the inspector's "N selected" line. */
     fun selectionCount(): Int = state.selectedElements.size
+
+    /**
+     * The text style the Format inspector shows, null when the primary element
+     * is not a text box. Read off the primary alone; the setters below write to
+     * the whole selection.
+     */
+    fun selectedText(): TextProps? = (state.primaryElement as? TextElement)?.let { text ->
+        TextProps(
+            fontFamily = text.fontFamily,
+            weightValue = text.fontWeight,
+            isBold = text.isBold,
+            italic = text.italic,
+            underline = text.underline,
+            strikethrough = text.strikethrough,
+            size = text.fontSize,
+            color = text.color,
+            align = text.align,
+            lineHeight = text.lineHeight,
+            listStyle = text.listStyle,
+            link = text.link,
+        )
+    }
+
+    /**
+     * Whether the Format menu has anything to act on: one unlocked text box in
+     * the selection is enough, even one whose caret is up. Formatting is a
+     * property of the whole box, so it applies mid-edit the same as it does
+     * from the canvas, which is why this doesn't consult `isEditingText` the
+     * way the clipboard verbs do.
+     */
+    fun canFormatText(): Boolean =
+        state.selectedElements.any { it is TextElement && !it.locked }
+
+    fun setSelectedTextFont(font: TextFont) {
+        formatSelection { it.copy(fontFamily = font) }
+    }
+
+    /** The raw weight the popup picked. Bold is a point on this scale, not a flag. */
+    fun setSelectedTextWeight(weight: Int) {
+        formatSelection { it.copy(fontWeight = weight.coerceIn(100, 900)) }
+    }
+
+    /** Floors at a point: text with no size has nothing left to click back into. */
+    fun setSelectedTextSize(size: Float) {
+        formatSelection { it.copy(fontSize = size.coerceIn(1f, 400f)) }
+    }
+
+    fun toggleSelectedTextBold() {
+        formatSelection { it.toggleBold() }
+    }
+
+    fun toggleSelectedTextItalic() {
+        formatSelection { it.toggleItalic() }
+    }
+
+    fun toggleSelectedTextUnderline() {
+        formatSelection { it.toggleUnderline() }
+    }
+
+    fun toggleSelectedTextStrikethrough() {
+        formatSelection { it.toggleStrikethrough() }
+    }
+
+    fun setSelectedTextColor(argb: Long) {
+        formatSelection { it.copy(color = argb) }
+    }
+
+    fun setSelectedTextAlign(align: TextAlign) {
+        formatSelection { it.copy(align = align) }
+    }
+
+    /** A multiple of the font size. Floors where the lines stop being readable. */
+    fun setSelectedTextLineHeight(lineHeight: Float) {
+        formatSelection { it.copy(lineHeight = lineHeight.coerceIn(0.5f, 5f)) }
+    }
+
+    fun setSelectedTextList(style: ListStyle) {
+        formatSelection { it.copy(listStyle = style) }
+    }
+
+    /** Blank is no link at all, so an emptied field clears it rather than storing "". */
+    fun setSelectedTextLink(link: String?) {
+        formatSelection { it.copy(link = link?.takeIf { url -> url.isNotBlank() }) }
+    }
+
+    // Every text setter goes through here: the core decides which of the
+    // selection can take the change, and hands back only what actually moved.
+    // Nothing back is nothing to commit, and so no history entry for a control
+    // that was set to what it already said.
+    private fun formatSelection(transform: (TextElement) -> TextElement) {
+        val edits: List<Element> = state.selectedElements.formatText(transform)
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
 
     /** Two unlocked elements are what a group is made of. */
     fun canGroup(): Boolean = canGroup(state.selectedElements)

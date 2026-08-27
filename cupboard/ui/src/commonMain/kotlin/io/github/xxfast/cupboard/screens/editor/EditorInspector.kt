@@ -24,6 +24,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabPosition
@@ -63,9 +65,19 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.TextAlign
+import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.toggleBold
+import io.github.xxfast.cupboard.document.toggleItalic
+import io.github.xxfast.cupboard.document.toggleStrikethrough
+import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import kotlin.math.roundToInt
@@ -74,10 +86,10 @@ import kotlin.math.roundToInt
  * The 282dp M3 inspector: Format / Animate / Slide tabs over their bodies.
  * Clicking the active tab does nothing (close-on-reclick is macOS-only).
  *
- * Format is live whenever [selectedElements] isn't empty: the geometry, rotation,
- * opacity, z-order and lock of the selection. With nothing selected it falls back
- * to the design's text mock, which is still a placeholder (text formatting is its
- * own roadmap item). Animate is still a mock, and so is the Slide tab's layout
+ * Format is live whenever [selectedElements] isn't empty: the text styling where
+ * the primary element is a text box, then the geometry, rotation, opacity,
+ * z-order and lock of the selection. With nothing selected it falls back to the
+ * design's text mock. Animate is still a mock, and so is the Slide tab's layout
  * card; the rest of that tab edits the slide.
  *
  * The "Slide" tab is [InspectorTab.Document]: same pane, per-platform label.
@@ -140,16 +152,27 @@ fun EditorInspector(
         ) {
             when (tab) {
                 InspectorTab.Format -> if (selectedElements.isEmpty()) TextFormatPanel()
-                else ElementFormatPanel(
-                    elements = selectedElements,
-                    onUpdate = onUpdateElements,
-                    onPreview = onPreviewElements,
-                    onReorder = onReorderElements,
-                    onSetLocked = onSetElementsLocked,
-                    onFlip = onFlipElements,
-                    onGroup = onGroupElements,
-                    onUngroup = onUngroupElements,
-                )
+                else {
+                    // The text section sits above the geometry, the way the
+                    // design has it, and only where there is text to style.
+                    val primary: Element = selectedElements.first()
+                    if (primary is TextElement) TextSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                    )
+
+                    ElementFormatPanel(
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                        onPreview = onPreviewElements,
+                        onReorder = onReorderElements,
+                        onSetLocked = onSetElementsLocked,
+                        onFlip = onFlipElements,
+                        onGroup = onGroupElements,
+                        onUngroup = onUngroupElements,
+                    )
+                }
 
                 InspectorTab.Animate -> AnimatePanel()
                 InspectorTab.Document -> SlidePanel(slide = slide, onUpdate = onUpdateSlide)
@@ -244,6 +267,249 @@ private fun TextFormatPanel() {
 
     SectionLabel("OPACITY")
     SliderRow(fraction = 1f, valueLabel = "100%")
+}
+
+/** The weights the inspector offers, which is the range the canvas can actually draw. */
+private val TEXT_WEIGHTS: List<Pair<Int, String>> = listOf(
+    300 to "Light",
+    400 to "Regular",
+    500 to "Medium",
+    600 to "Semibold",
+    700 to "Bold",
+)
+
+/**
+ * The text palette: the slide's own white, the deck's lilacs, its two ambers,
+ * and black for a slide that has gone inverted. A fixed set like the background
+ * grid, with the hex field underneath for anything outside it.
+ */
+private val TEXT_SWATCHES: List<Long> = listOf(
+    0xFFFFFFFF, 0xFFA9A0D8, 0xFFD9CFFF, 0xFFFFE28A, 0xFFA98FFF, 0xFFF5C518, 0xFF000000,
+)
+
+/**
+ * The live TEXT section, shown when the primary element is a text box.
+ *
+ * Every control reads [primary] and writes the whole selection through
+ * [formatText], so a mixed selection styles its text boxes and leaves the shapes
+ * and images in it alone. Formatting is whole-box, not per-range: the document
+ * holds one style per element, so a caret sitting in the text makes no
+ * difference to what any of this does.
+ *
+ * Nothing here previews. Each of these is one settled edit, so each is one
+ * history entry and one autosave write, and there is no gesture to stream.
+ */
+@Composable
+private fun TextSection(
+    primary: TextElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+
+    // False when the transform changed nothing anywhere: no event, and no field
+    // left holding a value the document never took.
+    fun format(transform: (TextElement) -> TextElement): Boolean {
+        val formatted: List<Element> = elements.formatText(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    SectionLabel("TEXT")
+    DropdownField(
+        label = "Font",
+        value = primary.fontFamily,
+        options = TextFont.entries.map { font -> font to font.name },
+        enabled = enabled,
+        onPick = { font -> format { it.copy(fontFamily = font) } },
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        DropdownField(
+            label = "Weight",
+            // A weight the list has no name for still shows: an imported 450
+            // reads as 450 rather than as an empty field.
+            value = primary.fontWeight,
+            options = TEXT_WEIGHTS.withEntry(primary.fontWeight),
+            enabled = enabled,
+            onPick = { weight -> format { it.copy(fontWeight = weight) } },
+            modifier = Modifier.weight(1f),
+        )
+        NumberField(
+            label = "Size",
+            value = primary.fontSize,
+            enabled = enabled,
+            onCommit = { size -> format { it.copy(fontSize = size) } },
+            modifier = Modifier.width(74.dp),
+            minimum = 1f,
+        )
+    }
+
+    SegmentedRow {
+        StyleSegment("B", primary.isBold, enabled, first = true) { format { it.toggleBold() } }
+        StyleSegment("I", primary.italic, enabled, style = FontStyle.Italic) {
+            format { it.toggleItalic() }
+        }
+        StyleSegment("U", primary.underline, enabled, decoration = TextDecoration.Underline) {
+            format { it.toggleUnderline() }
+        }
+        StyleSegment("S", primary.strikethrough, enabled, decoration = TextDecoration.LineThrough) {
+            format { it.toggleStrikethrough() }
+        }
+    }
+
+    SwatchLabel("Color")
+    SwatchRow(
+        colors = TEXT_SWATCHES,
+        selected = primary.color,
+        enabled = enabled,
+        onPick = { color -> format { it.copy(color = color) } },
+    )
+    HexField(
+        label = "Hex",
+        color = primary.color,
+        enabled = enabled,
+        onCommit = { color -> format { it.copy(color = color) } },
+    )
+
+    SegmentedRow {
+        for ((index, align) in TextAlign.entries.withIndex()) {
+            Segment(
+                selected = primary.align == align,
+                first = index == 0,
+                onClick = if (enabled) ({ format { it.copy(align = align) } }) else null,
+            ) {
+                AlignGlyph(
+                    color = segmentTint(primary.align == align, enabled),
+                    variant = index,
+                )
+            }
+        }
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        NumberField(
+            label = "Line Spacing",
+            value = primary.lineHeight,
+            enabled = enabled,
+            onCommit = { spacing -> format { it.copy(lineHeight = spacing) } },
+            modifier = Modifier.width(110.dp),
+            minimum = 0.5f,
+            fractional = true,
+        )
+        DropdownField(
+            label = "List",
+            value = primary.listStyle,
+            options = TextListStyles,
+            enabled = enabled,
+            onPick = { style -> format { it.copy(listStyle = style) } },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    // Empty clears it: a link nobody typed is no link, not an empty one.
+    EntryField(
+        label = "Link",
+        display = primary.link.orEmpty(),
+        enabled = enabled,
+        monospace = false,
+    ) { entered ->
+        val link: String? = entered.trim().takeIf { it.isNotEmpty() }
+        if (link == primary.link) false else format { it.copy(link = link) }
+    }
+
+    PanelDivider()
+}
+
+/** Keynote's three titles for [ListStyle], which read better in a menu than the enum does. */
+private val TextListStyles: List<Pair<ListStyle, String>> = listOf(
+    ListStyle.None to "None",
+    ListStyle.Bullet to "Bullet",
+    ListStyle.Numbered to "Numbered",
+)
+
+/** [value] appended under its own name where the list doesn't already carry it. */
+private fun List<Pair<Int, String>>.withEntry(value: Int): List<Pair<Int, String>> =
+    if (any { (weight, _) -> weight == value }) this else this + (value to "$value")
+
+/** One of the B / I / U / S toggles, drawn in the style it turns on. */
+@Composable
+private fun RowScope.StyleSegment(
+    glyph: String,
+    selected: Boolean,
+    enabled: Boolean,
+    first: Boolean = false,
+    style: FontStyle = FontStyle.Normal,
+    decoration: TextDecoration = TextDecoration.None,
+    onClick: () -> Unit,
+) {
+    Segment(selected = selected, first = first, onClick = if (enabled) onClick else null) {
+        Text(
+            text = glyph,
+            color = segmentTint(selected, enabled),
+            fontSize = 13.sp,
+            fontWeight = if (glyph == "B") FontWeight.Bold else FontWeight.Medium,
+            fontStyle = style,
+            textDecoration = decoration,
+        )
+    }
+}
+
+/** What a segment's content is painted, for its on/off and enabled/disabled corners. */
+@Composable
+private fun segmentTint(selected: Boolean, enabled: Boolean): Color {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    return when {
+        !enabled -> tokens.faint
+        selected -> tokens.segOnText
+        else -> tokens.segOff
+    }
+}
+
+/**
+ * [OutlinedField]'s look as a menu button: the current option in the field, the
+ * whole list under it, the live one ticked.
+ */
+@Composable
+private fun <T> DropdownField(
+    label: String,
+    value: T,
+    options: List<Pair<T, String>>,
+    enabled: Boolean,
+    onPick: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var open: Boolean by remember { mutableStateOf(false) }
+
+    Box(modifier) {
+        OutlinedField(
+            label = label,
+            value = options.firstOrNull { (option, _) -> option == value }?.second.orEmpty(),
+            trailing = "▾",
+            enabled = enabled,
+            modifier = Modifier.clickable(enabled = enabled) { open = true },
+        )
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for ((option, title) in options) {
+                DropdownMenuItem(
+                    text = { Text(title, fontSize = 13.sp) },
+                    leadingIcon = {
+                        Box(Modifier.width(14.dp)) {
+                            if (option == value) {
+                                Text("✓", color = tokens.accent, fontSize = 12.sp)
+                            }
+                        }
+                    },
+                    onClick = {
+                        open = false
+                        onPick(option)
+                    },
+                )
+            }
+        }
+    }
 }
 
 /**
@@ -627,29 +893,40 @@ private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
 /** The palette, six to a row, the current colour ringed. */
 @Composable
 private fun SwatchGrid(selected: Long, onPick: (Long) -> Unit) {
-    val tokens: ChromeTokens = LocalChromeTokens.current
-
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         for (row in BACKGROUND_SWATCHES.chunked(6)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (color in row) {
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(28.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color(color))
-                            // The hairline is what keeps a near-black swatch off
-                            // a near-black panel; the ring replaces it when picked.
-                            .border(
-                                width = if (color == selected) 2.dp else 1.dp,
-                                color = if (color == selected) tokens.accent else tokens.outline,
-                                shape = RoundedCornerShape(6.dp),
-                            )
-                            .clickable { onPick(color) },
+            SwatchRow(colors = row, selected = selected, enabled = true, onPick = onPick)
+        }
+    }
+}
+
+/** One row of the palette, the swatches sharing the width evenly. */
+@Composable
+private fun SwatchRow(
+    colors: List<Long>,
+    selected: Long,
+    enabled: Boolean,
+    onPick: (Long) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (color in colors) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(color))
+                    // The hairline is what keeps a near-black swatch off a
+                    // near-black panel; the ring replaces it when picked.
+                    .border(
+                        width = if (color == selected) 2.dp else 1.dp,
+                        color = if (color == selected) tokens.accent else tokens.outline,
+                        shape = RoundedCornerShape(6.dp),
                     )
-                }
-            }
+                    .clickable(enabled = enabled) { onPick(color) },
+            )
         }
     }
 }
@@ -680,6 +957,7 @@ private fun OutlinedField(
     trailing: String? = null,
     monospace: Boolean = false,
     height: Dp = 44.dp,
+    enabled: Boolean = true,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
 
@@ -688,23 +966,25 @@ private fun OutlinedField(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(height)
-                .border(1.dp, tokens.outline, RoundedCornerShape(4.dp))
+                .border(1.dp, if (enabled) tokens.outline else tokens.div, RoundedCornerShape(4.dp))
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 text = value,
-                color = tokens.text,
+                color = if (enabled) tokens.text else tokens.faint,
                 fontSize = if (monospace) 13.sp else 14.sp,
                 fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
                 modifier = Modifier.weight(1f),
             )
-            if (trailing != null) Text(trailing, color = tokens.dim, fontSize = 10.sp)
+            if (trailing != null) {
+                Text(trailing, color = if (enabled) tokens.dim else tokens.faint, fontSize = 10.sp)
+            }
         }
         // The label sits on the border, masking it with the panel background.
         Text(
             text = label,
-            color = tokens.subtle,
+            color = if (enabled) tokens.subtle else tokens.faint,
             fontSize = 10.5.sp,
             modifier = Modifier
                 .offset(x = 10.dp, y = (-7).dp)
@@ -717,35 +997,51 @@ private fun OutlinedField(
 /** Document units read as whole numbers; the fractions are the canvas's business. */
 private fun Float.asWholeNumber(): String = roundToInt().toString()
 
+/** Two decimals is as fine as a multiplier gets before it stops meaning anything. */
+private fun Float.asMultiplier(): String = ((this * 100).roundToInt() / 100f).toString()
+
+/** Packed ARGB the way it is typed: six digits when it is fully opaque, eight when it isn't. */
+private fun Long.asHex(): String {
+    val digits: String = toString(16).padStart(8, '0').uppercase()
+    return if (digits.startsWith("FF")) "#${digits.substring(2)}" else "#$digits"
+}
+
+/** Six digits take a full alpha, eight carry their own. Anything else is not a colour. */
+private fun String.toArgbOrNull(): Long? {
+    val digits: String = trim().removePrefix("#")
+    if (digits.length != 6 && digits.length != 8) return null
+
+    val value: Long = digits.toLongOrNull(16) ?: return null
+    return if (digits.length == 6) value or 0xFF000000 else value
+}
+
 /**
  * [OutlinedField]'s look with an editable value, committed on Enter and on focus
- * loss. Anything that isn't a number reverts to what the document holds, so a
- * half-typed field can never write a garbage frame.
+ * loss. [onCommit] false puts [display] back, so a half-typed field can never
+ * sit there pretending to hold what the document holds.
  *
  * The text is keyed on the displayed value, so an edit that lands elsewhere (an
  * undo, a canvas drag) redraws the field instead of leaving stale digits behind.
  */
 @Composable
-private fun NumberField(
+private fun EntryField(
     label: String,
-    value: Float,
+    display: String,
     enabled: Boolean,
-    onCommit: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    minimum: Float = Float.NEGATIVE_INFINITY,
+    monospace: Boolean = true,
+    onCommit: (String) -> Boolean,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
     val focusManager: FocusManager = LocalFocusManager.current
-    val display: String = value.asWholeNumber()
     var text: String by remember(display) { mutableStateOf(display) }
     var focused: Boolean by remember { mutableStateOf(false) }
+    // The callback closes over the current element, so a commit that lands after
+    // a state change has to run the latest one rather than the one it started with.
+    val commit: (String) -> Boolean by rememberUpdatedState(onCommit)
 
-    // Reverting covers the no-change case too: "72.0" typed over 72 normalizes
-    // back to "72" rather than sitting there as a phantom edit.
-    fun commit() {
-        val entered: Float? = text.trim().toFloatOrNull()?.coerceAtLeast(minimum)
-        if (entered == null || entered == value) text = display
-        else onCommit(entered)
+    fun settle() {
+        if (!commit(text)) text = display
     }
 
     Box(modifier) {
@@ -765,20 +1061,20 @@ private fun NumberField(
                 textStyle = TextStyle(
                     color = if (enabled) tokens.text else tokens.faint,
                     fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
                 ),
                 cursorBrush = SolidColor(tokens.accent),
                 modifier = Modifier
                     .weight(1f)
                     .onFocusChanged { state ->
-                        if (focused && !state.isFocused) commit()
+                        if (focused && !state.isFocused) settle()
                         focused = state.isFocused
                     }
                     .onPreviewKeyEvent { event ->
                         val entered: Boolean = event.type == KeyEventType.KeyDown &&
                             (event.key == Key.Enter || event.key == Key.NumPadEnter)
                         if (entered) {
-                            commit()
+                            settle()
                             focusManager.clearFocus()
                         }
                         entered
@@ -794,6 +1090,58 @@ private fun NumberField(
                 .background(tokens.insBg)
                 .padding(horizontal = 5.dp),
         )
+    }
+}
+
+/**
+ * An [EntryField] over a number. Anything that isn't one reverts, and so does
+ * the no-change case: "72.0" typed over 72 normalizes back to "72" rather than
+ * sitting there as a phantom edit.
+ *
+ * [fractional] keeps the decimals, for the values that are multipliers rather
+ * than document units.
+ */
+@Composable
+private fun NumberField(
+    label: String,
+    value: Float,
+    enabled: Boolean,
+    onCommit: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    minimum: Float = Float.NEGATIVE_INFINITY,
+    fractional: Boolean = false,
+) {
+    val display: String = if (fractional) value.asMultiplier() else value.asWholeNumber()
+
+    EntryField(label = label, display = display, enabled = enabled, modifier = modifier) { text ->
+        val entered: Float? = text.trim().toFloatOrNull()?.coerceAtLeast(minimum)
+        if (entered == null || entered == value) return@EntryField false
+
+        onCommit(entered)
+        return@EntryField true
+    }
+}
+
+/** An [EntryField] over a packed ARGB colour, typed as hex. */
+@Composable
+private fun HexField(
+    label: String,
+    color: Long,
+    enabled: Boolean,
+    onCommit: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    EntryField(
+        label = label,
+        display = color.asHex(),
+        enabled = enabled,
+        modifier = modifier,
+    ) { text ->
+        val entered: Long? = text.toArgbOrNull()
+        if (entered == null || entered == color) return@EntryField false
+
+        onCommit(entered)
+        return@EntryField true
     }
 }
 

@@ -2,11 +2,19 @@ package io.github.xxfast.cupboard.screens.editor
 
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.TextAlign
+import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove.Backward
 import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.toggleBold
+import io.github.xxfast.cupboard.document.toggleItalic
+import io.github.xxfast.cupboard.document.toggleStrikethrough
+import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 
@@ -154,6 +162,63 @@ private fun alignItem(
     enabled: Boolean,
     viewModel: EditorViewModel,
 ): EditorMenuItem = EditorMenuItem(label, enabled) { viewModel.onAlignElements(edge) }
+
+/**
+ * The text verbs, separator by separator: the four style toggles, the three
+ * alignments, then the list styles.
+ *
+ * Formatting is a property of the whole box, so these apply to the selection's
+ * text elements and to nothing else in it: `formatText` drops the shapes, the
+ * images and anything locked, and an empty result is an edit that changed
+ * nothing, which is no event and no history entry. That is also why a caret
+ * sitting in the text makes no difference to what any of these do.
+ *
+ * Nothing carries a checkmark. The state these would show is the primary box's,
+ * which is a lie the moment two boxes disagree, and neither renderer has a mixed
+ * mark to draw instead.
+ */
+fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorMenuSection> {
+    val elements: List<Element> = state.selectedElements
+    val formattable: Boolean = elements.any { it is TextElement && !it.locked }
+
+    fun format(transform: (TextElement) -> TextElement): () -> Unit = {
+        val formatted: List<Element> = elements.formatText(transform)
+        if (formatted.isNotEmpty()) viewModel.onUpdateElements(formatted)
+    }
+
+    return listOf(
+        EditorMenuSection(
+            listOf(
+                EditorMenuItem("Bold", formattable, onPick = format { it.toggleBold() }),
+                EditorMenuItem("Italic", formattable, onPick = format { it.toggleItalic() }),
+                EditorMenuItem("Underline", formattable, onPick = format { it.toggleUnderline() }),
+                EditorMenuItem(
+                    label = "Strikethrough",
+                    enabled = formattable,
+                    onPick = format { it.toggleStrikethrough() },
+                ),
+            ),
+        ),
+        EditorMenuSection(
+            listOf(
+                TextAlign.Start to "Align Left",
+                TextAlign.Center to "Align Center",
+                TextAlign.End to "Align Right",
+            ).map { (align, label) ->
+                EditorMenuItem(label, formattable, onPick = format { it.copy(align = align) })
+            },
+        ),
+        EditorMenuSection(
+            listOf(
+                ListStyle.Bullet to "Bullet List",
+                ListStyle.Numbered to "Numbered List",
+                ListStyle.None to "No List",
+            ).map { (style, label) ->
+                EditorMenuItem(label, formattable, onPick = format { it.copy(listStyle = style) })
+            },
+        ),
+    )
+}
 
 /**
  * The slide verbs, section by section: [New Slide, Duplicate Slide], then the
