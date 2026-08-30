@@ -51,9 +51,9 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * The stacked layout's 60dp M3 toolbar, per the design's Linux variant: filled
  * Play pill, tonal Add slide, circular insert icon buttons, outlined zoom pill.
  *
- * Text inserts a box, Shape drops the catalog down; Add slide, image and media
- * stay placeholders until the document gains those operations. [onPlay] null
- * (android/web shells) hides Play entirely.
+ * Text inserts a box, Code a code block, Shape drops the catalog down; Add
+ * slide, image and media stay placeholders until the document gains those
+ * operations. [onPlay] null (android/web shells) hides Play entirely.
  */
 @Composable
 fun EditorToolbar(
@@ -61,6 +61,7 @@ fun EditorToolbar(
     onZoomPercentChange: (Int) -> Unit,
     onPlay: (() -> Unit)?,
     onInsertText: () -> Unit,
+    onInsertCode: () -> Unit,
     onInsertShape: (ShapeCatalogEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -126,6 +127,7 @@ fun EditorToolbar(
 
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 InsertButton(onClick = onInsertText) { TextGlyph(color = tokens.icon) }
+                InsertButton(onClick = onInsertCode) { CodeGlyph(color = tokens.icon) }
                 ShapeInsertButton(onPick = onInsertShape)
                 InsertButton { ImageGlyph(color = tokens.icon) }
                 InsertButton { MediaGlyph(color = tokens.icon) }
@@ -292,6 +294,25 @@ private fun TextGlyph(color: Color) {
             lineTo(6.5f * s, 12f * s)
             moveTo(4.5f * s, 12f * s)
             lineTo(8.5f * s, 12f * s)
+        }
+        drawPath(glyph, color, style = glyphStroke())
+    }
+}
+
+/** Angle brackets around a slash, the way an editor marks a code block. */
+@Composable
+private fun CodeGlyph(color: Color) {
+    Canvas(Modifier.size(15.dp)) {
+        val s: Float = size.width / 14f
+        val glyph: Path = Path().apply {
+            moveTo(4.6f * s, 3.4f * s)
+            lineTo(1f * s, 7f * s)
+            lineTo(4.6f * s, 10.6f * s)
+            moveTo(9.4f * s, 3.4f * s)
+            lineTo(13f * s, 7f * s)
+            lineTo(9.4f * s, 10.6f * s)
+            moveTo(8f * s, 2.6f * s)
+            lineTo(6f * s, 11.4f * s)
         }
         drawPath(glyph, color, style = glyphStroke())
     }

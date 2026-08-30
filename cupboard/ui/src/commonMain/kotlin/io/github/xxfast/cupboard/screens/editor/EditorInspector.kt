@@ -62,6 +62,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeLanguages
+import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
@@ -76,6 +79,7 @@ import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.toggleBold
@@ -91,8 +95,8 @@ import kotlin.math.roundToInt
  * Clicking the active tab does nothing (close-on-reclick is macOS-only).
  *
  * Format is live whenever [selectedElements] isn't empty: the text styling where
- * the primary element is a text box, the shape styling where it is a shape,
- * then the geometry, rotation, opacity,
+ * the primary element is a text box, the shape styling where it is a shape, the
+ * code styling where it is a code block, then the geometry, rotation, opacity,
  * z-order and lock of the selection. With nothing selected it falls back to the
  * design's text mock. Animate is still a mock, and so is the Slide tab's layout
  * card; the rest of that tab edits the slide.
@@ -168,6 +172,12 @@ fun EditorInspector(
                     )
 
                     if (primary is ShapeElement) ShapeSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                    )
+
+                    if (primary is CodeElement) CodeSection(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
@@ -751,6 +761,86 @@ private fun ShapeSection(
 
 /** Where a shape's gradient runs to when it is switched on and has none yet. */
 private const val SHAPE_GRADIENT_END: Long = 0xFF2A2452
+
+/**
+ * The live CODE section, shown when the primary element is a code block.
+ *
+ * Reads [primary] and writes the whole selection through `formatCode`, like the
+ * text section: a mixed selection styles its code blocks and leaves the rest
+ * alone. Nothing here previews, since every control is one settled edit.
+ *
+ * The code itself isn't edited here. It is typed on the canvas, the way a text
+ * box's text is; this section is only how the block is dressed.
+ */
+@Composable
+private fun CodeSection(
+    primary: CodeElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+    // The document's language is free-form and resolved case-insensitively
+    // ("kotlin" on disk, "Kotlin" in the menu), so the field shows the catalog's
+    // spelling of whatever it holds. One the catalog has no spelling for still
+    // shows, appended as itself, rather than leaving the field blank.
+    val language: String = CodeLanguages
+        .firstOrNull { it.equals(primary.language, ignoreCase = true) }
+        ?: primary.language
+
+    // False when the transform changed nothing anywhere: no event, and no field
+    // left holding a value the document never took.
+    fun format(transform: (CodeElement) -> CodeElement): Boolean {
+        val formatted: List<Element> = elements.formatCode(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    SectionLabel("CODE")
+    DropdownField(
+        label = "Language",
+        value = language,
+        options = CodeLanguages.withLanguage(language),
+        enabled = enabled,
+        onPick = { picked -> format { it.copy(language = picked) } },
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        DropdownField(
+            label = "Theme",
+            value = primary.theme,
+            options = CodeTheme.entries.map { theme -> theme to theme.name },
+            enabled = enabled,
+            onPick = { theme -> format { it.copy(theme = theme) } },
+            modifier = Modifier.weight(1f),
+        )
+        NumberField(
+            label = "Size",
+            value = primary.fontSize,
+            enabled = enabled,
+            onCommit = { size -> format { it.copy(fontSize = size) } },
+            modifier = Modifier.width(74.dp),
+            minimum = 1f,
+        )
+    }
+
+    AppearanceRow(
+        label = "Line Numbers",
+        checked = primary.showLineNumbers,
+        onToggle = if (!enabled) null else ({ on -> format { it.copy(showLineNumbers = on) } }),
+    )
+    AppearanceRow(
+        label = "Wrap",
+        checked = primary.wrap,
+        onToggle = if (!enabled) null else ({ on -> format { it.copy(wrap = on) } }),
+    )
+
+    PanelDivider()
+}
+
+/** [language] appended under its own name where the catalog doesn't carry it. */
+private fun List<String>.withLanguage(language: String): List<Pair<String, String>> =
+    (if (contains(language)) this else this + language).map { it to it }
 
 /**
  * The live property editor for the selection.

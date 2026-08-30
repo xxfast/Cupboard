@@ -19,6 +19,10 @@ import androidx.compose.ui.renderComposeScene
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeLanguages
+import io.github.xxfast.cupboard.document.CodeTheme
+import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
+import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
@@ -40,7 +44,9 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.element
+import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.textBoxElement
@@ -243,6 +249,25 @@ class ShapeProps(
     val endArrow: Boolean,
     val label: String,
     val labelSize: Float,
+)
+
+/**
+ * The primary selected element's code style, flattened for the native inspector,
+ * and null unless that element is a [CodeElement]. The third of [TextProps]'s
+ * family, same contract: what the panel shows, never a handle onto the document.
+ *
+ * [theme] is the enum's name rather than the enum, the way [ShapeProps.kindName]
+ * spells its kind: the picker draws `codeThemes()` and hands a name back, so no
+ * Kotlin enum has to cross into ObjC. [language] is already a plain string in
+ * the model, and `codeLanguages()` is what a picker offers of it.
+ */
+class CodeProps(
+    val language: String,
+    /** Spelled the way [CodeTheme] spells it, one of `codeThemes()`. */
+    val theme: String,
+    val fontSize: Float,
+    val showLineNumbers: Boolean,
+    val wrap: Boolean,
 )
 
 /**
@@ -527,6 +552,12 @@ class EditorHost {
         viewModel.onInsertElement(textBoxElement(frame))
     }
 
+    /** A code block in the middle of the slide, carrying a snippet to type over. */
+    fun insertCodeBox() {
+        val frame: Frame = state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight)
+        viewModel.onInsertElement(codeBoxElement(frame))
+    }
+
     /**
      * What the Format inspector shows, or null when nothing is selected: the
      * primary element, with the rest of the selection behind it.
@@ -756,6 +787,70 @@ class EditorHost {
             val formatted: ShapeElement = transform(element)
             return@mapNotNull if (formatted == element) null else formatted
         }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The code style the Format inspector shows, null when the primary element
+     * is not a code block. Read off the primary, written to every unlocked code
+     * block in the selection, the way the text and shape ones work.
+     */
+    fun selectedCode(): CodeProps? = (state.primaryElement as? CodeElement)?.let { code ->
+        CodeProps(
+            language = code.language,
+            theme = code.theme.name,
+            fontSize = code.fontSize,
+            showLineNumbers = code.showLineNumbers,
+            wrap = code.wrap,
+        )
+    }
+
+    /**
+     * The languages a picker offers, in menu order. The document's list, not the
+     * shell's: what highlights and what it is called are the core's business.
+     */
+    fun codeLanguages(): List<String> = CodeLanguages
+
+    /** The syntax palettes, named the way [CodeTheme] names them, in its order. */
+    fun codeThemes(): List<String> = CodeTheme.entries.map { it.name }
+
+    /**
+     * Free-form on the model, so this takes whatever the picker hands over: an
+     * unknown name highlights as plain text rather than failing.
+     */
+    fun setCodeLanguage(language: String) {
+        formatCodeBlocks { it.copy(language = language) }
+    }
+
+    /**
+     * A theme by name, from [codeThemes]. A name the enum doesn't have writes
+     * nothing rather than falling back to a palette nobody picked: the string
+     * crosses a language boundary on the way back, the way the snap kinds do.
+     */
+    fun setCodeTheme(theme: String) {
+        val picked: CodeTheme = CodeTheme.entries.firstOrNull { it.name == theme } ?: return
+        formatCodeBlocks { it.copy(theme = picked) }
+    }
+
+    /** Floors at a point, like the text box's: code with no size can't be read. */
+    fun setCodeFontSize(size: Float) {
+        formatCodeBlocks { it.copy(fontSize = size.coerceIn(1f, 400f)) }
+    }
+
+    fun setCodeLineNumbers(enabled: Boolean) {
+        formatCodeBlocks { it.copy(showLineNumbers = enabled) }
+    }
+
+    fun setCodeWrap(enabled: Boolean) {
+        formatCodeBlocks { it.copy(wrap = enabled) }
+    }
+
+    // The code setters' [formatSelection]: the core picks the unlocked code
+    // blocks and drops the ones the change left alone, so a control set to what
+    // it already said spends no history entry.
+    private fun formatCodeBlocks(transform: (CodeElement) -> CodeElement) {
+        val edits: List<Element> = state.selectedElements.formatCode(transform)
         if (edits.isEmpty()) return
         viewModel.onUpdateElements(edits)
     }

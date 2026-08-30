@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
+import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
@@ -43,6 +45,7 @@ import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.editor.EditorCanvas
@@ -219,6 +222,13 @@ fun EditorView(
                         onInsertElement(
                             textBoxElement(
                                 state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight),
+                            ),
+                        )
+                    },
+                    onInsertCode = {
+                        onInsertElement(
+                            codeBoxElement(
+                                state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight),
                             ),
                         )
                     },

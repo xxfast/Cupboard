@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -40,6 +41,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
@@ -334,24 +336,67 @@ private fun ImageElementView(element: ImageElement) {
     }
 }
 
+/** Code is set looser than prose, and the gutter has to be set to the same. */
+private const val CodeLineHeight: Float = 1.5f
+
+/** Between the last digit and the first character of its line. */
+private val CodeGutterGap = 10.dp
+
+private val CodeCorner = RoundedCornerShape(8.dp)
+
+/**
+ * A code block: its theme's chrome, its numbers, and its highlighted text.
+ *
+ * The gutter is a second [Text] of the same face and size rather than a prefix
+ * on each line, so selecting or exporting the code never picks the numbers up.
+ * It takes its width from its own widest number, which is the digit count of the
+ * line count. Numbers line up with lines, not with rows: with [CodeElement.wrap]
+ * on, a line that reflows pushes its neighbours down and the column drifts. Only
+ * a per-line layout fixes that, which is more than a wrapped block is worth.
+ */
 @Composable
 private fun CodeElementView(element: CodeElement) {
+    val chrome: CodeChrome = element.theme.chrome
     Box(
         modifier = Modifier
             .size(element.frame.width.dp, element.frame.height.dp)
-            .background(Color(0xFF14151F), RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF33363D), RoundedCornerShape(8.dp))
+            .background(chrome.background, CodeCorner)
+            .border(1.dp, chrome.border, CodeCorner)
+            .clip(CodeCorner)
             .padding(12.dp),
     ) {
-        val highlighted = remember(element.code, element.language) {
-            highlightCode(element.code, element.language)
+        val highlighted = remember(element.code, element.language, element.theme) {
+            highlightCode(element.code, element.language, element.theme)
         }
-        Text(
-            text = highlighted,
-            color = Color(0xFFD9CFFF),
-            fontSize = element.fontSize.sp,
-            fontFamily = FontFamily.Monospace,
-            lineHeight = (element.fontSize * 1.5f).sp,
-        )
+
+        Row {
+            if (element.showLineNumbers) {
+                val numbers: String = remember(element.code) {
+                    (1..element.code.count { it == '\n' } + 1).joinToString("\n")
+                }
+                Text(
+                    text = numbers,
+                    color = chrome.gutter,
+                    fontSize = element.fontSize.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = (element.fontSize * CodeLineHeight).sp,
+                    softWrap = false,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                    modifier = Modifier.padding(end = CodeGutterGap),
+                )
+            }
+
+            Text(
+                text = highlighted,
+                color = chrome.text,
+                fontSize = element.fontSize.sp,
+                fontFamily = FontFamily.Monospace,
+                lineHeight = (element.fontSize * CodeLineHeight).sp,
+                // Off, a long line runs to the edge of the block and is cut there
+                // by the clip above rather than reflowing under itself.
+                softWrap = element.wrap,
+                overflow = TextOverflow.Clip,
+            )
+        }
     }
 }

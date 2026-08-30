@@ -26,6 +26,8 @@ struct Chrome {
     let text: TextFormat?
     /// The primary's shape style, nil unless the primary is a shape.
     let shape: ShapeFormat?
+    /// The primary's code style, nil unless the primary is a code block.
+    let code: CodeFormat?
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
@@ -49,6 +51,7 @@ struct Chrome {
         element = host.selectedElement().map(Selection.init)
         text = host.selectedText().map(TextFormat.init)
         shape = host.selectedShape().map(ShapeFormat.init)
+        code = host.selectedCode().map(CodeFormat.init)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
@@ -175,6 +178,31 @@ struct ShapeFormat {
         endArrow = props.endArrow
         label = props.label
         labelSize = Double(props.labelSize)
+    }
+}
+
+/// The primary selected element's code style as a Swift value: what the Code
+/// section of the Format panel shows. Read off the primary, written to the whole
+/// selection, like every other Format control.
+///
+/// The theme arrives as its name rather than as the enum, the way the shape kind
+/// does, and goes back the same way: the picker draws `codeThemes()` and hands
+/// one of its own strings back.
+struct CodeFormat {
+    /// Free-form on the model and resolved case-insensitively, so this is not
+    /// always one of `codeLanguages()` exactly.
+    let language: String
+    let theme: String
+    let size: Double
+    let showLineNumbers: Bool
+    let wrap: Bool
+
+    init(_ props: CodeProps) {
+        language = props.language
+        theme = props.theme
+        size = Double(props.fontSize)
+        showLineNumbers = props.showLineNumbers
+        wrap = props.wrap
     }
 }
 

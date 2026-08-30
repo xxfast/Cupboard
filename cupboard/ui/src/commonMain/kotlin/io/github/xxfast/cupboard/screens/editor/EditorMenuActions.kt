@@ -1,5 +1,7 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
+import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Element
@@ -15,6 +17,7 @@ import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.textBoxElement
@@ -228,7 +231,7 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
 }
 
 /**
- * The Insert verbs: a text box, then the shape catalog as one submenu.
+ * The Insert verbs: a text box, a code block, then the shape catalog as one submenu.
  *
  * Nothing is ever greyed. An insertion asks nothing of the selection, and a
  * locked element on the slide is no reason not to add another one next to it.
@@ -251,6 +254,11 @@ fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                     val frame: Frame =
                         state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight)
                     viewModel.onInsertElement(textBoxElement(frame))
+                },
+                EditorMenuItem("Code", enabled = true) {
+                    val frame: Frame =
+                        state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight)
+                    viewModel.onInsertElement(codeBoxElement(frame))
                 },
                 EditorMenuItem(
                     label = "Shape",

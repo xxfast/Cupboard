@@ -82,6 +82,11 @@ extension EditorView {
                         shapeSection(shape)
                         palette.divider.frame(height: 1)
                     }
+                    // And the code block's, by the same rule.
+                    if let code = ui.code {
+                        codeSection(code)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -472,6 +477,56 @@ extension EditorView {
             .labelsHidden()
             .controlSize(.small)
         }
+    }
+
+    // MARK: Code
+
+    /// The code block's own style: what it is highlighted as, what palette it
+    /// wears, and the two switches for the gutter and the long lines. Same
+    /// contract as the Text and Shape sections, read off the primary and written
+    /// to every unlocked code block in the selection.
+    ///
+    /// Both lists come off the host rather than being restated here: what
+    /// highlights, what a palette is called, and what order they come in are the
+    /// document's to say, the way the shape catalog's rows are.
+    func codeSection(_ code: CodeFormat) -> some View {
+        let languages = host.codeLanguages()
+        let themes = host.codeThemes()
+        return VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Code")
+
+            stylePopup(languages, selected: Self.languageIndex(code.language, in: languages)) {
+                index in host.setCodeLanguage(language: languages[index])
+            }
+
+            HStack(spacing: 8) {
+                stylePopup(themes, selected: themes.firstIndex(of: code.theme) ?? 0) { index in
+                    host.setCodeTheme(theme: themes[index])
+                }
+
+                ValueField(label: "", value: code.size, palette: palette, unit: "pt") {
+                    host.setCodeFontSize(size: Float($0))
+                }
+                .frame(width: 78)
+            }
+
+            checkRow("Line Numbers", on: code.showLineNumbers) {
+                host.setCodeLineNumbers(enabled: !code.showLineNumbers)
+            }
+
+            checkRow("Wrap", on: code.wrap) {
+                host.setCodeWrap(enabled: !code.wrap)
+            }
+        }
+    }
+
+    /// The row a language marks. Case-insensitive, because the model stores what
+    /// it was given and documents on disk carry lowercase names. One the list
+    /// doesn't have marks Plain, which is what it highlights as anyway.
+    static func languageIndex(_ language: String, in languages: [String]) -> Int {
+        languages.firstIndex { $0.caseInsensitiveCompare(language) == .orderedSame }
+            ?? languages.firstIndex(of: "Plain")
+            ?? 0
     }
 
     func positionSection(_ element: Selection) -> some View {

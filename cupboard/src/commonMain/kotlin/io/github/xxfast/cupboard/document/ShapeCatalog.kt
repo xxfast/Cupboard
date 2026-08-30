@@ -37,9 +37,51 @@ fun shapeElement(kind: ShapeKind, frame: Frame): ShapeElement = ShapeElement(
     strokeWidth = if (kind == ShapeKind.Line) LineStrokeWidth else ShapeStrokeWidth,
 )
 
+/** The box a fresh code block inserts into. */
+const val DefaultCodeBoxWidth: Float = 420f
+const val DefaultCodeBoxHeight: Float = 160f
+
 /** A fresh text box filling [frame], with the placeholder a shell drops the caret into. */
 fun textBoxElement(frame: Frame): TextElement =
     TextElement(frame = frame, text = "Text", fontSize = 32f)
+
+/**
+ * The languages a picker offers, in menu order.
+ *
+ * Display names rather than the engine's keys: every one of these resolves
+ * through the renderer's case-insensitive mapping, and "Plain" is the one that
+ * deliberately doesn't, landing on no highlighting at all. The highlighter knows
+ * a few more, but a picker is a short list or it is no help.
+ */
+val CodeLanguages: List<String> = listOf(
+    "Kotlin",
+    "Swift",
+    "Java",
+    "JavaScript",
+    "TypeScript",
+    "Python",
+    "Rust",
+    "C",
+    "C++",
+    "C#",
+    "Go",
+    "Dart",
+    "PHP",
+    "Ruby",
+    "Shell",
+    "Plain",
+)
+
+/** A fresh code block filling [frame], with a snippet to type over. */
+fun codeBoxElement(frame: Frame): CodeElement = CodeElement(
+    frame = frame,
+    code = """
+        fun main() {
+            println("Hello, Cupboard")
+        }
+    """.trimIndent(),
+    language = "Kotlin",
+)
 
 /**
  * One entry of the shape menu: what to insert, what to call it, and how round.

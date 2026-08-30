@@ -11,22 +11,94 @@ import dev.snipme.highlights.model.ColorHighlight
 import dev.snipme.highlights.model.SyntaxLanguage
 import dev.snipme.highlights.model.SyntaxTheme
 import dev.snipme.highlights.model.SyntaxThemes
+import io.github.xxfast.cupboard.document.CodeTheme
 
 /**
- * Atom One Dark. `design/` defines no code token palette, so we take the built-in that reads
- * best on the code box background (`0xFF14151F`). Unhighlighted spans keep the caller's text
- * color rather than the theme's `code` value.
+ * The block a theme is drawn on: its background, its outline, the colour the
+ * spans the highlighter said nothing about fall back to, and the gutter's.
+ *
+ * `design/` defines no code token palette, so each of these is the theme's own
+ * editor chrome rather than anything of ours, which is what makes a picked theme
+ * read as itself rather than as Atom wearing different keywords.
  */
-private val CodeTheme: SyntaxTheme = SyntaxThemes.atom(darkMode = true)
+internal data class CodeChrome(
+    val background: Color,
+    val border: Color,
+    val text: Color,
+    val gutter: Color,
+)
 
-/** Syntax-highlights [code] as [language], falling back to no-language highlighting. */
-internal fun highlightCode(code: String, language: String): AnnotatedString {
+/**
+ * Always dark mode: the slide stays dark in both app themes, so the light
+ * variants would highlight against a background nothing here ever draws.
+ * [CodeTheme.Notepad] is the exception the pale [CodeChrome.background] is for.
+ */
+private fun CodeTheme.syntaxTheme(): SyntaxTheme = when (this) {
+    CodeTheme.Atom -> SyntaxThemes.atom(darkMode = true)
+    CodeTheme.Darcula -> SyntaxThemes.darcula(darkMode = true)
+    CodeTheme.Monokai -> SyntaxThemes.monokai(darkMode = true)
+    CodeTheme.Pastel -> SyntaxThemes.pastel(darkMode = true)
+    CodeTheme.Matrix -> SyntaxThemes.matrix(darkMode = true)
+    CodeTheme.Notepad -> SyntaxThemes.notepad(darkMode = true)
+}
+
+/** Atom keeps the colours the code box has always drawn in; the rest come from their editors. */
+internal val CodeTheme.chrome: CodeChrome get() = when (this) {
+    CodeTheme.Atom -> CodeChrome(
+        background = Color(0xFF14151F),
+        border = Color(0xFF33363D),
+        text = Color(0xFFD9CFFF),
+        gutter = Color(0xFF5C6370),
+    )
+
+    CodeTheme.Darcula -> CodeChrome(
+        background = Color(0xFF2B2B2B),
+        border = Color(0xFF4E5254),
+        text = Color(0xFFEDEDED),
+        gutter = Color(0xFF606366),
+    )
+
+    CodeTheme.Monokai -> CodeChrome(
+        background = Color(0xFF272822),
+        border = Color(0xFF49483E),
+        text = Color(0xFFF8F8F2),
+        gutter = Color(0xFF75715E),
+    )
+
+    CodeTheme.Pastel -> CodeChrome(
+        background = Color(0xFF2E3436),
+        border = Color(0xFF555753),
+        text = Color(0xFFDFDEE0),
+        gutter = Color(0xFF888A85),
+    )
+
+    CodeTheme.Matrix -> CodeChrome(
+        background = Color(0xFF000000),
+        border = Color(0xFF00591F),
+        text = Color(0xFF008500),
+        gutter = Color(0xFF004D00),
+    )
+
+    CodeTheme.Notepad -> CodeChrome(
+        background = Color(0xFFFDFDF6),
+        border = Color(0xFFBFBFB4),
+        text = Color(0xFF000080),
+        gutter = Color(0xFF9A9A90),
+    )
+}
+
+/** Syntax-highlights [code] as [language] in [theme], falling back to no-language highlighting. */
+internal fun highlightCode(
+    code: String,
+    language: String,
+    theme: CodeTheme = CodeTheme.Atom,
+): AnnotatedString {
     if (code.isEmpty()) return AnnotatedString("")
 
     val highlights = Highlights.Builder(
         code = code,
         language = language.toSyntaxLanguage(),
-        theme = CodeTheme,
+        theme = theme.syntaxTheme(),
     ).build().getHighlights()
 
     return buildAnnotatedString {

@@ -369,6 +369,18 @@ data class GroupElement(
     }
 }
 
+/**
+ * The syntax palettes the highlighter ships, and the whole of what a code box
+ * can be dressed in. Named after the editors they come from rather than after
+ * their colours, because that is what someone picking one is looking for.
+ *
+ * [Atom] is where every code box starts, and where every document written before
+ * this enum existed lands when it is opened. [Notepad] is the one light palette:
+ * its block is drawn pale so its ink is legible, on a slide that stays dark.
+ */
+@Serializable
+enum class CodeTheme { Atom, Darcula, Monokai, Pastel, Matrix, Notepad }
+
 @Serializable
 @SerialName("code")
 data class CodeElement(
@@ -380,8 +392,18 @@ data class CodeElement(
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
     val code: String = "",
+    /**
+     * Free-form, and resolved case-insensitively by the renderer: documents on
+     * disk already carry lowercase names, and an unknown one highlights as plain
+     * text rather than failing to open. `CodeLanguages` is what a picker offers.
+     */
     val language: String = "kotlin",
     val fontSize: Float = 14f,
+    val theme: CodeTheme = CodeTheme.Atom,
+    /** Gutter numbers count physical lines, so they match what was typed. */
+    val showLineNumbers: Boolean = false,
+    /** Off, and a long line runs out of the box rather than reflowing under itself. */
+    val wrap: Boolean = false,
 ) : Element {
     override fun update(
         frame: Frame,

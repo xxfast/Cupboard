@@ -54,6 +54,22 @@ fun List<Element>.formatText(transform: (TextElement) -> TextElement): List<Elem
         return@mapNotNull if (formatted == element) null else formatted
     }
 
+/**
+ * [transform] applied to every code block in the selection, the way [formatText]
+ * does its text boxes: unlocked and top-level only, and only the ones that
+ * actually changed.
+ *
+ * Separate from [formatText] rather than generic over the element type, because
+ * both shells dispatch inspector edits through these two by name and a mixed
+ * selection has to leave the other kind alone.
+ */
+fun List<Element>.formatCode(transform: (CodeElement) -> CodeElement): List<Element> =
+    mapNotNull { element ->
+        if (element !is CodeElement || element.locked) return@mapNotNull null
+        val formatted: CodeElement = transform(element)
+        return@mapNotNull if (formatted == element) null else formatted
+    }
+
 /** How deep this line sits: one leading tab per level, the way [indentLine] writes it. */
 fun String.listIndentLevel(): Int = takeWhile { it == Tab }.length
 
