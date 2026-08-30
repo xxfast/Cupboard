@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
@@ -810,7 +811,8 @@ fun EditorPresenter(
             // A caret is not an edit: no document changes, so no history
             // entry. Selecting the element is part of placing it, the way a
             // double click both selects and opens the text for typing.
-            is BeginTextEdit -> (state.unlockedElement(event.id) as? TextElement)
+            is BeginTextEdit -> state.unlockedElement(event.id)
+                ?.takeIf { it is TextElement || it is CodeElement }
                 ?.let {
                     state.copy(
                         selectedElementIds = listOf(event.id),

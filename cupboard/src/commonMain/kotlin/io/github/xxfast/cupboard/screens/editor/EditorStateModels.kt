@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -199,13 +200,17 @@ data class EditorState(
 
     /**
      * The element the caret is in, null when none is: an id that no longer
-     * resolves, or one that resolves to something with no text to edit, is no
-     * more an edit session than no id at all.
+     * resolves, or one that resolves to something with no text or code to edit,
+     * is no more an edit session than no id at all.
+     *
+     * A text box and a code block are the two that take a caret. They edit
+     * differently on the canvas, one a plain field and one a highlighted one,
+     * but a session is a session either way.
      */
-    val editingElement: TextElement?
+    val editingElement: Element?
         get() = editingElementId
             ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
-            as? TextElement
+            ?.takeIf { it is TextElement || it is CodeElement }
 
     /** Whether the caret is in an element, and so whether keys are text rather than commands. */
     val isEditingText: Boolean get() = editingElement != null
@@ -605,13 +610,13 @@ sealed interface EditorEvent {
      */
     data class PasteStyle(val ids: List<String>) : EditorEvent
     /**
-     * Puts the caret in the text element [id], the way a double click does:
-     * it becomes the whole selection, the canvas takes the focus, and the keys
-     * that follow are text rather than commands.
+     * Puts the caret in the text element or code block [id], the way a double
+     * click does: it becomes the whole selection, the canvas takes the focus,
+     * and the keys that follow are text rather than commands.
      *
      * Nothing in the document changes, so no history entry. A locked element
      * refuses the caret like it refuses every other edit, and an id that is not
-     * an unlocked text element on the selected slide begins nothing.
+     * an unlocked text or code element on the selected slide begins nothing.
      */
     data class BeginTextEdit(val id: String) : EditorEvent
     /**

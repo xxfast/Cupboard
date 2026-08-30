@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +26,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -51,6 +53,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.OffsetMapping
@@ -62,13 +65,21 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
+import io.github.xxfast.cupboard.canvas.CodeChrome
+import io.github.xxfast.cupboard.canvas.CodeCorner
+import io.github.xxfast.cupboard.canvas.CodeGutterGap
+import io.github.xxfast.cupboard.canvas.CodeLineHeight
+import io.github.xxfast.cupboard.canvas.CodePadding
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
 import io.github.xxfast.cupboard.canvas.alignment
+import io.github.xxfast.cupboard.canvas.chrome
+import io.github.xxfast.cupboard.canvas.highlightCode
 import io.github.xxfast.cupboard.canvas.textStyle
 import io.github.xxfast.cupboard.canvas.toComposeColor
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -194,9 +205,11 @@ fun EditorCanvas(
     // Read from the pointer handlers, which are set up once: a press outside the
     // field has to know whether there is a caret to take away.
     val currentEditingId by rememberUpdatedState(editingElementId)
-    // Whatever the id resolves to right now, and only when there is text to edit.
-    val editing: TextElement? =
-        slide.elements.firstOrNull { it.id == editingElementId } as? TextElement
+    // Whatever the id resolves to right now, and only when there is text or code
+    // to edit. Which of the two it is picks the field below.
+    val editing: Element? = slide.elements
+        .firstOrNull { it.id == editingElementId }
+        ?.takeIf { it is TextElement || it is CodeElement }
     val currentGuides by rememberUpdatedState(guides)
     val currentShowGuides by rememberUpdatedState(showGuides)
     val currentSnapTargets by rememberUpdatedState(snapTargets)
@@ -411,10 +424,10 @@ fun EditorCanvas(
                                             val hit: Element? = elementAt(toDoc(start))
                                             val now: Long =
                                                 event.changes.firstOrNull()?.uptimeMillis ?: 0L
-                                            // A second click on the same text
-                                            // element opens it for typing, the way
-                                            // every editor's does. Anything else
-                                            // selects, first click or not.
+                                            // A second click on the same text box
+                                            // or code block opens it for typing,
+                                            // the way every editor's does. Anything
+                                            // else selects, first click or not.
                                             val again: Boolean = hit != null &&
                                                 hit.id == clickedId &&
                                                 now - clickedAt <= doubleClick
@@ -422,7 +435,8 @@ fun EditorCanvas(
                                             clickedAt = now
                                             when {
                                                 hit == null -> onSelectElement(null)
-                                                again && hit is TextElement && !hit.locked ->
+                                                again && (hit is TextElement ||
+                                                    hit is CodeElement) && !hit.locked ->
                                                     onBeginTextEdit(hit.id)
 
                                                 else -> onSelectElement(hit.id)
@@ -655,12 +669,20 @@ fun EditorCanvas(
 
             // Last, and so on top of the input overlay: the field has to see its own
             // clicks and drags to place a caret and sweep a selection with them.
-            if (editing != null) {
-                TextEditor(
+            when (editing) {
+                is TextElement -> TextEditor(
                     element = editing,
                     onPreviewElements = onPreviewElements,
                     onEndTextEdit = onEndTextEdit,
                 )
+
+                is CodeElement -> CodeEditor(
+                    element = editing,
+                    onPreviewElements = onPreviewElements,
+                    onEndTextEdit = onEndTextEdit,
+                )
+
+                else -> {}
             }
         }
 
@@ -930,6 +952,140 @@ private fun TextEditor(
                     }
                 },
         )
+    }
+}
+
+/** What a Tab puts in the code, rather than a tab stop the field cannot lay out. */
+private const val CodeIndent: String = "    "
+
+/**
+ * [element] as an editable code block, sitting exactly where its code draws.
+ *
+ * [TextEditor]'s pattern throughout: the value is held here so the caret moves
+ * with the key that moved it, and every change goes back through the loop as an
+ * ordinary element preview, so one session is one undo entry and every other
+ * shell sees the code as it is typed.
+ *
+ * The chrome is the renderer's, built from the same constants rather than from
+ * numbers repeated here, so opening a block for typing moves nothing. The
+ * highlighting is recomputed on every keystroke against the field's own text: a
+ * slide-sized snippet is small enough that a re-parse per key costs nothing, and
+ * an identity mapping is honest because the pass only colours, never rewrites.
+ */
+@Composable
+private fun CodeEditor(
+    element: CodeElement,
+    onPreviewElements: (List<Element>) -> Unit,
+    onEndTextEdit: () -> Unit,
+) {
+    // Re-seeded when the caret moves to another block, everything selected the
+    // way [TextEditor] seeds a text box.
+    var value: TextFieldValue by remember(element.id) {
+        mutableStateOf(TextFieldValue(element.code, TextRange(0, element.code.length)))
+    }
+    val focusRequester: FocusRequester = remember { FocusRequester() }
+    LaunchedEffect(element.id) { focusRequester.requestFocus() }
+
+    val chrome: CodeChrome = element.theme.chrome
+    val style: TextStyle = TextStyle(
+        color = chrome.text,
+        fontSize = element.fontSize.sp,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = (element.fontSize * CodeLineHeight).sp,
+    )
+
+    // Colouring only, so every offset in the text is its own offset in what is
+    // drawn: no mapping to keep, unlike the list markers above.
+    val highlighted = VisualTransformation { text ->
+        TransformedText(
+            highlightCode(text.text, element.language, element.theme),
+            OffsetMapping.Identity,
+        )
+    }
+
+    Box(
+        Modifier
+            .offset(element.frame.x.dp, element.frame.y.dp)
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .graphicsLayer {
+                alpha = element.opacity
+                rotationZ = element.rotation
+                scaleX = if (element.flippedHorizontally) -1f else 1f
+                scaleY = if (element.flippedVertically) -1f else 1f
+                transformOrigin = TransformOrigin.Center
+            }
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(chrome.background, CodeCorner)
+                .border(1.dp, chrome.border, CodeCorner)
+                .clip(CodeCorner)
+                .padding(CodePadding)
+        ) {
+            Row {
+                // Counted off the field rather than off the element, so a line
+                // added or taken away is numbered as it is typed.
+                if (element.showLineNumbers) {
+                    Text(
+                        text = (1..value.text.count { it == '\n' } + 1).joinToString("\n"),
+                        color = chrome.gutter,
+                        fontSize = element.fontSize.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = (element.fontSize * CodeLineHeight).sp,
+                        softWrap = false,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                        modifier = Modifier.padding(end = CodeGutterGap),
+                    )
+                }
+
+                BasicTextField(
+                    value = value,
+                    onValueChange = { edited ->
+                        val typed: Boolean = edited.text != value.text
+                        value = edited
+                        if (typed) onPreviewElements(listOf(element.copy(code = edited.text)))
+                    },
+                    textStyle = style,
+                    cursorBrush = SolidColor(chrome.text),
+                    visualTransformation = highlighted,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focusRequester)
+                        // Escape leaves the code where it is and the caret
+                        // behind. Enter is the field's, it inserts a newline.
+                        .onPreviewKeyEvent { key ->
+                            if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                            when (key.key) {
+                                Key.Escape -> {
+                                    onEndTextEdit()
+                                    true
+                                }
+
+                                // In code, Tab is an indent rather than focus
+                                // traversal: four spaces where the caret is, and
+                                // a selection is replaced by them like any typing
+                                // would replace it.
+                                Key.Tab -> {
+                                    val start: Int = value.selection.min
+                                    val end: Int = value.selection.max
+                                    val edited: String =
+                                        value.text.replaceRange(start, end, CodeIndent)
+                                    value = TextFieldValue(
+                                        text = edited,
+                                        selection = TextRange(start + CodeIndent.length),
+                                    )
+                                    onPreviewElements(listOf(element.copy(code = edited)))
+                                    true
+                                }
+
+                                else -> false
+                            }
+                        },
+                )
+            }
+        }
     }
 }
 

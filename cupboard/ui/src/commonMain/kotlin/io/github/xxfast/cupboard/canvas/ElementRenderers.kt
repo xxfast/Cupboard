@@ -336,13 +336,23 @@ private fun ImageElementView(element: ImageElement) {
     }
 }
 
-/** Code is set looser than prose, and the gutter has to be set to the same. */
-private const val CodeLineHeight: Float = 1.5f
+/**
+ * Code is set looser than prose, and the gutter has to be set to the same.
+ *
+ * These three are internal rather than private for the same reason
+ * [TextElement.textStyle] is: the editor's in-place code field builds its own
+ * chrome from them, so the block under the caret is the block that was there
+ * before it, to the pixel.
+ */
+internal const val CodeLineHeight: Float = 1.5f
 
 /** Between the last digit and the first character of its line. */
-private val CodeGutterGap = 10.dp
+internal val CodeGutterGap = 10.dp
 
-private val CodeCorner = RoundedCornerShape(8.dp)
+internal val CodeCorner = RoundedCornerShape(8.dp)
+
+/** The block's inset, shared with the field so the first character sits still. */
+internal val CodePadding = 12.dp
 
 /**
  * A code block: its theme's chrome, its numbers, and its highlighted text.
@@ -363,7 +373,7 @@ private fun CodeElementView(element: CodeElement) {
             .background(chrome.background, CodeCorner)
             .border(1.dp, chrome.border, CodeCorner)
             .clip(CodeCorner)
-            .padding(12.dp),
+            .padding(CodePadding),
     ) {
         val highlighted = remember(element.code, element.language, element.theme) {
             highlightCode(element.code, element.language, element.theme)
