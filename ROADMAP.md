@@ -48,7 +48,8 @@ The parity core every later phase builds on. All of it is `screens/editor/` even
 
 Where we beat Keynote for our audience; worth shipping before broad parity.
 
-- [x] Code element parity+: language picker (curated `CodeLanguages`, free-form on the model), six syntax themes (always dark, per-theme block chrome), line numbers gutter, font size + wrap controls. Code section in both Format inspectors, Insert > Code menu + toolbar button on both shells, style paste carries the new looks. (`1573fe4`, needs a visual pass)
+- [x] Code element parity+: language picker (curated `CodeLanguages`, free-form on the model), six syntax themes (always dark, per-theme block chrome), line numbers gutter, font size + wrap controls. Code section in both Format inspectors, Insert > Code menu + toolbar button on both shells, style paste carries the new looks. (`1573fe4`)
+- [ ] On-canvas code editing: double-click puts the caret in a code block the way it does a text box (same one-undo-per-session model, monospace field styled by the block's theme). Found on the parity+ visual pass: the edit path gates on text elements, so `CodeElement.code` has no edit surface yet.
 - [ ] Code steps: per-build line/range highlighting and progressive reveal (CuP's `cup-source-code` model, but document-owned and native-safe).
 - [ ] Code diffing between steps (Magic Move for code: matched lines animate, added/removed lines fade/slide).
 - [ ] Terminal/output element: monospace block styled as a terminal with prompt/output styling, typewriter build.
