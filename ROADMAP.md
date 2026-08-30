@@ -48,7 +48,7 @@ The parity core every later phase builds on. All of it is `screens/editor/` even
 
 Where we beat Keynote for our audience; worth shipping before broad parity.
 
-- [ ] Code element parity+: language picker, theme choice (tokenized to app theme), line numbers, font size/wrap controls.
+- [x] Code element parity+: language picker (curated `CodeLanguages`, free-form on the model), six syntax themes (always dark, per-theme block chrome), line numbers gutter, font size + wrap controls. Code section in both Format inspectors, Insert > Code menu + toolbar button on both shells, style paste carries the new looks. (`1573fe4`, needs a visual pass)
 - [ ] Code steps: per-build line/range highlighting and progressive reveal (CuP's `cup-source-code` model, but document-owned and native-safe).
 - [ ] Code diffing between steps (Magic Move for code: matched lines animate, added/removed lines fade/slide).
 - [ ] Terminal/output element: monospace block styled as a terminal with prompt/output styling, typewriter build.
