@@ -5,6 +5,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
+import io.github.xxfast.cupboard.screens.editor.InspectorTab
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +46,15 @@ class WinEditorState(
     val selectedSlideTitle: String,
     val canUndo: Boolean,
     val canRedo: Boolean,
+    /** Whether the inspector column is showing. */
+    val inspectorOpen: Boolean,
+    /** The selected inspector tab, as 0 Format, 1 Animate, 2 Slide.
+     *
+     * An Int rather than the shared `InspectorTab`, for the same reason the rest
+     * of this class is flattened: the interop generator only projects simple
+     * types, and an enum is not worth the risk on a surface that has never been
+     * compiled. The C# adapter turns it back into three bools for the tab strip. */
+    val inspectorTabIndex: Int,
 )
 
 /**
@@ -101,6 +111,20 @@ class WinEditorViewModel {
 
     fun onToggleCollapsed(slideId: String) { viewModel.onToggleCollapsed(slideId) }
 
+    /** Picks a tab by index, the same 0/1/2 the state carries. Anything else is ignored. */
+    fun onSelectInspectorTab(index: Int) {
+        val tab = when (index) {
+            0 -> InspectorTab.Format
+            1 -> InspectorTab.Animate
+            2 -> InspectorTab.Document
+            else -> return
+        }
+        viewModel.onSelectInspectorTab(tab)
+    }
+
+    /** Shows the inspector if it is hidden, hides it if it is showing. */
+    fun onToggleInspector() { viewModel.onToggleInspector() }
+
     fun onUndo() { viewModel.onUndo() }
 
     fun onRedo() { viewModel.onRedo() }
@@ -129,4 +153,10 @@ private fun EditorState.toWin(): WinEditorState = WinEditorState(
     selectedSlideTitle = selectedSlide.title,
     canUndo = canUndo,
     canRedo = canRedo,
+    inspectorOpen = inspectorOpen,
+    inspectorTabIndex = when (inspectorTab) {
+        InspectorTab.Format -> 0
+        InspectorTab.Animate -> 1
+        InspectorTab.Document -> 2
+    },
 )

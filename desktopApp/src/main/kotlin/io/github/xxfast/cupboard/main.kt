@@ -457,6 +457,14 @@ fun main() {
                         checked = state.sidebarOpen,
                         onCheckedChange = { viewModel.onToggleSidebar() },
                     )
+                    // The only way to put the inspector away on this shell: the
+                    // tabs switch panels but never close one, which is the mac
+                    // shell's behaviour and stays there (design/README.md).
+                    CheckboxItem(
+                        text = "Show Inspector",
+                        checked = state.inspectorOpen,
+                        onCheckedChange = { viewModel.onToggleInspector() },
+                    )
                     CheckboxItem(
                         text = "Show Presenter Notes",
                         checked = state.showNotes,

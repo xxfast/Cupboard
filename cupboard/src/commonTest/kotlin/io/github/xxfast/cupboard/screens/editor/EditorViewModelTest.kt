@@ -144,12 +144,31 @@ class EditorViewModelTest {
     }
 
     @Test
+    fun togglingTheInspectorKeepsTheTabItWasOn() = runTest {
+        val viewModel = editor()
+        viewModel.onSelectInspectorTab(InspectorTab.Document)
+        viewModel.await { it.inspectorTab == InspectorTab.Document }
+
+        viewModel.onToggleInspector()
+        val hidden = viewModel.await { !it.inspectorOpen }
+        // Hiding is not a tab change: it comes back on the same one.
+        assertEquals(InspectorTab.Document, hidden.inspectorTab)
+        assertTrue(hidden.sidebarOpen)
+
+        viewModel.onToggleInspector()
+        val shown = viewModel.await { it.inspectorOpen }
+        assertEquals(InspectorTab.Document, shown.inspectorTab)
+    }
+
+    @Test
     fun chromeEventsLeaveTheDocumentAndHistoryAlone() = runTest {
         val viewModel = editor()
         val opened = viewModel.states.value.document
 
         viewModel.onToggleSidebar()
         viewModel.onToggleNotes()
+        viewModel.onSelectInspectorTab(InspectorTab.Document)
+        viewModel.onToggleInspector()
         viewModel.onSelectInspectorTab(InspectorTab.Document)
         viewModel.onCloseInspector()
         val after = viewModel.await { !it.inspectorOpen }

@@ -26,12 +26,29 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _selectedSlideTitle = string.Empty;
     private string _slidePosition = string.Empty;
     private string _toggleCollapsedLabel = CollapseLabel;
+    private string _inspectorTitle = FormatTitle;
     private bool _canUndo;
     private bool _canRedo;
+    private bool _inspectorOpen;
+    private bool _isFormatTab;
+    private bool _isAnimateTab;
+    private bool _isSlideTab;
     private int _disposed;
 
     private const string CollapseLabel = "Collapse Slide";
     private const string ExpandLabel = "Expand Slide";
+
+    // The tab indices the Kotlin bridge speaks in. It carries an int rather than
+    // the shared enum, so the names live on both sides of the boundary, not in it.
+    private const int FormatTab = 0;
+    private const int AnimateTab = 1;
+    private const int SlideTab = 2;
+
+    // Panel titles, the same three the macOS inspector shows. Format names what it
+    // is formatting; Windows has no element in its state yet, so it says "Text".
+    private const string FormatTitle = "Text";
+    private const string AnimateTitle = "Build";
+    private const string SlideTitle = "Slide";
 
     /// <param name="uiContext">
     /// UI synchronization context. Defaults to <see cref="SynchronizationContext.Current"/>,
@@ -65,6 +82,11 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
             },
             () => SelectedRow?.HasChildren == true);
 
+        // The tab strip passes the index it stands for; the shared editor decides
+        // what that means, including reopening the inspector if it was closed.
+        SelectInspectorTabCommand = new RelayCommand<int>(_kotlinViewModel.OnSelectInspectorTab);
+        ToggleInspectorCommand = new RelayCommand(_kotlinViewModel.OnToggleInspector);
+
         // Enumerating is also what starts the shared presenter: its state flow is
         // lazily shared, so nothing runs until this subscribes.
         _observation = ObserveStatesAsync();
@@ -75,6 +97,8 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand UndoCommand { get; }
     public ICommand RedoCommand { get; }
     public ICommand ToggleSelectedCollapsedCommand { get; }
+    public ICommand SelectInspectorTabCommand { get; }
+    public ICommand ToggleInspectorCommand { get; }
 
     public string SelectedSlideTitle
     {
@@ -94,6 +118,41 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         get => _toggleCollapsedLabel;
         private set => SetField(ref _toggleCollapsedLabel, value);
+    }
+
+    /// <summary>Whether the inspector column is showing. Drives its visibility and
+    /// the check on the View menu's Inspector item.</summary>
+    public bool InspectorOpen
+    {
+        get => _inspectorOpen;
+        private set => SetField(ref _inspectorOpen, value);
+    }
+
+    /// <summary>Panel title: "Text", "Build" or "Slide", following the tab.</summary>
+    public string InspectorTitle
+    {
+        get => _inspectorTitle;
+        private set => SetField(ref _inspectorTitle, value);
+    }
+
+    // One bool per tab rather than the index itself: XAML can bind a bool to a
+    // brush selector and to Visibility, but has nothing to compare an int with.
+    public bool IsFormatTab
+    {
+        get => _isFormatTab;
+        private set => SetField(ref _isFormatTab, value);
+    }
+
+    public bool IsAnimateTab
+    {
+        get => _isAnimateTab;
+        private set => SetField(ref _isAnimateTab, value);
+    }
+
+    public bool IsSlideTab
+    {
+        get => _isSlideTab;
+        private set => SetField(ref _isSlideTab, value);
     }
 
     public bool CanUndo
@@ -157,6 +216,18 @@ public sealed class EditorViewModel : INotifyPropertyChanged, IAsyncDisposable
         SelectedSlideTitle = state.SelectedSlideTitle;
         CanUndo = state.CanUndo;
         CanRedo = state.CanRedo;
+        InspectorOpen = state.InspectorOpen;
+
+        var tab = state.InspectorTabIndex;
+        IsFormatTab = tab == FormatTab;
+        IsAnimateTab = tab == AnimateTab;
+        IsSlideTab = tab == SlideTab;
+        InspectorTitle = tab switch
+        {
+            AnimateTab => AnimateTitle,
+            SlideTab => SlideTitle,
+            _ => FormatTitle,
+        };
         SlidePosition = state.SlideCount > 0 && state.SelectedSlideIndex >= 0
             ? $"slide {state.SelectedSlideIndex + 1} of {state.SlideCount}"
             : "no slides";

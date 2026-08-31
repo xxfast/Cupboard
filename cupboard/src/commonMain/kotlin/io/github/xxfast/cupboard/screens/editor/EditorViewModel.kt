@@ -63,6 +63,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
@@ -188,6 +189,7 @@ class EditorViewModel(
     fun onEndGuideDrag() { scope.launch { events.emit(EndGuideDrag) } }
     fun onSelectInspectorTab(tab: InspectorTab) { scope.launch { events.emit(SelectInspectorTab(tab)) } }
     fun onCloseInspector() { scope.launch { events.emit(CloseInspector) } }
+    fun onToggleInspector() { scope.launch { events.emit(ToggleInspector) } }
 
     fun close() {
         scope.cancel()

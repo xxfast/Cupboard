@@ -90,6 +90,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
@@ -325,7 +326,7 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview,
     ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
-    is SelectInspectorTab, CloseInspector,
+    is SelectInspectorTab, CloseInspector, ToggleInspector,
         -> true
 
     // Focus arriving on the pane the caret is already in says nothing new;
@@ -931,6 +932,8 @@ fun EditorPresenter(
             is SelectInspectorTab -> state.copy(inspectorTab = event.tab, inspectorOpen = true)
 
             CloseInspector -> state.copy(inspectorOpen = false)
+
+            ToggleInspector -> state.copy(inspectorOpen = !state.inspectorOpen)
 
             // The Edit-menu verbs, focus resolved: the same reductions again
             // with the target the focused pane names. Re-entered rather than

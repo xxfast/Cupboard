@@ -38,6 +38,14 @@
                 </MenuFlyoutItem>
             </MenuBarItem>
 
+            <!-- The inspector is the only thing this shell can show or hide so far,
+                 so View is one item; it grows with the panels. -->
+            <MenuBarItem Title="View">
+                <ToggleMenuFlyoutItem Text="Inspector"
+                                      IsChecked="{x:Bind ViewModel.InspectorOpen, Mode=OneWay}"
+                                      Command="{x:Bind ViewModel.ToggleInspectorCommand}" />
+            </MenuBarItem>
+
             <MenuBarItem Title="Slide">
                 <MenuFlyoutItem Text="{x:Bind ViewModel.ToggleCollapsedLabel, Mode=OneWay}"
                                 Command="{x:Bind ViewModel.ToggleSelectedCollapsedCommand}" />
@@ -48,6 +56,11 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="224" />
                 <ColumnDefinition Width="*" MinWidth="320" />
+                <!-- Auto rather than 282: a hidden inspector has to give its width
+                     back, and a column sized to its content does that by itself,
+                     where a fixed one would need a GridLength converter. The width
+                     lives on the panel below. -->
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
             <!-- Navigator: the shared outline, collapse rules already applied. -->
@@ -148,6 +161,419 @@
                                Foreground="#8A8F98"
                                Style="{StaticResource CaptionTextBlockStyle}" />
                 </StackPanel>
+            </Border>
+
+            <!-- Inspector. Three tabs over a placeholder body: the shared editor
+                 owns which tab is up and whether the panel is here at all, but it
+                 carries no element properties to Windows yet (WinEditorState is the
+                 outline and the menu flags), so nothing below edits anything. Same
+                 order the other shells shipped in: chrome first, controls when the
+                 state to drive them crosses the boundary. -->
+            <Border Grid.Column="2"
+                    Width="282"
+                    Background="{ThemeResource CupboardPanelBrush}"
+                    BorderBrush="{ThemeResource CupboardBorderBrush}"
+                    BorderThickness="1,0,0,0"
+                    Visibility="{x:Bind ViewModel.InspectorOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Tab strip. Each tab is a Button styled inline, like the
+                         navigator chevron: an explicit Style with no BasedOn would
+                         drop the Button's own template. The hover fill is the one
+                         thing the template has to be told, and it is told through a
+                         local resource rather than a global one, so the navigator
+                         keeps the stock Fluent hover. -->
+                    <Border Grid.Row="0"
+                            Padding="16,12,16,0"
+                            BorderBrush="{ThemeResource CupboardDividerBrush}"
+                            BorderThickness="0,0,0,1">
+                        <StackPanel Orientation="Horizontal" Spacing="18">
+                            <Button MinWidth="0"
+                                    MinHeight="0"
+                                    Padding="0"
+                                    CornerRadius="4,4,0,0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Command="{x:Bind ViewModel.SelectInspectorTabCommand}"
+                                    CommandParameter="0">
+                                <Button.Resources>
+                                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CupboardHoverBrush" />
+                                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CupboardHoverBrush" />
+                                </Button.Resources>
+                                <StackPanel>
+                                    <!-- Two labels, one visible: that keeps both
+                                         colours on ThemeResource, where a brush
+                                         converter would freeze them at first paint. -->
+                                    <Grid Margin="0,0,0,9">
+                                        <TextBlock Text="Format"
+                                                   Style="{StaticResource InspectorTabTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <TextBlock Text="Format"
+                                                   Style="{StaticResource InspectorInactiveTabTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                    </Grid>
+                                    <!-- The Grid holds the 2.5px whether or not the
+                                         underline is in it, so labels do not jump
+                                         as the selection moves. -->
+                                    <Grid Height="2.5">
+                                        <Border Background="{ThemeResource CupboardAccentBrush}"
+                                                Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Button>
+
+                            <Button MinWidth="0"
+                                    MinHeight="0"
+                                    Padding="0"
+                                    CornerRadius="4,4,0,0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Command="{x:Bind ViewModel.SelectInspectorTabCommand}"
+                                    CommandParameter="1">
+                                <Button.Resources>
+                                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CupboardHoverBrush" />
+                                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CupboardHoverBrush" />
+                                </Button.Resources>
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,9">
+                                        <TextBlock Text="Animate"
+                                                   Style="{StaticResource InspectorTabTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <TextBlock Text="Animate"
+                                                   Style="{StaticResource InspectorInactiveTabTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                    </Grid>
+                                    <Grid Height="2.5">
+                                        <Border Background="{ThemeResource CupboardAccentBrush}"
+                                                Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Button>
+
+                            <Button MinWidth="0"
+                                    MinHeight="0"
+                                    Padding="0"
+                                    CornerRadius="4,4,0,0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Command="{x:Bind ViewModel.SelectInspectorTabCommand}"
+                                    CommandParameter="2">
+                                <Button.Resources>
+                                    <StaticResource x:Key="ButtonBackgroundPointerOver" ResourceKey="CupboardHoverBrush" />
+                                    <StaticResource x:Key="ButtonBackgroundPressed" ResourceKey="CupboardHoverBrush" />
+                                </Button.Resources>
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,9">
+                                        <TextBlock Text="Slide"
+                                                   Style="{StaticResource InspectorTabTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                        <TextBlock Text="Slide"
+                                                   Style="{StaticResource InspectorInactiveTabTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                    </Grid>
+                                    <Grid Height="2.5">
+                                        <Border Background="{ThemeResource CupboardAccentBrush}"
+                                                Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Format body. -->
+                    <ScrollViewer Grid.Row="1"
+                                  Padding="16"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Font" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <Border Style="{StaticResource InspectorFieldStyle}">
+                                    <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                        <Grid>
+                                            <TextBlock Text="Ubuntu" Style="{StaticResource InspectorValueTextStyle}" />
+                                            <FontIcon Glyph="&#xE70D;"
+                                                      FontSize="9"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource CupboardDimBrush}" />
+                                        </Grid>
+                                    </Border>
+                                </Border>
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="80" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Style="{StaticResource InspectorFieldStyle}">
+                                        <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                            <Grid>
+                                                <TextBlock Text="Bold" Style="{StaticResource InspectorValueTextStyle}" />
+                                                <FontIcon Glyph="&#xE70D;"
+                                                          FontSize="9"
+                                                          HorizontalAlignment="Right"
+                                                          VerticalAlignment="Center"
+                                                          Foreground="{ThemeResource CupboardDimBrush}" />
+                                            </Grid>
+                                        </Border>
+                                    </Border>
+                                    <Border Grid.Column="1" Style="{StaticResource InspectorFieldStyle}">
+                                        <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                            <TextBlock Text="46"
+                                                       HorizontalAlignment="Center"
+                                                       Style="{StaticResource InspectorMonoTextStyle}" />
+                                        </Border>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+
+                            <Border Style="{StaticResource InspectorDividerStyle}" />
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Position &amp; size" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <Grid ColumnSpacing="8" RowSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource InspectorFieldStyle}">
+                                        <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="X" Style="{StaticResource InspectorLabelTextStyle}" />
+                                                <TextBlock Text="72" Style="{StaticResource InspectorMonoTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Border>
+                                    <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource InspectorFieldStyle}">
+                                        <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="Y" Style="{StaticResource InspectorLabelTextStyle}" />
+                                                <TextBlock Text="64" Style="{StaticResource InspectorMonoTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Border>
+                                    <Border Grid.Row="1" Grid.Column="0" Style="{StaticResource InspectorFieldStyle}">
+                                        <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="W" Style="{StaticResource InspectorLabelTextStyle}" />
+                                                <TextBlock Text="800" Style="{StaticResource InspectorMonoTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Border>
+                                    <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource InspectorFieldStyle}">
+                                        <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock Text="H" Style="{StaticResource InspectorLabelTextStyle}" />
+                                                <TextBlock Text="118" Style="{StaticResource InspectorMonoTextStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Border>
+                                </Grid>
+                            </StackPanel>
+
+                            <Border Style="{StaticResource InspectorDividerStyle}" />
+
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Opacity" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <!-- Slider drawn rather than used: a real one would
+                                         invite a drag with nothing behind it. -->
+                                    <Grid Grid.Column="0" Height="18">
+                                        <Border Height="4"
+                                                CornerRadius="2"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource CupboardTrackBrush}" />
+                                        <Border Height="4"
+                                                CornerRadius="2"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource CupboardAccentBrush}" />
+                                        <Border Width="18"
+                                                Height="18"
+                                                CornerRadius="9"
+                                                HorizontalAlignment="Right"
+                                                Background="{ThemeResource CupboardTrackBrush}">
+                                            <Border Width="10"
+                                                    Height="10"
+                                                    CornerRadius="5"
+                                                    Background="{ThemeResource CupboardAccentBrush}" />
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Grid.Column="1"
+                                               Text="100%"
+                                               Style="{StaticResource InspectorMonoTextStyle}" />
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Animate body. -->
+                    <ScrollViewer Grid.Row="1"
+                                  Padding="16"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Build in" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <Border Style="{StaticResource InspectorFieldStyle}">
+                                    <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                        <Grid>
+                                            <TextBlock Text="Fade Up" Style="{StaticResource InspectorValueTextStyle}" />
+                                            <FontIcon Glyph="&#xE70D;"
+                                                      FontSize="9"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource CupboardDimBrush}" />
+                                        </Grid>
+                                    </Border>
+                                </Border>
+                                <Grid ColumnSpacing="10" Margin="0,4,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="58" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0"
+                                               Text="Duration"
+                                               Style="{StaticResource InspectorCaptionTextStyle}"
+                                               VerticalAlignment="Center" />
+                                    <Grid Grid.Column="1" Height="18">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="3*" />
+                                            <ColumnDefinition Width="7*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0"
+                                                Grid.ColumnSpan="2"
+                                                Height="4"
+                                                CornerRadius="2"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource CupboardTrackBrush}" />
+                                        <Border Grid.Column="0"
+                                                Height="4"
+                                                CornerRadius="2"
+                                                VerticalAlignment="Center"
+                                                Background="{ThemeResource CupboardAccentBrush}" />
+                                        <Border Grid.Column="0"
+                                                Width="18"
+                                                Height="18"
+                                                CornerRadius="9"
+                                                HorizontalAlignment="Right"
+                                                Background="{ThemeResource CupboardTrackBrush}">
+                                            <Border Width="10"
+                                                    Height="10"
+                                                    CornerRadius="5"
+                                                    Background="{ThemeResource CupboardAccentBrush}" />
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Grid.Column="2"
+                                               Text="0.4s"
+                                               Style="{StaticResource InspectorMonoTextStyle}" />
+                                </Grid>
+                            </StackPanel>
+
+                            <Border Style="{StaticResource InspectorDividerStyle}" />
+
+                            <StackPanel Spacing="7">
+                                <TextBlock Text="Build order" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <!-- The active row carries the 3px accent edge; the
+                                     rest carry a transparent one, so the labels stay
+                                     on the same left edge. -->
+                                <Border CornerRadius="4"
+                                        Padding="11,7"
+                                        Background="{ThemeResource CupboardControlBrush}"
+                                        BorderThickness="3,0,0,0"
+                                        BorderBrush="{ThemeResource CupboardAccentBrush}">
+                                    <StackPanel>
+                                        <TextBlock Text="Title" Style="{StaticResource InspectorValueTextStyle}" />
+                                        <TextBlock Text="Fade Up · 0.4s" Style="{StaticResource InspectorLabelTextStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border CornerRadius="4"
+                                        Padding="11,7"
+                                        Background="{ThemeResource CupboardControlBrush}"
+                                        BorderThickness="3,0,0,0"
+                                        BorderBrush="Transparent">
+                                    <StackPanel>
+                                        <TextBlock Text="Shape" Style="{StaticResource InspectorValueTextStyle}" />
+                                        <TextBlock Text="Pop · 0.3s · after 1" Style="{StaticResource InspectorLabelTextStyle}" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource InspectorFieldStyle}" Margin="0,2,0,0">
+                                    <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                        <TextBlock Text="Add build"
+                                                   HorizontalAlignment="Center"
+                                                   Style="{StaticResource InspectorValueTextStyle}" />
+                                    </Border>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- Slide body. The title is the one live thing in this panel:
+                         it is already on the view model, so it costs no new state. -->
+                    <ScrollViewer Grid.Row="1"
+                                  Padding="16"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Slide" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.SelectedSlideTitle, Mode=OneWay}"
+                                           TextWrapping="Wrap"
+                                           Style="{StaticResource InspectorValueTextStyle}" />
+                            </StackPanel>
+
+                            <Border Style="{StaticResource InspectorDividerStyle}" />
+
+                            <StackPanel Spacing="9">
+                                <TextBlock Text="Slide number" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="16"
+                                            Height="16"
+                                            CornerRadius="3"
+                                            VerticalAlignment="Center"
+                                            Background="{ThemeResource CupboardTrackBrush}" />
+                                    <TextBlock Text="Show on this slide" Style="{StaticResource InspectorValueTextStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <Border Style="{StaticResource InspectorDividerStyle}" />
+
+                            <StackPanel Spacing="9">
+                                <TextBlock Text="Background" Style="{StaticResource InspectorCaptionTextStyle}" />
+                                <Border Style="{StaticResource InspectorFieldStyle}">
+                                    <Border Style="{StaticResource InspectorFieldEdgeStyle}">
+                                        <Grid>
+                                            <TextBlock Text="Colour Fill" Style="{StaticResource InspectorValueTextStyle}" />
+                                            <FontIcon Glyph="&#xE70D;"
+                                                      FontSize="9"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      Foreground="{ThemeResource CupboardDimBrush}" />
+                                        </Grid>
+                                    </Border>
+                                </Border>
+                                <Border Height="32"
+                                        CornerRadius="4"
+                                        Background="{ThemeResource CupboardCanvasWellBrush}"
+                                        BorderThickness="1"
+                                        BorderBrush="{ThemeResource CupboardControlBorderBrush}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
             </Border>
         </Grid>
 

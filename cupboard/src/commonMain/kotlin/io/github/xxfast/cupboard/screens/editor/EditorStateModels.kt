@@ -662,4 +662,10 @@ sealed interface EditorEvent {
     /** Picking a tab shows the inspector: a tab you can't see is not a choice. */
     data class SelectInspectorTab(val tab: InspectorTab) : EditorEvent
     data object CloseInspector : EditorEvent
+    /**
+     * Shows or hides the inspector without picking a tab: the View-menu switch,
+     * [ToggleSidebar]'s twin. Reopening comes back on whatever tab was last up,
+     * which is why this isn't a [SelectInspectorTab] the shell has to guess.
+     */
+    data object ToggleInspector : EditorEvent
 }

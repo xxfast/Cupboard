@@ -22,6 +22,17 @@
                     <SolidColorBrush x:Key="CupboardFaintBrush" Color="#717171" />
                     <SolidColorBrush x:Key="CupboardAccentBrush" Color="#8961FF" />
                     <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="#8961FF" />
+
+                    <!-- Inspector tokens. Its background is the panel fill and its
+                         two grey ramps are the Dim/Faint brushes above, so only the
+                         ones with no existing twin are spelled out here. -->
+                    <SolidColorBrush x:Key="CupboardDividerBrush" Color="#383838" />
+                    <SolidColorBrush x:Key="CupboardTextBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="CupboardControlBrush" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="CupboardControlBorderBrush" Color="#383838" />
+                    <SolidColorBrush x:Key="CupboardControlBottomBorderBrush" Color="#4D4D4D" />
+                    <SolidColorBrush x:Key="CupboardHoverBrush" Color="#2D2D2D" />
+                    <SolidColorBrush x:Key="CupboardTrackBrush" Color="#454545" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="CupboardChromeBrush" Color="#F3F3F3" />
@@ -31,6 +42,14 @@
                     <SolidColorBrush x:Key="CupboardFaintBrush" Color="#8A8A8A" />
                     <SolidColorBrush x:Key="CupboardAccentBrush" Color="#6F42E0" />
                     <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="#6F42E0" />
+
+                    <SolidColorBrush x:Key="CupboardDividerBrush" Color="#E5E5E5" />
+                    <SolidColorBrush x:Key="CupboardTextBrush" Color="#1A1A1A" />
+                    <SolidColorBrush x:Key="CupboardControlBrush" Color="#FBFBFB" />
+                    <SolidColorBrush x:Key="CupboardControlBorderBrush" Color="#E5E5E5" />
+                    <SolidColorBrush x:Key="CupboardControlBottomBorderBrush" Color="#CFCFCF" />
+                    <SolidColorBrush x:Key="CupboardHoverBrush" Color="#E9E9E9" />
+                    <SolidColorBrush x:Key="CupboardTrackBrush" Color="#C8C8C8" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
@@ -43,12 +62,75 @@
             <SolidColorBrush x:Key="CupboardCanvasWellBrush" Color="#17181C" />
 
             <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
 
             <Style x:Key="StatusBarTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
                 <Setter Property="FontFamily" Value="Consolas" />
                 <Setter Property="FontSize" Value="11.5" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="Foreground" Value="{ThemeResource CupboardFaintBrush}" />
+            </Style>
+
+            <!-- Inspector. These all target TextBlock and Border, neither of which is
+                 a templated control, so a Style with no BasedOn costs nothing here;
+                 the caveat on the navigator's buttons does not apply. -->
+
+            <!-- The active tab. Its inactive twin below differs only in colour, and
+                 the two are swapped by visibility rather than by a brush converter,
+                 so both keep following the theme dictionaries. -->
+            <Style x:Key="InspectorTabTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontSize" Value="13.5" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{ThemeResource CupboardTextBrush}" />
+            </Style>
+
+            <Style x:Key="InspectorInactiveTabTextStyle" TargetType="TextBlock" BasedOn="{StaticResource InspectorTabTextStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource CupboardDimBrush}" />
+            </Style>
+
+            <Style x:Key="InspectorCaptionTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource CupboardDimBrush}" />
+            </Style>
+
+            <Style x:Key="InspectorValueTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource CupboardTextBrush}" />
+            </Style>
+
+            <Style x:Key="InspectorMonoTextStyle" TargetType="TextBlock" BasedOn="{StaticResource InspectorValueTextStyle}">
+                <Setter Property="FontFamily" Value="Consolas" />
+            </Style>
+
+            <Style x:Key="InspectorLabelTextStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource CupboardFaintBrush}" />
+            </Style>
+
+            <Style x:Key="InspectorDividerStyle" TargetType="Border">
+                <Setter Property="Height" Value="1" />
+                <Setter Property="Background" Value="{ThemeResource CupboardDividerBrush}" />
+            </Style>
+
+            <!-- A Fluent field, in two borders. One Border cannot carry a darker
+                 bottom edge than its other three sides, and that edge is the whole
+                 Fluent "underline" affordance, so the outer one draws it and the
+                 inner one draws the rest. -->
+            <Style x:Key="InspectorFieldStyle" TargetType="Border">
+                <Setter Property="Height" Value="32" />
+                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Background" Value="{ThemeResource CupboardControlBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CupboardControlBottomBorderBrush}" />
+            </Style>
+
+            <Style x:Key="InspectorFieldEdgeStyle" TargetType="Border">
+                <Setter Property="CornerRadius" Value="4,4,0,0" />
+                <Setter Property="BorderThickness" Value="1,1,1,0" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CupboardControlBorderBrush}" />
+                <Setter Property="Padding" Value="11,0" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>
