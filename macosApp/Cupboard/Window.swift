@@ -238,6 +238,13 @@ final class EditorModel {
             guard let self else { return }
             popCanvasMenu(host: self.host, elementId: elementId)
         }
+        // The same click, but inside a text box or code block: the caret's menu
+        // rather than the slide's, and nothing to settle first.
+        // Kotlin hands a closure's arguments over boxed, hence the unwrap.
+        host.setFieldMenuCallback { [weak self] x, y in
+            guard let self else { return }
+            popFieldMenu(host: self.host, x: x.doubleValue, y: y.doubleValue)
+        }
     }
 
     deinit {

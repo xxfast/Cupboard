@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -57,6 +58,7 @@ import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.EditorCanvas
+import io.github.xxfast.cupboard.editor.FieldMenuBridge
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
@@ -299,6 +301,19 @@ class ContextFacts(
 )
 
 /**
+ * What a menu opened by a right-click inside an edit session may offer.
+ * [ContextFacts]'s smaller cousin: these are the caret's verbs, not the
+ * selection's, so they answer for the text in the field rather than the elements
+ * on the slide. Read at pop time, like the other one.
+ */
+class FieldMenuFacts(
+    val canCut: Boolean,
+    val canCopy: Boolean,
+    val canPaste: Boolean,
+    val canSelectAll: Boolean,
+)
+
+/**
  * A running presentation: a Compose view playing a snapshot of the document.
  * The host shows [view] full screen and calls [dispose] when it tears it down.
  * Playback keys are the player's own business; it only calls back on exit.
@@ -359,6 +374,16 @@ class EditorHost {
     /** Where a right-click on the canvas goes once the loop has been told. */
     private var contextClick: ((String?) -> Unit)? = null
 
+    /**
+     * The caret's own Cut/Copy/Paste/Select All, for the menu that pops inside an
+     * edit session. Handing this to the canvas is also what stops compose from
+     * drawing its own text menu there.
+     */
+    private val fieldMenu = FieldMenuBridge()
+
+    /** Where a right-click inside an edit session goes. Canvas pixels, x then y. */
+    private var fieldMenuClick: ((Double, Double) -> Unit)? = null
+
     /** The full-bleed content layer: the shell floats its glass panels over this. */
     val view: NSView = ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
@@ -402,6 +427,13 @@ class EditorHost {
                     editingElementId = state.editingElementId,
                     onBeginTextEdit = viewModel::onBeginTextEdit,
                     onEndTextEdit = viewModel::onEndTextEdit,
+                    fieldMenuBridge = fieldMenu,
+                    // Nothing to tell the loop: the caret has not moved and the
+                    // document has not changed. Straight out to the shell, which
+                    // pops the field menu at the event it is already holding.
+                    onFieldContextClick = { position ->
+                        fieldMenuClick?.invoke(position.x.toDouble(), position.y.toDouble())
+                    },
                     modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
                     else Modifier.fillMaxSize(),
                     zoom = scale,
@@ -1253,6 +1285,53 @@ class EditorHost {
      */
     fun setContextClickCallback(callback: (String?) -> Unit) {
         contextClick = callback
+    }
+
+    /**
+     * Registers [callback], fired on the main thread when a right-click lands
+     * inside an edit session, carrying where it landed in the canvas layer's own
+     * space, in compose pixels. Nothing has been told anything by then: the click
+     * moved neither the caret nor the selection, it only asked for a menu.
+     *
+     * One registration, like the one above: last in wins.
+     */
+    fun setFieldMenuCallback(callback: (Double, Double) -> Unit) {
+        fieldMenuClick = callback
+    }
+
+    /**
+     * What the field menu may offer right now. Empty when no caret is in
+     * anything, which is also when the menu has no business popping.
+     */
+    fun fieldMenuFacts(): FieldMenuFacts {
+        val selection: Boolean = fieldMenu.hasSelection
+        return FieldMenuFacts(
+            canCut = selection,
+            canCopy = selection,
+            canPaste = fieldMenu.canPaste,
+            canSelectAll = fieldMenu.canSelectAll,
+        )
+    }
+
+    fun fieldCut() = fieldEdit(fieldMenu::cut)
+
+    fun fieldCopy() = fieldMenu.copy()
+
+    fun fieldPaste() = fieldEdit(fieldMenu::paste)
+
+    fun fieldSelectAll() = fieldEdit(fieldMenu::selectAll)
+
+    /**
+     * A field verb picked from a menu, i.e. run from AppKit's tracking loop
+     * rather than from anything compose called. The edit lands in the field's own
+     * snapshot state, and nothing here is inside a compose handler, so the apply
+     * notification that would ordinarily ride along with one is sent by hand: the
+     * scene invalidates off that, and a caret that moved without a repaint is the
+     * whole bug class this app has been bitten by before.
+     */
+    private fun fieldEdit(verb: () -> Unit) {
+        verb()
+        Snapshot.sendApplyNotifications()
     }
 
     /**

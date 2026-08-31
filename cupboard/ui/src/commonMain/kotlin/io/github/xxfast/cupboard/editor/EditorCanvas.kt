@@ -43,6 +43,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -182,6 +183,21 @@ fun EditorCanvas(
     onBeginTextEdit: (String) -> Unit = {},
     /** Escape, or a press anywhere else on the slide: the caret leaves. */
     onEndTextEdit: () -> Unit = {},
+    /**
+     * A shell's way into the caret's own Cut/Copy/Paste/Select All, and its cue
+     * that it wants them: passed one, the fields hand it their verbs and a
+     * right-click inside an edit session is caught here rather than opening the
+     * menu compose draws itself (see [onFieldContextClick]). Left null, which is
+     * every compose shell, nothing about editing changes.
+     */
+    fieldMenuBridge: FieldMenuBridge? = null,
+    /**
+     * A right-click inside an edit session, in this composable's own space, in
+     * pixels, exactly as [onContextClick] reports one. Only ever fires when
+     * [fieldMenuBridge] is set. Nothing about the selection or the document
+     * changed, the caret is where it was: this is a menu cue and no more.
+     */
+    onFieldContextClick: (position: Offset) -> Unit = {},
     modifier: Modifier = Modifier,
     zoom: Float? = null,
     /** The slide's place in the presentation, drawn only when the slide asks for it. */
@@ -233,6 +249,10 @@ fun EditorCanvas(
     // the slide is letterboxed, and a menu anchors to the canvas.
     var canvasBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var slideBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    // Where the field under the caret sits, for the same reason: a right-click in
+    // it is reported in the canvas's space too, so a shell has one convention.
+    var fieldBounds by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val currentFieldContextClick by rememberUpdatedState(onFieldContextClick)
     // The slide rectangle in this composable's own space, in pixels: what the
     // rulers graduate against, and what tells a guide dragged out of one where it
     // has landed. A plain value rather than the coordinates themselves, which
@@ -667,6 +687,55 @@ fun EditorCanvas(
             snappedX?.let { SnapGuide(it, canvasScale) }
             snappedY?.let { SnapGuide(it, canvasScale) }
 
+            // The secondary press inside an edit session, for a shell that draws
+            // its own menu. It has to be caught on the field's own rectangle:
+            // the field is above the input overlay and so the press never
+            // reaches the click loop, and it has to be caught in the Initial
+            // pass, which is the parent's turn, before compose's text field can
+            // open the menu it draws itself. Without a bridge this is Modifier
+            // and everything stays exactly as it was.
+            val fieldContextClick: Modifier =
+                if (fieldMenuBridge == null) Modifier
+                else Modifier
+                    .onGloballyPositioned { fieldBounds = it }
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event: PointerEvent =
+                                    awaitPointerEvent(PointerEventPass.Initial)
+                                // The primary button is left entirely alone:
+                                // placing a caret and sweeping a selection are
+                                // the field's own, and a press consumed here
+                                // would take both. Only a secondary press with
+                                // nothing else held is ours, the same test the
+                                // click loop makes for the same reason.
+                                val secondary: Boolean =
+                                    event.type == PointerEventType.Press &&
+                                        event.buttons.isSecondaryPressed &&
+                                        !event.buttons.isPrimaryPressed
+                                if (!secondary) continue
+
+                                val position: Offset? =
+                                    event.changes.firstOrNull()?.position
+                                // Consumed whether or not it can be reported:
+                                // swallowing it is what keeps the built-in menu
+                                // shut, and a half-handled right-click that
+                                // opens both menus is the worst of the three.
+                                event.changes.forEach { it.consume() }
+                                if (position == null) continue
+
+                                val field: LayoutCoordinates? = fieldBounds
+                                val canvas: LayoutCoordinates? = canvasBounds
+                                currentFieldContextClick(
+                                    if (field != null && canvas != null &&
+                                        field.isAttached && canvas.isAttached
+                                    ) canvas.localPositionOf(field, position)
+                                    else position
+                                )
+                            }
+                        }
+                    }
+
             // Last, and so on top of the input overlay: the field has to see its own
             // clicks and drags to place a caret and sweep a selection with them.
             when (editing) {
@@ -674,12 +743,16 @@ fun EditorCanvas(
                     element = editing,
                     onPreviewElements = onPreviewElements,
                     onEndTextEdit = onEndTextEdit,
+                    fieldMenuBridge = fieldMenuBridge,
+                    modifier = fieldContextClick,
                 )
 
                 is CodeElement -> CodeEditor(
                     element = editing,
                     onPreviewElements = onPreviewElements,
                     onEndTextEdit = onEndTextEdit,
+                    fieldMenuBridge = fieldMenuBridge,
+                    modifier = fieldContextClick,
                 )
 
                 else -> {}
@@ -876,6 +949,8 @@ private fun TextEditor(
     element: TextElement,
     onPreviewElements: (List<Element>) -> Unit,
     onEndTextEdit: () -> Unit,
+    fieldMenuBridge: FieldMenuBridge? = null,
+    modifier: Modifier = Modifier,
 ) {
     // Re-seeded when the caret moves to another element, with everything
     // selected: entering an edit and typing replaces the text, Keynote-style.
@@ -900,6 +975,10 @@ private fun TextEditor(
         if (typed) onPreviewElements(listOf(element.copy(text = edited.text)))
     }
 
+    // The same [update] the chords go through, so a shell's menu item and a Cmd
+    // chord are one act as far as the loop can tell.
+    RegisterFieldMenu(fieldMenuBridge, element.id, { value }, clipboard, update)
+
     Box(
         Modifier
             .offset(element.frame.x.dp, element.frame.y.dp)
@@ -911,6 +990,7 @@ private fun TextEditor(
                 scaleY = if (element.flippedVertically) -1f else 1f
                 transformOrigin = TransformOrigin.Center
             }
+            .then(modifier)
     ) {
         BasicTextField(
             value = value,
@@ -990,6 +1070,8 @@ private fun CodeEditor(
     element: CodeElement,
     onPreviewElements: (List<Element>) -> Unit,
     onEndTextEdit: () -> Unit,
+    fieldMenuBridge: FieldMenuBridge? = null,
+    modifier: Modifier = Modifier,
 ) {
     // Re-seeded when the caret moves to another block, everything selected the
     // way [TextEditor] seeds a text box.
@@ -1017,6 +1099,9 @@ private fun CodeEditor(
         if (typed) onPreviewElements(listOf(element.copy(code = edited.text)))
     }
 
+    // As the text box: the menu's verbs are the chords' verbs.
+    RegisterFieldMenu(fieldMenuBridge, element.id, { value }, clipboard, update)
+
     // Colouring only, so every offset in the text is its own offset in what is
     // drawn: no mapping to keep, unlike the list markers above.
     val highlighted = VisualTransformation { text ->
@@ -1037,6 +1122,7 @@ private fun CodeEditor(
                 scaleY = if (element.flippedVertically) -1f else 1f
                 transformOrigin = TransformOrigin.Center
             }
+            .then(modifier)
     ) {
         Box(
             Modifier

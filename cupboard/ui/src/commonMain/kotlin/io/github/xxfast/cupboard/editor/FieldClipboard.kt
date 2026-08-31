@@ -99,8 +99,54 @@ internal fun TextFieldValue.withPaste(pasted: String): TextFieldValue? {
     )
 }
 
+/**
+ * This value with all of it selected, null when there is nothing to select or it
+ * is all selected already. Null the same way the three above are: nothing to do.
+ */
+internal fun TextFieldValue.withAllSelected(): TextFieldValue? {
+    if (text.isEmpty()) return null
+    val all = TextRange(0, text.length)
+    if (selection == all) return null
+    return TextFieldValue(text = text, selection = all)
+}
+
 /** Offsets come from the field, but a clamp costs nothing and keeps a stale one honest. */
 private fun Int.clamp(text: String): Int = coerceIn(0, text.length)
+
+/*
+ * The four verbs themselves, one place each, so a key chord and a menu item are
+ * the same act: same pasteboard calls, same [onValue], which is the editors' own
+ * value-change path and so the same preview through the loop.
+ */
+
+/** Copy takes the selection and leaves the field alone. */
+internal fun copyField(value: TextFieldValue, clipboard: FieldClipboard) {
+    value.selectedText()?.let(clipboard::write)
+}
+
+internal fun cutField(
+    value: TextFieldValue,
+    clipboard: FieldClipboard,
+    onValue: (TextFieldValue) -> Unit,
+) {
+    val taken: String = value.selectedText() ?: return
+    clipboard.write(taken)
+    value.withSelectionCut()?.let(onValue)
+}
+
+internal fun pasteField(
+    value: TextFieldValue,
+    clipboard: FieldClipboard,
+    onValue: (TextFieldValue) -> Unit,
+) {
+    val pasted: String = clipboard.read() ?: return
+    value.withPaste(pasted)?.let(onValue)
+}
+
+/** Select All moves the selection only, so nothing streams: the text is untouched. */
+internal fun selectAllField(value: TextFieldValue, onValue: (TextFieldValue) -> Unit) {
+    value.withAllSelected()?.let(onValue)
+}
 
 /**
  * Whether this key is the clipboard chord: Cmd on a mac, Ctrl everywhere else.
@@ -135,17 +181,9 @@ internal fun handleClipboardKey(
     if (!key.isClipboardModifierPressed || key.isAltPressed) return false
 
     when (key.key) {
-        Key.C -> value.selectedText()?.let(clipboard::write)
-
-        Key.X -> value.selectedText()?.let { taken ->
-            clipboard.write(taken)
-            value.withSelectionCut()?.let(onValue)
-        }
-
-        Key.V -> clipboard.read()?.let { pasted ->
-            value.withPaste(pasted)?.let(onValue)
-        }
-
+        Key.C -> copyField(value, clipboard)
+        Key.X -> cutField(value, clipboard, onValue)
+        Key.V -> pasteField(value, clipboard, onValue)
         else -> return false
     }
 

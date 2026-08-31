@@ -376,3 +376,45 @@ func popCanvasMenu(host: EditorHost, elementId: String?) {
         menu.popUp(positioning: nil, at: location, in: view)
     }
 }
+
+/// The menu for a right-click inside an edit session: the caret's verbs, not the
+/// selection's. This is the whole reason the canvas hands the shell a field
+/// bridge, so that mid-edit a mac gets an NSMenu like it does everywhere else
+/// instead of the one compose draws for its own text fields.
+///
+/// [x] and [y] are where the click landed in the canvas layer, in compose pixels
+/// with a top-left origin: the anchor of last resort, for the case where there is
+/// no event left to read.
+func popFieldMenu(host: EditorHost, x: Double, y: Double) {
+    let facts = host.fieldMenuFacts()
+    let entries: [MenuEntry] = [
+        MenuEntry(title: "Cut", enabled: facts.canCut, action: { host.fieldCut() }),
+        MenuEntry(title: "Copy", enabled: facts.canCopy, action: { host.fieldCopy() }),
+        MenuEntry(title: "Paste", enabled: facts.canPaste, action: { host.fieldPaste() }),
+        .separator(),
+        MenuEntry(
+            title: "Select All",
+            enabled: facts.canSelectAll,
+            action: { host.fieldSelectAll() }
+        ),
+    ]
+
+    let menu = nsMenu(entries)
+    let view = host.view
+    guard let window = view.window else { return }
+
+    // The click's own event first, exactly as the canvas menu takes it. Compose
+    // pixels convert by the backing scale, and the view is not flipped, so the
+    // fallback flips y as the canvas's own mouse mapping does.
+    var location = NSPoint(
+        x: x / window.backingScaleFactor,
+        y: view.bounds.height - y / window.backingScaleFactor
+    )
+    if let event = NSApp.currentEvent, event.window === window {
+        location = view.convert(event.locationInWindow, from: nil)
+    }
+
+    DispatchQueue.main.async {
+        menu.popUp(positioning: nil, at: location, in: view)
+    }
+}

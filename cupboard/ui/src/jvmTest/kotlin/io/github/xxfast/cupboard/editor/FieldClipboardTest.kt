@@ -182,4 +182,78 @@ class FieldClipboardTest {
         assertFalse(handleClipboardKey(chord(Key.B), field("hello", 0, 5), clipboard) { edited = it })
         assertNull(edited)
     }
+
+    @Test
+    fun `select all takes the whole text and leaves it as it was`() {
+        val all: TextFieldValue = requireNotNull(field("hello", 2).withAllSelected())
+        assertEquals("hello", all.text)
+        assertEquals(TextRange(0, 5), all.selection)
+    }
+
+    @Test
+    fun `select all has nothing to do in an empty field`() {
+        assertNull(field("", 0).withAllSelected())
+    }
+
+    @Test
+    fun `select all has nothing to do when everything is selected already`() {
+        assertNull(field("hello", 0, 5).withAllSelected())
+    }
+
+    /** A menu's Select All is the same edit path as any other, minus the text change. */
+    @Test
+    fun `the select all verb reports through the value path`() {
+        var edited: TextFieldValue? = null
+
+        selectAllField(field("hello", 2)) { edited = it }
+
+        assertEquals(TextRange(0, 5), edited?.selection)
+        assertEquals("hello", edited?.text)
+    }
+
+    /** The verbs a menu runs are the ones the chords run, tested at that seam. */
+    @Test
+    fun `the cut verb writes the selection and takes it out`() {
+        val clipboard = FakeClipboard()
+        var edited: TextFieldValue? = null
+
+        cutField(field("hello", 1, 4), clipboard) { edited = it }
+
+        assertEquals("ell", clipboard.content)
+        assertEquals("ho", edited?.text)
+    }
+
+    @Test
+    fun `the copy verb leaves the field alone`() {
+        val clipboard = FakeClipboard()
+
+        copyField(field("hello", 1, 4), clipboard)
+
+        assertEquals("ell", clipboard.content)
+    }
+
+    @Test
+    fun `the paste verb puts the clipboard in`() {
+        val clipboard = FakeClipboard("owd")
+        var edited: TextFieldValue? = null
+
+        pasteField(field("hello", 1, 4), clipboard) { edited = it }
+
+        assertEquals("howdo", edited?.text)
+    }
+
+    /** Nothing to do is nothing done: no verb reports an edit it did not make. */
+    @Test
+    fun `the verbs do nothing when there is nothing to do`() {
+        val clipboard = FakeClipboard()
+        var edited: TextFieldValue? = null
+        val caret: TextFieldValue = field("hello", 2)
+
+        copyField(caret, clipboard)
+        cutField(caret, clipboard) { edited = it }
+        pasteField(caret, clipboard) { edited = it }
+
+        assertNull(clipboard.content)
+        assertNull(edited)
+    }
 }
