@@ -163,6 +163,10 @@ class ComposeNSView(
     // input method already turned this keystroke into text.
     private var didHandleKeyAsText = false
 
+    // The command chord [performKeyEquivalent] already offered to the scene and
+    // nobody took, held only until the keyDown it comes back as arrives.
+    private var keyEquivalentInFlight: NSEvent? = null
+
     private val platformContext: PlatformContext =
         object : PlatformContext by PlatformContext.Empty() {
             override val windowInfo get() = this@ComposeNSView.windowInfo
@@ -293,6 +297,14 @@ class ComposeNSView(
 
     override fun keyDown(event: NSEvent) {
         if (isDisposed) return
+        // Already offered to the scene as a key equivalent and turned down, so
+        // this is the same keystroke coming round a second time, not a new one.
+        // Dropped rather than passed to super, which beeps at a chord no
+        // responder wants; the field branch below never beeps either.
+        if (keyEquivalentInFlight === event) {
+            keyEquivalentInFlight = null
+            return
+        }
         if (!textInputService.isActive) {
             val consumed = scene.sendKeyEvent(event.toComposeEvent())
             if (!consumed) super.keyDown(event)
@@ -311,6 +323,36 @@ class ComposeNSView(
     override fun keyUp(event: NSEvent) {
         if (isDisposed) return
         scene.sendKeyEvent(event.toComposeEvent())
+    }
+
+    /**
+     * Command chords, offered to the field before the menu bar gets them.
+     *
+     * AppKit walks the view hierarchy with this ahead of matching the main
+     * menu's key equivalents, which is the only place we can get in front of
+     * them. Mid-edit the app's Cut/Copy/Paste items are greyed out on purpose,
+     * the element clipboard having no business firing while a caret is in
+     * something, but a disabled item still owns Cmd+X/C/V and swallows the
+     * chord rather than letting it through. So while a field has focus,
+     * compose is asked first: it takes the editing chords and leaves the rest
+     * (Cmd+S, Cmd+B) unclaimed for the menu, exactly as before.
+     *
+     * Only while a field has focus. With no caret anywhere nothing in the
+     * scene would consume these anyway, and not asking keeps the menu's
+     * behaviour untouched rather than merely unchanged-in-practice.
+     */
+    override fun performKeyEquivalent(event: NSEvent): Boolean {
+        if (isDisposed) return false
+        if (event.type != NSKeyDown) return false
+        if (!textInputService.isActive) return false
+
+        // Returning false sends the chord on to the menu, and if the menu has
+        // nothing for it either AppKit delivers it again as an ordinary
+        // keyDown. Remembering the event is how that second delivery is told
+        // apart from a first one; AppKit hands both legs the same NSEvent.
+        val consumed: Boolean = scene.sendKeyEvent(event.toComposeEvent())
+        keyEquivalentInFlight = if (consumed) null else event
+        return consumed
     }
 
     // NSTextInputClient. AppKit hands us the text an input source produced; we turn it into

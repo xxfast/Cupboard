@@ -890,6 +890,16 @@ private fun TextEditor(
         else ListMarkerTransformation(element.listStyle)
     }
 
+    val clipboard: FieldClipboard = rememberFieldClipboard()
+
+    // Every way the value can change goes through here: typing, and the keys
+    // handled below that edit the text themselves.
+    val update: (TextFieldValue) -> Unit = { edited ->
+        val typed: Boolean = edited.text != value.text
+        value = edited
+        if (typed) onPreviewElements(listOf(element.copy(text = edited.text)))
+    }
+
     Box(
         Modifier
             .offset(element.frame.x.dp, element.frame.y.dp)
@@ -904,11 +914,7 @@ private fun TextEditor(
     ) {
         BasicTextField(
             value = value,
-            onValueChange = { edited ->
-                val typed: Boolean = edited.text != value.text
-                value = edited
-                if (typed) onPreviewElements(listOf(element.copy(text = edited.text)))
-            },
+            onValueChange = update,
             textStyle = element.textStyle(),
             cursorBrush = SolidColor(element.color.toComposeColor()),
             visualTransformation = markers,
@@ -920,6 +926,13 @@ private fun TextEditor(
                 // Enter is the field's, it inserts a newline.
                 .onPreviewKeyEvent { key ->
                     if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                    // Mid-edit the app's Cut/Copy/Paste grey out, so the chord
+                    // is the text's. Ahead of the field's own handling of it,
+                    // which is the only way the edit streams as a preview.
+                    if (handleClipboardKey(key, value, clipboard, update)) {
+                        return@onPreviewKeyEvent true
+                    }
 
                     when {
                         key.key == Key.Escape -> {
@@ -994,6 +1007,16 @@ private fun CodeEditor(
         lineHeight = (element.fontSize * CodeLineHeight).sp,
     )
 
+    val clipboard: FieldClipboard = rememberFieldClipboard()
+
+    // Every way the value can change goes through here: typing, and the keys
+    // handled below that edit the code themselves.
+    val update: (TextFieldValue) -> Unit = { edited ->
+        val typed: Boolean = edited.text != value.text
+        value = edited
+        if (typed) onPreviewElements(listOf(element.copy(code = edited.text)))
+    }
+
     // Colouring only, so every offset in the text is its own offset in what is
     // drawn: no mapping to keep, unlike the list markers above.
     val highlighted = VisualTransformation { text ->
@@ -1041,11 +1064,7 @@ private fun CodeEditor(
 
                 BasicTextField(
                     value = value,
-                    onValueChange = { edited ->
-                        val typed: Boolean = edited.text != value.text
-                        value = edited
-                        if (typed) onPreviewElements(listOf(element.copy(code = edited.text)))
-                    },
+                    onValueChange = update,
                     textStyle = style,
                     cursorBrush = SolidColor(chrome.text),
                     visualTransformation = highlighted,
@@ -1056,6 +1075,11 @@ private fun CodeEditor(
                         // behind. Enter is the field's, it inserts a newline.
                         .onPreviewKeyEvent { key ->
                             if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                            // As the text box: mid-edit the chord is the code's.
+                            if (handleClipboardKey(key, value, clipboard, update)) {
+                                return@onPreviewKeyEvent true
+                            }
 
                             when (key.key) {
                                 Key.Escape -> {

@@ -350,8 +350,15 @@ fun main() {
                         onClick = viewModel::onCopy,
                     )
                     Item(
+                        // The one accelerator here still live over a caret.
+                        // Cut and Copy grey out mid-edit and a greyed item lets
+                        // its key through to the field, which is how Delete's
+                        // bare Backspace has always deleted characters rather
+                        // than the element. Paste greys on an empty clipboard
+                        // and nothing else, so its accelerator has to come off
+                        // by hand for Cmd+V to be the field's paste.
                         text = "Paste",
-                        shortcut = editShortcut(Key.V),
+                        shortcut = editShortcut(Key.V).takeIf { !state.isEditingText },
                         enabled = state.canPaste,
                         onClick = viewModel::onPaste,
                     )
