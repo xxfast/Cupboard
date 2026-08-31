@@ -280,10 +280,12 @@ fun EditorCanvas(
             // nothing: the text field below draws it, and two copies of the same
             // text half a pixel apart is what an editor must never show.
             for (element in slide.elements) {
-                ElementView(
-                    element = element,
-                    modifier = if (element.id == editing?.id) Modifier.alpha(0f) else Modifier,
-                )
+                // Not composed at all rather than drawn at alpha 0: elements
+                // are absolutely positioned so nothing shifts, and a code
+                // block composed invisibly would still re-highlight on every
+                // keystroke the field streams through the loop.
+                if (element.id == editing?.id) continue
+                ElementView(element)
             }
             if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 
@@ -1103,12 +1105,20 @@ private fun CodeEditor(
     RegisterFieldMenu(fieldMenuBridge, element.id, { value }, clipboard, update)
 
     // Colouring only, so every offset in the text is its own offset in what is
-    // drawn: no mapping to keep, unlike the list markers above.
-    val highlighted = VisualTransformation { text ->
-        TransformedText(
-            highlightCode(text.text, element.language, element.theme),
-            OffsetMapping.Identity,
-        )
+    // drawn: no mapping to keep, unlike the list markers above. Remembered, and
+    // caching its last parse inside, because the field re-applies a
+    // transformation on every recomposition: handed a fresh instance each pass
+    // it would re-tokenize on every cursor blink, not just on every keystroke.
+    val highlighted: VisualTransformation = remember(element.language, element.theme) {
+        var lastText = ""
+        var lastParse = AnnotatedString("")
+        VisualTransformation { text ->
+            if (text.text != lastText || text.text.isEmpty()) {
+                lastText = text.text
+                lastParse = highlightCode(text.text, element.language, element.theme)
+            }
+            TransformedText(lastParse, OffsetMapping.Identity)
+        }
     }
 
     Box(
