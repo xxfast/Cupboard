@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
@@ -72,6 +73,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * the slide's own corner at the top level, the group's corner for a group's
  * children. Children are stored in absolute slide coordinates, so laying them out
  * inside their group's box would otherwise apply the group's offset twice.
+ *
+ * [codeStep] is the state a [CodeElement] draws in, resolved by the caller from
+ * the slide's build order. Null, the editor's case, is the whole block. Only a
+ * top-level element gets one: a code block inside a group draws whole, since a
+ * build names an element the slide holds.
  */
 @Composable
 fun ElementView(
@@ -79,6 +85,7 @@ fun ElementView(
     modifier: Modifier = Modifier,
     originX: Float = 0f,
     originY: Float = 0f,
+    codeStep: CodeStep? = null,
 ) {
     Box(
         modifier = modifier
@@ -96,7 +103,7 @@ fun ElementView(
             is TextElement -> TextElementView(element)
             is ShapeElement -> ShapeElementView(element)
             is ImageElement -> ImageElementView(element)
-            is CodeElement -> CodeElementView(element)
+            is CodeElement -> CodeElementView(element, codeStep)
             // The group draws nothing of its own: it is the box its transforms
             // hang off, and its children draw inside it. A nested group recurses
             // through here and re-bases its own children the same way.
@@ -363,9 +370,14 @@ internal val CodePadding = 12.dp
  * line count. Numbers line up with lines, not with rows: with [CodeElement.wrap]
  * on, a line that reflows pushes its neighbours down and the column drifts. Only
  * a per-line layout fixes that, which is more than a wrapped block is worth.
+ *
+ * [step] is the state to draw, or null for the whole block. A step that hides
+ * lines reflows the ones that are left, and the gutter keeps drawing each one's
+ * original number, so a reveal reads as a block filling in rather than as a
+ * block being renumbered.
  */
 @Composable
-private fun CodeElementView(element: CodeElement) {
+private fun CodeElementView(element: CodeElement, step: CodeStep? = null) {
     val chrome: CodeChrome = element.theme.chrome
     Box(
         modifier = Modifier
@@ -375,17 +387,14 @@ private fun CodeElementView(element: CodeElement) {
             .clip(CodeCorner)
             .padding(CodePadding),
     ) {
-        val highlighted = remember(element.code, element.language, element.theme) {
-            highlightCode(element.code, element.language, element.theme)
+        val stepped: SteppedCode = remember(element.code, element.language, element.theme, step) {
+            steppedCode(element.code, element.language, element.theme, step)
         }
 
         Row {
             if (element.showLineNumbers) {
-                val numbers: String = remember(element.code) {
-                    (1..element.code.count { it == '\n' } + 1).joinToString("\n")
-                }
                 Text(
-                    text = numbers,
+                    text = stepped.numbers,
                     color = chrome.gutter,
                     fontSize = element.fontSize.sp,
                     fontFamily = FontFamily.Monospace,
@@ -397,7 +406,7 @@ private fun CodeElementView(element: CodeElement) {
             }
 
             Text(
-                text = highlighted,
+                text = stepped.text,
                 color = chrome.text,
                 fontSize = element.fontSize.sp,
                 fontFamily = FontFamily.Monospace,

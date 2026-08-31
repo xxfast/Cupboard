@@ -404,6 +404,17 @@ data class CodeElement(
     val showLineNumbers: Boolean = false,
     /** Off, and a long line runs out of the box rather than reflowing under itself. */
     val wrap: Boolean = false,
+    /**
+     * The states the block is walked through in play mode, if any. Empty (and so
+     * every document written before this field) is a block that always shows all
+     * of its code.
+     *
+     * A stepped block draws `steps[0]` from the moment it is visible, and builds
+     * carrying a [Build.codeStep] move it along from there. Only play mode steps:
+     * the editor canvas shows the whole block, because what is being edited is
+     * the code rather than the walk through it.
+     */
+    val steps: List<CodeStep> = emptyList(),
 ) : Element {
     override fun update(
         frame: Frame,

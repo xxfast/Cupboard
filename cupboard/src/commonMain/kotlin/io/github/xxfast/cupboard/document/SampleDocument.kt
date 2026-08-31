@@ -16,47 +16,72 @@ private fun titleSlide(title: String, depth: Int = 0): Slide = Slide(
     ),
 )
 
-/** Shows off the highlighted code element: the deck's own document model, as a snippet. */
-private fun codeSlide(): Slide = Slide(
-    title = "Slides as Data",
-    depth = 1,
-    elements = listOf(
-        TextElement(
-            frame = Frame(146f, 130f, 1627f, 142f),
-            text = "Slides as Data",
-            fontSize = 94f,
-            fontWeight = 700,
-            letterSpacing = -1f,
-            color = 0xFFFFFFFF,
-        ),
-        TextElement(
-            frame = Frame(146f, 281f, 1627f, 61f),
-            text = "The document model, not compiled-in composables",
-            fontSize = 39f,
-            color = 0xFFA9A0D8,
-        ),
-        CodeElement(
-            frame = Frame(146f, 390f, 1627f, 560f),
-            language = "kotlin",
-            fontSize = 28f,
-            code = """
-                // Slides are data, so one deck renders on every platform
-                @Serializable
-                data class Slide(
-                    val title: String = "Untitled",
-                    val depth: Int = 0,
-                    val elements: List<Element> = emptyList(),
-                )
+/**
+ * Shows off the highlighted code element, and the code steps it is walked
+ * through: the deck's own document model, written out a piece at a time.
+ *
+ * Four states over four clicks. The block arrives holding the declaration with
+ * an empty body (lines 1-3 and the closing 7, which is what the gutter's jump
+ * from 3 to 7 is there to show), fills its properties in, brings the rest of the
+ * file up, and finally drops everything but the two lines that use it.
+ */
+private fun codeSlide(): Slide {
+    val title = TextElement(
+        frame = Frame(146f, 130f, 1627f, 142f),
+        text = "Slides as Data",
+        fontSize = 94f,
+        fontWeight = 700,
+        letterSpacing = -1f,
+        color = 0xFFFFFFFF,
+    )
+    val subtitle = TextElement(
+        frame = Frame(146f, 281f, 1627f, 61f),
+        text = "The document model, not compiled-in composables",
+        fontSize = 39f,
+        color = 0xFFA9A0D8,
+    )
+    val code = CodeElement(
+        frame = Frame(146f, 390f, 1627f, 560f),
+        language = "kotlin",
+        fontSize = 28f,
+        showLineNumbers = true,
+        code = """
+            // Slides are data, so one deck renders on every platform
+            @Serializable
+            data class Slide(
+                val title: String = "Untitled",
+                val depth: Int = 0,
+                val elements: List<Element> = emptyList(),
+            )
 
-                fun Slide.aspect(): Float = 1920f / 1080f
+            fun Slide.aspect(): Float = 1920f / 1080f
 
-                val opening = Slide(title = "Cupboard", depth = 1)
-            """.trimIndent(),
+            val opening = Slide(title = "Cupboard", depth = 1)
+        """.trimIndent(),
+        steps = listOf(
+            CodeStep(reveal = listOf(LineRange(1, 3), LineRange(7, 7))),
+            CodeStep(reveal = listOf(LineRange(1, 7))),
+            CodeStep(),
+            CodeStep(highlight = listOf(LineRange(9, 11))),
         ),
-    ),
-    notes = "The canvas never compiles a slide. It reads one. That is what keeps the " +
-        "editor, the thumbnails, and play mode pixel-identical.",
-)
+    )
+
+    return Slide(
+        title = "Slides as Data",
+        depth = 1,
+        elements = listOf(title, subtitle, code),
+        builds = listOf(
+            // The first build brings the block in at its first state; the rest
+            // only advance it, and it stays on screen through all of them.
+            Build(code.id),
+            Build(code.id, codeStep = 1),
+            Build(code.id, codeStep = 2),
+            Build(code.id, codeStep = 3),
+        ),
+        notes = "The canvas never compiles a slide. It reads one. That is what keeps the " +
+            "editor, the thumbnails, and play mode pixel-identical.",
+    )
+}
 
 /** The "Rendering Pipeline" slide from the design mock, as document data. */
 fun sampleDocument(): Document {

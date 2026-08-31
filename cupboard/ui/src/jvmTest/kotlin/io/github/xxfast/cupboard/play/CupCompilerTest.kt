@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.play
 
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.document.setSlideSkipped
@@ -52,5 +53,21 @@ class CupCompilerTest {
         for ((ours, cup) in document.slides.zip(cupSlides)) {
             assertEquals(ours.stepCount(), cup.stepCount)
         }
+    }
+
+    /**
+     * Code steps ride the ordinary build order, so the compiler needs to know
+     * nothing about them: a slide whose only builds walk one code block through
+     * its states still gets a step per click.
+     */
+    @Test
+    fun aCodeBlocksStepsAreStepsOfTheSlide() {
+        val document = sampleDocument()
+        val slide = document.slides.first { it.title == "Slides as Data" }
+        val code = slide.elements.filterIsInstance<CodeElement>().single()
+        val cup = document.toCupSlides().first { it.name == slide.id }
+
+        assertTrue(code.steps.size > 1)
+        assertEquals(code.steps.size + 1, cup.stepCount)
     }
 }

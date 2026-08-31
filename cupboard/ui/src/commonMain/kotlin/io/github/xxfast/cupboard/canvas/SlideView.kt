@@ -10,7 +10,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.isVisibleAt
 
 /** How far the slide number sits off the slide's right and bottom edges, in doc units. */
@@ -21,8 +23,9 @@ private const val SlideNumberSize: Float = 30f
 private const val SlideNumberColor: Long = 0x99FFFFFF
 
 /**
- * Renders a slide's elements. [step] limits visibility per the build order;
- * null (the editor default) shows everything.
+ * Renders a slide's elements. [step] limits visibility per the build order, and
+ * puts every stepped code block in the state its builds have reached; null (the
+ * editor default) shows everything, whole.
  *
  * [number] is this slide's place in the presentation, which only a slide that
  * asks for it draws. Passed in rather than worked out here: what counts as a
@@ -37,9 +40,13 @@ fun SlideView(
 ) {
     SlideSurface(modifier, slideBackground = slide.background) {
         for (element in slide.elements) {
-            if (step == null || slide.isVisibleAt(element.id, step)) {
-                ElementView(element)
-            }
+            if (step != null && !slide.isVisibleAt(element.id, step)) continue
+            ElementView(
+                element = element,
+                codeStep = if (step != null && element is CodeElement) {
+                    slide.codeStepFor(element, step)
+                } else null,
+            )
         }
         if (slide.showsSlideNumber && number != null) SlideNumberView(number)
     }
