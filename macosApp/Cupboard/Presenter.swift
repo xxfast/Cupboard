@@ -67,6 +67,12 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
         window.setFrame(screen.visibleFrame, display: true)
     }
 
+    /// Puts the keyboard on the presenter. A rehearsal has no show window for
+    /// the keys to land in, so this is the window they are pressed in.
+    func takeKeyboard() {
+        window?.makeKeyAndOrderFront(nil)
+    }
+
     private func open(_ session: PlaySession) {
         guard window == nil else { return }
         self.session = session
@@ -130,8 +136,14 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
     }
 
     /// The red button. The show carries on without it; the menu toggle is how
-    /// it comes back.
+    /// it comes back. A rehearsal has nothing to carry on as, so closing this
+    /// window ends it, exactly as Escape in it does.
     func windowWillClose(_ notification: Notification) {
+        if let session, session.isRehearsal {
+            // Not from inside the close notification: the window is mid-teardown.
+            DispatchQueue.main.async { session.exit() }
+            return
+        }
         dismissed = session
         // Not from inside the close notification: the window is mid-teardown.
         DispatchQueue.main.async { [weak self] in self?.close() }

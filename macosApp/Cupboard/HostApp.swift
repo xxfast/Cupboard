@@ -48,8 +48,9 @@ struct CupboardHostApp: App {
             Group {
                 // A show with a screen of its own leaves this window alone: the
                 // editor stays up behind it, the way it does under a full-screen
-                // Keynote. Only the one-display path takes the window over.
-                if let show, !show.external {
+                // Keynote. Only the one-display path takes the window over, and
+                // a rehearsal is not one: it has no deck to put anywhere.
+                if let show, !show.external, !show.rehearsal {
                     PlayCanvas(session: show.session)
                         .background(Color.black)
                 } else {
@@ -219,6 +220,12 @@ struct CupboardHostApp: App {
             // No key equivalent: Play owns the presentation gesture, and a
             // preview is the deliberate one you go to the menu for.
             Button("Preview Slide") { show = .preview(host.startPreview(onExit: { show = nil })) }
+
+            // The show, presenter display only, from the selected slide. No key
+            // equivalent either, for the same reason the preview has none.
+            Button("Rehearse Slideshow") {
+                show = .rehearse(host.startRehearsal(onExit: { show = nil }))
+            }
         }
     }
 

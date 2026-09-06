@@ -685,6 +685,12 @@ class PlaySession internal constructor(
     private val live: Flow<Document>? = null,
     /** Where a notes edit goes: slide id, new notes. Null for a preview. */
     private val notes: ((String, String) -> Unit)? = null,
+    /**
+     * A rehearsal: the same show, with nobody to show it to. [view] is still
+     * what drives the playback both faces read, so the host keeps it composed
+     * and hides it rather than leaving it out.
+     */
+    val isRehearsal: Boolean = false,
 ) {
     /**
      * The controller both faces play on, published by the show's own composition.
@@ -2439,7 +2445,17 @@ class EditorHost {
      * Starts playing the document as it stands, from the selected slide.
      * [onExit] fires on the main thread when the player asks to stop (Escape).
      */
-    fun startPlay(onExit: () -> Unit): PlaySession = PlaySession(
+    fun startPlay(onExit: () -> Unit): PlaySession = playSession(onExit, rehearsal = false)
+
+    /**
+     * Rehearses the deck from the selected slide: the show [startPlay] starts,
+     * with the presenter display as its only face. The player is still composed,
+     * since it is what the controller both faces read plays on, and the host
+     * hides it: a rehearsal has no audience to put a slide in front of.
+     */
+    fun startRehearsal(onExit: () -> Unit): PlaySession = playSession(onExit, rehearsal = true)
+
+    private fun playSession(onExit: () -> Unit, rehearsal: Boolean): PlaySession = PlaySession(
         document = state.document,
         startIndex = state.selectedSlideIndex().coerceAtLeast(0),
         onExit = onExit,
@@ -2450,6 +2466,7 @@ class EditorHost {
             val slide: Slide? = state.document.slideById(slideId)
             if (slide != null && slide.notes != text) viewModel.onUpdateSlide(slide.copy(notes = text))
         },
+        isRehearsal = rehearsal,
     )
 
     /**

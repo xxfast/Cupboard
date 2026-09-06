@@ -24,6 +24,16 @@ struct Show {
     static func preview(_ session: PlaySession) -> Show {
         Show(session: session, external: false)
     }
+
+    /// A run-through for the speaker alone: the presenter display, and no deck
+    /// on any screen. Never external, whatever is plugged in, since [external]
+    /// is about the screen an audience is looking at and there isn't one.
+    static func rehearse(_ session: PlaySession) -> Show {
+        Show(session: session, external: false)
+    }
+
+    /// Whether this show is a rehearsal, which is the session's own fact.
+    var rehearsal: Bool { session.isRehearsal }
 }
 
 /// The keys the play windows handle themselves, by AppKit key code. Playback is
@@ -69,6 +79,11 @@ final class ShowDisplays {
     private var showScreen: NSScreen?
     private var presenterScreen: NSScreen?
 
+    /// A rehearsal: the show window is up, 1x1 in a corner, because the player
+    /// is what drives the playback the presenter reads. Nothing else about it
+    /// is a show, so this is what the placement and the swap key branch on.
+    private var rehearsing: Bool { session?.isRehearsal == true }
+
     init() {
         presenter.onSwap = { [weak self] in self?.swapDisplays() }
     }
@@ -76,25 +91,35 @@ final class ShowDisplays {
     /// [show] is what is playing, or nil for nothing; [presenterEnabled] is what
     /// the View menu says.
     func sync(show: Show?, presenterEnabled: Bool) {
-        guard let show, show.external else {
+        guard let show, show.external || show.rehearsal else {
             // The presenter first: closing the show window disposes the session,
             // and the presenter is drawing a view that goes with it.
             presenter.sync(session: show?.session, enabled: presenterEnabled, screen: nil)
             close()
             return
         }
-        if show.session !== session {
+        let started = show.session !== session
+        if started {
             close()
             open(show.session)
         }
-        presenter.sync(session: show.session, enabled: presenterEnabled, screen: presenterScreen)
+        // A rehearsal is the presenter display. The View menu's toggle says
+        // whether a show gets one behind it, which is not a question here.
+        presenter.sync(
+            session: show.session,
+            enabled: show.rehearsal || presenterEnabled,
+            screen: presenterScreen
+        )
+        // No show window to drive from, so the presenter takes the keyboard.
+        // Only as the rehearsal opens: every later pass would be stealing it.
+        if started, show.rehearsal { presenter.takeKeyboard() }
         place()
     }
 
     /// The View menu's item and the X key: the show moves to the other screen and
     /// the presenter takes the one it left.
     func swapDisplays() {
-        guard window != nil else { return }
+        guard window != nil, !rehearsing else { return }
         (showScreen, presenterScreen) = (presenterScreen, showScreen)
         presenter.place(on: presenterScreen)
         place()
@@ -106,13 +131,14 @@ final class ShowDisplays {
         // The show goes to the first screen that is not the one the app is on.
         // Falling back to that same screen covers a display leaving between the
         // start of the show and this pass: still a show, just nowhere to put the
-        // presenter behind it.
-        showScreen = screens.first { $0 !== primary } ?? primary
+        // presenter behind it. A rehearsal never leaves the screen the speaker
+        // is on: what it puts there is a point, not a deck.
+        showScreen = session.isRehearsal ? primary : (screens.first { $0 !== primary } ?? primary)
         presenterScreen = primary
         self.session = session
 
         let window = ShowKeyWindow(
-            contentRect: showScreen?.frame ?? primary.frame,
+            contentRect: frame(on: showScreen ?? primary),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
@@ -133,6 +159,15 @@ final class ShowDisplays {
             self?.swapDisplays()
             return true
         }
+        guard !session.isRehearsal else {
+            // On a screen, so the scene goes on drawing frames and the playback
+            // the presenter is reading keeps moving, and out of everyone's way:
+            // a point in the corner that no click can land in.
+            window.ignoresMouseEvents = true
+            window.orderFront(nil)
+            self.window = window
+            return
+        }
         // Key, unlike the presenter window: this is the one being played, and the
         // Compose view takes first responder as soon as it has a window.
         window.makeKeyAndOrderFront(nil)
@@ -141,7 +176,14 @@ final class ShowDisplays {
 
     private func place() {
         guard let window, let showScreen else { return }
-        window.setFrame(showScreen.frame, display: true)
+        window.setFrame(frame(on: showScreen), display: true)
+    }
+
+    /// What the show's window fills on [screen]: all of it, or the one point a
+    /// rehearsal hides the player in.
+    private func frame(on screen: NSScreen) -> NSRect {
+        guard rehearsing else { return screen.frame }
+        return NSRect(origin: screen.frame.origin, size: NSSize(width: 1, height: 1))
     }
 
     /// Tears the window down and, with it, the Compose scene behind it. Safe to

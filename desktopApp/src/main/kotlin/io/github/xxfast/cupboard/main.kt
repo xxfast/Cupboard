@@ -3,6 +3,7 @@
 package io.github.xxfast.cupboard
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -92,9 +93,16 @@ private data class PlayRequest(
     val slideIndex: Int,
     val preview: Boolean = false,
     /**
+     * A rehearsal: the presenter display on its own, with no show window
+     * anywhere. The talk still plays, at no size behind the display, because
+     * the display is a view onto a running show rather than a show of its own.
+     */
+    val rehearse: Boolean = false,
+    /**
      * Which display the show fills, as an index into [playScreens]. The
      * presenter display takes the other one, so swapping the two is this
-     * index flipping. Ignored with a single display, and by previews.
+     * index flipping. Ignored with a single display, and by previews and
+     * rehearsals, neither of which places anything.
      */
     val showScreen: Int = 0,
 )
@@ -406,12 +414,28 @@ fun main() {
         // Swapping the displays is the show's index flipping: both windows are
         // placed off it, so the show takes the other screen and the presenter
         // display takes the one it left. Null with a single display, or over a
-        // preview, which is what greys the menu item and drops the X key.
+        // preview or a rehearsal, neither of which has a show window to move,
+        // which is what greys the menu item and drops the X key.
         val swapDisplays: (() -> Unit)? = playing
-            ?.takeIf { !it.preview && screens.size > 1 }
+            ?.takeIf { !it.preview && !it.rehearse && screens.size > 1 }
             ?.let { request ->
                 { playing = request.copy(showScreen = if (request.showScreen == 0) 1 else 0) }
             }
+
+        // A rehearsal is the talk with nowhere to project it: the presenter
+        // display alone, on this machine's own screen, running the same player
+        // the show would. Starts from the selected slide, like Play, and is off
+        // in layout mode for the same reason Play is.
+        val rehearseSlideshow: (() -> Unit)? = if (state.isEditingLayouts) null else {
+            {
+                screens = playScreens()
+                playing = PlayRequest(
+                    document = state.document,
+                    slideIndex = state.selectedSlideIndex().coerceAtLeast(0),
+                    rehearse = true,
+                )
+            }
+        }
 
         // Preview is Play on the slide alone: the deck's furniture, one slide of
         // it, opened at its first step so the builds run from the top. Off in
@@ -594,6 +618,15 @@ fun main() {
                         text = "Preview Slide",
                         enabled = previewSlide != null,
                         onClick = { previewSlide?.invoke() },
+                    )
+
+                    // No accelerator either, and no toolbar button: the toolbar
+                    // has one Play pill and no room beside it, so the menu is
+                    // where a rehearsal starts.
+                    Item(
+                        text = "Rehearse Slideshow",
+                        enabled = rehearseSlideshow != null,
+                        onClick = { rehearseSlideshow?.invoke() },
                     )
                 }
 
@@ -803,17 +836,28 @@ fun main() {
 
             // The presenter display's window state lives out here so it keeps
             // its display across a trip through the View menu: put away and
-            // brought back, it comes up where the swap left it.
-            val presenterState: WindowState = rememberWindowState(
-                size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
-                position = WindowPosition(Alignment.Center),
-            )
+            // brought back, it comes up where the swap left it. A rehearsal
+            // takes the screen instead: it is the only window of the show.
+            val presenterState: WindowState = if (request.rehearse) {
+                rememberWindowState(placement = WindowPlacement.Maximized)
+            } else {
+                rememberWindowState(
+                    size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
+                    position = WindowPosition(Alignment.Center),
+                )
+            }
+
+            // The primary display, explicitly: rehearsing with a projector
+            // still plugged in belongs on the screen in front of you.
+            if (request.rehearse) LaunchedEffect(Unit) {
+                screens.firstOrNull()?.let { presenterState.moveOnto(it, WindowPlacement.Maximized) }
+            }
 
             // Two displays or more: the show fills one of them and the
             // presenter display fills the other, and both move when the index
             // does. A single display keeps what it always did, the show
             // maximized with the presenter display windowed on top.
-            if (!request.preview && screens.size > 1) LaunchedEffect(request.showScreen) {
+            if (!request.preview && !request.rehearse && screens.size > 1) LaunchedEffect(request.showScreen) {
                 showState.moveOnto(screens[request.showScreen], WindowPlacement.Fullscreen)
                 presenterState.moveOnto(
                     bounds = screens[if (request.showScreen == 0) 1 else 0],
@@ -821,7 +865,9 @@ fun main() {
                 )
             }
 
-            Window(
+            // No show window for a rehearsal: the talk plays inside the
+            // presenter window instead, taking no room there.
+            if (!request.rehearse) Window(
                 onCloseRequest = close,
                 title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
                 state = showState,
@@ -854,15 +900,31 @@ fun main() {
 
             // The lectern's half of the show, following the same controller.
             // Never for a preview: a preview is one slide looked at from the
-            // editor, there is nobody at a lectern.
-            if (!request.preview && showPresenter) Window(
+            // editor, there is nobody at a lectern. Always for a rehearsal,
+            // which is this window and nothing else.
+            if (request.rehearse || (!request.preview && showPresenter)) Window(
                 // Closing this alone leaves the show up: it is a second screen,
-                // not the show. The View menu brings it back.
-                onCloseRequest = { showPresenter = false },
+                // not the show. The View menu brings it back. A rehearsal has
+                // no show behind it, so closing it ends the whole thing.
+                onCloseRequest = if (request.rehearse) close else {
+                    { showPresenter = false }
+                },
                 title = "Cupboard Presenter",
                 state = presenterState,
                 onKeyEvent = showKeys(controller, close, swapDisplays),
             ) {
+                // The show itself, playing at a pixel: the display follows a
+                // controller, and a controller has nothing to say until a
+                // player is composed against it. Behind the display and out of
+                // the way, so the current and next previews are the rehearsal.
+                if (request.rehearse) PresentationPlayer(
+                    document = request.document,
+                    startIndex = request.slideIndex,
+                    modifier = Modifier.size(1.dp),
+                    onExit = close,
+                    controller = controller,
+                )
+
                 PresenterView(
                     // The live document rather than the show's snapshot: notes
                     // typed here go through the editor's loop, and the snapshot
