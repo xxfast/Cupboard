@@ -71,6 +71,7 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
@@ -113,6 +114,20 @@ fun EditorInspector(
     /** The selected slide, which the Slide tab edits. */
     slide: Slide,
     onUpdateSlide: (Slide) -> Unit,
+    /** The deck's layouts: what the Slide tab's picker offers. */
+    layouts: List<Slide>,
+    /**
+     * Whether [slide] is one of [layouts], being edited. The Slide tab is then a
+     * layout editor: it names the layout and fills it with placeholders instead
+     * of putting a slide on one.
+     */
+    isEditingLayouts: Boolean,
+    onApplyLayout: (slideId: String, layoutId: String?) -> Unit,
+    onReapplyLayout: (slideId: String) -> Unit,
+    onEditSlideLayouts: () -> Unit,
+    onExitSlideLayouts: () -> Unit,
+    onAddPlaceholder: (PlaceholderRole) -> Unit,
+    onRenameSlide: (id: String, title: String) -> Unit,
     selectedElements: List<Element>,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
@@ -217,7 +232,18 @@ fun EditorInspector(
                 }
 
                 InspectorTab.Animate -> AnimatePanel()
-                InspectorTab.Document -> SlidePanel(slide = slide, onUpdate = onUpdateSlide)
+                InspectorTab.Document -> SlidePanel(
+                    slide = slide,
+                    layouts = layouts,
+                    isEditingLayouts = isEditingLayouts,
+                    onUpdate = onUpdateSlide,
+                    onApplyLayout = onApplyLayout,
+                    onReapplyLayout = onReapplyLayout,
+                    onEditSlideLayouts = onEditSlideLayouts,
+                    onExitSlideLayouts = onExitSlideLayouts,
+                    onAddPlaceholder = onAddPlaceholder,
+                    onRenameSlide = onRenameSlide,
+                )
             }
         }
     }
@@ -1315,47 +1341,93 @@ private fun AnimatePanel() {
 }
 
 /**
- * The Slide tab: the layout card and its button are still mocks (layouts are
- * their own roadmap item), the slide number switch and the background are real.
+ * The Slide tab, in either of its two moods. On a slide it is the layout the
+ * slide is on plus its own appearance and background; on a layout it is that
+ * layout's name and its placeholders, with the appearance and background
+ * sections working exactly as they do on a slide, because a layout is one.
  *
  * Every control is stateless against [slide] and commits whole slides through
  * [onUpdate], one settled edit per tap: there is no continuous colour picker
- * here, so one tap is one history entry.
+ * here, so one tap is one history entry. The layout verbs are events of their
+ * own rather than slide edits, since what they change is more than this slide.
  */
 @Composable
-private fun SlidePanel(slide: Slide, onUpdate: (Slide) -> Unit) {
-    val tokens: ChromeTokens = LocalChromeTokens.current
+private fun SlidePanel(
+    slide: Slide,
+    layouts: List<Slide>,
+    isEditingLayouts: Boolean,
+    onUpdate: (Slide) -> Unit,
+    onApplyLayout: (String, String?) -> Unit,
+    onReapplyLayout: (String) -> Unit,
+    onEditSlideLayouts: () -> Unit,
+    onExitSlideLayouts: () -> Unit,
+    onAddPlaceholder: (PlaceholderRole) -> Unit,
+    onRenameSlide: (String, String) -> Unit,
+) {
+    SectionLabel("LAYOUT")
 
-    // Slide layout card.
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(tokens.ctrl)
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Column(
-            modifier = Modifier
-                .size(width = 62.dp, height = 35.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(Color.White)
-                .padding(horizontal = 6.dp, vertical = 5.dp),
-            verticalArrangement = Arrangement.spacedBy(3.dp),
-        ) {
-            Box(Modifier.fillMaxWidth(0.68f).height(4.dp).background(Color(0xFF2A2630)))
-            Box(Modifier.fillMaxWidth(0.46f).height(3.dp).background(Color(0xFF9A958D)))
+    if (isEditingLayouts) {
+        // A layout is picked out of a list by its name, so the name is the one
+        // thing about it that has to be editable somewhere. This is that
+        // somewhere; the navigator's Rename is the same event.
+        EntryField(
+            label = "Name",
+            display = slide.title,
+            enabled = true,
+            monospace = false,
+        ) { entered ->
+            val name: String = entered.trim()
+            if (name.isEmpty() || name == slide.title) return@EntryField false
+
+            onRenameSlide(slide.id, name)
+            return@EntryField true
         }
-        Column(Modifier.weight(1f)) {
-            Text("Slide Layout", color = tokens.subtle, fontSize = 11.sp)
-            Text("Title", color = tokens.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+
+        PanelDivider()
+
+        SectionLabel("PLACEHOLDERS")
+        // Two by two rather than a row of four: "Media" doesn't fit a quarter of
+        // 282dp, and a 2x2 block reads as one set of four either way.
+        for (pair in PlaceholderRole.entries.chunked(2)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                for (role in pair) {
+                    TonalButton(
+                        label = role.name,
+                        enabled = true,
+                        onClick = { onAddPlaceholder(role) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
-        Text("⌄", color = tokens.subtle, fontSize = 10.sp)
+    } else {
+        val options: List<Pair<String?, String>> =
+            listOf<Pair<String?, String>>(null to "None") + layouts.map { it.id to it.title }
+
+        DropdownField(
+            label = "Slide Layout",
+            value = slide.layoutId,
+            options = options,
+            enabled = true,
+            onPick = { layoutId -> onApplyLayout(slide.id, layoutId) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // A slide whose layout is gone reads as being on none, so it has nothing
+        // to put back either.
+        TonalButton(
+            label = "Reapply Layout",
+            enabled = layouts.any { it.id == slide.layoutId },
+            onClick = { onReapplyLayout(slide.id) },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 
+    PanelDivider()
+
     SectionLabel("APPEARANCE")
-    // Title and Body are the layout's placeholders, so they wait on layouts.
+    // Still inert. A slide owns the placeholders it was given, so hiding one is
+    // deleting it, and nothing in the model says "this slide, without its
+    // layout's title" yet.
     AppearanceRow(label = "Title", checked = true)
     AppearanceRow(label = "Body", checked = true)
     AppearanceRow(
@@ -1430,17 +1502,14 @@ private fun SlidePanel(slide: Slide, onUpdate: (Slide) -> Unit) {
         }
     }
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(tokens.tonal),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Text("Edit Slide Layout", color = tokens.tonalText, fontSize = 12.5.sp)
-    }
+    // The mode switch, pinned to the bottom of the panel the way the design has
+    // it, saying whichever half of the trip is left to make.
+    TonalButton(
+        label = if (isEditingLayouts) "Done" else "Edit Slide Layouts",
+        enabled = true,
+        onClick = if (isEditingLayouts) onExitSlideLayouts else onEditSlideLayouts,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /**

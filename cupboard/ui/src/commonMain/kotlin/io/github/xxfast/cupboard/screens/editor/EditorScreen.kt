@@ -10,13 +10,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,7 +29,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -48,6 +59,7 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -55,6 +67,7 @@ import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.equationElement
+import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.editor.EditorCanvas
@@ -85,8 +98,16 @@ fun EditorScreen(
     /**
      * The same for the navigator: the shell draws the slide menu for the row at
      * [slideId], at a position in window coordinates. Null keeps the m3 dropdown.
+     *
+     * The third argument is what a Rename verb picks. The dialog it opens is this
+     * view's, whoever draws the menu, so a shell renaming a layout hands this back
+     * rather than building a dialog of its own.
      */
-    onShowSlideContextMenu: ((slideId: String, positionInWindow: Offset) -> Unit)? = null,
+    onShowSlideContextMenu: ((
+        slideId: String,
+        positionInWindow: Offset,
+        onRename: () -> Unit,
+    ) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -111,11 +132,14 @@ fun EditorScreen(
         // Built per row, since which slide the verbs carry is only known once a
         // row is clicked, and rebuilt from every state, so an open menu re-reads
         // its paste gate. A shell drawing its own menu gets none.
-        slideMenuSections = { slideId ->
-            if (onShowSlideContextMenu == null) {
-                slideSections(state, viewModel, slideId, includePaste = true)
-            } else {
-                emptyList()
+        // In layout mode the rows are layouts, so the verbs are the layout ones:
+        // pasting a slide among the masters means nothing, and a layout has a name
+        // where a slide has none.
+        slideMenuSections = { slideId, onRename ->
+            when {
+                onShowSlideContextMenu != null -> emptyList()
+                state.isEditingLayouts -> layoutSections(viewModel, slideId, onRename)
+                else -> slideSections(state, viewModel, slideId, includePaste = true)
             }
         },
         onShowSlideContextMenu = onShowSlideContextMenu,
@@ -137,6 +161,12 @@ fun EditorScreen(
         onGroupElements = viewModel::onGroupElements,
         onUngroupElements = viewModel::onUngroupElements,
         onSelectInspectorTab = viewModel::onSelectInspectorTab,
+        onEditSlideLayouts = viewModel::onEditSlideLayouts,
+        onExitSlideLayouts = viewModel::onExitSlideLayouts,
+        onApplyLayout = viewModel::onApplyLayout,
+        onReapplyLayout = viewModel::onReapplyLayout,
+        onAddPlaceholder = viewModel::onAddPlaceholder,
+        onRenameSlide = viewModel::onRenameSlide,
         onPreviewGuide = viewModel::onPreviewGuide,
         onCommitGuide = viewModel::onCommitGuide,
         onRemoveGuide = viewModel::onRemoveGuide,
@@ -173,6 +203,15 @@ fun EditorView(
     onGroupElements: (List<String>) -> Unit,
     onUngroupElements: (String) -> Unit,
     onSelectInspectorTab: (InspectorTab) -> Unit,
+    /** In and out of layout mode: the navigator swaps slides for layouts, and the
+     * canvas edits one of them. */
+    onEditSlideLayouts: () -> Unit = {},
+    onExitSlideLayouts: () -> Unit = {},
+    onApplyLayout: (slideId: String, layoutId: String?) -> Unit = { _, _ -> },
+    onReapplyLayout: (slideId: String) -> Unit = {},
+    onAddPlaceholder: (PlaceholderRole) -> Unit = {},
+    /** Renames a slide, or a layout: the navigator's Rename and the Name field. */
+    onRenameSlide: (id: String, title: String) -> Unit = { _, _ -> },
     /** A guide drag on the canvas: its samples, its drop, the guide it throws
      * away off the slide, and its cancel. What the drag draws is
      * [EditorState.guideDrag], which these four feed. */
@@ -187,10 +226,16 @@ fun EditorView(
     onShowContextMenu: ((elementId: String?, positionInWindow: Offset) -> Unit)? = null,
     /** A right-click on a navigator row, before its menu opens. */
     onSlideContextClick: (slideId: String) -> Unit = {},
-    /** What the navigator's context menu shows for a given row. Empty hides it. */
-    slideMenuSections: (slideId: String) -> List<EditorMenuSection> = { emptyList() },
+    /** What the navigator's context menu shows for a given row. Empty hides it.
+     * [onRename] is what a Rename verb picks: this view owns that dialog. */
+    slideMenuSections: (slideId: String, onRename: () -> Unit) -> List<EditorMenuSection> =
+        { _, _ -> emptyList() },
     /** [onShowContextMenu]'s counterpart for the navigator. */
-    onShowSlideContextMenu: ((slideId: String, positionInWindow: Offset) -> Unit)? = null,
+    onShowSlideContextMenu: ((
+        slideId: String,
+        positionInWindow: Offset,
+        onRename: () -> Unit,
+    ) -> Unit)? = null,
     /** A navigator drag reporting the gap it is over, its drop, and its cancel.
      * What the drag draws is [EditorState.slideDrag], which these three feed. */
     onPreviewSlideDrag: (slideId: String, afterId: String?, nest: Boolean, translationY: Float) -> Unit = { _, _, _, _ -> },
@@ -217,6 +262,9 @@ fun EditorView(
             // opened on, which is what the verbs in it carry.
             var slideMenuAt: Offset? by remember { mutableStateOf(null) }
             var slideMenuFor: String? by remember { mutableStateOf(null) }
+            // The row a Rename verb was picked on, null when no dialog is open.
+            // View-local like the menus: the name only reaches the loop on OK.
+            var renamingId: String? by remember { mutableStateOf(null) }
 
             Column(modifier.fillMaxSize().background(tokens.chrome)) {
                 EditorToolbar(
@@ -288,6 +336,8 @@ fun EditorView(
                             onSelectSlide = onSelectSlide,
                             onToggleCollapsed = onToggleCollapsed,
                             thumbnailRadius = theme.thumbR,
+                            isEditingLayouts = state.isEditingLayouts,
+                            onExitSlideLayouts = onExitSlideLayouts,
                             onContextClick = { slideId, positionInWindow ->
                                 onSlideContextClick(slideId)
                                 val native = onShowSlideContextMenu
@@ -297,7 +347,7 @@ fun EditorView(
                                         ?.windowToLocal(positionInWindow)
                                         ?: positionInWindow
                                 } else {
-                                    native(slideId, positionInWindow)
+                                    native(slideId, positionInWindow) { renamingId = slideId }
                                 }
                             },
                             slideDrag = state.slideDrag,
@@ -307,8 +357,9 @@ fun EditorView(
                             modifier = Modifier.onGloballyPositioned { navigatorCoords = it },
                         )
 
-                        val rowSections: List<EditorMenuSection> =
-                            slideMenuFor?.let(slideMenuSections).orEmpty()
+                        val rowSections: List<EditorMenuSection> = slideMenuFor
+                            ?.let { id -> slideMenuSections(id) { renamingId = id } }
+                            .orEmpty()
 
                         if (rowSections.isNotEmpty()) ContextMenu(
                             sections = rowSections,
@@ -338,6 +389,8 @@ fun EditorView(
 
                             EditorCanvas(
                                 slide = selectedSlide,
+                                layout = state.selectedLayout,
+                                isEditingLayouts = state.isEditingLayouts,
                                 selectedElementIds = state.selectedElementIds,
                                 marquee = state.marquee,
                                 onSelectElement = onSelectElement,
@@ -388,9 +441,18 @@ fun EditorView(
 
                         if (state.showNotes) SpeakerNotes(notes = selectedSlide.notes)
 
+                        // In layout mode the count is of layouts: the deck's slide
+                        // count says nothing about where the canvas is.
+                        val layouts: List<Slide> = state.document.layouts
                         EditorStatusBar(
-                            slideNumber = state.selectedSlideIndex() + 1,
-                            slideCount = state.document.allSlides().size,
+                            noun = if (state.isEditingLayouts) "layout" else "slide",
+                            slideNumber = if (state.isEditingLayouts) {
+                                layouts.indexOfFirst { it.id == selectedSlide.id } + 1
+                            } else {
+                                state.selectedSlideIndex() + 1
+                            },
+                            slideCount = if (state.isEditingLayouts) layouts.size
+                            else state.document.allSlides().size,
                             uiLabel = theme.uiLabel + if (dark) " · dark" else " · light",
                         )
                     }
@@ -400,6 +462,14 @@ fun EditorView(
                         onSelectTab = onSelectInspectorTab,
                         slide = selectedSlide,
                         onUpdateSlide = onUpdateSlide,
+                        layouts = state.document.layouts,
+                        isEditingLayouts = state.isEditingLayouts,
+                        onApplyLayout = onApplyLayout,
+                        onReapplyLayout = onReapplyLayout,
+                        onEditSlideLayouts = onEditSlideLayouts,
+                        onExitSlideLayouts = onExitSlideLayouts,
+                        onAddPlaceholder = onAddPlaceholder,
+                        onRenameSlide = onRenameSlide,
                         selectedElements = state.selectedElements,
                         onUpdateElements = onUpdateElements,
                         onPreviewElements = onPreviewElements,
@@ -411,8 +481,65 @@ fun EditorView(
                     )
                 }
             }
+
+            // Outside the layout rather than in the navigator: a dialog belongs to
+            // the window, and the row it was opened on can well have scrolled away
+            // before it is answered. Keyed on the id, so it holds the name of the
+            // row it opened on whatever the selection does meanwhile.
+            renamingId?.let { id ->
+                RenameDialog(
+                    name = state.document.slideById(id)?.title.orEmpty(),
+                    onDismiss = { renamingId = null },
+                    onRename = { name ->
+                        renamingId = null
+                        onRenameSlide(id, name)
+                    },
+                )
+            }
         }
     }
+}
+
+/**
+ * The navigator's Rename: one field over the name it starts with, committed by
+ * the button or by Enter. A blank name is no name, so it commits nothing.
+ */
+@Composable
+private fun RenameDialog(name: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+    var text: String by remember(name) { mutableStateOf(name) }
+    val focus: FocusRequester = remember { FocusRequester() }
+
+    fun commit() {
+        val entered: String = text.trim()
+        if (entered.isEmpty()) onDismiss() else onRename(entered)
+    }
+
+    // The name is what the dialog is for, so it is typed into straight away
+    // rather than after a click.
+    LaunchedEffect(Unit) { focus.requestFocus() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focus)
+                    .onPreviewKeyEvent { event ->
+                        val entered: Boolean = event.type == KeyEventType.KeyDown &&
+                            (event.key == Key.Enter || event.key == Key.NumPadEnter)
+                        if (entered) commit()
+                        entered
+                    },
+            )
+        },
+        confirmButton = { TextButton(onClick = ::commit) { Text("Rename") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**

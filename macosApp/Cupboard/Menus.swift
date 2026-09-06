@@ -270,6 +270,33 @@ func slideEntries(
     return entries
 }
 
+/// The layout verbs: what a navigator row offers while the navigator is showing
+/// layouts. Fewer than a slide's, and deliberately so: a layout has no place in
+/// a presentation, so nothing here skips it, and the clipboard carries slides.
+///
+/// New Layout lands after the selected layout, so the row is selected first, the
+/// way `pasteAfterSlide` sends a select ahead of its paste. Delete and Duplicate
+/// carry the row's own id: the core reads it out of the layout list itself.
+func layoutEntries(
+    _ host: EditorHost,
+    index: Int32,
+    layoutId: String,
+    onRename: @escaping () -> Void
+) -> [MenuEntry] {
+    [
+        MenuEntry(title: "New Layout", action: {
+            host.selectSlide(index: index)
+            host.addLayout()
+        }),
+        MenuEntry(title: "Duplicate", action: { host.duplicateSlide(id: layoutId) }),
+        MenuEntry(title: "Delete", action: { host.deleteSlide(id: layoutId) }),
+
+        .separator(),
+
+        MenuEntry(title: "Rename...", action: onRename),
+    ]
+}
+
 /// What each snap switch is called, in the order Kotlin's `SnapKind` lists them.
 /// The position is the whole protocol: an index goes back to `setSnap`, so this
 /// list is also what says how many switches there are.

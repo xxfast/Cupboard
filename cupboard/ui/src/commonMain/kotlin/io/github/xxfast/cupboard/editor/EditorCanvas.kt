@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -97,15 +98,19 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
+import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.lineIndexOf
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.outdentLine
+import io.github.xxfast.cupboard.document.placeholderRole
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.screens.editor.GuideDrag
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -115,6 +120,13 @@ import kotlin.math.min
 
 private val Accent = Color(0xFF7F52FF)
 private val GuideYellow = Color(0xFFF5C518)
+
+/**
+ * The placeholder annotation's one colour, outline and tag alike: white at a
+ * quarter, so it reads on the dark slide without competing with what is drawn on
+ * it. Not the accent, which means selection everywhere else on this canvas.
+ */
+private val PlaceholderMark = Color(0x66FFFFFF)
 
 /**
  * The sheet a source is typed on, and what is typed on it. Shared by every
@@ -195,6 +207,20 @@ private fun rectBetween(a: Offset, b: Offset): Frame =
 @Composable
 fun EditorCanvas(
     slide: Slide,
+    /**
+     * The layout the slide is built on, null for a slide on none. Its static
+     * objects draw behind the slide's own and are background-locked: they hit-test
+     * as empty slide space, so nothing here selects, moves or resizes one. Editing
+     * them is editing the layout, which is what layout mode is for.
+     */
+    layout: Slide? = null,
+    /**
+     * Whether the slide on the canvas is a layout being edited. It only annotates:
+     * the placeholders wear a dashed outline and their role, so a slot on a layout
+     * reads as a slot. On an ordinary slide nothing is drawn, where a placeholder
+     * is simply an element the slide owns.
+     */
+    isEditingLayouts: Boolean = false,
     selectedElementIds: List<String>,
     marquee: Frame?,
     onSelectElement: (String?) -> Unit,
@@ -310,9 +336,13 @@ fun EditorCanvas(
 
         SlideSurface(
             modifier = Modifier.fillMaxSize().padding(start = rulerInset, top = rulerInset),
-            slideBackground = slide.background,
+            slideBackground = slide.effectiveBackground(layout),
             zoom = zoom,
         ) {
+            // Behind everything the slide owns, and out of every hit test below:
+            // the gesture code only ever looks at `slide.elements`.
+            for (element in slide.inheritedElements(layout)) ElementView(element)
+
             // The element under the caret keeps its place in the layout but paints
             // nothing: the text field below draws it, and two copies of the same
             // text half a pixel apart is what an editor must never show.
@@ -694,6 +724,16 @@ fun EditorCanvas(
                         )
                     }
             )
+
+            // Under the selection ring and over everything drawn: an annotation on
+            // the layout, not a part of it. Nothing here is hit-tested, the same
+            // way the rings above aren't.
+            if (isEditingLayouts) {
+                for (element in slide.elements) {
+                    val role: PlaceholderRole = element.placeholderRole ?: continue
+                    PlaceholderOverlay(element, role, canvasScale)
+                }
+            }
 
             // Selection rings, one per selected element; handles only for a lone one.
             val selected: List<Element> = slide.elements.filter { it.id in selectedElementIds }
@@ -1667,6 +1707,47 @@ private fun SelectionOverlay(element: Element, scale: Float, handles: Boolean) {
                 .graphicsLayer { rotationZ = element.rotation }
                 .background(Color.White, RoundedCornerShape((2f / scale).dp))
                 .border((1.5f / scale).dp, Accent, RoundedCornerShape((2f / scale).dp))
+        )
+    }
+}
+
+/**
+ * What a placeholder wears while its layout is edited: a dashed hairline round
+ * its frame and its role in the top-left corner.
+ *
+ * Every measurement is divided by [scale], the way the selection ring's is, so
+ * the annotation stays the same size on screen at every zoom rather than growing
+ * with the slide it sits on.
+ */
+@Composable
+private fun PlaceholderOverlay(element: Element, role: PlaceholderRole, scale: Float) {
+    val frame: Frame = element.frame
+
+    Box(
+        Modifier
+            .offset(frame.x.dp, frame.y.dp)
+            .size(frame.width.dp, frame.height.dp)
+            .graphicsLayer {
+                rotationZ = element.rotation
+                transformOrigin = TransformOrigin.Center
+            },
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val dash: Float = (4f / scale).dp.toPx()
+            drawRect(
+                color = PlaceholderMark,
+                style = Stroke(
+                    width = (1f / scale).dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(dash, dash)),
+                ),
+            )
+        }
+        Text(
+            text = role.name,
+            color = PlaceholderMark,
+            fontSize = (10f / scale).sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(start = (4f / scale).dp, top = (2f / scale).dp),
         )
     }
 }

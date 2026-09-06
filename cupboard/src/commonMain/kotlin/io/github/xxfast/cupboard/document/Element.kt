@@ -95,6 +95,32 @@ sealed interface Element {
     ): Element
 }
 
+/**
+ * What a placeholder stands for, and so what an instance of it is: the one fact
+ * apply and reapply map a slide's elements to a layout's by.
+ *
+ * Only the kinds that can hold slide content carry one ([TextElement],
+ * [ImageElement], [CodeElement]): a shape or a diagram on a layout is decoration,
+ * which every slide inherits as it is rather than filling in.
+ */
+@Serializable
+enum class PlaceholderRole { Title, Body, Media, Code }
+
+/**
+ * The role this element answers for, null for anything that can't hold one.
+ *
+ * On a layout a role makes the element a placeholder; on a slide it marks the
+ * instance that placeholder produced. Named apart from the fields it reads so an
+ * `Element` and a `TextElement` are never two different `role`s at one call site.
+ */
+val Element.placeholderRole: PlaceholderRole?
+    get() = when (this) {
+        is TextElement -> role
+        is ImageElement -> role
+        is CodeElement -> role
+        else -> null
+    }
+
 enum class TextAlign { Start, Center, End }
 
 /**
@@ -142,6 +168,8 @@ data class TextElement(
      * which is enough for the shape it takes on a slide. Nothing opens it yet.
      */
     val link: String? = null,
+    /** See [PlaceholderRole]: set, this is a placeholder on a layout or an instance on a slide. */
+    val role: PlaceholderRole? = null,
 ) : Element {
     override fun update(
         frame: Frame,
@@ -283,6 +311,8 @@ data class ImageElement(
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
     val placeholder: String = "Drop frame capture here",
+    /** See [PlaceholderRole]. Not [placeholder], which is the prompt the empty frame draws. */
+    val role: PlaceholderRole? = null,
 ) : Element {
     override fun update(
         frame: Frame,
@@ -466,6 +496,8 @@ data class CodeElement(
      * the code rather than the walk through it.
      */
     val steps: List<CodeStep> = emptyList(),
+    /** See [PlaceholderRole]: set, this is a placeholder on a layout or an instance on a slide. */
+    val role: PlaceholderRole? = null,
 ) : Element {
     override fun update(
         frame: Frame,

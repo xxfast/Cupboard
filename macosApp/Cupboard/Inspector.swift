@@ -57,7 +57,9 @@ extension EditorView {
     /// Format names what it is formatting, so the title follows the selection.
     func inspectorTitle(_ ui: Chrome) -> String {
         if ui.tab == InspectorTab.animate { return "Build" }
-        if ui.tab == InspectorTab.document { return "Slide" }
+        // In layout mode the Document panel is about the layout being edited,
+        // and the title is the first thing that has to say so.
+        if ui.tab == InspectorTab.document { return ui.editingLayouts ? "Layout" : "Slide" }
         return ui.element?.kind ?? "Text"
     }
 
@@ -925,44 +927,102 @@ extension EditorView {
 
     // MARK: Document panel
 
-    /// The selected slide, as far as the document model goes: the number switch
-    /// and the background are real and ride through `states`; the layout card
-    /// above them is still static, layouts not being modelled yet.
-    func documentPanel(_ ui: Chrome) -> some View {
+    /// The selected slide: the layout it is on, the number switch and the
+    /// background, all riding through `states`.
+    ///
+    /// In layout mode the panel is about the layout being edited instead, so it
+    /// shows what a layout has (a name, its placeholders) and drops what only a
+    /// slide has (the layout card, the appearance switches).
+    @ViewBuilder func documentPanel(_ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: Layout.panelPadding) {
-            slideLayoutCard
-            appearanceSection(ui)
-            palette.divider.frame(height: 1)
-            backgroundSection(ui)
-            Spacer(minLength: 0)
-            editLayoutButton
+            if ui.editingLayouts {
+                layoutNameSection(ui)
+                palette.divider.frame(height: 1)
+                placeholdersSection(ui)
+                palette.divider.frame(height: 1)
+                backgroundSection(ui)
+                Spacer(minLength: 0)
+                panelButton("Done", symbol: "checkmark") { host.exitSlideLayouts() }
+            } else {
+                slideLayoutCard(ui)
+                reapplyLayoutButton(ui)
+                appearanceSection(ui)
+                palette.divider.frame(height: 1)
+                backgroundSection(ui)
+                Spacer(minLength: 0)
+                editLayoutButton
+            }
         }
         .padding(Layout.panelPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    var slideLayoutCard: some View {
-        HStack(spacing: 12) {
-            layoutPreview
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Slide Layout")
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.subtle)
-                Text("Title")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.text)
+    /// The layout the slide is on, and the pick that moves it to another. "None"
+    /// is a real choice, not an empty state: a slide on no layout keeps
+    /// everything it has and simply inherits nothing.
+    func slideLayoutCard(_ ui: Chrome) -> some View {
+        Menu {
+            Button("None") { host.applyLayout(layoutId: nil) }
+            Divider()
+            ForEach(ui.layouts) { layout in
+                Button(layout.name) { host.applyLayout(layoutId: layout.id) }
             }
-            Spacer(minLength: 0)
-            Text("\u{2304}")
-                .font(.system(size: 10))
-                .foregroundStyle(palette.subtle)
+        } label: {
+            HStack(spacing: 12) {
+                layoutPreview(ui)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Slide Layout")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.subtle)
+                    Text(currentLayoutName(ui))
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.text)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Text("\u{2304}")
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.subtle)
+            }
+            .padding(10)
+            .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
-        .padding(10)
-        .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+    }
+
+    func currentLayoutName(_ ui: Chrome) -> String {
+        ui.layouts.first { $0.id == ui.slideLayoutId }?.name ?? "None"
+    }
+
+    /// Every placeholder back where the layout puts it. Off while the slide is
+    /// on no layout: there is nothing to put it back to.
+    func reapplyLayoutButton(_ ui: Chrome) -> some View {
+        panelButton("Reapply Layout", symbol: "arrow.clockwise") { host.reapplyLayout() }
+            .disabled(!ui.canReapplyLayout)
+            .opacity(ui.canReapplyLayout ? 1 : 0.45)
+    }
+
+    /// The layout the slide is on, rendered by the shared Compose renderer the
+    /// way a navigator thumbnail is. The drawn bars are the fallback, for a slide
+    /// on no layout and for the moment before a render lands.
+    @ViewBuilder func layoutPreview(_ ui: Chrome) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
+        if let id = ui.slideLayoutId, let image = host.layoutThumbnail(layoutId: id, width: 62) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 62)
+                .clipShape(shape)
+                .overlay { shape.inset(by: 0.5).stroke(palette.thumbEdge, lineWidth: 1) }
+        } else {
+            layoutPreviewBars
+        }
     }
 
     /// A slide the way a layout picker draws one: white paper, three grey bars.
-    var layoutPreview: some View {
+    var layoutPreviewBars: some View {
         let shape = RoundedRectangle(cornerRadius: 3, style: .continuous)
         return VStack(alignment: .leading, spacing: 0) {
             previewBar(width: 34, height: 4, color: Color(rgb: 0x2A2630))
@@ -979,12 +1039,56 @@ extension EditorView {
         .overlay { shape.inset(by: 0.5).stroke(Color.black.opacity(0.12), lineWidth: 1) }
     }
 
+    /// The layout's name, which is what the navigator row and the slide's layout
+    /// popup both show. Committed like every other string field here.
+    func layoutNameSection(_ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Name")
+            StringField(
+                placeholder: "Layout",
+                value: ui.slideTitle,
+                palette: palette
+            ) { typed in
+                guard !typed.isEmpty else { return }
+                host.renameSelectedSlide(title: typed)
+            }
+        }
+    }
+
+    /// What a slide on this layout fills in. The buttons are the roles Kotlin
+    /// lists, in its order: the index is what goes back, so a role added to the
+    /// document model shows up here with nothing to change but its glyph.
+    func placeholdersSection(_ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Placeholders")
+            ForEach(Array(ui.placeholderRoles.enumerated()), id: \.offset) { index, role in
+                panelButton(role, symbol: Self.placeholderSymbol(role)) {
+                    host.addPlaceholder(role: Int32(index))
+                }
+            }
+        }
+    }
+
+    /// The glyph for a role, by name. An unknown one still draws a button: the
+    /// list is the document model's to grow, and a missing glyph is not a reason
+    /// to hide the role it belongs to.
+    static func placeholderSymbol(_ role: String) -> String {
+        switch role {
+        case "Title": return "textformat"
+        case "Body": return "text.alignleft"
+        case "Media": return "photo"
+        case "Code": return "chevron.left.forwardslash.chevron.right"
+        default: return "square.dashed"
+        }
+    }
+
     func previewBar(width: CGFloat, height: CGFloat, color: Color) -> some View {
         RoundedRectangle(cornerRadius: 1).fill(color).frame(width: width, height: height)
     }
 
-    /// Title and Body are still inert: what a layout puts on a slide is the
-    /// layout's, and layouts are not modelled yet. The number is the slide's own.
+    /// Title and Body are still inert: they switch a layout's placeholders off
+    /// for this one slide, which the document model has no word for yet. The
+    /// number is the slide's own.
     func appearanceSection(_ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Appearance")
@@ -1142,12 +1246,19 @@ extension EditorView {
         .buttonStyle(.plain)
     }
 
+    /// Into layout mode, on the layout this slide is already on. No symbol, the
+    /// way the design draws it: a bare label across the foot of the panel.
     var editLayoutButton: some View {
-        Text("Edit Slide Layout")
-            .font(.system(size: 12.5))
-            .foregroundStyle(palette.ctrlText)
-            .frame(maxWidth: .infinity)
-            .frame(height: 26)
-            .background(palette.buttonFill, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return Button { host.editSlideLayouts() } label: {
+            Text("Edit Slide Layout")
+                .font(.system(size: 12.5))
+                .foregroundStyle(palette.ctrlText)
+                .frame(maxWidth: .infinity)
+                .frame(height: 26)
+                .background(palette.buttonFill, in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
     }
 }

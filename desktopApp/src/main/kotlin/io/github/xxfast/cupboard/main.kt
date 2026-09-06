@@ -48,6 +48,7 @@ import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
 import io.github.xxfast.cupboard.screens.editor.formatSections
 import io.github.xxfast.cupboard.screens.editor.insertSections
+import io.github.xxfast.cupboard.screens.editor.layoutSections
 import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
 import java.awt.Component
@@ -431,6 +432,17 @@ fun main() {
                             includePaste = false,
                         ),
                     )
+
+                    Separator()
+
+                    // Written here rather than into the shared spec: it is a slide
+                    // verb the navigator's menu has no business offering on a
+                    // layout, and in layout mode there is no slide to reapply to.
+                    Item(
+                        text = "Reapply Layout",
+                        enabled = !state.isEditingLayouts && state.selectedLayout != null,
+                        onClick = { viewModel.onReapplyLayout(state.selectedSlide.id) },
+                    )
                 }
 
                 // Whole-box text styling. Bold, Italic and Underline take the
@@ -508,6 +520,20 @@ fun main() {
                             )
                         }
                     }
+
+                    Separator()
+
+                    // A plain item rather than a checkbox: layout mode is a place
+                    // the editor goes, not a thing it shows, so the entry says
+                    // which way it is about to go.
+                    Item(
+                        text = if (state.isEditingLayouts) "Exit Slide Layouts"
+                        else "Edit Slide Layouts",
+                        onClick = {
+                            if (state.isEditingLayouts) viewModel.onExitSlideLayouts()
+                            else viewModel.onEditSlideLayouts()
+                        },
+                    )
                 }
             }
 
@@ -531,7 +557,12 @@ fun main() {
                     viewModel = viewModel,
                     // The document and index the editor has right now: play is a
                     // snapshot, later edits don't reach the running presentation.
-                    onPlay = { document, index -> playing = PlayRequest(document, index) },
+                    //
+                    // Off in layout mode: a layout is not a slide of the talk, and
+                    // the index the player would start from names nothing there.
+                    onPlay = if (state.isEditingLayouts) null else {
+                        { document, index -> playing = PlayRequest(document, index) }
+                    },
                     onShowContextMenu = nativeMenu?.let { menu ->
                         { elementId, positionInWindow ->
                             showNativeMenu(
@@ -547,18 +578,25 @@ fun main() {
                     // the row's verbs carry its id, so nothing here has to guess
                     // what the click did to the selection.
                     onShowSlideContextMenu = nativeMenu?.let { menu ->
-                        { slideId, positionInWindow ->
+                        { slideId, positionInWindow, onRename ->
                             showNativeMenu(
                                 popup = menu,
                                 parent = window.contentPane,
                                 density = density,
                                 positionInWindow = positionInWindow,
-                                sections = slideSections(
-                                    state = state,
-                                    viewModel = viewModel,
-                                    slideId = slideId,
-                                    includePaste = true,
-                                ),
+                                // In layout mode the row is a layout, so the verbs
+                                // are the layout ones. Rename's dialog belongs to
+                                // the editor view, which hands its opener in.
+                                sections = if (state.isEditingLayouts) {
+                                    layoutSections(viewModel, slideId, onRename)
+                                } else {
+                                    slideSections(
+                                        state = state,
+                                        viewModel = viewModel,
+                                        slideId = slideId,
+                                        includePaste = true,
+                                    )
+                                },
                             )
                         }
                     },

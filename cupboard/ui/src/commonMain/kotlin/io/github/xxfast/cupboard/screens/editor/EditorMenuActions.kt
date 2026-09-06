@@ -356,6 +356,38 @@ fun slideSections(
     ),
 )
 
+/**
+ * What a right-click on a navigator row offers while layout mode is open: a new
+ * layout, a copy of this one, its name, then away with it.
+ *
+ * The verbs are the slide ones underneath. `DuplicateSlide` and `DeleteSlide`
+ * both work out which list the id sits in, so a layout duplicates and deletes
+ * through the events a slide does, and New Layout is its own event only because
+ * it says where the fresh one goes. Renaming is the one verb with a dialog behind
+ * it, and a dialog is the shell's, so this asks for it through [onRename].
+ *
+ * Nothing is greyed, for [slideSections]' reason: the presenter keeps the last
+ * layout the way it keeps the last slide, so there is nothing to protect here.
+ */
+fun layoutSections(
+    viewModel: EditorViewModel,
+    layoutId: String,
+    onRename: () -> Unit,
+): List<EditorMenuSection> = listOf(
+    EditorMenuSection(
+        listOf(
+            EditorMenuItem("New Layout", enabled = true) { viewModel.onAddLayout() },
+            EditorMenuItem("Duplicate", enabled = true) { viewModel.onDuplicateSlide(layoutId) },
+            EditorMenuItem("Rename...", enabled = true, onPick = onRename),
+        ),
+    ),
+    EditorMenuSection(
+        listOf(
+            EditorMenuItem("Delete", enabled = true) { viewModel.onDeleteSlide(layoutId) },
+        ),
+    ),
+)
+
 /** Whether the slide [slideId] names is out of the presentation. An id this
  * document doesn't hold reads as in it, which keeps the verb's title sane. */
 private fun EditorState.isSkipped(slideId: String): Boolean =

@@ -136,6 +136,15 @@ struct CupboardHostApp: App {
                 Menu("Snap to") {
                     SnapToggles(host: host, snap: ui.snap)
                 }
+
+                Divider()
+
+                // One item, titled by which way it goes: layout mode is a place
+                // the editor is in, not a setting, so this is a verb rather than
+                // a checkmark.
+                Button(ui.editingLayouts ? "Exit Slide Layouts" : "Edit Slide Layouts") {
+                    if ui.editingLayouts { host.exitSlideLayouts() } else { host.editSlideLayouts() }
+                }
             }
             insertMenu
             slideMenu
@@ -175,6 +184,13 @@ struct CupboardHostApp: App {
             // Paste: in the bar that verb is Edit > Paste's.
             let _ = model.generation
             MenuEntries(entries: slideEntries(host, slideId: nil, includePaste: false))
+
+            Divider()
+
+            // Only in the bar: it acts on the selected slide, so a row menu
+            // offering it would be pointing at one slide and moving another.
+            Button("Reapply Layout") { host.reapplyLayout() }
+                .disabled(!host.canReapplyLayout())
         }
     }
 

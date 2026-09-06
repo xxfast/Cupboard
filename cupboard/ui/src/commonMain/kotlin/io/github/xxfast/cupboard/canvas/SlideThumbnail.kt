@@ -24,9 +24,12 @@ fun SlideThumbnail(
     width: Dp = 150.dp,
     cornerRadius: Dp = 5.dp,
     number: Int? = null,
+    /** The layout the slide is built on, whose static objects it draws behind its own. */
+    layout: Slide? = null,
 ) {
     SlideView(
         slide = slide,
+        layout = layout,
         number = number,
         modifier = modifier
             .width(width)

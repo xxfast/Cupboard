@@ -28,6 +28,8 @@ fun EditorStatusBar(
     slideNumber: Int,
     slideCount: Int,
     uiLabel: String,
+    /** What the count is counting: "layout" while the layouts are what's on show. */
+    noun: String = "slide",
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -42,7 +44,7 @@ fun EditorStatusBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            StatusText("slide $slideNumber / $slideCount", tokens.faint)
+            StatusText("$noun $slideNumber / $slideCount", tokens.faint)
             StatusText("944 × 531 @ 1x", tokens.faint)
             // The one flexible cell: ellipsizes in a narrow window instead of
             // pushing the synced indicator off the end of the row.

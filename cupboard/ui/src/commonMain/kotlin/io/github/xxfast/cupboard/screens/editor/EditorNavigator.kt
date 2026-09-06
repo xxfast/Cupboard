@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -57,13 +58,17 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 
@@ -93,6 +98,14 @@ fun EditorNavigator(
     onSelectSlide: (String) -> Unit,
     onToggleCollapsed: (String) -> Unit,
     thumbnailRadius: Dp,
+    /**
+     * Layout mode: the rows are the deck's layouts rather than its slides, which
+     * the outline has already decided. All this panel does with it is head the
+     * list with the strip that says so and give each row its name, since one
+     * layout looks much like another in a thumbnail.
+     */
+    isEditingLayouts: Boolean = false,
+    onExitSlideLayouts: () -> Unit = {},
     onContextClick: (slideId: String, positionInWindow: Offset) -> Unit = { _, _ -> },
     /** The row on the move and the gap it is over, null when nothing is dragging. */
     slideDrag: SlideDrag? = null,
@@ -151,8 +164,17 @@ fun EditorNavigator(
         // lands on the design's 14.
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp),
     ) {
+        // The one thing that tells layout mode from ordinary editing at a glance,
+        // and the way back out of it. Scrolls with the rows rather than pinning:
+        // it heads the list it names.
+        if (isEditingLayouts) item(key = "slide-layouts-header") {
+            LayoutsHeader(onDone = onExitSlideLayouts)
+        }
+
         items(rows, key = { it.slideId }) { entry ->
-            val slide: Slide = document.slides[entry.slideIndex]
+            // By id, not by index: in layout mode the rows are the deck's
+            // layouts, which are a list of their own.
+            val slide: Slide = document.slideById(entry.slideId) ?: return@items
             val selected: Boolean = entry.slideId == selectedSlideId
             val dragged: Boolean = entry.slideId in draggedIds
             // On release the displacement and the placement animate with one
@@ -175,6 +197,12 @@ fun EditorNavigator(
             ) {
                 NavigatorRow(
                     slide = slide,
+                    // Null on a layout, and for free: a layout is on no layout, so
+                    // its thumbnail draws itself and nothing behind it.
+                    layout = document.layoutOf(slide),
+                    // A deck of layouts is a deck of near-identical thumbnails, so
+                    // there the name is the row. Ordinary rows keep the number alone.
+                    title = entry.title.takeIf { isEditingLayouts },
                     entry = entry,
                     selected = selected,
                     thumbnailRadius = thumbnailRadius,
@@ -204,6 +232,46 @@ fun EditorNavigator(
                     onEndSlideDrag = onEndSlideDrag,
                 )
             }
+        }
+    }
+}
+
+/**
+ * The strip that heads the navigator in layout mode: what the rows are, and the
+ * button that puts them away. The label is the speaker notes' label, since it
+ * says the same kind of thing about the panel under it.
+ */
+@Composable
+private fun LayoutsHeader(onDone: () -> Unit) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 6.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "SLIDE LAYOUTS",
+            color = tokens.faint,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Row(
+            modifier = Modifier
+                .height(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(tokens.tonal)
+                .clickable(onClick = onDone)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Done",
+                color = tokens.tonalText,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
 }
@@ -239,6 +307,9 @@ private fun draggedRun(entries: List<OutlineEntry>, slideId: String?): Set<Strin
 @Composable
 private fun NavigatorRow(
     slide: Slide,
+    layout: Slide?,
+    /** The name under the thumbnail, null for a row that shows none. */
+    title: String?,
     entry: OutlineEntry,
     selected: Boolean,
     thumbnailRadius: Dp,
@@ -403,16 +474,26 @@ private fun NavigatorRow(
                 textAlign = TextAlign.End,
                 modifier = Modifier.width(14.dp).padding(top = 2.dp),
             )
-            SlideThumbnail(
-                slide = slide,
-                width = (136 - 12 * minOf(entry.depth, 3)).dp,
-                cornerRadius = thumbnailRadius,
-                modifier = if (selected) {
-                    Modifier.border(2.dp, tokens.accent, RoundedCornerShape(thumbnailRadius))
-                } else {
-                    Modifier
-                },
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                SlideThumbnail(
+                    slide = slide,
+                    layout = layout,
+                    width = (136 - 12 * minOf(entry.depth, 3)).dp,
+                    cornerRadius = thumbnailRadius,
+                    modifier = if (selected) {
+                        Modifier.border(2.dp, tokens.accent, RoundedCornerShape(thumbnailRadius))
+                    } else {
+                        Modifier
+                    },
+                )
+                if (title != null) Text(
+                    text = title,
+                    color = if (selected) tokens.text else tokens.dim,
+                    fontSize = 11.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

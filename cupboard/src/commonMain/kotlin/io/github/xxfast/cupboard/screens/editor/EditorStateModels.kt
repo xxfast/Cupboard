@@ -5,11 +5,15 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
+import io.github.xxfast.cupboard.document.isLayout
+import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.AlignEdge
@@ -174,11 +178,36 @@ data class EditorState(
      * mid-edit, however it was left.
      */
     @Transient val editingElementId: String? = null,
+    /**
+     * Where the selection was when layout mode was entered, so leaving comes back
+     * to the slide you were on rather than to the top of the deck. Null whenever
+     * layout mode isn't open.
+     *
+     * Stored rather than [Transient]: which slide you were editing is part of
+     * where you left the editor, the same argument [focusedPane] makes.
+     */
+    val slideBeforeLayouts: String? = null,
 ) {
-    /** The selected slide, falling back to the first one if the id went stale. */
+    /**
+     * The selected slide, which in layout mode is a layout: both lists answer to
+     * one id, so every reduction from the element edits down works on a layout
+     * without knowing it is on one. Falls back to the first slide if the id went
+     * stale.
+     */
     val selectedSlide: Slide
-        get() = document.allSlides().firstOrNull { it.id == selectedSlideId }
-            ?: document.slides.first()
+        get() = document.slideById(selectedSlideId) ?: document.slides.first()
+
+    /**
+     * Whether the navigator is showing layouts rather than slides, which is the
+     * whole of what "layout mode" is: the selection naming a layout.
+     */
+    val isEditingLayouts: Boolean get() = document.isLayout(selectedSlideId)
+
+    /**
+     * The layout the selected slide is built on, null when it is on none. Null in
+     * layout mode too, and for free: layouts never stack, so a layout is on none.
+     */
+    val selectedLayout: Slide? get() = document.layoutOf(selectedSlide)
 
     /**
      * The selected elements, in selection order. Ids that no longer resolve are
@@ -344,8 +373,25 @@ data class EditorState(
      * Every slide as a navigator row, hidden ones included: [OutlineEntry.visible]
      * is false inside a collapsed group. For shells that animate collapsing, where
      * an exiting row has to stay in the tree to animate out.
+     *
+     * In layout mode the rows are the layouts, flat: they never nest, never
+     * collapse and are never skipped, so all a row carries is its place in the
+     * list. One outline for both means a navigator draws layout mode with the
+     * rows it already has.
      */
     fun fullOutline(): List<OutlineEntry> {
+        if (isEditingLayouts) return document.layouts.mapIndexed { index, layout ->
+            OutlineEntry(
+                slideId = layout.id,
+                title = layout.title,
+                depth = 0,
+                slideIndex = index,
+                number = index + 1,
+                hasChildren = false,
+                collapsed = false,
+            )
+        }
+
         val visibleIndices: Set<Int> = document.visibleIndices().toSet()
         val numbers: List<Int?> = document.presentationNumbers()
 
@@ -628,6 +674,56 @@ sealed interface EditorEvent {
      */
     data object EndTextEdit : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
+    /**
+     * Edit Slide Layouts: the navigator swaps its slides for the deck's layouts
+     * and the canvas edits one of them, Keynote's master mode.
+     *
+     * Selects the layout the current slide is on, or the first layout when it is
+     * on none, remembers where to come back to in [EditorState.slideBeforeLayouts],
+     * drops the element selection and puts the focus in the navigator. Nothing in
+     * the document changes, so no history entry: mode is not an edit. Already in
+     * layout mode, it does nothing, so re-entering can't lose the way back.
+     */
+    data object EditSlideLayouts : EditorEvent
+    /**
+     * Done: back to the slide layout mode was entered from, or to the first slide
+     * when that one is gone. [EditSlideLayouts]' kind, and no history entry either.
+     */
+    data object ExitSlideLayouts : EditorEvent
+    /**
+     * Puts the slide on [layoutId], or on no layout at all when that is null.
+     *
+     * What the slide keeps and what it takes is `Slide.applyingLayout`'s business:
+     * content survives, geometry and look come from the layout. One history entry,
+     * and a slide already exactly like this is a no-op.
+     */
+    data class ApplyLayout(val slideId: String, val layoutId: String?) : EditorEvent
+    /**
+     * Reapply Layout: puts every placeholder instance back where the layout the
+     * slide is already on says it goes. One history entry; a slide on no layout,
+     * and one nothing has moved on, are both no-ops.
+     */
+    data class ReapplyLayout(val slideId: String) : EditorEvent
+    /**
+     * A fresh empty layout after the selected one, and selected. One history
+     * entry: layouts live in the document, so making one is an edit like any
+     * other. What [AddSlide] does while layout mode is open.
+     */
+    data object AddLayout : EditorEvent
+    /**
+     * Renames the slide, or the layout, with [id]: the navigator's rename, and the
+     * only way a layout gets a name. One history entry, and a title that is
+     * already what it is asked to be is a no-op.
+     */
+    data class RenameSlide(val id: String, val title: String) : EditorEvent
+    /**
+     * Puts a placeholder of [role] on the layout being edited, dressed the way
+     * `defaultLayouts` dresses that role, and selects it. One history entry.
+     *
+     * Layout mode only: a placeholder on a slide is an instance of one, which is
+     * what applying a layout makes, never something a slide adds for itself.
+     */
+    data class AddPlaceholder(val role: PlaceholderRole) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent
     data object ToggleSidebar : EditorEvent

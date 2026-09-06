@@ -25,6 +25,16 @@ data class Document(
     val slideHeight: Float = SLIDE_HEIGHT,
     val slides: List<Slide> = emptyList(),
     /**
+     * The deck's masters, Keynote's word for them being "slide layouts". A layout
+     * is a [Slide] like any other, so every element reduction the editor has works
+     * on one unchanged; what makes it a layout is the list it sits in.
+     *
+     * Never nested and never skipped: a layout is a template, not a step in a
+     * presentation. See `SlideLayouts.kt` for the four this defaults to, and for
+     * what a slide inherits from the one it points at.
+     */
+    val layouts: List<Slide> = defaultLayouts(),
+    /**
      * The user's own guides, shared by every slide the way Keynote's are: a
      * guide is a property of the deck, not of the slide it was pulled out on.
      */
@@ -87,6 +97,13 @@ data class Slide(
     val showsSlideNumber: Boolean = false,
     /** What the slide paints behind its elements; null is the app's dark gradient. */
     val background: SlideBackground? = null,
+    /**
+     * The layout in [Document.layouts] this slide is built on, null for a slide
+     * on no layout at all, which is every deck written before layouts existed.
+     *
+     * Always null on a layout itself: layouts never stack.
+     */
+    val layoutId: String? = null,
 )
 
 /**
@@ -118,8 +135,37 @@ sealed interface SlideBackground {
 /** Slides in presentation order. Kept for call-site symmetry with the old tree model. */
 fun Document.allSlides(): List<Slide> = slides
 
-fun Document.updateSlide(updated: Slide): Document =
-    copy(slides = slides.map { if (it.id == updated.id) updated else it })
+/**
+ * The slide with [id], layouts included: [slides] first, then [layouts]. Null
+ * for an id this document holds in neither list.
+ *
+ * One lookup for both lists on purpose. A layout is edited through the very
+ * reductions a slide is, so everything from the selection down asks for a slide
+ * by id and gets one whichever list it came out of.
+ */
+fun Document.slideById(id: String): Slide? =
+    slides.firstOrNull { it.id == id } ?: layouts.firstOrNull { it.id == id }
+
+/** Whether [id] names a layout rather than a slide, i.e. whether the editor is in layout mode. */
+fun Document.isLayout(id: String): Boolean = layouts.any { it.id == id }
+
+/**
+ * Replaces the slide with the same id, in whichever list holds it. An id this
+ * document holds in neither returns this same instance.
+ *
+ * The list is looked up rather than passed in so every element reduction lands
+ * on a layout exactly as it lands on a slide, with nothing about layout mode in
+ * it.
+ */
+fun Document.updateSlide(updated: Slide): Document = when {
+    slides.any { it.id == updated.id } ->
+        copy(slides = slides.map { if (it.id == updated.id) updated else it })
+
+    layouts.any { it.id == updated.id } ->
+        copy(layouts = layouts.map { if (it.id == updated.id) updated else it })
+
+    else -> this
+}
 
 /** Replaces the element with the same id. An id this slide doesn't hold changes nothing. */
 fun Slide.updateElement(updated: Element): Slide =

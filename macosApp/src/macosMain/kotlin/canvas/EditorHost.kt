@@ -40,6 +40,7 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeCatalog
 import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.document.ShapeElement
@@ -61,6 +62,7 @@ import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
@@ -433,7 +435,15 @@ class EditorHost {
 
     // The number is part of the cache key, not just the slide: skipping an
     // earlier slide renumbers every row after it without touching one of them.
-    private class Thumbnail(val slide: Slide, val number: Int?, val width: Int, val image: NSImage)
+    // So is the layout it resolved against: a slide draws what it inherits, so
+    // editing a layout changes every thumbnail on it without touching a slide.
+    private class Thumbnail(
+        val slide: Slide,
+        val layout: Slide?,
+        val number: Int?,
+        val width: Int,
+        val image: NSImage,
+    )
 
     private val thumbnails = mutableMapOf<String, Thumbnail>()
 
@@ -481,6 +491,7 @@ class EditorHost {
             Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
                 EditorCanvas(
                     slide = state.selectedSlide,
+                    layout = state.selectedLayout,
                     selectedElementIds = state.selectedElementIds,
                     marquee = state.marquee,
                     onSelectElement = viewModel::onSelectElement,
@@ -563,10 +574,22 @@ class EditorHost {
 
     fun canRedo(): Boolean = state.canRedo
 
-    fun selectedSlideIndex(): Int = state.selectedSlideIndex()
+    /**
+     * Which row is selected, and which row a click selects. Both count in the
+     * list the navigator is showing, so in layout mode they count layouts: a row
+     * index is a place in the rows, not a place in the deck.
+     */
+    fun selectedSlideIndex(): Int =
+        if (state.isEditingLayouts) state.document.layouts.indexOfFirst { it.id == state.selectedSlideId }
+        else state.selectedSlideIndex()
 
     fun selectSlide(index: Int) {
-        viewModel.onSelectSlideAt(index)
+        if (!state.isEditingLayouts) {
+            viewModel.onSelectSlideAt(index)
+            return
+        }
+        val layout: Slide = state.document.layouts.getOrNull(index) ?: return
+        viewModel.onSelectSlide(layout.id)
     }
 
     /**
@@ -1455,6 +1478,70 @@ class EditorHost {
     }
 
     /**
+     * Slide layouts, Keynote's masters. Layout mode is a selection sitting on a
+     * layout rather than on a slide, so the shell asks whether it is in it rather
+     * than keeping a flag of its own: one owner, the same rule the panel toggles
+     * follow.
+     *
+     * The two lists are parallel and stay that way, ids and names off one read of
+     * the document: a name is what a menu shows and an id is what goes back, and
+     * neither travels as a [Slide] the shell could edit its way around.
+     */
+    fun isEditingLayouts(): Boolean = state.isEditingLayouts
+
+    fun layoutNames(): List<String> = state.document.layouts.map { it.title }
+
+    fun layoutIds(): List<String> = state.document.layouts.map { it.id }
+
+    /** The layout the selected slide is built on, null when it is on none. */
+    fun selectedSlideLayoutId(): String? = state.selectedLayout?.id
+
+    /** Puts the selected slide on [layoutId], or on no layout when that is null. */
+    fun applyLayout(layoutId: String?) {
+        viewModel.onApplyLayout(state.selectedSlide.id, layoutId)
+    }
+
+    /** Every placeholder back where the layout says it goes. A slide on none has nothing to reapply. */
+    fun canReapplyLayout(): Boolean = !state.isEditingLayouts && state.selectedLayout != null
+
+    fun reapplyLayout() {
+        if (!canReapplyLayout()) return
+        viewModel.onReapplyLayout(state.selectedSlide.id)
+    }
+
+    fun editSlideLayouts() {
+        viewModel.onEditSlideLayouts()
+    }
+
+    fun exitSlideLayouts() {
+        viewModel.onExitSlideLayouts()
+    }
+
+    fun addLayout() {
+        viewModel.onAddLayout()
+    }
+
+    /** The navigator's rename, which is also the only way a layout gets a name. */
+    fun renameSelectedSlide(title: String) {
+        viewModel.onRenameSlide(state.selectedSlide.id, title)
+    }
+
+    fun selectedSlideTitle(): String = state.selectedSlide.title
+
+    /**
+     * What each placeholder button is called, in the order the document model
+     * lists the roles. The position is the whole protocol, the way `snapTitles`
+     * and [setSnap] work: an index goes back to [addPlaceholder].
+     */
+    fun placeholderRoles(): List<String> = PlaceholderRole.entries.map { it.name }
+
+    /** Layout mode only; the core drops it on a slide, where a role is an instance. */
+    fun addPlaceholder(role: Int) {
+        val placeholder: PlaceholderRole = PlaceholderRole.entries.getOrNull(role) ?: return
+        viewModel.onAddPlaceholder(placeholder)
+    }
+
+    /**
      * The selected slide's own properties, for the Document inspector. Primitives
      * rather than the slide itself, the way [ElementProps] is: a shell holding a
      * [Slide] could edit its way around anything the core decides.
@@ -1628,17 +1715,43 @@ class EditorHost {
      * and the row catches up then, one render per gesture.
      */
     fun thumbnail(index: Int, width: Int): NSImage? {
-        val slide = state.document.allSlides().getOrNull(index) ?: return null
-        val number: Int? = state.slideNumber(slide.id)
+        // In layout mode the rows are the layouts, so that is what an index means
+        // here too: one navigator, one row protocol, whichever list it is showing.
+        if (state.isEditingLayouts) {
+            val layout: Slide = state.document.layouts.getOrNull(index) ?: return null
+            return render(layout, layout = null, number = null, width = width)
+        }
+
+        val slide: Slide = state.document.allSlides().getOrNull(index) ?: return null
+        return render(
+            slide,
+            layout = state.document.layoutOf(slide),
+            number = state.slideNumber(slide.id),
+            width = width,
+        )
+    }
+
+    /**
+     * The same render for a layout by id, which is what the Document panel's
+     * layout card shows. A layout is on no layout and carries no number, so it
+     * draws as nothing but itself.
+     */
+    fun layoutThumbnail(layoutId: String, width: Int): NSImage? {
+        val layout: Slide = state.document.layouts.firstOrNull { it.id == layoutId } ?: return null
+        return render(layout, layout = null, number = null, width = width)
+    }
+
+    private fun render(slide: Slide, layout: Slide?, number: Int?, width: Int): NSImage? {
         val cached = thumbnails[slide.id]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
         val usable = cached != null && cached.width == width &&
-            ((cached.slide == slide && cached.number == number) || state.isPreviewing)
+            ((cached.slide == slide && cached.layout == layout && cached.number == number) ||
+                state.isPreviewing)
         if (usable) return cached.image
 
         val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
-            SlideView(slide, number = number)
+            SlideView(slide, layout = layout, number = number)
         }
         val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: return null
         val nsData = png.usePinned { pinned ->
@@ -1648,7 +1761,7 @@ class EditorHost {
             setSize(NSMakeSize(width.toDouble(), height.toDouble()))
         } ?: return null
 
-        thumbnails[slide.id] = Thumbnail(slide, number, width, image)
+        thumbnails[slide.id] = Thumbnail(slide, layout, number, width, image)
         return image
     }
 

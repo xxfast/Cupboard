@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import io.github.xxfast.cupboard.canvas.SlideView
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.presentationNumbers
 import io.github.xxfast.cupboard.document.stepCount
 import net.kodein.cup.Slide as CupSlide
@@ -27,6 +28,7 @@ internal fun Document.toCupSlides(): List<CupSlide> {
         CupSlide(name = slide.id, stepCount = slide.stepCount()) { step ->
             SlideView(
                 slide = slide,
+                layout = layoutOf(slide),
                 modifier = Modifier.fillMaxSize(),
                 step = step,
                 number = number,

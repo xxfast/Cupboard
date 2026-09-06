@@ -23,7 +23,7 @@ extension EditorView {
         HStack(spacing: Layout.edge) {
             documentName
             Spacer(minLength: 8)
-            toolbarCluster
+            toolbarCluster(ui)
             Spacer(minLength: 8)
             zoomPill
             if ui.inspectorOpen {
@@ -58,13 +58,17 @@ extension EditorView {
         .fixedSize()
     }
 
-    var toolbarCluster: some View {
+    func toolbarCluster(_ ui: Chrome) -> some View {
         HStack(spacing: 10) {
+            // A layout is not a slide of the talk, so there is nothing to play
+            // from while one is being edited. The shortcut goes with the button.
             Button { startPlay() } label: {
                 pill { Image(systemName: "play.fill").font(.system(size: 12)) }
+                    .opacity(ui.editingLayouts ? 0.45 : 1)
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.return, modifiers: .command)
+            .disabled(ui.editingLayouts)
             .help("Play from the selected slide")
 
             placeholderPill("plus.rectangle", help: "Add slide")

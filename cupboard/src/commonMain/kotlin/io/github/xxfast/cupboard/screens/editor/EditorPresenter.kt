@@ -12,21 +12,32 @@ import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.addElements
+import io.github.xxfast.cupboard.document.addLayout
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.applyingLayout
 import io.github.xxfast.cupboard.document.applyingStyle
 import io.github.xxfast.cupboard.document.drawnBounds
+import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.insertionIndexAfter
+import io.github.xxfast.cupboard.document.instantiating
+import io.github.xxfast.cupboard.document.isLayout
+import io.github.xxfast.cupboard.document.layoutAt
+import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.moveLayout
 import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.newId
+import io.github.xxfast.cupboard.document.placeholderElement
 import io.github.xxfast.cupboard.document.putGuide
 import io.github.xxfast.cupboard.document.removeElements
 import io.github.xxfast.cupboard.document.removeGuide
+import io.github.xxfast.cupboard.document.removeLayout
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.setSlideSkipped
 import io.github.xxfast.cupboard.document.slideAt
+import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideGroup
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.toggleCollapsed
@@ -37,8 +48,11 @@ import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
@@ -59,10 +73,12 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExitSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
@@ -75,8 +91,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
@@ -220,6 +238,28 @@ private fun EditorState.withoutSlide(id: String): EditorState? {
 }
 
 /**
+ * The layout with [id] taken out, or null when it wasn't there to take, which
+ * includes the last layout: that one stays, the way the last slide does.
+ *
+ * [withoutSlide]'s rule in the layout list: the gap closes up and the selection
+ * lands on whatever now holds the removed layout's place. The slides that were on
+ * it keep everything they had and are simply on no layout, which
+ * `Document.removeLayout` sees to.
+ */
+private fun EditorState.withoutLayout(id: String): EditorState? {
+    val index: Int = document.layouts.indexOfFirst { it.id == id }
+    val remaining: Document = document.removeLayout(id)
+    if (remaining === document) return null
+
+    return if (remaining.layouts.any { it.id == selectedSlideId }) copy(document = remaining)
+    else copy(
+        document = remaining,
+        selectedSlideId = remaining.layoutAt(index)?.id ?: selectedSlideId,
+        selectedElementIds = emptyList(),
+    )
+}
+
+/**
  * Copies of [elements] laid on top of the selected slide, [offset] units down and
  * right, and selected: what paste and duplicate both come down to. Fresh ids all
  * the way down, so a group's children are as new as the group.
@@ -269,12 +309,16 @@ private fun EditorState.pastingSlides(payload: List<Slide>): EditorState {
  * before the swap, so it lands on the slide that took its place, which is where
  * a deletion would have left it anyway.
  */
-private fun EditorState.restoring(restored: Document, index: Int): EditorState =
-    if (restored.slides.any { it.id == selectedSlideId }) copy(document = restored)
-    else copy(
-        document = restored,
-        selectedSlideId = restored.slideAt(index)?.id ?: selectedSlideId,
-    )
+private fun EditorState.restoring(restored: Document, index: Int): EditorState {
+    if (restored.slideById(selectedSlideId) != null) return copy(document = restored)
+
+    // [index] is a place in the deck, which means nothing in layout mode: there
+    // the selection sits in the layout list, so it re-anchors against that one.
+    val landing: Slide? =
+        if (isEditingLayouts) restored.layoutAt(document.layouts.indexOfFirst { it.id == selectedSlideId })
+        else restored.slideAt(index)
+    return copy(document = restored, selectedSlideId = landing?.id ?: selectedSlideId)
+}
 
 /**
  * The specific event a generic Edit verb comes down to: [slide] over the
@@ -305,10 +349,11 @@ private fun EditorState.targeting(
 private fun EditorEvent.focusing(): EditorPane? = when (this) {
     is SelectSlide, is SelectSlideAt, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
     is CutSlide, is CopySlide, is DeleteSlide, is MoveSlide, is SetSlideSkipped,
+    is EditSlideLayouts, is ExitSlideLayouts, is AddLayout, is RenameSlide,
         -> EditorPane.Navigator
 
     is SelectElement, is SelectElements, is ToggleElementSelection, is ContextClick,
-    is PreviewMarquee, is InsertElement,
+    is PreviewMarquee, is InsertElement, is AddPlaceholder,
         -> EditorPane.Canvas
 
     else -> null
@@ -623,13 +668,21 @@ fun EditorPresenter(
                 }
                 ?: state
 
-            is DeleteSlide -> state.withoutSlide(event.id)
-                ?.let { deleted ->
-                    undone.push(state.document)
-                    redone.clear()
-                    deleted
-                }
-                ?: state
+            // A layout deletes out of its own list, and the last one stays there
+            // the way the last slide stays in the deck.
+            is DeleteSlide -> {
+                val removed: EditorState? =
+                    if (state.document.isLayout(event.id)) state.withoutLayout(event.id)
+                    else state.withoutSlide(event.id)
+
+                removed
+                    ?.let { deleted ->
+                        undone.push(state.document)
+                        redone.clear()
+                        deleted
+                    }
+                    ?: state
+            }
 
             // The clipboard events below. Copying is not an edit: it makes
             // no history entry, reads locked elements like any other, and
@@ -694,8 +747,9 @@ fun EditorPresenter(
                 }
 
                 // No offset to cascade: a slide has nowhere to land but
-                // between two other slides.
-                is Clipboard.Slides -> {
+                // between two other slides. And nowhere at all in layout
+                // mode, where the deck isn't what the navigator is showing.
+                is Clipboard.Slides -> if (state.isEditingLayouts) state else {
                     undone.push(state.document)
                     redone.clear()
                     state.pastingSlides(payload.slides)
@@ -718,7 +772,19 @@ fun EditorPresenter(
             // straight after it: dropped between a slide and the run under
             // it, the duplicate would take that run for itself, collapsed
             // or not.
-            is DuplicateSlide -> state.document.slideGroup(event.id)
+            is DuplicateSlide -> if (state.document.isLayout(event.id)) {
+                val duplicated: Document = state.document.duplicateLayout(event.id)
+                undone.push(state.document)
+                redone.clear()
+                // The copy is the one right after the original, which is where
+                // Document.duplicateLayout puts it.
+                val at: Int = duplicated.layouts.indexOfFirst { it.id == event.id } + 1
+                state.copy(
+                    document = duplicated,
+                    selectedSlideId = duplicated.layouts[at].id,
+                    selectedElementIds = emptyList(),
+                )
+            } else state.document.slideGroup(event.id)
                 .takeIf { it.isNotEmpty() }
                 ?.let { group ->
                     val after: Int = state.document.insertionIndexAfter(event.id)
@@ -737,11 +803,18 @@ fun EditorPresenter(
                 ?: state
 
             // The blank inherits the anchor's depth, so New Slide on a
-            // child makes a sibling, not a top-level slide out of place.
-            is AddSlide -> state.document.slides.firstOrNull { it.id == event.afterId }
+            // child makes a sibling, not a top-level slide out of place. It
+            // inherits the anchor's layout too, placeholders and all: the
+            // next slide of a talk is the same kind of slide as this one.
+            //
+            // In layout mode New Slide is New Layout: the navigator is
+            // showing layouts, so that is what a new row has to be.
+            is AddSlide -> if (state.isEditingLayouts) reduce(AddLayout)
+            else state.document.slides.firstOrNull { it.id == event.afterId }
                 ?.let { anchor ->
                     val at: Int = state.document.insertionIndexAfter(anchor.id)
-                    val fresh = Slide(depth = anchor.depth)
+                    val fresh: Slide = Slide(depth = anchor.depth)
+                        .instantiating(state.document.layoutOf(anchor))
                     undone.push(state.document)
                     redone.clear()
                     state.copy(
@@ -766,8 +839,12 @@ fun EditorPresenter(
             // The drop always ends the drag, whether or not it moved anything:
             // a row put back where it came from is a finished gesture too, it
             // just isn't an edit.
+            // Layouts are a flat list, so a drop among them lands where it was
+            // dropped and nothing nests.
             is MoveSlide -> {
-                val moved: Document = state.document.moveSlide(event.id, event.afterId, event.nest)
+                val moved: Document =
+                    if (state.document.isLayout(event.id)) state.document.moveLayout(event.id, event.afterId)
+                    else state.document.moveSlide(event.id, event.afterId, event.nest)
                 if (moved === state.document) state.copy(slideDrag = null)
                 else {
                     undone.push(state.document)
@@ -848,8 +925,11 @@ fun EditorPresenter(
 
             // Disclosure is not an edit, so it makes no history entry, the
             // same way Keynote won't undo a twisty. The document still
-            // changes: collapsed state is stored on the slide.
-            is ToggleCollapsed -> state.copy(document = state.document.toggleCollapsed(event.slideId))
+            // changes: collapsed state is stored on the slide. Layouts never
+            // nest, so there is nothing on one to disclose.
+            is ToggleCollapsed ->
+                if (state.document.isLayout(event.slideId)) state
+                else state.copy(document = state.document.toggleCollapsed(event.slideId))
 
             // The slide selection is left alone as long as it still
             // resolves, which is the common case. It can now fail to:
@@ -945,6 +1025,105 @@ fun EditorPresenter(
             Duplicate -> reduce(state.targeting(::DuplicateSlide, ::DuplicateElements))
 
             Delete -> reduce(state.targeting(::DeleteSlide, ::DeleteElements))
+
+            // The layout events. Entering and leaving layout mode is a
+            // selection and nothing more: the layouts were always in the
+            // document, and which one is selected is what "mode" means here.
+            // So no history entry for either, and no way to lose the slide
+            // you came from by entering twice.
+            EditSlideLayouts -> {
+                val target: Slide? = state.selectedLayout ?: state.document.layouts.firstOrNull()
+                if (state.isEditingLayouts || target == null) state
+                else state.copy(
+                    selectedSlideId = target.id,
+                    selectedElementIds = emptyList(),
+                    slideBeforeLayouts = state.selectedSlideId,
+                )
+            }
+
+            ExitSlideLayouts -> if (!state.isEditingLayouts) state else {
+                val back: Slide? = state.slideBeforeLayouts
+                    ?.let { id -> state.document.slides.firstOrNull { it.id == id } }
+                    ?: state.document.slides.firstOrNull()
+
+                state.copy(
+                    selectedSlideId = back?.id ?: state.selectedSlideId,
+                    selectedElementIds = emptyList(),
+                    slideBeforeLayouts = null,
+                )
+            }
+
+            // Applying is an edit like any other: the slide keeps what it
+            // says and takes where it sits. A slide already exactly like
+            // this comes back equal and costs no history entry, which is
+            // also what makes a pointless reapply free.
+            is ApplyLayout -> {
+                val slide: Slide? = state.document.slides.firstOrNull { it.id == event.slideId }
+                val layout: Slide? = event.layoutId
+                    ?.let { id -> state.document.layouts.firstOrNull { it.id == id } }
+                val applied: Slide? = slide
+                    ?.takeIf { event.layoutId == null || layout != null }
+                    ?.applyingLayout(layout)
+                    ?.takeIf { it != slide }
+
+                if (applied == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.updateSlide(applied))
+                }
+            }
+
+            is ReapplyLayout -> {
+                val slide: Slide? = state.document.slides.firstOrNull { it.id == event.slideId }
+                val applied: Slide? = slide
+                    ?.let { current -> state.document.layoutOf(current)?.let(current::applyingLayout) }
+                    ?.takeIf { it != slide }
+
+                if (applied == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.updateSlide(applied))
+                }
+            }
+
+            // Numbered by how many there are rather than by where it lands:
+            // the name is a starting point to rename, not a position.
+            AddLayout -> {
+                val fresh = Slide(title = "Layout ${state.document.layouts.size + 1}")
+                undone.push(state.document)
+                redone.clear()
+                state.copy(
+                    document = state.document.addLayout(state.selectedSlideId, fresh),
+                    selectedSlideId = fresh.id,
+                    selectedElementIds = emptyList(),
+                )
+            }
+
+            is RenameSlide -> state.document.slideById(event.id)
+                ?.takeIf { it.title != event.title }
+                ?.let { slide ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.updateSlide(slide.copy(title = event.title)))
+                }
+                ?: state
+
+            // On top and selected alone, the way InsertElement leaves what
+            // it made. Layout mode only: on a slide, an element with a role
+            // is an instance a layout put there.
+            is AddPlaceholder -> if (!state.isEditingLayouts) state else {
+                val placeholder: Element = placeholderElement(event.role)
+                undone.push(state.document)
+                redone.clear()
+                state.copy(
+                    document = state.document.updateSlide(
+                        state.selectedSlide.addElements(listOf(placeholder)),
+                    ),
+                    selectedElementIds = listOf(placeholder.id),
+                )
+            }
 
             // Focus on its own. The post-step below moves it for every event
             // that implies a pane; this is the one that says so outright.

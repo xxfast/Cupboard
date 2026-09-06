@@ -44,6 +44,22 @@ struct Chrome {
     let canFormatText: Bool
     /// The selected slide's own properties, what the Document panel edits.
     let slide: SlideProps
+    /// Whether the navigator is showing layouts rather than slides. Kotlin's, not
+    /// a flag of the shell's: layout mode is the selection sitting on a layout,
+    /// and that lives in `states` like every other piece of chrome here.
+    let editingLayouts: Bool
+    /// The deck's layouts, for the Document panel's popup. Ids and names paired
+    /// off one read, so the menu shows a name and hands back the id beside it.
+    let layouts: [LayoutChoice]
+    /// The layout the selected slide is on, nil when it is on none.
+    let slideLayoutId: String?
+    /// Whether Reapply Layout has a layout to put back.
+    let canReapplyLayout: Bool
+    /// The selected slide's, or layout's, name: what the layout panel renames.
+    let slideTitle: String
+    /// What each placeholder button is called, in the order Kotlin lists the
+    /// roles. The position is what goes back to `addPlaceholder`.
+    let placeholderRoles: [String]
 
     init(_ host: EditorHost) {
         sidebarOpen = host.sidebarOpen()
@@ -66,11 +82,31 @@ struct Chrome {
         canUngroup = host.canUngroup()
         canFormatText = host.canFormatText()
         slide = SlideProps(host)
+        editingLayouts = host.isEditingLayouts()
+        layouts = LayoutChoice.all(host)
+        slideLayoutId = host.selectedSlideLayoutId()
+        canReapplyLayout = host.canReapplyLayout()
+        slideTitle = host.selectedSlideTitle()
+        placeholderRoles = host.placeholderRoles()
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
     /// presenter applies: a live item is never a silently dropped event.
     var editable: Bool { element.map { !$0.locked } ?? false }
+}
+
+/// One layout in the Document panel's popup. Kotlin hands the ids and the names
+/// back as two parallel lists, which is the ObjC-friendly shape; they are zipped
+/// here so a menu row cannot show one layout's name over another's id.
+struct LayoutChoice: Identifiable, Equatable {
+    let id: String
+    let name: String
+
+    static func all(_ host: EditorHost) -> [LayoutChoice] {
+        let ids = host.layoutIds()
+        let names = host.layoutNames()
+        return zip(ids, names).map { LayoutChoice(id: $0, name: $1) }
+    }
 }
 
 /// The selected slide's own properties as a Swift value: what the Document

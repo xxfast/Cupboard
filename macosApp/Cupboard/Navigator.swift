@@ -70,7 +70,46 @@ extension EditorView {
         let selected = host.selectedSlideIndex()
         let rows = host.outline()
         let dragged = draggedRun(in: rows)
-        return ScrollView {
+        let layoutMode = host.isEditingLayouts()
+        return VStack(spacing: 0) {
+            if layoutMode { layoutsHeader }
+            navigatorRows(rows, selected: selected, dragged: dragged, layoutMode: layoutMode)
+        }
+    }
+
+    /// Says what the rows are, since in layout mode they are not slides, and
+    /// carries the way out. Only in layout mode: with slides showing there is
+    /// nothing to say and nothing to be done.
+    var layoutsHeader: some View {
+        HStack(spacing: 8) {
+            Text("SLIDE LAYOUTS")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(1.2)
+                .foregroundStyle(palette.subtle)
+            Spacer(minLength: 0)
+            Button { host.exitSlideLayouts() } label: {
+                Text("Done")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.ctrlText)
+                    .padding(.horizontal, 10)
+                    .frame(height: 20)
+                    .background(palette.ctrl, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Back to the slides")
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
+    }
+
+    func navigatorRows(
+        _ rows: [OutlineRow],
+        selected: Int32,
+        dragged: Set<String>,
+        layoutMode: Bool
+    ) -> some View {
+        ScrollView {
             // Rows are identified by their slide, so collapsing a group reads as
             // those rows leaving and everything after sliding up, and a reorder
             // as one row moving, not as every row changing in place.
@@ -82,6 +121,7 @@ extension EditorView {
                         dragging: dragged.contains(row.slideId),
                         nestTarget: slideDrag?.nest == true && slideDrag?.afterId == row.slideId,
                         liftY: dragged.contains(row.slideId) ? slideDrag?.translationY ?? 0 : 0,
+                        layoutMode: layoutMode,
                         palette: palette,
                         host: host,
                         onDrag: { point, translation in dragSlide(row, to: point, by: translation, rows: rows) },
@@ -188,6 +228,8 @@ extension EditorView {
         let nestTarget: Bool
         /// How far this row has been carried by the drag, 0 when it hasn't.
         let liftY: CGFloat
+        /// This row is a layout, so it carries its name and the layout verbs.
+        let layoutMode: Bool
         let palette: Palette
         let host: EditorHost
         /// A drag sample, in [NavigatorSpace] plus its travel, and the release
@@ -197,6 +239,10 @@ extension EditorView {
 
         @State private var hovering = false
         @State private var chevronHovering = false
+        /// The rename sheet, and what is being typed into it. Sheet state, not
+        /// document state: the name only becomes the document's on Rename.
+        @State private var renaming = false
+        @State private var renameText = ""
 
         private var thumbWidth: CGFloat { Layout.thumbnail - 12 * CGFloat(min(row.depth, 3)) }
 
@@ -205,7 +251,19 @@ extension EditorView {
                 gutter
                 // Skipped is a slide out of the presentation, not out of the
                 // deck: the gutter keeps its width, the slide reads back.
-                thumbnail.opacity(row.skipped ? 0.4 : 1)
+                VStack(alignment: .leading, spacing: 3) {
+                    thumbnail.opacity(row.skipped ? 0.4 : 1)
+                    // A layout is picked by name, so the row says its name. A
+                    // slide's title is its own content, and the thumbnail
+                    // already shows it.
+                    if layoutMode {
+                        Text(row.title)
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.dim)
+                            .lineLimit(1)
+                            .frame(width: thumbWidth, alignment: .leading)
+                    }
+                }
             }
             .padding(.vertical, 5)
             .padding(.horizontal, 6)
@@ -243,7 +301,31 @@ extension EditorView {
                 // No selecting the row first, unlike the canvas menu: every entry
                 // carries this row's id, and the ones that end in a selection
                 // (new, duplicate, delete, cut, paste) settle it in the core.
-                MenuEntries(entries: slideEntries(host, slideId: row.slideId, includePaste: true))
+                if layoutMode {
+                    MenuEntries(entries: layoutEntries(
+                        host,
+                        index: row.slideIndex,
+                        layoutId: row.slideId,
+                        onRename: {
+                            renameText = row.title
+                            renaming = true
+                        }
+                    ))
+                } else {
+                    MenuEntries(entries: slideEntries(host, slideId: row.slideId, includePaste: true))
+                }
+            }
+            // Renaming is the one layout verb with something to ask, so it is
+            // the one that takes a sheet. The select goes first for the same
+            // reason `pasteAfterSlide` sends one: the rename acts on the
+            // selection, and the events flow serializes the two.
+            .alert("Rename Layout", isPresented: $renaming) {
+                TextField("Name", text: $renameText)
+                Button("Rename") {
+                    host.selectSlide(index: row.slideIndex)
+                    host.renameSelectedSlide(title: renameText)
+                }
+                Button("Cancel", role: .cancel) {}
             }
             .onHover { hovering = $0 }
             .padding(.leading, CGFloat(row.depth) * 12)

@@ -15,7 +15,9 @@ import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.diagramStepFor
+import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.entryBuild
+import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isVisibleAt
 
 /** How far the slide number sits off the slide's right and bottom edges, in doc units. */
@@ -33,15 +35,24 @@ private const val SlideNumberColor: Long = 0x99FFFFFF
  * [number] is this slide's place in the presentation, which only a slide that
  * asks for it draws. Passed in rather than worked out here: what counts as a
  * number is the document's business, and a skipped slide has none.
+ *
+ * [layout] is the layout the slide is built on, which the caller resolves the
+ * same way (`Document.layoutOf`). Its static objects draw behind the slide's own
+ * and its background stands in where the slide has none, which is the whole of
+ * what a slide inherits: the placeholders are already the slide's own elements.
+ * Builds and steps never reach them, because nothing on a layout is a step.
  */
 @Composable
 fun SlideView(
     slide: Slide,
     modifier: Modifier = Modifier,
+    layout: Slide? = null,
     step: Int? = null,
     number: Int? = null,
 ) {
-    SlideSurface(modifier, slideBackground = slide.background) {
+    SlideSurface(modifier, slideBackground = slide.effectiveBackground(layout)) {
+        for (element in slide.inheritedElements(layout)) ElementView(element)
+
         for (element in slide.elements) {
             if (step != null && !slide.isVisibleAt(element.id, step)) continue
             ElementView(

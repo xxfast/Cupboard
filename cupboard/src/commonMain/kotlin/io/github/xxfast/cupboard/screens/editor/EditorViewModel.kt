@@ -6,13 +6,17 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
@@ -33,10 +37,12 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExitSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
@@ -49,8 +55,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
@@ -176,6 +184,13 @@ class EditorViewModel(
     fun onCopyStyle(id: String) { scope.launch { events.emit(CopyStyle(id)) } }
     fun onPasteStyle(ids: List<String>) { scope.launch { events.emit(PasteStyle(ids)) } }
     fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
+    fun onEditSlideLayouts() { scope.launch { events.emit(EditSlideLayouts) } }
+    fun onExitSlideLayouts() { scope.launch { events.emit(ExitSlideLayouts) } }
+    fun onApplyLayout(slideId: String, layoutId: String?) { scope.launch { events.emit(ApplyLayout(slideId, layoutId)) } }
+    fun onReapplyLayout(slideId: String) { scope.launch { events.emit(ReapplyLayout(slideId)) } }
+    fun onAddLayout() { scope.launch { events.emit(AddLayout) } }
+    fun onRenameSlide(id: String, title: String) { scope.launch { events.emit(RenameSlide(id, title)) } }
+    fun onAddPlaceholder(role: PlaceholderRole) { scope.launch { events.emit(AddPlaceholder(role)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
     fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }
