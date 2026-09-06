@@ -20,6 +20,18 @@ fun newId(): String = Uuid.random().toString()
  */
 @Serializable
 data class Document(
+    /**
+     * What shape of Cupboard document this is. First so it is the first thing
+     * in the file, readable without parsing the rest.
+     *
+     * A deck written by a newer Cupboard than the one opening it is refused
+     * rather than half-read: see [DocumentLoad.TooNew]. Decks written before the
+     * field existed have no version key and load as version 1, which is what
+     * they are. Bump [CURRENT_FORMAT_VERSION] only for a change an older build
+     * would silently mangle, never for a new field with a default: those are
+     * what `ignoreUnknownKeys` is for.
+     */
+    val formatVersion: Int = CURRENT_FORMAT_VERSION,
     val id: String = newId(),
     val name: String = "Untitled",
     /**

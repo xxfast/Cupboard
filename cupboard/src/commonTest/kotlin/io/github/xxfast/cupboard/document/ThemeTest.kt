@@ -129,7 +129,7 @@ class ThemeTest {
     /** Documents written before themes existed carry none of the three new fields. */
     @Test
     fun aDocumentWithoutAThemeStillLoads() {
-        val decoded: Document = decodeDocument(
+        val decoded: Document = loadedDocument(
             """{"id":"old","name":"Old","slides":[{"id":"s","title":"S"}]}""",
         )
 

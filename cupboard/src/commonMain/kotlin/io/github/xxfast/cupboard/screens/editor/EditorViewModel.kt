@@ -2,11 +2,13 @@ package io.github.xxfast.cupboard.screens.editor
 
 import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.moleculeFlow
+import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.PlaybackSettings
@@ -15,6 +17,7 @@ import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.encodeToString
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
@@ -134,6 +137,16 @@ class EditorViewModel(
     private val documentStore: KStore<Document>,
     /** The user's saved themes; null for a host with nowhere to keep them. */
     private val themeStore: KStore<List<Theme>>? = null,
+    /**
+     * The deck's bytes: `assets/` inside its bundle, or memory for a host with
+     * no bundle. Public because it is the shells' way in as well as the
+     * presenter's: a drag-and-dropped image is bytes the shell has and the
+     * document model only ever holds the id they were written under.
+     *
+     * A dependency, not state. Nothing about it changes as the deck is edited,
+     * so it has no business in [EditorState].
+     */
+    val assets: AssetStore = InMemoryAssetStore(),
     dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
 ) {
     /** Opens [initialDocument] on its first slide with content. */
@@ -141,8 +154,9 @@ class EditorViewModel(
         initialDocument: Document,
         documentStore: KStore<Document>,
         themeStore: KStore<List<Theme>>? = null,
+        assets: AssetStore = InMemoryAssetStore(),
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
-    ) : this(EditorState.opening(initialDocument), documentStore, themeStore, dispatcher)
+    ) : this(EditorState.opening(initialDocument), documentStore, themeStore, assets, dispatcher)
 
     // Private: this class is exported to ObjC (and later to .NET), and a
     // CoroutineScope on the public surface is a Kotlin type those hosts have no
@@ -162,7 +176,7 @@ class EditorViewModel(
     private val events: MutableSharedFlow<EditorEvent> = MutableSharedFlow(extraBufferCapacity = 64)
 
     val states: StateFlow<EditorState> =
-        moleculeFlow(Immediate) { EditorPresenter(initialState, events, documentStore, themeStore) }
+        moleculeFlow(Immediate) { EditorPresenter(initialState, events, documentStore, themeStore, assets) }
             .stateIn(scope, SharingStarted.Lazily, initialState)
 
     fun onSelectSlide(id: String) { scope.launch { events.emit(SelectSlide(id)) } }
@@ -255,3 +269,12 @@ class EditorViewModel(
         scope.cancel()
     }
 }
+
+/**
+ * The deck as it stands right now, as `document.json` would hold it.
+ *
+ * For the shells that have to put a deck somewhere this view model's own store
+ * does not reach: a save-as to a bundle the user just picked, an export, a
+ * clipboard. Reads the current state, so it is whatever the last event left.
+ */
+fun EditorViewModel.documentJson(): String = states.value.document.encodeToString()

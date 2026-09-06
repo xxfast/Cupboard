@@ -182,7 +182,7 @@ class BuildTimelineTest {
             }
         """.trimIndent()
 
-        val build = decodeDocument(json).slides.single().builds.single()
+        val build = loadedDocument(json).slides.single().builds.single()
         assertEquals(Build("x"), build)
         assertEquals(BuildKind.In, build.kind)
         assertEquals(BuildDelivery.All, build.delivery)

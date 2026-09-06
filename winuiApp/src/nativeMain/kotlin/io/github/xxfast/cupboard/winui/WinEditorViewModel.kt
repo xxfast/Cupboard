@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard.winui
 
 import io.github.xxfast.cupboard.Cupboard
+import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.screens.editor.EditorState
@@ -64,7 +65,8 @@ class WinEditorState(
  * reasons. Exporting it would pull its constructor's `KStore<Document>` (and
  * through [Document], the sealed element hierarchy the interop generator cannot
  * project) into the .NET surface; the store is built Kotlin-side by
- * `Cupboard.editor`, over the directory [WindowsApp.bootstrap] stashed, so the
+ * `Cupboard.editor`, over the bundle in the directory [WindowsApp.bootstrap]
+ * stashed, so the
  * exported surface stays limited to projectable
  * types: strings, ints, the `Win*` projections, `StateFlow`. Its event methods take
  * domain types (`Slide`); the ones here take ids and indices, which is what a
@@ -78,13 +80,13 @@ class WinEditorViewModel {
     // Private so CoroutineScope is not part of the NuGet export surface.
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // Same factory the macOS and desktop shells call, over the directory the
-    // host bootstrapped. It blocks on the initial load, which is right: there is
+    // Same factory the macOS and desktop shells call, over the `.cupboard`
+    // bundle inside the directory the host bootstrapped. It blocks on the initial load, which is right: there is
     // no editor to show until the document loads, and the host constructs this
     // before its first frame.
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val viewModel = Cupboard.editor(
-        directory = requireDocumentDirectory(),
+        bundle = CupboardBundle.default(requireDocumentDirectory()),
         // Serialized, never Unconfined (see EditorViewModel's scope note). There is
         // no Kotlin main loop in the .NET process, so a single-parallelism worker
         // stands in for one; the C# adapter already marshals onto the UI thread.

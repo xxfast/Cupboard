@@ -44,7 +44,7 @@ class PlaybackTest {
 
     @Test
     fun aDocumentWrittenBeforePlaybackOpensOnTheDefaults() {
-        val document: Document = decodeDocument(oldDocument)
+        val document: Document = loadedDocument(oldDocument)
 
         assertEquals(PlaybackSettings(), document.playback)
         assertEquals(PlaybackType.Normal, document.playback.type)
@@ -52,7 +52,7 @@ class PlaybackTest {
 
     @Test
     fun anOldTextLinkIsStillAUrl() {
-        val document: Document = decodeDocument(oldDocument)
+        val document: Document = loadedDocument(oldDocument)
         val text: TextElement = document.slides[0].elements[0] as TextElement
 
         // The string is all the file carried, and a whole-box URL is what it meant.

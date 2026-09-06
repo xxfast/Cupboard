@@ -9,7 +9,7 @@ class DocumentTest {
     @Test
     fun serializationRoundTripsTheSampleDocument() {
         val document = sampleDocument()
-        val decoded = decodeDocument(document.encodeToString())
+        val decoded = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
     }
 
@@ -21,7 +21,7 @@ class DocumentTest {
                 Slide(title = "Child", depth = 1),
             ),
         )
-        val decoded = decodeDocument(document.encodeToString())
+        val decoded = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
         assertTrue(decoded.slides[0].collapsed)
         assertEquals(1, decoded.slides[1].depth)
@@ -54,7 +54,7 @@ class DocumentTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single()
+        val element = loadedDocument(json).slides.single().elements.single()
         assertEquals(1f, element.opacity)
         assertEquals(0f, element.rotation)
         assertFalse(element.flippedHorizontally)
@@ -298,7 +298,7 @@ class DocumentTest {
             slides = listOf(slide.groupElements(listOf("inner", "c"), groupId = "outer")),
         )
 
-        val decoded = decodeDocument(document.encodeToString())
+        val decoded = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
         val outer = decoded.slides.single().elements.single() as GroupElement
         assertEquals("inner", (outer.children.first() as GroupElement).id)
@@ -326,7 +326,7 @@ class DocumentTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single()
+        val element = loadedDocument(json).slides.single().elements.single()
         assertEquals("Hello", (element as TextElement).text)
     }
 
@@ -551,7 +551,7 @@ class DocumentTest {
                 ),
             ),
         )
-        assertEquals(document, decodeDocument(document.encodeToString()))
+        assertEquals(document, loadedDocument(document.encodeToString()))
     }
 
     @Test
@@ -565,7 +565,7 @@ class DocumentTest {
             ),
         )
 
-        val decoded = decodeDocument(document.encodeToString())
+        val decoded = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
         assertEquals(GuideAxis.Vertical, decoded.guides.first().axis)
     }
@@ -580,7 +580,7 @@ class DocumentTest {
             }
         """.trimIndent()
 
-        assertTrue(decodeDocument(json).guides.isEmpty())
+        assertTrue(loadedDocument(json).guides.isEmpty())
     }
 
     /** Slide management arrived last, so a file written before it has none of it. */
@@ -593,7 +593,7 @@ class DocumentTest {
             }
         """.trimIndent()
 
-        val slide = decodeDocument(json).slides.single()
+        val slide = loadedDocument(json).slides.single()
         assertFalse(slide.skipped)
         assertFalse(slide.showsSlideNumber)
         assertEquals(null, slide.background)
@@ -632,7 +632,7 @@ class DocumentTest {
                 ),
             ),
         )
-        assertEquals(document, decodeDocument(document.encodeToString()))
+        assertEquals(document, loadedDocument(document.encodeToString()))
     }
 
     /**
@@ -660,7 +660,7 @@ class DocumentTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single() as TextElement
+        val element = loadedDocument(json).slides.single().elements.single() as TextElement
         assertEquals(TextFont.Sans, element.fontFamily)
         assertFalse(element.italic)
         assertFalse(element.underline)
@@ -692,7 +692,7 @@ class DocumentTest {
             ),
         )
 
-        val decoded = decodeDocument(document.encodeToString())
+        val decoded = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
 
         val star = decoded.slides.single().elements[0] as ShapeElement
@@ -732,7 +732,7 @@ class DocumentTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single() as ShapeElement
+        val element = loadedDocument(json).slides.single().elements.single() as ShapeElement
         assertEquals(ShapeKind.Ellipse, element.kind)
         assertEquals(123L, element.fill)
         assertEquals(null, element.gradient)

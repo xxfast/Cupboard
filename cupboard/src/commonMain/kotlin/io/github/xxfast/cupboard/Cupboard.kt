@@ -12,14 +12,15 @@ package io.github.xxfast.cupboard
 object Cupboard
 
 /**
- * The one file every shell on a machine edits. Interim: the editor is a
- * single-document app until open/save lands, so the path is a constant, not a
- * user choice.
+ * The deck inside a `.cupboard` bundle. See `CupboardBundle` for the layout
+ * around it. Which bundle a shell opens is still a constant rather than a user
+ * choice until open/save-as lands.
  */
 internal const val DOCUMENT_FILE_NAME: String = "document.json"
 
 /**
- * The user's saved themes, beside the document rather than in it: a theme is a
- * look you carry between decks, so it outlives whichever one it was saved from.
+ * The user's saved themes, beside the bundle rather than inside it: a theme is a
+ * look you carry between decks, so it outlives whichever one it was saved from,
+ * and it must not travel when a bundle is mailed to someone else.
  */
 internal const val THEME_LIBRARY_FILE_NAME: String = "themes.json"

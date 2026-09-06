@@ -192,7 +192,7 @@ class SlideLayoutsTest {
             layouts = listOf(layout()),
         )
 
-        val decoded: Document = decodeDocument(document.encodeToString())
+        val decoded: Document = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
         assertEquals("layout", decoded.slides.single().layoutId)
         assertEquals(PlaceholderRole.Title, decoded.layouts.single().elements.first().placeholderRole)
@@ -226,7 +226,7 @@ class SlideLayoutsTest {
             }
         """.trimIndent()
 
-        val decoded: Document = decodeDocument(json)
+        val decoded: Document = loadedDocument(json)
         assertEquals(defaultLayouts(), decoded.layouts)
         assertNull(decoded.slides.single().layoutId)
         assertNull(decoded.slides.single().elements.single().placeholderRole)

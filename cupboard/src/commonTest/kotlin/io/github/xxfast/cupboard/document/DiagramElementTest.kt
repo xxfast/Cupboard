@@ -37,7 +37,7 @@ class DiagramElementTest {
             ),
         )
 
-        assertEquals(document, decodeDocument(document.encodeToString()))
+        assertEquals(document, loadedDocument(document.encodeToString()))
     }
 
     /** The tag is what a file on disk carries, so it has to stay "diagram". */
@@ -63,7 +63,7 @@ class DiagramElementTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single() as DiagramElement
+        val element = loadedDocument(json).slides.single().elements.single() as DiagramElement
         assertEquals("graph LR\nA --> B", element.source)
         assertEquals(16f, element.fontSize)
         assertEquals(emptyList(), element.steps)

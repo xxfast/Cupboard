@@ -6,12 +6,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.ShapeElement
@@ -452,6 +454,12 @@ private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
  * rather than of the deck and so has a file of its own. Null for a host with
  * nowhere to keep one (the preview shells, most tests): the library then lives
  * as long as the editor does.
+ *
+ * [assets] is the deck's bytes, `assets/` inside its bundle. Threaded through
+ * as a dependency rather than sitting in [EditorState], because nothing about
+ * it changes as the deck is edited: the document holds asset ids, and this is
+ * where they resolve. The reductions here move ids around; the effects that
+ * actually put bytes in it arrive with image import.
  */
 @Composable
 fun EditorPresenter(
@@ -459,6 +467,7 @@ fun EditorPresenter(
     events: Flow<EditorEvent>,
     documentStore: KStore<Document>,
     themeStore: KStore<List<Theme>>? = null,
+    @Suppress("UNUSED_PARAMETER") assets: AssetStore = InMemoryAssetStore(),
 ): EditorState {
     var state: EditorState by remember { mutableStateOf(initialState) }
 

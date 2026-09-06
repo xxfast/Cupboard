@@ -14,6 +14,13 @@ plugins {
 // That is what lets this module carry mingwX64 for the WinUI shell, which no
 // Compose UI artifact publishes. Anything that touches a pixel goes in :cupboard:ui.
 kotlin {
+    // Explicit because it stops applying itself the moment any dependsOn edge
+    // is set by hand, and `fileMain` below sets two. Without this the whole
+    // default hierarchy silently vanishes: nativeMain stops reaching commonMain,
+    // appleMain is never created, and the native factories fall out of the klib
+    // while the build still passes.
+    applyDefaultHierarchyTemplate()
+
     iosArm64()
     iosSimulatorArm64()
 
@@ -68,19 +75,34 @@ kotlin {
             // sets below and web keeps compiling.
             api(libs.kstore)
         }
-        // Where Cupboard.editor() builds the store, so no shell has to.
-        jvmMain.dependencies {
-            implementation(libs.kstore.file)
+        // `fileMain`: jvm plus every native target, the ones with a real
+        // filesystem under them. Where `.cupboard` bundles are laid out and
+        // where Cupboard.editor() builds its stores, so neither is written per
+        // platform. Not android or web: neither opens a folder the user picked.
+        //
+        // Wired by hand rather than through applyDefaultHierarchyTemplate: a
+        // group added under `common` there comes out a *sibling* of the
+        // template's own `nativeMain`, so nativeMain cannot see it. Two
+        // dependsOn edges say the intended shape and nothing else moves.
+        //
+        // kotlinx-io is already in the graph under kstore-file; naming it here
+        // is just making the direct use direct.
+        val fileMain by creating {
+            dependsOn(commonMain.get())
+            dependencies {
+                implementation(libs.kstore.file)
+                implementation(libs.kotlinx.io.core)
+            }
         }
-        nativeMain.dependencies {
-            implementation(libs.kstore.file)
-        }
+        jvmMain.get().dependsOn(fileMain)
+        nativeMain.get().dependsOn(fileMain)
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutinesTest)
         }
         jvmTest.dependencies {
             implementation(libs.kstore.file)
+            implementation(libs.kotlinx.io.core)
         }
     }
 }

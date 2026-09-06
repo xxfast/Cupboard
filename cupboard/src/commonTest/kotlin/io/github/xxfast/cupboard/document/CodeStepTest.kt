@@ -43,7 +43,7 @@ class CodeStepTest {
             }
         """.trimIndent()
 
-        val slide = decodeDocument(json).slides.single()
+        val slide = loadedDocument(json).slides.single()
         assertEquals(emptyList(), (slide.elements.single() as CodeElement).steps)
         assertNull(slide.builds.single().elementStep)
         // And an unstepped block is not stepped by anything the slide does.
@@ -65,7 +65,7 @@ class CodeStepTest {
             ),
         )
 
-        assertEquals(document, decodeDocument(document.encodeToString()))
+        assertEquals(document, loadedDocument(document.encodeToString()))
     }
 
     @Test

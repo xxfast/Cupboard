@@ -96,7 +96,7 @@ class TransitionTest {
             }
         """.trimIndent()
 
-        val document: Document = decodeDocument(json)
+        val document: Document = loadedDocument(json)
         assertNull(document.slides.single().transition)
     }
 

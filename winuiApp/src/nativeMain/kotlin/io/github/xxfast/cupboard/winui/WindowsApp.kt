@@ -15,11 +15,11 @@ private var documentDirectory: Path? = null
 /** Entry points exported to .NET hosts through kotlin-native-nuget. */
 object WindowsApp {
     /**
-     * Points the editor at `<storageDirectory>/document.json`. Call once before
+     * Points the editor at the `.cupboard` bundle in [storageDirectory]. Call once before
      * any [WinEditorViewModel]; calling again is a no-op, so a host that
      * re-creates its window is safe.
      *
-     * Only the directory is kept here. Creating it and opening the store is
+     * Only the directory is kept here. Laying out the bundle and opening the store is
      * `Cupboard.editor`'s job, the same call the macOS and desktop shells make.
      */
     fun bootstrap(storageDirectory: String) {

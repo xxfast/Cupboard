@@ -33,7 +33,7 @@ class TerminalElementTest {
             ),
         )
 
-        assertEquals(document, decodeDocument(document.encodeToString()))
+        assertEquals(document, loadedDocument(document.encodeToString()))
     }
 
     /** The tag is what a file on disk carries, so it has to stay "terminal". */
@@ -59,7 +59,7 @@ class TerminalElementTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single() as TerminalElement
+        val element = loadedDocument(json).slides.single().elements.single() as TerminalElement
         assertEquals("$ whoami", element.text)
         assertEquals("$", element.prompt)
         assertEquals("zsh", element.title)

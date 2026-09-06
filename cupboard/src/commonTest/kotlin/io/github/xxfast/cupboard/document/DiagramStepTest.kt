@@ -105,6 +105,6 @@ class DiagramStepTest {
               ]
             }
         """.trimIndent()
-        assertEquals(2, decodeDocument(json).slides.single().builds.single().elementStep)
+        assertEquals(2, loadedDocument(json).slides.single().builds.single().elementStep)
     }
 }

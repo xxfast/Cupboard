@@ -42,7 +42,7 @@ class CodeElementTest {
             }
         """.trimIndent()
 
-        val element = decodeDocument(json).slides.single().elements.single() as CodeElement
+        val element = loadedDocument(json).slides.single().elements.single() as CodeElement
         assertEquals(CodeTheme.Atom, element.theme)
         assertFalse(element.showLineNumbers)
         assertFalse(element.wrap)
@@ -66,7 +66,7 @@ class CodeElementTest {
             ),
         )
 
-        val decoded = decodeDocument(document.encodeToString())
+        val decoded = loadedDocument(document.encodeToString())
         assertEquals(document, decoded)
     }
 

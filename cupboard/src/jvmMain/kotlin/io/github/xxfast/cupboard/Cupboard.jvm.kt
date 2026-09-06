@@ -1,6 +1,8 @@
 package io.github.xxfast.cupboard
 
+import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.FileAssetStore
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
@@ -10,36 +12,39 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
-import kotlinx.io.files.SystemFileSystem
 
 /**
- * An editor over `<directory>/document.json`, creating [directory] if missing,
- * defaulting to `~/.cupboard` so this shell and the macOS one edit one document.
+ * An editor over a `.cupboard` bundle, creating it if missing, defaulting to
+ * `~/.cupboard/Untitled.cupboard` so this shell and the macOS one edit one deck.
  *
- * Interim persistence, per the roadmap: one JSON file per machine rather than a
- * document-per-file open/save flow. Tests pass a temp directory.
+ * Still one deck per machine until open/save-as lands, but the thing on disk is
+ * now the real format: a folder with `document.json` and `assets/` in it. A
+ * pre-bundle `~/.cupboard/document.json` moves into it on the way past, see
+ * [CupboardBundle.migrate].
+ *
+ * The theme library is not the deck's, it is the machine's, so it stays beside
+ * the bundle rather than inside it: `<bundle's folder>/themes.json`.
  *
  * [dispatcher] is the host's serialized main dispatcher; never Unconfined, see
  * [EditorViewModel]'s scope note.
  *
- * The body duplicates the native factory's four lines on purpose: sharing them
- * would need an intermediate source set spanning jvm and native (the default
- * hierarchy has none) for the sake of a `runBlocking` that isn't common code.
+ * The body duplicates the native factory's few lines on purpose: the layout is
+ * shared through [CupboardBundle], and what is left is a `runBlocking` that has
+ * no common declaration across jvm and native to be written once.
  */
 fun Cupboard.editor(
-    directory: Path = Path(System.getProperty("user.home"), ".cupboard"),
+    bundle: Path = CupboardBundle.default(Path(System.getProperty("user.home"), ".cupboard")),
     dispatcher: CoroutineDispatcher = Dispatchers.Main,
 ): EditorViewModel {
-    SystemFileSystem.createDirectories(directory)
-    val store: KStore<Document> = storeOf(
-        file = Path(directory, DOCUMENT_FILE_NAME),
-        default = sampleDocument(),
-    )
+    val directory: Path = bundle.parent ?: Path(".")
+    CupboardBundle.migrate(directory, bundle)
+    val store: KStore<Document> = CupboardBundle.documentStore(bundle)
+    val assets: FileAssetStore = CupboardBundle.assetStore(bundle)
     val themes: KStore<List<Theme>> = storeOf(
         file = Path(directory, THEME_LIBRARY_FILE_NAME),
         default = emptyList(),
     )
     // Blocking is right here: there is no editor to show until the document loads.
     val initial: Document = runBlocking { store.get() } ?: sampleDocument()
-    return EditorViewModel(initial, store, themes, dispatcher)
+    return EditorViewModel(initial, store, themes, assets, dispatcher)
 }

@@ -121,7 +121,7 @@ class ObjectStyleTest {
     /** Documents written before styles existed carry none, and open with the six. */
     @Test
     fun aDocumentWithoutStylesStillLoads() {
-        val decoded: Document = decodeDocument(
+        val decoded: Document = loadedDocument(
             """{"id":"old","name":"Old","slides":[{"id":"s","title":"S"}]}""",
         )
 

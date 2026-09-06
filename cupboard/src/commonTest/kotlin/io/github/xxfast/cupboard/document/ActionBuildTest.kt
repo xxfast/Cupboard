@@ -192,7 +192,7 @@ class ActionBuildTest {
             }
         """.trimIndent()
 
-        val build: Build = decodeDocument(json).slides.single().builds.single()
+        val build: Build = loadedDocument(json).slides.single().builds.single()
         assertEquals(BuildKind.In, build.kind)
         assertEquals(BuildEffect.Pop, build.effect)
         assertNull(build.action)
@@ -205,7 +205,7 @@ class ActionBuildTest {
             slides = listOf(slide(Build.action("box", BuildAction(ActionKind.Move, dx = 12f, dy = -4f)))),
         )
 
-        assertEquals(document, decodeDocument(document.encodeToString()))
+        assertEquals(document, loadedDocument(document.encodeToString()))
     }
 
     @Test
