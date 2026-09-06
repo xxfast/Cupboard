@@ -35,6 +35,10 @@ struct CupboardHostApp: App {
     @NSApplicationDelegateAdaptor(ActivationDelegate.self) private var activation
     @State private var model = EditorModel()
     @State private var playSession: PlaySession?
+    /// The presenter window, and whether the View menu wants one. Remembered
+    /// across launches: a lectern setup is not something to re-pick every show.
+    @State private var presenter = PresenterWindow()
+    @AppStorage("showPresenterDisplay") private var showPresenter = true
 
     private var host: EditorHost { model.host }
 
@@ -50,6 +54,14 @@ struct CupboardHostApp: App {
             }
             .ignoresSafeArea()
             .background(WindowConfigurator(lights: model.lights).frame(width: 0, height: 0))
+            .background(
+                PresenterBridge(
+                    session: playSession,
+                    enabled: showPresenter,
+                    presenter: presenter
+                )
+                .frame(width: 0, height: 0)
+            )
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
@@ -121,6 +133,9 @@ struct CupboardHostApp: App {
                     get: { ui.showNotes },
                     set: { _ in host.toggleNotes() }
                 ))
+                // Ours rather than the document's: which screen the presenter
+                // display is on is a lectern preference, not a fact about the deck.
+                Toggle("Show Presenter Display", isOn: $showPresenter)
 
                 Divider()
 

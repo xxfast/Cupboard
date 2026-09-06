@@ -14,17 +14,6 @@ import net.kodein.cup.TransitionSet
 import net.kodein.cup.Slide as CupSlide
 
 /**
- * The slides play walks, in presentation order.
- *
- * Skipped slides are left out, which is the whole point of skipping one. A deck
- * with every slide skipped is the exception: CuP has nothing to play with no
- * slides at all, so the skips are ignored rather than obeyed into an empty
- * window.
- */
-internal fun Document.playedSlides(): List<Slide> =
-    slides.filterNot { it.skipped }.ifEmpty { slides }
-
-/**
  * Compiles the document into CuP runtime slides. Slide names are our slide ids,
  * so CuP's name-based position restore stays stable across recompiles.
  *
@@ -43,7 +32,7 @@ internal fun Document.toCupSlides(
 ): List<CupSlide> {
     val numbers: Map<String, Int?> =
         slides.zip(presentationNumbers()).associate { (slide, number) -> slide.id to number }
-    val playing: List<Slide> = playedSlides()
+    val playing: List<Slide> = playOrder()
 
     // One set per slide, shared with the slide behind it rather than built twice:
     // the two sides of a change are meant to be the same animation, and a set is

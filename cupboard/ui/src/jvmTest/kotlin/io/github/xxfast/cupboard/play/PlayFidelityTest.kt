@@ -53,7 +53,7 @@ class PlayFidelityTest {
     fun everySlideOffersAClickPerStepOfItsBuildOrder() {
         val document = sampleDocument()
 
-        for ((slide, cup) in document.playedSlides().zip(document.toCupSlides())) {
+        for ((slide, cup) in document.playOrder().zip(document.toCupSlides())) {
             val steps: Int = 1 + (slide.buildTimeline().maxOfOrNull { it.lastStep } ?: 0)
             assertEquals(steps, cup.stepCount, "${slide.title} plays the wrong number of steps")
             assertEquals(steps, slide.stepCount())

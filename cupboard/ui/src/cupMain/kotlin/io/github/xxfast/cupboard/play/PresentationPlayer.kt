@@ -42,6 +42,7 @@ import net.kodein.cup.PresentationState
 import net.kodein.cup.SlideSpecs
 import net.kodein.cup.Slides
 import net.kodein.cup.TransitionSet
+import net.kodein.cup.goTo
 import net.kodein.cup.goToNextSlide
 import net.kodein.cup.goToNextStep
 import net.kodein.cup.goToPreviousSlide
@@ -79,6 +80,13 @@ public class PlayerController internal constructor() {
     public fun previous() { state?.goToPreviousStep() }
     public fun nextSlide() { state?.goToNextSlide() }
     public fun previousSlide() { state?.goToPreviousSlide() }
+
+    /**
+     * Jumps the show to [slideIndex] and [step], both indices into the slides
+     * being *played*. Out-of-range values are clamped to the deck, so a host may
+     * hand over whatever it has without checking it first.
+     */
+    public fun goTo(slideIndex: Int, step: Int = 0) { state?.goTo(slideIndex, step) }
 }
 
 @Composable
@@ -108,7 +116,7 @@ public fun PresentationPlayer(
     val slides = remember(document, layoutDirection) { document.toCupSlides(layoutDirection) }
     // The same list CuP is playing, as our own slides: what the automatic
     // trigger and the Magic Move below both read the document off.
-    val playing: List<Slide> = remember(document) { document.playedSlides() }
+    val playing: List<Slide> = remember(document) { document.playOrder() }
     // CuP's slide is a dp box, and only its aspect matters: the board inside
     // scales itself into whatever it is given. 360dp tall, so a 16:9 deck comes
     // out at exactly SLIDE_SIZE_16_9 and the common case is unchanged.
@@ -137,8 +145,8 @@ public fun PresentationPlayer(
             }
 
             // The show's own position, mirrored out as plain ints: what a host
-            // reads to say where the deck is, and what Phase 6's presenter
-            // display will follow.
+            // reads to say where the deck is, and what the presenter display
+            // follows.
             LaunchedEffect(state, controller) {
                 snapshotFlow { state.currentPosition }.collect { at ->
                     controller.slideIndex = at.slideIndex

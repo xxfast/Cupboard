@@ -69,7 +69,7 @@ class TransitionSetTest {
     @Test
     fun theChainIsOverTheSlidesThatActuallyPlay() {
         val document = sampleDocument()
-        val played: List<Slide> = document.playedSlides()
+        val played: List<Slide> = document.playOrder()
         val slides: List<CupSlide> = document.toCupSlides()
 
         assertTrue(played.any { it.transition != null })

@@ -11,6 +11,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -79,6 +81,7 @@ import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.previewOf
+import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
@@ -97,7 +100,10 @@ import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.export.ExportedFile
 import io.github.xxfast.cupboard.export.toCupProject
+import io.github.xxfast.cupboard.play.PlayerController
 import io.github.xxfast.cupboard.play.PresentationPlayer
+import io.github.xxfast.cupboard.play.PresenterView
+import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.FlipAxis
@@ -109,7 +115,11 @@ import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -122,6 +132,9 @@ import platform.AppKit.NSCursorFrameResizePositionTopRight
 import platform.AppKit.NSImage
 import platform.AppKit.NSView
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
+import platform.Foundation.NSMakeRect
 import platform.Foundation.NSMakeSize
 import platform.Foundation.NSProcessInfo
 import platform.Foundation.dataWithBytes
@@ -643,28 +656,117 @@ class ExportFile(val path: String, val contents: String)
 /** The one line of an exported settings file that names the project. */
 private val RootProjectName = Regex("""rootProject\.name = "(.*)"""")
 
+/** What the presenter display's wall clock says: the time of day, to the minute. */
+private val WallClock: NSDateFormatter = NSDateFormatter().apply { dateFormat = "HH:mm" }
+
+/** How big the presenter window opens, in points. */
+private const val PRESENTER_WIDTH: Double = 1280.0
+private const val PRESENTER_HEIGHT: Double = 720.0
+
 /**
  * A running presentation: a Compose view playing a snapshot of the document.
  * The host shows [view] full screen and calls [dispose] when it tears it down.
  * Playback keys are the player's own business; it only calls back on exit.
+ *
+ * A show also has a second face, [presenterView], for the window on the laptop
+ * screen: the same playback, driven by the same controller, showing the current
+ * slide, what is next, and the notes. A preview has none ([hasPresenter] false):
+ * it is one slide with nothing after it, and nothing to speak over.
+ *
+ * The show plays [document], a snapshot, so the deck cannot change under the
+ * audience. The presenter follows [live] instead, so notes typed into it during
+ * the show are the notes it goes on showing.
  */
 class PlaySession internal constructor(
-    document: Document,
+    private val document: Document,
     startIndex: Int,
-    onExit: () -> Unit,
+    private val onExit: () -> Unit,
+    /** The document as it stands, for the presenter's notes. Null for a preview. */
+    private val live: Flow<Document>? = null,
+    /** Where a notes edit goes: slide id, new notes. Null for a preview. */
+    private val notes: ((String, String) -> Unit)? = null,
 ) {
+    /**
+     * The controller both faces play on, published by the show's own composition.
+     * [PlayerController]'s constructor is internal to `:cupboard:ui`, so the only
+     * way to one out here is remembering it inside a composable. Snapshot state
+     * rather than a plain field, so the presenter picks it up on the frame it
+     * lands rather than whenever it next happens to recompose.
+     */
+    private var controller: PlayerController? by mutableStateOf(null)
+
     private val composeView = ComposeNSView {
+        val player: PlayerController = rememberPlayerController()
+        DisposableEffect(player) {
+            controller = player
+            onDispose { if (controller === player) controller = null }
+        }
         PresentationPlayer(
             document = document,
             startIndex = startIndex,
             modifier = Modifier.fillMaxSize(),
             onExit = onExit,
+            controller = player,
         )
     }
 
+    private var presenterCompose: ComposeNSView? = null
+
     val view: NSView = composeView
 
+    /** Whether this session has a presenter display to show at all. */
+    val hasPresenter: Boolean = live != null && notes != null
+
+    /**
+     * The presenter display, built the first time it is asked for. Empty until
+     * the show's composition has published its controller, which is a frame at
+     * the very most: the window only opens once the show is up.
+     */
+    val presenterView: NSView
+        get() = presenterCompose ?: buildPresenter().also { presenterCompose = it }
+
+    private fun buildPresenter(): ComposeNSView {
+        val documents: Flow<Document> = live ?: emptyFlow()
+        val onNotesChange: (String, String) -> Unit = notes ?: { _, _ -> }
+        return ComposeNSView(
+            NSMakeRect(0.0, 0.0, PRESENTER_WIDTH, PRESENTER_HEIGHT),
+        ) {
+            val player: PlayerController? = controller
+            val deck: Document by documents.collectAsState(initial = document)
+            if (player != null) {
+                PresenterView(
+                    document = deck,
+                    controller = player,
+                    onNotesChange = onNotesChange,
+                    clock = { WallClock.stringFromDate(NSDate()) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+
+    /** Playback from the presenter window, which has no player of its own. */
+    fun next() {
+        controller?.next()
+    }
+
+    fun previous() {
+        controller?.previous()
+    }
+
+    /** Escape in the presenter window: ends the show, the way it does in it. */
+    fun exit() {
+        onExit()
+    }
+
+    /** Tears down the presenter display alone, the show carrying on without it. */
+    fun disposePresenter() {
+        presenterCompose?.dispose()
+        presenterCompose = null
+    }
+
     fun dispose() {
+        disposePresenter()
         composeView.dispose()
     }
 }
@@ -2337,8 +2439,18 @@ class EditorHost {
      * Starts playing the document as it stands, from the selected slide.
      * [onExit] fires on the main thread when the player asks to stop (Escape).
      */
-    fun startPlay(onExit: () -> Unit): PlaySession =
-        PlaySession(state.document, state.selectedSlideIndex().coerceAtLeast(0), onExit)
+    fun startPlay(onExit: () -> Unit): PlaySession = PlaySession(
+        document = state.document,
+        startIndex = state.selectedSlideIndex().coerceAtLeast(0),
+        onExit = onExit,
+        // The show plays a snapshot; the presenter follows the document, so a
+        // note typed mid-show is the note it goes on showing.
+        live = viewModel.states.map { it.document }.distinctUntilChanged(),
+        notes = { slideId, text ->
+            val slide: Slide? = state.document.slideById(slideId)
+            if (slide != null && slide.notes != text) viewModel.onUpdateSlide(slide.copy(notes = text))
+        },
+    )
 
     /**
      * Plays the selected slide alone, from its first step: the deck cut down to

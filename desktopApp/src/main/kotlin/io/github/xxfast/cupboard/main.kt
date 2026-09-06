@@ -18,6 +18,7 @@ import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.SystemTheme
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.KeyShortcut
 import androidx.compose.ui.input.key.isShiftPressed
@@ -41,7 +42,9 @@ import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.editor.SnapKind
+import io.github.xxfast.cupboard.play.PlayerController
 import io.github.xxfast.cupboard.play.PresentationPlayer
+import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -66,6 +69,8 @@ import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.awt.Menu as AwtMenu
 import java.awt.MenuItem as AwtMenuItem
 import kotlinx.coroutines.delay
@@ -87,6 +92,41 @@ private data class PlayRequest(
 /** Half of 1080p: big enough to read a slide, small enough to leave the editor behind it. */
 private val PreviewWindowWidth = 960.dp
 private val PreviewWindowHeight = 540.dp
+
+/**
+ * Two thirds of 1080p, resizable: the presenter display is meant for the laptop
+ * screen while the show takes the projector, and that is about the size of it.
+ */
+private val PresenterWindowWidth = 1280.dp
+private val PresenterWindowHeight = 720.dp
+
+/** The wall clock the presenter display shows, in the shell's own formatter. */
+private val ClockFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+/**
+ * The keys that drive a running show, on whichever of its windows has focus.
+ *
+ * Window-level fallback for when focus wanders off the player's own key handler;
+ * consumed events never reach here, so no double-advance, and typing into the
+ * presenter's notes field doesn't advance the deck either. Escape on either
+ * window ends the whole show, both windows with it.
+ */
+private fun showKeys(controller: PlayerController, onExit: () -> Unit): (KeyEvent) -> Boolean =
+    { event ->
+        if (event.type != KeyEventType.KeyDown) false
+        else when (event.key) {
+            Key.Escape -> { onExit(); true }
+            Key.DirectionRight, Key.DirectionDown, Key.Spacebar, Key.Enter -> {
+                if (event.isShiftPressed) controller.nextSlide() else controller.next()
+                true
+            }
+            Key.DirectionLeft, Key.DirectionUp, Key.Backspace -> {
+                if (event.isShiftPressed) controller.previousSlide() else controller.previous()
+                true
+            }
+            else -> false
+        }
+    }
 
 /**
  * This shell is the Linux app but runs everywhere, so the Edit menu takes the
@@ -301,6 +341,12 @@ fun main() {
 
     application {
         var playing by remember { mutableStateOf<PlayRequest?>(null) }
+
+        // Whether a show also puts up the presenter display. This shell's own
+        // preference rather than the editor's: it is about the windows on this
+        // machine, and nothing in the document has an opinion on it. Closing the
+        // presenter window sets it back, which is why one flag covers both.
+        var showPresenter by remember { mutableStateOf(true) }
 
         val state: EditorState by viewModel.states.collectAsState()
 
@@ -534,6 +580,14 @@ fun main() {
                         checked = state.showNotes,
                         onCheckedChange = { viewModel.onToggleNotes() },
                     )
+                    // Live rather than a setting you arm beforehand: ticked
+                    // mid-show the presenter display comes up on the spot, and
+                    // unticked it goes away without touching the show.
+                    CheckboxItem(
+                        text = "Show Presenter Display",
+                        checked = showPresenter,
+                        onCheckedChange = { showPresenter = it },
+                    )
 
                     Separator()
 
@@ -651,8 +705,6 @@ fun main() {
         playing?.let { request ->
             val controller = rememberPlayerController()
             val close = { playing = null }
-            // Window-level fallback for when focus wanders off the player's own
-            // key handler; consumed events never reach here, so no double-advance.
             Window(
                 onCloseRequest = close,
                 title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
@@ -667,21 +719,7 @@ fun main() {
                 } else {
                     rememberWindowState(placement = WindowPlacement.Maximized)
                 },
-                onKeyEvent = { event ->
-                    if (event.type != KeyEventType.KeyDown) false
-                    else when (event.key) {
-                        Key.Escape -> { close(); true }
-                        Key.DirectionRight, Key.DirectionDown, Key.Spacebar, Key.Enter -> {
-                            if (event.isShiftPressed) controller.nextSlide() else controller.next()
-                            true
-                        }
-                        Key.DirectionLeft, Key.DirectionUp, Key.Backspace -> {
-                            if (event.isShiftPressed) controller.previousSlide() else controller.previous()
-                            true
-                        }
-                        else -> false
-                    }
-                },
+                onKeyEvent = showKeys(controller, close),
             ) {
                 // WindowState sizes the frame, title bar and all, so 960x540
                 // asked for is a slide short by whatever the chrome takes. Hand
@@ -705,6 +743,36 @@ fun main() {
                     modifier = Modifier.fillMaxSize(),
                     onExit = close,
                     controller = controller,
+                )
+            }
+
+            // The lectern's half of the show, following the same controller.
+            // Never for a preview: a preview is one slide looked at from the
+            // editor, there is nobody at a lectern.
+            if (!request.preview && showPresenter) Window(
+                // Closing this alone leaves the show up: it is a second screen,
+                // not the show. The View menu brings it back.
+                onCloseRequest = { showPresenter = false },
+                title = "Cupboard Presenter",
+                state = rememberWindowState(
+                    size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
+                    position = WindowPosition(Alignment.Center),
+                ),
+                onKeyEvent = showKeys(controller, close),
+            ) {
+                PresenterView(
+                    // The live document rather than the show's snapshot: notes
+                    // typed here go through the editor's loop, and the snapshot
+                    // would never show them coming back. The play order is the
+                    // same either way, nothing edits the deck while a show is up.
+                    document = state.document,
+                    controller = controller,
+                    onNotesChange = { slideId, notes ->
+                        state.document.slides.firstOrNull { it.id == slideId }
+                            ?.let { slide -> viewModel.onUpdateSlide(slide.copy(notes = notes)) }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    clock = { LocalTime.now().format(ClockFormat) },
                 )
             }
         }
