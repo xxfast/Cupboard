@@ -24,10 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -47,6 +51,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Build
@@ -57,6 +63,7 @@ import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
+import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
@@ -69,11 +76,14 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.colorMatrix
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.pieces
+import io.github.xxfast.cupboard.document.sourceRect
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 fun Long.toComposeColor(): Color = Color(this)
 
@@ -407,11 +417,93 @@ private fun ShapeLabel(element: ShapeElement) {
     )
 }
 
+/** The room a caption takes under an image, and the size it is set at. */
+private const val CaptionHeight: Float = 24f
+private const val CaptionSize: Float = 16f
+
+/**
+ * An image: its masked window drawn into its box, adjusted on the way, with its
+ * caption under it.
+ *
+ * With no bytes behind it, and while those bytes are being read, it draws the
+ * design's drop placeholder instead. A caption is drawn either way, and the
+ * picture gives up the room it takes rather than sitting under it: the element's
+ * frame is the whole of what it occupies on the slide, caption included.
+ */
 @Composable
 private fun ImageElementView(element: ImageElement) {
+    val image: ImageBitmap? = rememberAssetImage(element.assetId)
+    val reserved: Float = if (element.caption.isEmpty()) 0f else CaptionHeight
+    val height: Float = (element.frame.height - reserved).coerceAtLeast(0f)
+
+    Box(modifier = Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
+        if (image == null) ImagePlaceholder(element.placeholder, element.frame.width, height)
+        else ImageContent(element, image, element.frame.width, height)
+
+        if (element.caption.isNotEmpty()) {
+            Text(
+                text = element.caption,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = CaptionSize.sp,
+                fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ImageContent(
+    element: ImageElement,
+    image: ImageBitmap,
+    width: Float,
+    height: Float,
+) {
+    val kind: ShapeKind = element.mask?.kind ?: ShapeKind.Rectangle
+
+    val filter: ColorFilter = remember(element.adjust) {
+        ColorFilter.colorMatrix(ColorMatrix(element.adjust.colorMatrix()))
+    }
+
+    // The window in the bitmap's own pixels. Measured against the bitmap rather
+    // than the document when the document has no natural size to offer: an
+    // element written before its bytes were decoded still draws all of them.
+    val source: Frame = remember(element.mask, element.naturalWidth, element.naturalHeight, image) {
+        val sized: ImageElement =
+            if (element.naturalWidth > 0 && element.naturalHeight > 0) element
+            else element.copy(naturalWidth = image.width, naturalHeight = image.height)
+        sized.sourceRect()
+    }
+
+    Canvas(
+        modifier = Modifier
+            .size(width.dp, height.dp)
+            .let { if (kind == ShapeKind.Rectangle) it else it.clip(kind.shape()) },
+    ) {
+        val left: Int = source.x.roundToInt().coerceIn(0, (image.width - 1).coerceAtLeast(0))
+        val top: Int = source.y.roundToInt().coerceIn(0, (image.height - 1).coerceAtLeast(0))
+
+        drawImage(
+            image = image,
+            srcOffset = IntOffset(left, top),
+            srcSize = IntSize(
+                width = source.width.roundToInt().coerceIn(1, image.width - left),
+                height = source.height.roundToInt().coerceIn(1, image.height - top),
+            ),
+            dstOffset = IntOffset.Zero,
+            dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()),
+            colorFilter = filter,
+        )
+    }
+}
+
+@Composable
+private fun ImagePlaceholder(text: String, width: Float, height: Float) {
     Box(
         modifier = Modifier
-            .size(element.frame.width.dp, element.frame.height.dp)
+            .size(width.dp, height.dp)
             .drawBehind {
                 drawRoundRect(
                     color = Color.White.copy(alpha = 0.3f),
@@ -419,13 +511,13 @@ private fun ImageElementView(element: ImageElement) {
                         width = 1.5.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx())),
                     ),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                    cornerRadius = CornerRadius(10.dp.toPx()),
                 )
             },
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = element.placeholder,
+            text = text,
             color = Color.White.copy(alpha = 0.45f),
             fontSize = 13.sp,
         )

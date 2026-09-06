@@ -1,5 +1,7 @@
 package io.github.xxfast.cupboard.document
 
+import kotlin.math.min
+
 /** The radius a rounded rectangle inserts with, and what "rounded" means here. */
 private const val RoundedCornerRadius: Float = 10f
 
@@ -160,6 +162,74 @@ fun diagramElement(
     nodeText = defaults.shapeLabelColor,
     edgeColor = defaults.bodyColor,
 )
+
+/** The box a fresh image is fitted into, before its own aspect narrows it. */
+const val DefaultImageWidth: Float = 480f
+const val DefaultImageHeight: Float = 320f
+
+/**
+ * A fresh image for [assetId], its natural aspect fitted inside [frame] and
+ * centred there.
+ *
+ * Fitted rather than stretched because an image arrives with a shape of its own,
+ * unlike every other element the catalog makes: [frame] is the room it is given
+ * and the aspect is what it takes of it.
+ *
+ * [defaults] is taken and not read, the way [terminalElement] takes it: an image
+ * has no colours to inherit, and one signature across the insert factories is
+ * worth more than the parameter costs.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun imageElement(
+    frame: Frame,
+    assetId: String,
+    naturalWidth: Int,
+    naturalHeight: Int,
+    defaults: ElementDefaults = ElementDefaults(),
+): ImageElement = ImageElement(
+    frame = fitInside(frame, naturalWidth.toFloat(), naturalHeight.toFloat()),
+    assetId = assetId,
+    naturalWidth = naturalWidth,
+    naturalHeight = naturalHeight,
+)
+
+/**
+ * This image shrunk to fit inside [maxWidth] x [maxHeight], about its own centre.
+ *
+ * Already small enough, it comes back as it is: fitting never enlarges, so
+ * dropping a thumbnail on a slide leaves a thumbnail rather than a blown-up one.
+ */
+fun ImageElement.fitted(maxWidth: Float, maxHeight: Float): ImageElement {
+    if (frame.width <= 0f || frame.height <= 0f) return this
+    val scale: Float = min(maxWidth / frame.width, maxHeight / frame.height)
+    if (scale >= 1f) return this
+
+    val width: Float = frame.width * scale
+    val height: Float = frame.height * scale
+    return copy(
+        frame = Frame(
+            x = frame.centerX - width / 2,
+            y = frame.centerY - height / 2,
+            width = width,
+            height = height,
+        ),
+    )
+}
+
+/** [width] x [height]'s aspect scaled to fill as much of [frame] as it can, centred in it. */
+private fun fitInside(frame: Frame, width: Float, height: Float): Frame {
+    if (width <= 0f || height <= 0f) return frame
+    val scale: Float = min(frame.width / width, frame.height / height)
+    val fittedWidth: Float = width * scale
+    val fittedHeight: Float = height * scale
+
+    return Frame(
+        x = frame.centerX - fittedWidth / 2,
+        y = frame.centerY - fittedHeight / 2,
+        width = fittedWidth,
+        height = fittedHeight,
+    )
+}
 
 /** The box a fresh equation inserts into. */
 const val DefaultEquationWidth: Float = 480f

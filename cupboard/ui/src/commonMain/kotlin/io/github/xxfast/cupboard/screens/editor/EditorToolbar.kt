@@ -52,9 +52,10 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * Play pill, tonal Add slide, circular insert icon buttons, outlined zoom pill.
  *
  * Text inserts a box, Code a code block, Terminal a shell window, Diagram a
- * chart, Equation a formula, Shape drops the catalog down; Add slide, image and
- * media stay placeholders until the document gains those operations. [onPlay]
- * null (android/web shells) hides Play entirely.
+ * chart, Equation a formula, Shape drops the catalog down, Image opens the
+ * shell's file picker; Add slide and media stay placeholders until the document
+ * gains those operations. [onPlay] null (android/web shells) hides Play
+ * entirely, and [onInsertImage] null leaves the image button inert the same way.
  */
 @Composable
 fun EditorToolbar(
@@ -67,6 +68,7 @@ fun EditorToolbar(
     onInsertDiagram: () -> Unit,
     onInsertEquation: () -> Unit,
     onInsertShape: (ShapeCatalogEntry) -> Unit,
+    onInsertImage: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -136,7 +138,7 @@ fun EditorToolbar(
                 InsertButton(onClick = onInsertDiagram) { DiagramGlyph(color = tokens.icon) }
                 InsertButton(onClick = onInsertEquation) { EquationGlyph(color = tokens.icon) }
                 ShapeInsertButton(onPick = onInsertShape)
-                InsertButton { ImageGlyph(color = tokens.icon) }
+                InsertButton(onClick = onInsertImage) { ImageGlyph(color = tokens.icon) }
                 InsertButton { MediaGlyph(color = tokens.icon) }
             }
 

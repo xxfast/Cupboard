@@ -258,14 +258,23 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
  * The Insert verbs: a text box, a code block, a terminal, a diagram, an
  * equation, then the shape catalog as one submenu.
  *
- * Nothing is ever greyed. An insertion asks nothing of the selection, and a
- * locked element on the slide is no reason not to add another one next to it.
+ * Nothing is ever greyed but Image, which needs somewhere to pick a file from:
+ * an insertion asks nothing of the selection, and a locked element on the slide
+ * is no reason not to add another one next to it.
  *
  * Where an insertion lands is [EditorState.insertionFrame]'s business and how
  * big it starts is the catalog's, so a shell renders this without knowing
  * either the slide's size or that a line wants a different box to a rectangle.
+ *
+ * [onInsertImage] is the one verb here the shell has to own: the bytes come from
+ * a file dialog, which is platform hosting rather than anything the document
+ * knows about. Null is a shell with no picker, and greys the entry.
  */
-fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorMenuSection> {
+fun insertSections(
+    state: EditorState,
+    viewModel: EditorViewModel,
+    onInsertImage: (() -> Unit)? = null,
+): List<EditorMenuSection> {
     fun insert(entry: ShapeCatalogEntry): EditorMenuItem =
         EditorMenuItem(entry.title, enabled = true) {
             val frame: Frame = state.insertionFrame(entry.width, entry.height)
@@ -299,6 +308,9 @@ fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                     val frame: Frame =
                         state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight)
                     viewModel.onInsertElement(equationElement(frame, state.defaults))
+                },
+                EditorMenuItem("Image...", enabled = onInsertImage != null) {
+                    onInsertImage?.invoke()
                 },
                 EditorMenuItem(
                     label = "Shape",

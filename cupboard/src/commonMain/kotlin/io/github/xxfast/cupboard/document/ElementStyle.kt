@@ -12,7 +12,8 @@ package io.github.xxfast.cupboard.document
  *
  * What is deliberately left out is the content ([TextElement.text],
  * [TextElement.link], [TextElement.linkTarget], [ShapeElement.link],
- * [ImageElement.link], [ShapeElement.label], [CodeElement.code],
+ * [ImageElement.link], [ImageElement.assetId], [ImageElement.mask],
+ * [ImageElement.caption], [ShapeElement.label], [CodeElement.code],
  * [CodeElement.language], [TerminalElement.text], [TerminalElement.title],
  * [DiagramElement.source], [DiagramElement.steps], [EquationElement.latex],
  * [ShapeElement.kind]), the
@@ -85,7 +86,15 @@ fun Element.applyingStyle(source: Element): Element = when {
         color = source.color,
     )
 
-    // Images and groups have no style of their own, and so does any pair of
-    // types that don't match: opacity is all there is to carry across.
+    // The adjustment is the whole of an image's look: the mask is where the
+    // element is cropped and the caption is what it says, both content rather
+    // than style, and neither means anything on a different picture.
+    this is ImageElement && source is ImageElement -> copy(
+        opacity = source.opacity,
+        adjust = source.adjust,
+    )
+
+    // A group has no style of its own, and neither does any pair of types that
+    // don't match: opacity is all there is to carry across.
     else -> update(opacity = source.opacity)
 }

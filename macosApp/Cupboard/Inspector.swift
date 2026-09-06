@@ -135,6 +135,11 @@ extension EditorView {
                         equationSection(equation)
                         palette.divider.frame(height: 1)
                     }
+                    // And the image's.
+                    if let image = ui.image {
+                        imageSection(image, ui)
+                        palette.divider.frame(height: 1)
+                    }
                     // Text, shape and image are the kinds that hold a link, so
                     // the section is here for those three and nowhere else.
                     if let link = ui.link {
@@ -832,6 +837,177 @@ extension EditorView {
                     host.setEquationColor(argb: $0)
                 }
             }
+        }
+    }
+
+    // MARK: Image
+
+    /// The picture's own controls: what shows of it, how it is corrected, what
+    /// is written under it, and the two verbs that change its bytes. Same
+    /// contract as the Equation section, except the caption, which is content
+    /// and so goes to the primary alone.
+    ///
+    /// Everything below the mask needs bytes to act on, so an image that has
+    /// none shows the popup and the caption and nothing else: there is no
+    /// picture to adjust and no background to rub out.
+    @ViewBuilder func imageSection(_ image: ImageFormat, _ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Image")
+
+            // None first, then the outlines, so the popup's position is Kotlin's
+            // index plus one and picking None is index -1: no mask at all.
+            stylePopup(["None"] + ui.maskKinds, selected: image.maskKind + 1) { index in
+                setMask(image, kind: index - 1)
+            }
+
+            if image.maskKind >= 0 {
+                HStack(spacing: 8) {
+                    maskField("X", image.maskX) { setMask(image, x: $0) }
+                    maskField("Y", image.maskY) { setMask(image, y: $0) }
+                }
+                HStack(spacing: 8) {
+                    maskField("W", image.maskWidth) { setMask(image, width: $0) }
+                    maskField("H", image.maskHeight) { setMask(image, height: $0) }
+                }
+            }
+
+            if image.hasAsset {
+                palette.divider.frame(height: 1)
+
+                adjustRow("Exposure", image.exposure, in: -1...1) {
+                    setAdjust(image, exposure: $0)
+                }
+                adjustRow("Saturation", image.saturation, in: 0...2) {
+                    setAdjust(image, saturation: $0)
+                }
+                adjustRow("Contrast", image.contrast, in: 0...2) {
+                    setAdjust(image, contrast: $0)
+                }
+
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    Button("Reset") { host.resetImageAdjust() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(image.adjusted ? palette.accent : palette.faint)
+                        .disabled(!image.adjusted)
+                }
+            }
+
+            StringField(placeholder: "Caption", value: image.caption, palette: palette) {
+                host.setImageCaption(text: $0)
+            }
+
+            if image.hasAsset {
+                palette.divider.frame(height: 1)
+
+                // How far from the corner pixel counts as the same backdrop.
+                // A slider rather than a field: what it takes is a look at the
+                // result, and the number itself means nothing to anyone.
+                HStack(spacing: 10) {
+                    Text("Tolerance")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(palette.subtle)
+                        .frame(width: 66, alignment: .leading)
+                    Slider(value: $backgroundTolerance, in: 0...1)
+                        .controlSize(.small)
+                        .tint(palette.accent)
+                    Text("\(Int((backgroundTolerance * 100).rounded()))%")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(palette.ctrlText)
+                        .frame(width: 40, alignment: .trailing)
+                }
+
+                panelButton("Remove Background", symbol: "wand.and.stars") {
+                    host.removeImageBackground(tolerance: Float(backgroundTolerance))
+                }
+            }
+
+            panelButton("Replace Image...", symbol: "photo") { Media.replace(in: host) }
+        }
+    }
+
+    /// One corner of the mask window, in whole percent. The model's units are
+    /// 0 to 1, so the field multiplies on the way out and divides on the way
+    /// back: nobody reads a window as 0.375.
+    func maskField(_ label: String, _ value: Double, onCommit: @escaping (Double) -> Void) -> some View {
+        ValueField(label: label, value: (value * 100).rounded(), palette: palette, unit: "%") {
+            onCommit($0 / 100)
+        }
+    }
+
+    /// The mask, with one part of it replaced. Everything the control did not
+    /// touch goes back as it was, so setting the width never moves the window
+    /// and picking an outline never resizes it. Kotlin clamps.
+    func setMask(
+        _ image: ImageFormat,
+        kind: Int? = nil,
+        x: Double? = nil,
+        y: Double? = nil,
+        width: Double? = nil,
+        height: Double? = nil
+    ) {
+        host.setImageMask(
+            kindIndex: Int32(kind ?? image.maskKind),
+            x: Float(x ?? image.maskX),
+            y: Float(y ?? image.maskY),
+            w: Float(width ?? image.maskWidth),
+            h: Float(height ?? image.maskHeight)
+        )
+    }
+
+    /// One correction, previewed. The other two go back as they were: the three
+    /// compose into one colour matrix, so they travel as one write.
+    func setAdjust(
+        _ image: ImageFormat,
+        exposure: Double? = nil,
+        saturation: Double? = nil,
+        contrast: Double? = nil
+    ) {
+        host.setImageAdjust(
+            exposure: Float(exposure ?? image.exposure),
+            saturation: Float(saturation ?? image.saturation),
+            contrast: Float(contrast ?? image.contrast),
+            commit: false
+        )
+    }
+
+    /// A correction slider. The drag streams previews through the loop and the
+    /// release commits what they left, so the whole drag is one undo entry, the
+    /// way the opacity slider works. The committed values are read back off the
+    /// host rather than trusted from this pass's snapshot.
+    func adjustRow(
+        _ label: String,
+        _ value: Double,
+        in range: ClosedRange<Double>,
+        preview: @escaping (Double) -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 11.5))
+                .foregroundStyle(palette.subtle)
+                .frame(width: 66, alignment: .leading)
+
+            Slider(
+                value: Binding(get: { value }, set: preview),
+                in: range,
+                onEditingChanged: { editing in
+                    guard !editing, let live = host.selectedImage() else { return }
+                    host.setImageAdjust(
+                        exposure: live.exposure,
+                        saturation: live.saturation,
+                        contrast: live.contrast,
+                        commit: true
+                    )
+                }
+            )
+            .controlSize(.small)
+            .tint(palette.accent)
+
+            Text("\(Int((value * 100).rounded()))%")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(palette.ctrlText)
+                .frame(width: 40, alignment: .trailing)
         }
     }
 

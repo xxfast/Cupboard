@@ -129,7 +129,7 @@ extension EditorView {
         ) == nil ? "function" : "x.squareroot"
 
     /// The one insert cluster: raised capsule, 30x24 items. Text, Code, Terminal,
-    /// Diagram, Equation and Shape are live; Table, Chart and Media wait on element
+    /// Diagram, Equation, Shape and Image are live; Table and Chart wait on element
     /// types the document model does not hold yet.
     var insertCapsule: some View {
         HStack(spacing: 2) {
@@ -178,7 +178,11 @@ extension EditorView {
             .frame(width: 30, height: 24)
             .help("Shape")
 
-            insertPlaceholder("paperclip", help: "Media")
+            Button { Media.insert(into: host) } label: {
+                insertIcon("photo")
+            }
+            .buttonStyle(.plain)
+            .help("Image")
         }
         .padding(3)
         .background(palette.ctrl, in: Capsule())

@@ -58,8 +58,13 @@ kotlin {
        }
     }
 
-    // Default hierarchy plus a "cup" group shared across CuP's targets only
-    // (jvm, js, wasmJs, macosArm64). android and iOS must never see CuP.
+    // Default hierarchy plus two groups of our own.
+    //
+    // "cup" is CuP's targets only (jvm, js, wasmJs, macosArm64): android and iOS
+    // must never see CuP. "skiko" is every target Compose draws with Skia on,
+    // which is all of them but android: PNG encoding has no common API, and the
+    // one android needs is its own framework's. jvm sits in both, which is what
+    // a hierarchy is for.
     @OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
@@ -68,6 +73,15 @@ kotlin {
                 withJs()
                 withWasmJs()
                 withMacosArm64()
+            }
+
+            group("skiko") {
+                withJvm()
+                withJs()
+                withWasmJs()
+                withMacosArm64()
+                withIosArm64()
+                withIosSimulatorArm64()
             }
         }
     }

@@ -308,8 +308,57 @@ data class ShapeElement(
 }
 
 /**
- * Image content ships with the file format work; until then an image element
- * renders as the design's drop placeholder.
+ * The window of an image that is shown, and the outline it is shown through.
+ *
+ * [frame] is in image-normalised units: x, y, width and height are all fractions
+ * of the natural image. That is what makes the mask non-destructive and what
+ * keeps it meaningful when the element is resized: widening the window brings the
+ * hidden pixels back rather than re-cropping anything, and nothing about the mask
+ * is measured in the element's own coordinates.
+ *
+ * The element's frame draws exactly that window, stretched to fill it, which is
+ * Keynote's rule: the image behind a mask can be larger than the box showing it.
+ *
+ * [kind] is the outline the window is seen through. [ShapeKind.Rectangle] is the
+ * plain crop and clips nothing; every other kind clips the box to that shape's
+ * path, and the kinds with no sensible inside ([ShapeKind.Line]) read as the
+ * rectangle they are boxed by.
+ */
+@Serializable
+data class ImageMask(
+    val kind: ShapeKind = ShapeKind.Rectangle,
+    val frame: Frame,
+)
+
+/**
+ * The three corrections an image is drawn through, never written back into its
+ * bytes.
+ *
+ * The defaults are the identity, deliberately: an image nobody has adjusted costs
+ * no colour filter at all, and an adjustment is undone by putting the numbers
+ * back rather than by keeping a copy of the original around.
+ */
+@Serializable
+data class ImageAdjust(
+    /** -1 (black) to 1 (blown out); 0 is the image as it was decoded. */
+    val exposure: Float = 0f,
+    /** 0 (greyscale) to 2 (twice as vivid). */
+    val saturation: Float = 1f,
+    /** 0 (flat grey) to 2 (twice the separation), pivoting around mid grey. */
+    val contrast: Float = 1f,
+)
+
+/**
+ * An image on a slide: an id the asset store resolves to bytes, the window of
+ * those bytes that shows, and how they are corrected on the way to the canvas.
+ *
+ * [assetId] null is an element with no bytes behind it yet, which draws the
+ * design's drop placeholder. That is what a media placeholder on a layout is, and
+ * what an insert leaves behind if its file goes missing.
+ *
+ * [naturalWidth] and [naturalHeight] are recorded when the image is inserted, so
+ * a mask, a fit and a layout are all arithmetic on the document rather than
+ * something that has to wait on a decode.
  */
 @Serializable
 @SerialName("image")
@@ -322,6 +371,16 @@ data class ImageElement(
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
     val placeholder: String = "Drop frame capture here",
+    /** What the asset store resolves to this image's bytes. Null draws [placeholder]. */
+    val assetId: String? = null,
+    /** The decoded size of [assetId]'s bytes, in pixels. Zero until an image lands. */
+    val naturalWidth: Int = 0,
+    val naturalHeight: Int = 0,
+    /** Null shows the whole image. See [ImageMask]. */
+    val mask: ImageMask? = null,
+    val adjust: ImageAdjust = ImageAdjust(),
+    /** Drawn under the image, inside the element's own box. Empty draws nothing. */
+    val caption: String = "",
     /** See [PlaceholderRole]. Not [placeholder], which is the prompt the empty frame draws. */
     val role: PlaceholderRole? = null,
     /** Where clicking the image takes the show. See [LinkTarget]. */

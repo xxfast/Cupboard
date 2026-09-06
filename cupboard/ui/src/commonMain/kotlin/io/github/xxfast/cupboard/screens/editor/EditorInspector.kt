@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,9 +78,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import io.github.xxfast.cupboard.canvas.BuildEffectNames
+import io.github.xxfast.cupboard.canvas.LocalAssetStore
+import io.github.xxfast.cupboard.canvas.removeBackground
 import io.github.xxfast.cupboard.canvas.gradientStop
 import io.github.xxfast.cupboard.canvas.title
 import io.github.xxfast.cupboard.document.ActionKind
+import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAction
 import io.github.xxfast.cupboard.document.BuildDelivery
@@ -93,7 +97,9 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
@@ -133,6 +139,8 @@ import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTheme
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /**
  * The 282dp M3 inspector: Format / Animate / Slide tabs over their bodies.
@@ -223,6 +231,9 @@ fun EditorInspector(
     onFlipElements: (List<String>, FlipAxis) -> Unit,
     onGroupElements: (List<String>) -> Unit,
     onUngroupElements: (String) -> Unit,
+    /** Point the selected image at other bytes: the image section's Replace
+     * Image. Null on a shell with no file picker, which greys the button. */
+    onReplaceImage: ((ImageElement) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -309,6 +320,14 @@ fun EditorInspector(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
+                    )
+
+                    if (primary is ImageElement) ImageSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                        onPreview = onPreviewElements,
+                        onReplaceImage = onReplaceImage,
                     )
 
                     ElementFormatPanel(
@@ -1454,6 +1473,226 @@ private fun EquationSection(
         color = primary.color,
         enabled = enabled,
         onCommit = { color -> format { it.copy(color = color) } },
+    )
+
+    PanelDivider()
+}
+
+/**
+ * [transform] over the selection's images, the way [formatShapes] does its
+ * shapes: locked elements, everything that isn't an [ImageElement], and any
+ * image the transform left alone all drop out.
+ */
+private fun List<Element>.formatImages(
+    transform: (ImageElement) -> ImageElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is ImageElement || element.locked) return@mapNotNull null
+    val formatted: ImageElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+/** The whole picture, in the image-normalised units [ImageMask.frame] is in. */
+private val WholeImage: Frame = Frame(0f, 0f, 1f, 1f)
+
+/**
+ * What an image can be cut to: the catalog's outlines, plus no mask at all.
+ *
+ * [ShapeKind.Line] is not offered. It is a stroke between two corners with no
+ * inside to show a picture through, which is why the renderer never asks it for
+ * an outline either.
+ */
+private val MASK_CHOICES: List<Pair<ShapeKind?, String>> = listOf(
+    null to "None",
+    ShapeKind.Rectangle to "Rectangle",
+    ShapeKind.Ellipse to "Oval",
+    ShapeKind.Triangle to "Triangle",
+    ShapeKind.Arrow to "Arrow",
+    ShapeKind.Diamond to "Diamond",
+    ShapeKind.Star to "Star",
+    ShapeKind.Polygon to "Hexagon",
+    ShapeKind.QuoteBubble to "Quote Bubble",
+    ShapeKind.Callout to "Callout",
+)
+
+/** How close a colour has to be to the seed to be rubbed out, to start with. */
+private const val DefaultRemovalTolerance: Float = 0.25f
+
+/**
+ * The live IMAGE section, shown when the primary element is an image: the mask,
+ * the three corrections, the caption, and the two verbs that touch the bytes.
+ *
+ * Reads [primary] and writes the whole selection through [formatImages], like
+ * every other kind section. The three adjustment sliders are gestures, so they
+ * preview per sample and commit on release, the way opacity does: one drag is
+ * one undo entry and one autosave write.
+ *
+ * The mask window is four percentages rather than a gesture on the canvas: the
+ * numbers are exact, they are what the document holds, and a drag over the
+ * picture is a different feature to this one. Typing into one while the image
+ * has no mask gives it a rectangular one, which is the crop those numbers mean.
+ *
+ * Background removal is the one control here that rewrites bytes. It runs off
+ * the composition, writes a new asset, and points this element at it: the old
+ * bytes stay, so undo puts the picture back for free and a second image sharing
+ * it is untouched. The seed is the image's top-left pixel, which is the corner a
+ * flat background is most likely to own.
+ */
+@Composable
+private fun ImageSection(
+    primary: ImageElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+    onPreview: (List<Element>) -> Unit,
+    /** Point this image at other bytes. Null on a shell with no file picker. */
+    onReplaceImage: ((ImageElement) -> Unit)?,
+) {
+    val enabled: Boolean = !primary.locked
+    val assets: AssetStore = LocalAssetStore.current
+    val scope: CoroutineScope = rememberCoroutineScope()
+    val window: Frame = primary.mask?.frame ?: WholeImage
+    val adjust: ImageAdjust = primary.adjust
+    // View-local: how hard to rub is a setting for the next click rather than
+    // anything the document holds. Reset with the element it is aimed at.
+    var tolerance: Float by remember(primary.id) { mutableStateOf(DefaultRemovalTolerance) }
+
+    fun format(transform: (ImageElement) -> ImageElement): Boolean {
+        val formatted: List<Element> = elements.formatImages(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    fun preview(transform: (ImageElement) -> ImageElement) {
+        val formatted: List<Element> = elements.formatImages(transform)
+        if (formatted.isNotEmpty()) onPreview(formatted)
+    }
+
+    fun withWindow(edit: (Frame) -> Frame): Boolean = format { element ->
+        val mask: ImageMask = element.mask ?: ImageMask(ShapeKind.Rectangle, WholeImage)
+        element.copy(mask = mask.copy(frame = edit(mask.frame)))
+    }
+
+    SectionLabel("IMAGE")
+    DropdownField(
+        label = "Mask",
+        value = primary.mask?.kind,
+        options = MASK_CHOICES,
+        enabled = enabled,
+        onPick = { kind ->
+            format { element ->
+                when (kind) {
+                    null -> element.copy(mask = null)
+                    else -> element.copy(
+                        mask = element.mask?.copy(kind = kind) ?: ImageMask(kind, WholeImage),
+                    )
+                }
+            }
+        },
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberField(
+            label = "X %",
+            value = window.x * 100f,
+            enabled = enabled,
+            onCommit = { x -> withWindow { it.copy(x = x / 100f) } },
+            modifier = Modifier.weight(1f),
+        )
+        NumberField(
+            label = "Y %",
+            value = window.y * 100f,
+            enabled = enabled,
+            onCommit = { y -> withWindow { it.copy(y = y / 100f) } },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberField(
+            label = "W %",
+            value = window.width * 100f,
+            enabled = enabled,
+            onCommit = { width -> withWindow { it.copy(width = width / 100f) } },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+        NumberField(
+            label = "H %",
+            value = window.height * 100f,
+            enabled = enabled,
+            onCommit = { height -> withWindow { it.copy(height = height / 100f) } },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+    }
+
+    SwatchLabel("Exposure")
+    SliderRow(
+        // The slider runs 0..1 over a correction that runs -1..1.
+        fraction = (adjust.exposure + 1f) / 2f,
+        valueLabel = adjust.exposure.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> preview { it.copy(adjust = it.adjust.copy(exposure = value * 2f - 1f)) } },
+        onRelease = { value -> format { it.copy(adjust = it.adjust.copy(exposure = value * 2f - 1f)) } },
+    )
+    SwatchLabel("Saturation")
+    SliderRow(
+        fraction = adjust.saturation / 2f,
+        valueLabel = adjust.saturation.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> preview { it.copy(adjust = it.adjust.copy(saturation = value * 2f)) } },
+        onRelease = { value -> format { it.copy(adjust = it.adjust.copy(saturation = value * 2f)) } },
+    )
+    SwatchLabel("Contrast")
+    SliderRow(
+        fraction = adjust.contrast / 2f,
+        valueLabel = adjust.contrast.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> preview { it.copy(adjust = it.adjust.copy(contrast = value * 2f)) } },
+        onRelease = { value -> format { it.copy(adjust = it.adjust.copy(contrast = value * 2f)) } },
+    )
+    TonalButton(
+        label = "Reset Adjustments",
+        enabled = enabled && adjust != ImageAdjust(),
+        onClick = { format { it.copy(adjust = ImageAdjust()) } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    EntryField(
+        label = "Caption",
+        display = primary.caption,
+        enabled = enabled,
+        monospace = false,
+    ) { text ->
+        if (text == primary.caption) return@EntryField false
+        format { it.copy(caption = text) }
+    }
+
+    SwatchLabel("Tolerance")
+    SliderRow(
+        fraction = tolerance,
+        valueLabel = tolerance.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> tolerance = value },
+        onRelease = { value -> tolerance = value },
+    )
+    TonalButton(
+        label = "Remove Background",
+        enabled = enabled && primary.assetId != null,
+        onClick = {
+            val assetId: String = primary.assetId ?: return@TonalButton
+            scope.launch {
+                val cleared: String = assets.removeBackground(assetId, 0, 0, tolerance)
+                if (cleared != assetId) onUpdate(listOf(primary.copy(assetId = cleared)))
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    TonalButton(
+        label = "Replace Image...",
+        enabled = enabled && onReplaceImage != null,
+        onClick = { onReplaceImage?.invoke(primary) },
+        modifier = Modifier.fillMaxWidth(),
     )
 
     PanelDivider()

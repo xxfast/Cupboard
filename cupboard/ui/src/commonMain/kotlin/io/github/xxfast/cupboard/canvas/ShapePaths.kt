@@ -25,7 +25,16 @@ import kotlin.math.sin
  * [ShapeKind.Line] has no outline of its own and is not answered for here: it is
  * a stroke between two corners, which the renderer draws directly.
  */
-internal fun ShapeElement.shape(): Shape = when (kind) {
+internal fun ShapeElement.shape(): Shape = kind.shape(cornerRadius)
+
+/**
+ * The same outline for a bare kind, which is what a mask has: an image cropped to
+ * a star is clipped by the star the catalog draws, so the two never drift apart.
+ *
+ * [cornerRadius] means nothing to any kind but [ShapeKind.Rectangle], and defaults
+ * to square because a mask carries no radius of its own.
+ */
+internal fun ShapeKind.shape(cornerRadius: Float = 0f): Shape = when (this) {
     ShapeKind.Rectangle -> RoundedCornerShape(cornerRadius.dp)
     ShapeKind.Ellipse -> CircleShape
     ShapeKind.Triangle -> TriangleShape

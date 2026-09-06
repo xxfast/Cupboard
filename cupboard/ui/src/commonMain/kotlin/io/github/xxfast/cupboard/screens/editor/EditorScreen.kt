@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.canvas.LocalAssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
@@ -60,6 +61,7 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.PlaybackSettings
@@ -120,89 +122,106 @@ fun EditorScreen(
         positionInWindow: Offset,
         onRename: () -> Unit,
     ) -> Unit)? = null,
+    /**
+     * Pick an image file and put it on the slide: the toolbar's image button and
+     * Insert > Image. The picker is the shell's (only it has a file dialog), and
+     * what it does with the bytes is `EditorViewModel.insertImage`. Null on a
+     * shell with nowhere to pick from, which leaves the button inert.
+     */
+    onInsertImage: (() -> Unit)? = null,
+    /** The same picker, pointing an image that is already on the slide at other
+     * bytes: the inspector's Replace Image. */
+    onReplaceImage: ((ImageElement) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
-    EditorView(
-        state = state,
-        onSelectSlide = viewModel::onSelectSlide,
-        onToggleCollapsed = viewModel::onToggleCollapsed,
-        onSelectElement = viewModel::onSelectElement,
-        onToggleElementSelection = viewModel::onToggleElementSelection,
-        // The click settles the selection; the view opens the menu at the
-        // position it came with.
-        onContextClick = { elementId, _ -> viewModel.onContextClick(elementId) },
-        // Rebuilt from every state this screen sees, so the menu that is already
-        // open re-reads its enablement as the click's selection settles. A shell
-        // that draws its own menu gets none: two menus for one click is a bug.
-        menuSections =
-            if (onShowContextMenu == null) canvasMenuSections(state, viewModel) else emptyList(),
-        onShowContextMenu = onShowContextMenu,
-        // The row selects before its menu opens, through the loop, the same rule
-        // the canvas click follows.
-        onSlideContextClick = viewModel::onSelectSlide,
-        // Built per row, since which slide the verbs carry is only known once a
-        // row is clicked, and rebuilt from every state, so an open menu re-reads
-        // its paste gate. A shell drawing its own menu gets none.
-        // In layout mode the rows are layouts, so the verbs are the layout ones:
-        // pasting a slide among the masters means nothing, and a layout has a name
-        // where a slide has none.
-        slideMenuSections = { slideId, onRename ->
-            when {
-                onShowSlideContextMenu != null -> emptyList()
-                state.isEditingLayouts -> layoutSections(viewModel, slideId, onRename)
-                else -> slideSections(state, viewModel, slideId, includePaste = true)
-            }
-        },
-        onShowSlideContextMenu = onShowSlideContextMenu,
-        onPreviewSlideDrag = viewModel::onPreviewSlideDrag,
-        onMoveSlide = viewModel::onMoveSlide,
-        onEndSlideDrag = viewModel::onEndSlideDrag,
-        onUpdateSlide = viewModel::onUpdateSlide,
-        onPreviewSlide = viewModel::onPreviewSlide,
-        onSetSlideTransition = viewModel::onSetSlideTransition,
-        onAddBuild = viewModel::onAddBuild,
-        onUpdateBuild = viewModel::onUpdateBuild,
-        onRemoveBuild = viewModel::onRemoveBuild,
-        onMoveBuild = viewModel::onMoveBuild,
-        onPreviewMarquee = viewModel::onPreviewMarquee,
-        onEndMarquee = viewModel::onEndMarquee,
-        onCancelPreview = viewModel::onCancelPreview,
-        onUpdateElements = viewModel::onUpdateElements,
-        onPreviewElements = viewModel::onPreviewElements,
-        onInsertElement = viewModel::onInsertElement,
-        onBeginTextEdit = viewModel::onBeginTextEdit,
-        onEndTextEdit = viewModel::onEndTextEdit,
-        onReorderElements = viewModel::onReorderElements,
-        onSetElementsLocked = viewModel::onSetElementsLocked,
-        onFlipElements = viewModel::onFlipElements,
-        onGroupElements = viewModel::onGroupElements,
-        onUngroupElements = viewModel::onUngroupElements,
-        onSelectInspectorTab = viewModel::onSelectInspectorTab,
-        onEditSlideLayouts = viewModel::onEditSlideLayouts,
-        onExitSlideLayouts = viewModel::onExitSlideLayouts,
-        onApplyLayout = viewModel::onApplyLayout,
-        onReapplyLayout = viewModel::onReapplyLayout,
-        onAddPlaceholder = viewModel::onAddPlaceholder,
-        onRenameSlide = viewModel::onRenameSlide,
-        onChangeTheme = viewModel::onChangeTheme,
-        onSaveAsTheme = viewModel::onSaveAsTheme,
-        onDeleteUserTheme = viewModel::onDeleteUserTheme,
-        onApplyObjectStyle = viewModel::onApplyObjectStyle,
-        onSaveObjectStyle = viewModel::onSaveObjectStyle,
-        onRenameObjectStyle = viewModel::onRenameObjectStyle,
-        onDeleteObjectStyle = viewModel::onDeleteObjectStyle,
-        onSetDocumentBackground = viewModel::onSetDocumentBackground,
-        onSetSlideSize = viewModel::onSetSlideSize,
-        onSetPlayback = viewModel::onSetPlayback,
-        onSetElementLinks = viewModel::onSetElementLinks,
-        onPreviewGuide = viewModel::onPreviewGuide,
-        onCommitGuide = viewModel::onCommitGuide,
-        onRemoveGuide = viewModel::onRemoveGuide,
-        onEndGuideDrag = viewModel::onEndGuideDrag,
-        onPlay = onPlay,
-        onPlayPreview = onPlayPreview,
-    )
+    // The deck's bytes, provided once around the whole screen: the canvas, the
+    // navigator's thumbnails and every renderer under them resolve asset ids
+    // through this, and none of them has any business being handed a store.
+    CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+        EditorView(
+            state = state,
+            onSelectSlide = viewModel::onSelectSlide,
+            onToggleCollapsed = viewModel::onToggleCollapsed,
+            onSelectElement = viewModel::onSelectElement,
+            onToggleElementSelection = viewModel::onToggleElementSelection,
+            // The click settles the selection; the view opens the menu at the
+            // position it came with.
+            onContextClick = { elementId, _ -> viewModel.onContextClick(elementId) },
+            // Rebuilt from every state this screen sees, so the menu that is already
+            // open re-reads its enablement as the click's selection settles. A shell
+            // that draws its own menu gets none: two menus for one click is a bug.
+            menuSections =
+                if (onShowContextMenu == null) canvasMenuSections(state, viewModel) else emptyList(),
+            onShowContextMenu = onShowContextMenu,
+            // The row selects before its menu opens, through the loop, the same rule
+            // the canvas click follows.
+            onSlideContextClick = viewModel::onSelectSlide,
+            // Built per row, since which slide the verbs carry is only known once a
+            // row is clicked, and rebuilt from every state, so an open menu re-reads
+            // its paste gate. A shell drawing its own menu gets none.
+            // In layout mode the rows are layouts, so the verbs are the layout ones:
+            // pasting a slide among the masters means nothing, and a layout has a name
+            // where a slide has none.
+            slideMenuSections = { slideId, onRename ->
+                when {
+                    onShowSlideContextMenu != null -> emptyList()
+                    state.isEditingLayouts -> layoutSections(viewModel, slideId, onRename)
+                    else -> slideSections(state, viewModel, slideId, includePaste = true)
+                }
+            },
+            onShowSlideContextMenu = onShowSlideContextMenu,
+            onPreviewSlideDrag = viewModel::onPreviewSlideDrag,
+            onMoveSlide = viewModel::onMoveSlide,
+            onEndSlideDrag = viewModel::onEndSlideDrag,
+            onUpdateSlide = viewModel::onUpdateSlide,
+            onPreviewSlide = viewModel::onPreviewSlide,
+            onSetSlideTransition = viewModel::onSetSlideTransition,
+            onAddBuild = viewModel::onAddBuild,
+            onUpdateBuild = viewModel::onUpdateBuild,
+            onRemoveBuild = viewModel::onRemoveBuild,
+            onMoveBuild = viewModel::onMoveBuild,
+            onPreviewMarquee = viewModel::onPreviewMarquee,
+            onEndMarquee = viewModel::onEndMarquee,
+            onCancelPreview = viewModel::onCancelPreview,
+            onUpdateElements = viewModel::onUpdateElements,
+            onPreviewElements = viewModel::onPreviewElements,
+            onInsertElement = viewModel::onInsertElement,
+            onBeginTextEdit = viewModel::onBeginTextEdit,
+            onEndTextEdit = viewModel::onEndTextEdit,
+            onReorderElements = viewModel::onReorderElements,
+            onSetElementsLocked = viewModel::onSetElementsLocked,
+            onFlipElements = viewModel::onFlipElements,
+            onGroupElements = viewModel::onGroupElements,
+            onUngroupElements = viewModel::onUngroupElements,
+            onSelectInspectorTab = viewModel::onSelectInspectorTab,
+            onEditSlideLayouts = viewModel::onEditSlideLayouts,
+            onExitSlideLayouts = viewModel::onExitSlideLayouts,
+            onApplyLayout = viewModel::onApplyLayout,
+            onReapplyLayout = viewModel::onReapplyLayout,
+            onAddPlaceholder = viewModel::onAddPlaceholder,
+            onRenameSlide = viewModel::onRenameSlide,
+            onChangeTheme = viewModel::onChangeTheme,
+            onSaveAsTheme = viewModel::onSaveAsTheme,
+            onDeleteUserTheme = viewModel::onDeleteUserTheme,
+            onApplyObjectStyle = viewModel::onApplyObjectStyle,
+            onSaveObjectStyle = viewModel::onSaveObjectStyle,
+            onRenameObjectStyle = viewModel::onRenameObjectStyle,
+            onDeleteObjectStyle = viewModel::onDeleteObjectStyle,
+            onSetDocumentBackground = viewModel::onSetDocumentBackground,
+            onSetSlideSize = viewModel::onSetSlideSize,
+            onSetPlayback = viewModel::onSetPlayback,
+            onSetElementLinks = viewModel::onSetElementLinks,
+            onPreviewGuide = viewModel::onPreviewGuide,
+            onCommitGuide = viewModel::onCommitGuide,
+            onRemoveGuide = viewModel::onRemoveGuide,
+            onEndGuideDrag = viewModel::onEndGuideDrag,
+            onPlay = onPlay,
+            onPlayPreview = onPlayPreview,
+            onInsertImage = onInsertImage,
+            onReplaceImage = onReplaceImage,
+        )
+    }
 }
 
 @Composable
@@ -306,6 +325,11 @@ fun EditorView(
     onEndSlideDrag: () -> Unit = {},
     onPlay: ((Document, Int) -> Unit)? = null,
     onPlayPreview: (() -> Unit)? = null,
+    /** Pick an image file and put it on the slide. Null leaves the toolbar's
+     * image button inert, on the shells with no file dialog. */
+    onInsertImage: (() -> Unit)? = null,
+    /** The same picker over an image already on the slide: Replace Image. */
+    onReplaceImage: ((ImageElement) -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -391,6 +415,9 @@ fun EditorView(
                             ),
                         )
                     },
+                    // Unlike every other insert this one leaves the app for a
+                    // file, so the shell owns it end to end.
+                    onInsertImage = onInsertImage,
                 )
 
                 Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -594,6 +621,7 @@ fun EditorView(
                         onFlipElements = onFlipElements,
                         onGroupElements = onGroupElements,
                         onUngroupElements = onUngroupElements,
+                        onReplaceImage = onReplaceImage,
                     )
                 }
             }

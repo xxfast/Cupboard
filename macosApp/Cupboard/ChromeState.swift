@@ -42,6 +42,11 @@ struct Chrome {
     let diagram: DiagramFormat?
     /// The primary's equation style, nil unless the primary is an equation.
     let equation: EquationFormat?
+    /// The primary's picture, nil unless the primary is an image.
+    let image: ImageFormat?
+    /// The outlines an image may be cut to, in Kotlin's order. A position is
+    /// what goes back, the way a transition kind's is; -1 is no mask at all.
+    let maskKinds: [String]
     /// Where the primary points when it is clicked in a show, nil unless it is
     /// one of the three kinds that hold a link at all.
     let link: LinkFormat?
@@ -128,6 +133,8 @@ struct Chrome {
         terminal = host.selectedTerminal().map(TerminalFormat.init)
         diagram = host.selectedDiagram().map(DiagramFormat.init)
         equation = host.selectedEquation().map(EquationFormat.init)
+        image = host.selectedImage().map(ImageFormat.init)
+        maskKinds = host.maskKindTitles()
         link = host.selectedLink().map(LinkFormat.init)
         linkKinds = host.linkKindTitles()
         slideChoices = SlideChoice.all(host)
@@ -612,6 +619,48 @@ struct EquationFormat {
         size = Double(props.fontSize)
         color = props.color
     }
+}
+
+/// The primary selected element's picture as a Swift value: what the Image
+/// section of the Format panel shows. Read off the primary like
+/// `EquationFormat`, and written back the same way, except the caption, which
+/// is content and so goes to the primary alone.
+///
+/// The mask is a place in `maskKinds`, -1 for an image showing all of itself,
+/// with its window filled in whatever that place is: switching a mask on never
+/// has to invent one, and switching it off never has to remember one. The
+/// window is normalised, 0 to 1 on each axis, and the fields show it as percent.
+///
+/// `hasAsset` is false for an image with no bytes behind it yet, which has
+/// nothing to frame, correct or rub the background out of.
+struct ImageFormat {
+    let hasAsset: Bool
+    let maskKind: Int
+    let maskX: Double
+    let maskY: Double
+    let maskWidth: Double
+    let maskHeight: Double
+    let exposure: Double
+    let saturation: Double
+    let contrast: Double
+    let caption: String
+
+    init(_ props: ImageProps) {
+        hasAsset = props.hasAsset
+        maskKind = Int(props.maskKindIndex)
+        maskX = Double(props.maskX)
+        maskY = Double(props.maskY)
+        maskWidth = Double(props.maskW)
+        maskHeight = Double(props.maskH)
+        exposure = Double(props.exposure)
+        saturation = Double(props.saturation)
+        contrast = Double(props.contrast)
+        caption = props.caption
+    }
+
+    /// Whether the three corrections are all still where they were decoded.
+    /// What greys the Reset button out: nothing to put back.
+    var adjusted: Bool { exposure != 0 || saturation != 1 || contrast != 1 }
 }
 
 /// The primary selected element's properties as a Swift value. Kotlin hands back

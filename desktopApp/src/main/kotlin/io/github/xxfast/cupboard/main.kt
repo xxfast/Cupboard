@@ -1,7 +1,9 @@
-@file:OptIn(InternalComposeUiApi::class)
+@file:OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
 
 package io.github.xxfast.cupboard
 
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -14,9 +16,11 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.Modifier
@@ -25,6 +29,12 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.KeyShortcut
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragData
+import androidx.compose.ui.draganddrop.dragData
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
@@ -43,7 +53,9 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.previewOf
+import io.github.xxfast.cupboard.canvas.LocalAssetStore
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
@@ -62,7 +74,9 @@ import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
 import io.github.xxfast.cupboard.screens.editor.formatSections
+import io.github.xxfast.cupboard.screens.editor.insertImage
 import io.github.xxfast.cupboard.screens.editor.insertSections
+import io.github.xxfast.cupboard.screens.editor.replaceImage
 import io.github.xxfast.cupboard.screens.editor.layoutSections
 import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
@@ -83,7 +97,9 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.awt.Menu as AwtMenu
 import java.awt.MenuItem as AwtMenuItem
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
 import org.jetbrains.skiko.currentSystemTheme
 import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
@@ -199,6 +215,9 @@ internal val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWi
 
 private fun editShortcut(key: Key, shift: Boolean = false, alt: Boolean = false): KeyShortcut =
     KeyShortcut(key, shift = shift, alt = alt, meta = isMacOs, ctrl = !isMacOs)
+
+/** Whether this key came with the Edit menu's own modifier held. */
+private fun KeyEvent.hasPasteModifier(): Boolean = if (isMacOs) isMetaPressed else isCtrlPressed
 
 private val isWindows: Boolean = System.getProperty("os.name").orEmpty().startsWith("Windows")
 
@@ -445,6 +464,24 @@ private fun EditorWindow(
 
     val state: EditorState by viewModel.states.collectAsState()
 
+    val scope: CoroutineScope = rememberCoroutineScope()
+
+    // Where every way an image arrives ends up: the file picker, a drop and a
+    // paste all have bytes, and the deck's own insert takes it from there.
+    // Reads the state per image rather than closing over one, so a drop of
+    // several lands on the slide the one before it left selected.
+    fun insertImages(images: List<PickedImage>) {
+        if (images.isEmpty()) return
+
+        scope.launch {
+            for (image in images) {
+                viewModel.insertImage(image.bytes, image.extension) { width, height ->
+                    viewModel.states.value.insertionFrame(width, height)
+                }
+            }
+        }
+    }
+
     // Swapping the displays is the show's index flipping: both windows are
     // placed off it, so the show takes the other screen and the presenter
     // display takes the one it left. Null with a single display, or over a
@@ -501,11 +538,25 @@ private fun EditorWindow(
         // when there is something to take away. Nothing in the window takes
         // typing yet, so there is no field to steal from.
         onKeyEvent = { event ->
-            if (event.type == KeyEventType.KeyDown && event.key == Key.Delete && state.canDelete) {
-                viewModel.onDelete()
-                true
-            } else {
-                false
+            val down: Boolean = event.type == KeyEventType.KeyDown
+            when {
+                down && event.key == Key.Delete && state.canDelete -> {
+                    viewModel.onDelete()
+                    true
+                }
+
+                // Paste with nothing on the editor's own clipboard: a picture on
+                // the system one is what this shell can still paste, which is
+                // how a screenshot gets onto a slide. Edit > Paste is greyed
+                // then, and a greyed item lets its accelerator through to here.
+                down && event.key == Key.V && event.hasPasteModifier() &&
+                    !state.canPaste && !state.isEditingText -> {
+                    val image: PickedImage? = clipboardImage()
+                    if (image != null) insertImages(listOf(image))
+                    image != null
+                }
+
+                else -> false
             }
         },
     ) {
@@ -514,6 +565,16 @@ private fun EditorWindow(
         DisposableEffect(window) {
             documents.register(viewModel, window)
             onDispose { }
+        }
+
+        // The two verbs that need a file dialog, and so this window: the panel
+        // is modal and belongs to the frame it was asked from. Both hand what
+        // comes back to the shared insert.
+        val insertImage: () -> Unit = { chooseImage(window)?.let { insertImages(listOf(it)) } }
+        val replaceImage: (ImageElement) -> Unit = { element ->
+            chooseImage(window)?.let { picked ->
+                scope.launch { viewModel.replaceImage(element, picked.bytes, picked.extension) }
+            }
         }
 
         // The recents list as of the last time this window came forward.
@@ -707,7 +768,7 @@ private fun EditorWindow(
             // verb the user reaches for mid-gesture, and the toolbar's
             // Text and Shape buttons render the same catalog.
             Menu("Insert", mnemonic = 'I') {
-                MenuItems(insertSections(state, viewModel))
+                MenuItems(insertSections(state, viewModel, insertImage))
             }
 
             // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
@@ -880,66 +941,95 @@ private fun EditorWindow(
             }
             val density: Float = LocalDensity.current.density
 
-            EditorScreen(
-                viewModel = viewModel,
-                // The document and index the editor has right now: play is a
-                // snapshot, later edits don't reach the running presentation.
-                //
-                // Off in layout mode: a layout is not a slide of the talk, and
-                // the index the player would start from names nothing there.
-                onPlay = if (state.isEditingLayouts) null else {
-                    { document, index ->
-                        val displays: List<Rectangle> = playScreens()
-                        screens = displays
-                        playing = PlayRequest(
-                            document = document,
-                            slideIndex = index,
-                            // The talk goes to the projector and the lectern
-                            // keeps the laptop: the show opens on the first
-                            // display that isn't the primary one.
-                            showScreen = if (displays.size > 1) 1 else 0,
-                        )
+            // Images dragged in from Finder or a file manager. Only a file drag
+            // is taken, so dropped text still falls through to whatever else
+            // might want it, and anything in the drag that isn't a picture we
+            // read is skipped rather than failing the drop.
+            val dropImages: DragAndDropTarget = remember(viewModel) {
+                object : DragAndDropTarget {
+                    override fun onDrop(event: DragAndDropEvent): Boolean {
+                        val files: List<String> =
+                            (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
+                        val images: List<PickedImage> = droppedImages(files)
+                        if (images.isEmpty()) return false
+
+                        insertImages(images)
+                        return true
                     }
-                },
-                onPlayPreview = previewSlide,
-                onShowContextMenu = nativeMenu?.let { menu ->
-                    { elementId, positionInWindow ->
-                        showNativeMenu(
-                            popup = menu,
-                            parent = window.contentPane,
-                            density = density,
-                            positionInWindow = positionInWindow,
-                            sections = canvasContextSections(state, viewModel, elementId),
-                        )
-                    }
-                },
-                // The same popup: two menus can't be open at once anyway, and
-                // the row's verbs carry its id, so nothing here has to guess
-                // what the click did to the selection.
-                onShowSlideContextMenu = nativeMenu?.let { menu ->
-                    { slideId, positionInWindow, onRename ->
-                        showNativeMenu(
-                            popup = menu,
-                            parent = window.contentPane,
-                            density = density,
-                            positionInWindow = positionInWindow,
-                            // In layout mode the row is a layout, so the verbs
-                            // are the layout ones. Rename's dialog belongs to
-                            // the editor view, which hands its opener in.
-                            sections = if (state.isEditingLayouts) {
-                                layoutSections(viewModel, slideId, onRename)
-                            } else {
-                                slideSections(
-                                    state = state,
-                                    viewModel = viewModel,
-                                    slideId = slideId,
-                                    includePaste = true,
-                                )
-                            },
-                        )
-                    }
-                },
-            )
+                }
+            }
+
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .dragAndDropTarget(
+                        shouldStartDragAndDrop = { it.dragData() is DragData.FilesList },
+                        target = dropImages,
+                    ),
+            ) {
+                EditorScreen(
+                    viewModel = viewModel,
+                    // The document and index the editor has right now: play is a
+                    // snapshot, later edits don't reach the running presentation.
+                    //
+                    // Off in layout mode: a layout is not a slide of the talk, and
+                    // the index the player would start from names nothing there.
+                    onPlay = if (state.isEditingLayouts) null else {
+                        { document, index ->
+                            val displays: List<Rectangle> = playScreens()
+                            screens = displays
+                            playing = PlayRequest(
+                                document = document,
+                                slideIndex = index,
+                                // The talk goes to the projector and the lectern
+                                // keeps the laptop: the show opens on the first
+                                // display that isn't the primary one.
+                                showScreen = if (displays.size > 1) 1 else 0,
+                            )
+                        }
+                    },
+                    onPlayPreview = previewSlide,
+                    onShowContextMenu = nativeMenu?.let { menu ->
+                        { elementId, positionInWindow ->
+                            showNativeMenu(
+                                popup = menu,
+                                parent = window.contentPane,
+                                density = density,
+                                positionInWindow = positionInWindow,
+                                sections = canvasContextSections(state, viewModel, elementId),
+                            )
+                        }
+                    },
+                    // The same popup: two menus can't be open at once anyway, and
+                    // the row's verbs carry its id, so nothing here has to guess
+                    // what the click did to the selection.
+                    onShowSlideContextMenu = nativeMenu?.let { menu ->
+                        { slideId, positionInWindow, onRename ->
+                            showNativeMenu(
+                                popup = menu,
+                                parent = window.contentPane,
+                                density = density,
+                                positionInWindow = positionInWindow,
+                                // In layout mode the row is a layout, so the verbs
+                                // are the layout ones. Rename's dialog belongs to
+                                // the editor view, which hands its opener in.
+                                sections = if (state.isEditingLayouts) {
+                                    layoutSections(viewModel, slideId, onRename)
+                                } else {
+                                    slideSections(
+                                        state = state,
+                                        viewModel = viewModel,
+                                        slideId = slideId,
+                                        includePaste = true,
+                                    )
+                                },
+                            )
+                        }
+                    },
+                    onInsertImage = insertImage,
+                    onReplaceImage = replaceImage,
+                )
+            }
         }
     }
 
@@ -1014,14 +1104,19 @@ private fun EditorWindow(
                 }
             }
 
-            PresentationPlayer(
-                document = request.document,
-                startIndex = request.slideIndex,
-                modifier = Modifier.fillMaxSize(),
-                onExit = close,
-                controller = controller,
-                onOpenUrl = ::openInBrowser,
-            )
+            // The show is a second composition over the same deck, so it needs
+            // the same bytes: an image on a slide draws from the editor's store
+            // here as much as it does on the canvas.
+            CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+                PresentationPlayer(
+                    document = request.document,
+                    startIndex = request.slideIndex,
+                    modifier = Modifier.fillMaxSize(),
+                    onExit = close,
+                    controller = controller,
+                    onOpenUrl = ::openInBrowser,
+                )
+            }
         }
 
         // The lectern's half of the show, following the same controller.
@@ -1039,33 +1134,35 @@ private fun EditorWindow(
             state = presenterState,
             onKeyEvent = showKeys(controller, close, swapDisplays),
         ) {
-            // The show itself, playing at a pixel: the display follows a
-            // controller, and a controller has nothing to say until a
-            // player is composed against it. Behind the display and out of
-            // the way, so the current and next previews are the rehearsal.
-            if (request.rehearse) PresentationPlayer(
-                document = request.document,
-                startIndex = request.slideIndex,
-                modifier = Modifier.size(1.dp),
-                onExit = close,
-                controller = controller,
-                onOpenUrl = ::openInBrowser,
-            )
+            CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+                // The show itself, playing at a pixel: the display follows a
+                // controller, and a controller has nothing to say until a
+                // player is composed against it. Behind the display and out of
+                // the way, so the current and next previews are the rehearsal.
+                if (request.rehearse) PresentationPlayer(
+                    document = request.document,
+                    startIndex = request.slideIndex,
+                    modifier = Modifier.size(1.dp),
+                    onExit = close,
+                    controller = controller,
+                    onOpenUrl = ::openInBrowser,
+                )
 
-            PresenterView(
-                // The live document rather than the show's snapshot: notes
-                // typed here go through the editor's loop, and the snapshot
-                // would never show them coming back. The play order is the
-                // same either way, nothing edits the deck while a show is up.
-                document = state.document,
-                controller = controller,
-                onNotesChange = { slideId, notes ->
-                    state.document.slides.firstOrNull { it.id == slideId }
-                        ?.let { slide -> viewModel.onUpdateSlide(slide.copy(notes = notes)) }
-                },
-                modifier = Modifier.fillMaxSize(),
-                clock = { LocalTime.now().format(ClockFormat) },
-            )
+                PresenterView(
+                    // The live document rather than the show's snapshot: notes
+                    // typed here go through the editor's loop, and the snapshot
+                    // would never show them coming back. The play order is the
+                    // same either way, nothing edits the deck while a show is up.
+                    document = state.document,
+                    controller = controller,
+                    onNotesChange = { slideId, notes ->
+                        state.document.slides.firstOrNull { it.id == slideId }
+                            ?.let { slide -> viewModel.onUpdateSlide(slide.copy(notes = notes)) }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    clock = { LocalTime.now().format(ClockFormat) },
+                )
+            }
         }
     }
 }

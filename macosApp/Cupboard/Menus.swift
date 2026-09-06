@@ -219,6 +219,9 @@ func insertEntries(_ host: EditorHost) -> [MenuEntry] {
         MenuEntry(title: "Diagram", action: { host.insertDiagram() }),
         MenuEntry(title: "Equation", action: { host.insertEquation() }),
         MenuEntry(title: "Shape", children: shapeEntries(host)),
+        // The one row that opens a panel: an image is bytes, and there is
+        // nothing to insert until the user has said which.
+        MenuEntry(title: "Image...", action: { Media.insert(into: host) }),
     ]
 }
 

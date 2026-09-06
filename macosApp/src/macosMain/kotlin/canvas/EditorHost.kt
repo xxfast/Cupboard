@@ -28,6 +28,7 @@ import io.github.xxfast.cupboard.openDocument
 import io.github.xxfast.cupboard.recentDocuments
 import io.github.xxfast.cupboard.saveAs
 import io.github.xxfast.cupboard.document.ActionKind
+import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAction
 import io.github.xxfast.cupboard.document.BuildDelivery
@@ -43,6 +44,8 @@ import io.github.xxfast.cupboard.document.DefaultDiagramHeight
 import io.github.xxfast.cupboard.document.DefaultDiagramWidth
 import io.github.xxfast.cupboard.document.DefaultEquationHeight
 import io.github.xxfast.cupboard.document.DefaultEquationWidth
+import io.github.xxfast.cupboard.document.DefaultImageHeight
+import io.github.xxfast.cupboard.document.DefaultImageWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
 import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
@@ -53,7 +56,9 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
@@ -85,10 +90,13 @@ import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.equationElement
+import io.github.xxfast.cupboard.document.fitted
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.imageElement
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.slideById
@@ -131,9 +139,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.Image as SkiaImage
 import platform.AppKit.NSCursor
 import platform.AppKit.NSCursorFrameResizeDirectionsAll
 import platform.AppKit.NSCursorFrameResizePosition
@@ -150,6 +160,7 @@ import platform.Foundation.NSMakeSize
 import platform.Foundation.NSProcessInfo
 import platform.Foundation.NSURL
 import platform.Foundation.dataWithBytes
+import platform.posix.memcpy
 
 /**
  * The chrome the shell floats over the canvas, in canvas coordinates. Fit has to
@@ -165,6 +176,16 @@ private val NOTES = 122.dp
  * background yet: the deck's own ink, so switching kinds shows something
  * deliberate rather than the first swatch of a palette.
  */
+/**
+ * How much of the slide a freshly inserted image may take. Room to see it and
+ * room to put something beside it: an image that lands filling the slide is one
+ * the first thing you do is shrink.
+ */
+private const val IMAGE_INSERT_SHARE: Float = 0.6f
+
+/** The smallest a mask window may be, in the image's own normalised units. */
+private const val MIN_MASK_EXTENT: Float = 0.02f
+
 private const val DEFAULT_BACKGROUND_COLOR: Long = 0xFF101223
 private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
 private const val DEFAULT_GRADIENT_END: Long = 0xFF101223
@@ -201,6 +222,39 @@ private val LinkKindTitles: List<String> = listOf(
     "Exit Show",
     "Webpage",
     "Slide",
+)
+
+/**
+ * The outlines an image may be cut to, in the order the mask popup offers them,
+ * paired with what each is called. A place in these lists is the whole protocol,
+ * the way a transition kind's is, and -1 is an image showing all of itself.
+ *
+ * Not every [ShapeKind]: a line has no inside to keep, so masking to one would
+ * hide the picture entirely. The rest of the catalog reads as a window.
+ */
+private val MaskKinds: List<ShapeKind> = listOf(
+    ShapeKind.Rectangle,
+    ShapeKind.Ellipse,
+    ShapeKind.Triangle,
+    ShapeKind.Diamond,
+    ShapeKind.Star,
+    ShapeKind.Polygon,
+    ShapeKind.Arrow,
+    ShapeKind.QuoteBubble,
+    ShapeKind.Callout,
+)
+
+/** What [MaskKinds] are called in the popup, in its order. */
+private val MaskKindTitles: List<String> = listOf(
+    "Rectangle",
+    "Ellipse",
+    "Triangle",
+    "Diamond",
+    "Star",
+    "Polygon",
+    "Arrow",
+    "Quote Bubble",
+    "Callout",
 )
 
 /** Where [target] sits in [LinkKindTitles]. Null points nowhere, which is 0. */
@@ -398,6 +452,30 @@ private val AppKitResizeCursors = ResizeCursors { direction ->
     }
     Modifier
 }
+
+/**
+ * These bytes as Kotlin's. The shell hands images over as [NSData] (a panel, a
+ * drop, the pasteboard all produce one), and everything past this line is a
+ * [ByteArray]: the asset store has never heard of Foundation.
+ */
+private fun NSData.toByteArray(): ByteArray {
+    val size: Int = length.toInt()
+    if (size <= 0) return ByteArray(0)
+    val copy = ByteArray(size)
+    copy.usePinned { pinned -> memcpy(pinned.addressOf(0), bytes, length) }
+    return copy
+}
+
+/**
+ * [extension] as an asset id's suffix: lower case, no dot, letters and digits
+ * only, and "png" for anything left with nothing.
+ *
+ * The store never reads it, so this is only about what the bundle looks like in
+ * Finder. Sanitised rather than trusted because an id has to stay one path
+ * segment, and a dropped file's extension is whatever the file was called.
+ */
+private fun assetExtension(extension: String): String =
+    extension.trimStart('.').lowercase().filter { it.isLetterOrDigit() }.take(8).ifEmpty { "png" }
 
 /** One row of the navigator outline, for the native (SwiftUI) sidebar. */
 class OutlineRow(
@@ -601,6 +679,35 @@ class EquationProps(
 )
 
 /**
+ * The primary selected image, flattened for the Image section of the Format
+ * panel: what shows of the picture, how it is corrected, and what is written
+ * under it. [TextProps]'s family, a snapshot rather than a handle.
+ *
+ * The mask travels as a place in `maskKindTitles()`, -1 for an image showing all
+ * of itself, with the window filled in whatever that place is: it is the whole
+ * image for an unmasked one, so switching a mask on never has to invent a
+ * window and switching it off never has to remember one. The window is in the
+ * image's own normalised units, 0..1 on each axis, which is what the panel
+ * shows as percentages.
+ *
+ * [hasAsset] is false for an image with no bytes behind it yet (a media
+ * placeholder, or an insert whose file went missing): there is a picture to
+ * frame and adjust only once one has landed.
+ */
+class ImageProps(
+    val hasAsset: Boolean,
+    val maskKindIndex: Int,
+    val maskX: Float,
+    val maskY: Float,
+    val maskW: Float,
+    val maskH: Float,
+    val exposure: Float,
+    val saturation: Float,
+    val contrast: Float,
+    val caption: String,
+)
+
+/**
  * Where the primary selected element points when it is clicked in a show, and
  * null unless that element is one of the three kinds that hold a link at all.
  * [TextProps]'s family again: what the panel shows, never a handle onto the
@@ -795,6 +902,12 @@ class PlaySession internal constructor(
      * and hides it rather than leaving it out.
      */
     val isRehearsal: Boolean = false,
+    /**
+     * Where the slides resolve their image ids. The show and the presenter both
+     * draw the deck, so both need it: a picture that is on the slide in the
+     * editor is on the slide in front of the audience.
+     */
+    private val assets: AssetStore,
 ) {
     /**
      * The controller both faces play on, published by the show's own composition.
@@ -811,19 +924,21 @@ class PlaySession internal constructor(
             controller = player
             onDispose { if (controller === player) controller = null }
         }
-        PresentationPlayer(
-            document = document,
-            startIndex = startIndex,
-            modifier = Modifier.fillMaxSize(),
-            onExit = onExit,
-            // The player has no idea what a browser is, and neither does
-            // anything else in the shared module: a URL link comes out here.
-            // A string that is not an address opens nothing rather than throwing.
-            onOpenUrl = { url ->
-                NSURL.URLWithString(url)?.let { NSWorkspace.sharedWorkspace.openURL(it) }
-            },
-            controller = player,
-        )
+        CompositionLocalProvider(LocalAssetStore provides assets) {
+            PresentationPlayer(
+                document = document,
+                startIndex = startIndex,
+                modifier = Modifier.fillMaxSize(),
+                onExit = onExit,
+                // The player has no idea what a browser is, and neither does
+                // anything else in the shared module: a URL link comes out here.
+                // A string that is not an address opens nothing rather than throwing.
+                onOpenUrl = { url ->
+                    NSURL.URLWithString(url)?.let { NSWorkspace.sharedWorkspace.openURL(it) }
+                },
+                controller = player,
+            )
+        }
     }
 
     private var presenterCompose: ComposeNSView? = null
@@ -850,13 +965,15 @@ class PlaySession internal constructor(
             val player: PlayerController? = controller
             val deck: Document by documents.collectAsState(initial = document)
             if (player != null) {
-                PresenterView(
-                    document = deck,
-                    controller = player,
-                    onNotesChange = onNotesChange,
-                    clock = { WallClock.stringFromDate(NSDate()) },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                CompositionLocalProvider(LocalAssetStore provides assets) {
+                    PresenterView(
+                        document = deck,
+                        controller = player,
+                        onNotesChange = onNotesChange,
+                        clock = { WallClock.stringFromDate(NSDate()) },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
@@ -979,7 +1096,12 @@ class EditorHost(
             end = if (state.inspectorOpen) INSPECTOR else 0.dp,
             bottom = if (state.showNotes) NOTES else 0.dp,
         )
-        CompositionLocalProvider(LocalResizeCursors provides AppKitResizeCursors) {
+        CompositionLocalProvider(
+            LocalResizeCursors provides AppKitResizeCursors,
+            // Where the slide's images come from. The deck's own store, so the
+            // canvas draws the bytes this window's bundle is carrying.
+            LocalAssetStore provides viewModel.assets,
+        ) {
             Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
                 EditorCanvas(
                     slide = state.selectedSlide,
@@ -1200,6 +1322,212 @@ class EditorHost(
     fun insertEquation() {
         val frame: Frame = state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight)
         viewModel.onInsertElement(equationElement(frame, state.defaults))
+    }
+
+    /**
+     * [bytes] on the slide: written to the deck's assets under a fresh id, then
+     * inserted at its own aspect, no bigger than [IMAGE_INSERT_SHARE] of the
+     * slide.
+     *
+     * The one insert that is not synchronous, and the one that takes bytes: an
+     * image arrives from a panel, a drop or the pasteboard, and none of those
+     * are the document's business. The decode and the write both happen off the
+     * main thread and the element lands back on it, so dropping a 20 megapixel
+     * photo doesn't stall the window.
+     *
+     * Bytes nothing can decode insert nothing rather than an empty frame:
+     * a file that is not an image is a mistake, not a placeholder.
+     */
+    fun insertImage(bytes: NSData, extension: String) {
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val size: NaturalSize = writeAsset(data, extension) ?: return@launch
+            val fitted: ImageElement = imageElement(
+                frame = state.insertionFrame(DefaultImageWidth, DefaultImageHeight),
+                assetId = size.assetId,
+                naturalWidth = size.width,
+                naturalHeight = size.height,
+                defaults = state.defaults,
+            ).fitted(
+                maxWidth = state.document.slideWidth * IMAGE_INSERT_SHARE,
+                maxHeight = state.document.slideHeight * IMAGE_INSERT_SHARE,
+            )
+            viewModel.onInsertElement(fitted)
+        }
+    }
+
+    /**
+     * New bytes behind the primary image, its frame left where it is: what
+     * Replace Image does.
+     *
+     * The mask goes with the old picture. It is a window in the image's own
+     * units, and the same window over a photo of another shape frames something
+     * nobody chose; a fresh one is a drag away, and a kept one is a puzzle.
+     */
+    fun replaceImage(bytes: NSData, extension: String) {
+        val target: ImageElement = state.primaryElement as? ImageElement ?: return
+        if (target.locked) return
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val size: NaturalSize = writeAsset(data, extension) ?: return@launch
+            // Re-read: the write took a moment, and the selection may have moved
+            // under it. Editing by id is what keeps this off the wrong element.
+            val live: ImageElement = liveImage(target.id) ?: return@launch
+            viewModel.onUpdateElements(
+                listOf(
+                    live.copy(
+                        assetId = size.assetId,
+                        naturalWidth = size.width,
+                        naturalHeight = size.height,
+                        mask = null,
+                    ),
+                ),
+            )
+        }
+    }
+
+    /** The size and id of [data] written to the deck's assets, null if it won't decode. */
+    private suspend fun writeAsset(data: ByteArray, extension: String): NaturalSize? =
+        withContext(Dispatchers.Default) {
+            val decoded = runCatching { SkiaImage.makeFromEncoded(data) }.getOrNull()
+                ?: return@withContext null
+            val id = "${newId()}.${assetExtension(extension)}"
+            viewModel.assets.write(id, data)
+            NaturalSize(id, decoded.width, decoded.height)
+        }
+
+    /** What an asset write hands back: where the bytes went, and how big they are. */
+    private class NaturalSize(val assetId: String, val width: Int, val height: Int)
+
+    /** The image with [id] as the slide holds it now, if it is still there and unlocked. */
+    private fun liveImage(id: String): ImageElement? =
+        (state.selectedSlide.elementById(id) as? ImageElement)?.takeIf { !it.locked }
+
+    /**
+     * The picture the Format inspector shows, null when the primary element is
+     * not an image. Read off the primary, like every other Format section.
+     */
+    fun selectedImage(): ImageProps? = (state.primaryElement as? ImageElement)?.let { image ->
+        val window: Frame = image.mask?.frame ?: Frame(0f, 0f, 1f, 1f)
+        ImageProps(
+            hasAsset = image.assetId != null,
+            maskKindIndex = image.mask?.let { MaskKinds.indexOf(it.kind) } ?: -1,
+            maskX = window.x,
+            maskY = window.y,
+            maskW = window.width,
+            maskH = window.height,
+            exposure = image.adjust.exposure,
+            saturation = image.adjust.saturation,
+            contrast = image.adjust.contrast,
+            caption = image.caption,
+        )
+    }
+
+    /** The outlines an image may be cut to, in popup order. -1 is no mask at all. */
+    fun maskKindTitles(): List<String> = MaskKindTitles
+
+    /**
+     * The window the selection's images show, and the outline it is cut to.
+     * [kindIndex] outside `maskKindTitles()` drops the mask, which is what the
+     * popup's None row picks.
+     *
+     * The window is normalised, so it is clamped rather than trusted: a mask
+     * reaching past the image would sample nothing, and one with no extent would
+     * leave the element blank with no handle to drag it back by.
+     */
+    fun setImageMask(kindIndex: Int, x: Float, y: Float, w: Float, h: Float) {
+        val kind: ShapeKind? = MaskKinds.getOrNull(kindIndex)
+        val mask: ImageMask? = kind?.let {
+            val width: Float = w.coerceIn(MIN_MASK_EXTENT, 1f)
+            val height: Float = h.coerceIn(MIN_MASK_EXTENT, 1f)
+            ImageMask(
+                kind = it,
+                frame = Frame(
+                    x = x.coerceIn(0f, 1f - width),
+                    y = y.coerceIn(0f, 1f - height),
+                    width = width,
+                    height = height,
+                ),
+            )
+        }
+        formatImages { it.copy(mask = mask) }
+    }
+
+    /**
+     * The three corrections, as one write: they compose into one colour matrix,
+     * so there is nothing to be gained by setting them apart. [commit] false is
+     * a slider still under the thumb, exactly as it is for opacity.
+     */
+    fun setImageAdjust(exposure: Float, saturation: Float, contrast: Float, commit: Boolean) {
+        val adjust = ImageAdjust(
+            exposure = exposure.coerceIn(-1f, 1f),
+            saturation = saturation.coerceIn(0f, 2f),
+            contrast = contrast.coerceIn(0f, 2f),
+        )
+        val edits: List<Element> = imageEdits { it.copy(adjust = adjust) }
+        if (edits.isEmpty()) return
+        if (commit) viewModel.onUpdateElements(edits) else viewModel.onPreviewElements(edits)
+    }
+
+    /** Back to the identity: the image as it was decoded. */
+    fun resetImageAdjust() {
+        formatImages { it.copy(adjust = ImageAdjust()) }
+    }
+
+    /**
+     * What is written under the picture. The primary alone, the way a terminal's
+     * title is: a caption is content, and one field across a selection would
+     * give every image the same words.
+     */
+    fun setImageCaption(text: String) {
+        val image: ImageElement = state.primaryElement as? ImageElement ?: return
+        if (image.locked || image.caption == text) return
+        viewModel.onUpdateElements(listOf(image.copy(caption = text)))
+    }
+
+    /**
+     * The primary image with the region around its top-left corner rubbed out,
+     * pointed at the asset that came back.
+     *
+     * The seed is (0, 0) because that is where a backdrop is: the corner of a
+     * screenshot or a product shot is the thing being removed, and a click-to-
+     * seed gesture on the canvas is a later job. The core writes a new asset
+     * rather than rewriting the old one, so this is one document change undo
+     * puts back whole.
+     */
+    fun removeImageBackground(tolerance: Float) {
+        val target: ImageElement = state.primaryElement as? ImageElement ?: return
+        val assetId: String = target.assetId ?: return
+        if (target.locked) return
+        scope.launch {
+            val cleared: String =
+                viewModel.assets.removeBackground(assetId, 0, 0, tolerance.coerceIn(0f, 1f))
+            if (cleared == assetId) return@launch
+            val live: ImageElement = liveImage(target.id) ?: return@launch
+            viewModel.onUpdateElements(listOf(live.copy(assetId = cleared)))
+        }
+    }
+
+    /** One unlocked image in the selection is enough for the image controls. */
+    fun canFormatImages(): Boolean =
+        state.selectedElements.any { it is ImageElement && !it.locked }
+
+    // The image setters' [formatSelection]. The core has no formatImages of its
+    // own yet, so the rule is spelled here: every unlocked image in the
+    // selection, minus the ones the change left alone, so a control set to what
+    // it already said spends no history entry.
+    private fun imageEdits(transform: (ImageElement) -> ImageElement): List<Element> =
+        state.selectedElements
+            .filterIsInstance<ImageElement>()
+            .filter { !it.locked }
+            .mapNotNull { image -> transform(image).takeIf { it != image } }
+
+    private fun formatImages(transform: (ImageElement) -> ImageElement) {
+        val edits: List<Element> = imageEdits(transform)
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
     }
 
     /**
@@ -2696,6 +3024,7 @@ class EditorHost(
             if (slide != null && slide.notes != text) viewModel.onUpdateSlide(slide.copy(notes = text))
         },
         isRehearsal = rehearsal,
+        assets = viewModel.assets,
     )
 
     /**
@@ -2704,7 +3033,12 @@ class EditorHost(
      * nothing follows it. [onExit] behaves as [startPlay]'s does.
      */
     fun startPreview(onExit: () -> Unit): PlaySession =
-        PlaySession(state.document.previewOf(state.selectedSlide.id), 0, onExit)
+        PlaySession(
+            state.document.previewOf(state.selectedSlide.id),
+            0,
+            onExit,
+            assets = viewModel.assets,
+        )
 
     /**
      * The document as a standalone CuP project, file by file. Generating is all
@@ -2783,14 +3117,19 @@ class EditorHost(
 
         val height = (width * slideHeight / slideWidth).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
-            SlideView(
-                slide = slide,
-                layout = layout,
-                number = number,
-                background = background,
-                slideWidth = slideWidth,
-                slideHeight = slideHeight,
-            )
+            // One frame, so an image only lands here if the canvas has already
+            // decoded it: the row catches up on the next render, which is the
+            // next edit. Cheaper than blocking a thumbnail on a decode.
+            CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+                SlideView(
+                    slide = slide,
+                    layout = layout,
+                    number = number,
+                    background = background,
+                    slideWidth = slideWidth,
+                    slideHeight = slideHeight,
+                )
+            }
         }
         val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: return null
         val nsData = png.usePinned { pinned ->

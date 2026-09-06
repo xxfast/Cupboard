@@ -67,7 +67,9 @@ fun Element.matchKey(): String = when (this) {
     is TerminalElement -> "terminal:$text"
     is DiagramElement -> "diagram:$source"
     is EquationElement -> "equation:$latex"
-    is ImageElement -> "image:$placeholder"
+    // The bytes are the content; the placeholder is the content of an image that
+    // has none yet, so two empty frames still travel across the cut together.
+    is ImageElement -> "image:${assetId ?: placeholder}"
     is GroupElement -> "group:${children.joinToString("|") { it.matchKey() }}"
 }
 

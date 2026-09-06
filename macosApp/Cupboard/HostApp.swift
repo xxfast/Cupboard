@@ -9,6 +9,7 @@
 import SwiftUI
 import AppKit
 import Observation
+import UniformTypeIdentifiers
 import CupboardCanvas
 
 // MARK: - App
@@ -102,9 +103,15 @@ struct CupboardHostApp: App {
                 Button("Copy") { host.doCopySelection() }
                     .keyboardShortcut("c", modifiers: .command)
                     .disabled(!host.canCopy())
-                Button("Paste") { host.paste() }
-                    .keyboardShortcut("v", modifiers: .command)
-                    .disabled(!host.canPaste())
+                // The one exception to the clipboard being the app's own: with
+                // nothing of ours to paste, Cmd+V takes a picture off the system
+                // pasteboard. The two can never both have something, since
+                // copying an element here puts nothing on NSPasteboard.
+                Button("Paste") {
+                    if host.canPaste() { host.paste() } else { Media.paste(into: host) }
+                }
+                .keyboardShortcut("v", modifiers: .command)
+                .disabled(!host.canPaste() && !Media.pasteboardHasImage())
                 Button("Duplicate") { host.duplicateSelection() }
                     .keyboardShortcut("d", modifiers: .command)
                     .disabled(!host.canDuplicate())
@@ -371,6 +378,10 @@ struct EditorView: View {
     @State var customWidthText = ""
     @State var customHeightText = ""
     @State var customScaleContent = true
+    /// How far Remove Background reaches from the corner pixel. Panel state, and
+    /// deliberately not the document's: it is a knob on one run of the tool, not
+    /// something an image wears.
+    @State var backgroundTolerance: Double = 0.25
 
     var host: EditorHost { model.host }
     var palette: Palette { Palette.of(colorScheme) }
@@ -406,6 +417,12 @@ struct EditorView: View {
             }
         }
         .frame(minWidth: 1100, minHeight: 640)
+        // The whole window takes a picture, panels included: a drop is aimed at
+        // the deck rather than at a point on the slide, and it lands centred
+        // wherever it was let go.
+        .onDrop(of: [.image, .fileURL], isTargeted: nil) { providers in
+            Media.drop(providers, into: host)
+        }
         .background {
             TrafficLightTarget(lights: model.lights, sidebarOpen: ui.sidebarOpen)
                 .frame(width: 0, height: 0)
