@@ -85,7 +85,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 ## Phase 7: Media and data
 
 - [x] Images: asset-backed `ImageElement` (insert from file/drag/paste on both shells), non-destructive mask window with any catalog shape, instant alpha (pure flood fill, re-encoded as a new asset), draw-time exposure/saturation/contrast, captions; Image section in both inspectors. (`a377ffa`, needs a visual pass)
-- [ ] Image galleries (carousel object, per-image captions, cycled during a show).
+- [x] Image galleries: `GalleryElement` (asset images + captions), cycled in play through `elementStep` builds (Add Slide Steps), crossfade + dots; multi-select insert, multi-drop, Gallery inspector section on both shells. (`2be0f9d`, needs a visual pass)
 - [ ] Video/audio: embedded playback, trim, poster frame, loop, volume; web video embeds.
 - [ ] Tables: rows/columns/headers/footers, merged cells, cell styling, sort; cell formats (number/currency/date/percent); conditional highlighting. Formula engine only if demand proves out (it's Numbers-in-Keynote; developers mostly paste results).
 - [ ] Charts: 2D set (column/bar/line/area/pie/donut/scatter) with a data editor; interactive/animated data sets later; 3D never.
