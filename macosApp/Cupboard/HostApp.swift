@@ -62,11 +62,7 @@ struct CupboardHostApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             fileCommands
-            // The File menu's one item of ours. No key equivalent: exporting is
-            // a deliberate act, not something to hit on the way to Cmd+S.
-            CommandGroup(replacing: .importExport) {
-                Button("Export as CuP Project...") { exportCupProject(host: host) }
-            }
+            exportCommands
             // Ours, not AppKit's: the history lives in Kotlin, so the system
             // undo manager has nothing to say about it.
             CommandGroup(replacing: .undoRedo) {

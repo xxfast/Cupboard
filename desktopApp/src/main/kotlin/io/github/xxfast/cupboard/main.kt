@@ -621,6 +621,10 @@ private fun EditorWindow(
             if (focused) recents = Cupboard.recentDocuments()
         }
 
+        // File > Export's own state, out here because both halves need it: the
+        // menu items set it, and the dialogs down in the content read it.
+        val exports: Exports = remember { Exports() }
+
         MenuBar {
             // What's left of the element-scoped enablement, for the items
             // that stay element-scoped: the style pair below. The label
@@ -703,11 +707,33 @@ private fun EditorWindow(
 
                 Separator()
 
-                // The deck as a CuP project someone else can run: the generator
-                // makes the files, this only asks where they go.
+                // The deck as somebody else's file. Every one of these is the
+                // same two steps behind a different writer: ask what shape it
+                // should be, then draw the deck into it. The item only names
+                // the format, [ExportDialogs] does the rest.
+                Menu("Export") {
+                    Item(text = "PDF...", onClick = { exports.ask(ExportFormat.Pdf) })
+                    Item(text = "Images (PNG)...", onClick = { exports.ask(ExportFormat.Png) })
+                    Item(text = "Animated GIF...", onClick = { exports.ask(ExportFormat.Gif) })
+                    Item(text = "HTML Player...", onClick = { exports.ask(ExportFormat.Html) })
+                    Item(text = "PowerPoint (PPTX)...", onClick = { exports.ask(ExportFormat.Pptx) })
+
+                    // The odd one out: a project someone else can run rather
+                    // than a file they can open, so it writes its own folder
+                    // of sources and never touches the rasteriser.
+                    Item(
+                        text = "CuP Project...",
+                        onClick = { exportCupProject(state.document, window) },
+                    )
+                }
+
+                Separator()
+
+                // Print is a one-per-page PDF nobody keeps, handed to the OS.
                 Item(
-                    text = "Export as CuP Project...",
-                    onClick = { exportCupProject(state.document, window) },
+                    text = "Print...",
+                    shortcut = editShortcut(Key.P),
+                    onClick = { exports.ask(ExportFormat.Print) },
                 )
             }
 
@@ -990,6 +1016,17 @@ private fun EditorWindow(
                     }
                 }
             }
+
+            // The export options and the progress modal: windows of their own,
+            // so they sit in the tree rather than in the menu callback that
+            // asked for them. Nothing shows until [Exports] says so.
+            ExportDialogs(
+                exports = exports,
+                document = state.document,
+                name = state.title,
+                assets = viewModel.assets,
+                window = window,
+            )
 
             Box(
                 Modifier
