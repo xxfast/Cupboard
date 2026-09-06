@@ -199,6 +199,7 @@ func insertEntries(_ host: EditorHost) -> [MenuEntry] {
     [
         MenuEntry(title: "Text Box", action: { host.insertTextBox() }),
         MenuEntry(title: "Code", action: { host.insertCodeBox() }),
+        MenuEntry(title: "Terminal", action: { host.insertTerminal() }),
         MenuEntry(title: "Shape", children: shapeEntries(host)),
     ]
 }

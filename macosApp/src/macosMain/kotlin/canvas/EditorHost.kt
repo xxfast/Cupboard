@@ -24,6 +24,8 @@ import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
+import io.github.xxfast.cupboard.document.DefaultTerminalHeight
+import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
@@ -40,6 +42,7 @@ import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
@@ -50,6 +53,7 @@ import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
@@ -270,6 +274,22 @@ class CodeProps(
     val fontSize: Float,
     val showLineNumbers: Boolean,
     val wrap: Boolean,
+)
+
+/**
+ * The primary selected element's terminal style, flattened for the native
+ * inspector, and null unless that element is a [TerminalElement]. Same contract
+ * as [CodeProps]: what the panel shows, never a handle onto the document.
+ *
+ * [title] is the name in the title bar, which is content rather than style, so
+ * the setter for it writes the primary alone while the other three write the
+ * whole selection.
+ */
+class TerminalProps(
+    val title: String,
+    val prompt: String,
+    val fontSize: Float,
+    val showTitleBar: Boolean,
 )
 
 /**
@@ -590,6 +610,12 @@ class EditorHost {
         viewModel.onInsertElement(codeBoxElement(frame))
     }
 
+    /** A terminal in the middle of the slide, carrying a command and its output. */
+    fun insertTerminal() {
+        val frame: Frame = state.insertionFrame(DefaultTerminalWidth, DefaultTerminalHeight)
+        viewModel.onInsertElement(terminalElement(frame))
+    }
+
     /**
      * What the Format inspector shows, or null when nothing is selected: the
      * primary element, with the rest of the selection behind it.
@@ -614,6 +640,7 @@ class EditorHost {
                 is ShapeElement -> "Shape"
                 is ImageElement -> "Image"
                 is CodeElement -> "Code"
+                is TerminalElement -> "Terminal"
                 is GroupElement -> "Group"
             },
         )
@@ -883,6 +910,63 @@ class EditorHost {
     // it already said spends no history entry.
     private fun formatCodeBlocks(transform: (CodeElement) -> CodeElement) {
         val edits: List<Element> = state.selectedElements.formatCode(transform)
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The terminal style the Format inspector shows, null when the primary
+     * element is not a terminal. Read off the primary, written to every unlocked
+     * terminal in the selection, the way the code one works.
+     */
+    fun selectedTerminal(): TerminalProps? =
+        (state.primaryElement as? TerminalElement)?.let { terminal ->
+            TerminalProps(
+                title = terminal.title,
+                prompt = terminal.prompt,
+                fontSize = terminal.fontSize,
+                showTitleBar = terminal.showTitleBar,
+            )
+        }
+
+    /** One unlocked terminal in the selection is enough for the terminal controls. */
+    fun canFormatTerminals(): Boolean =
+        state.selectedElements.any { it is TerminalElement && !it.locked }
+
+    /**
+     * The name in the title bar. The primary alone, because a title is content:
+     * writing one field across a selection would give every terminal the same
+     * name, which is not what a batch of the other three does.
+     */
+    fun setTerminalTitle(title: String) {
+        val terminal: TerminalElement = state.primaryElement as? TerminalElement ?: return
+        if (terminal.locked || terminal.title == title) return
+        viewModel.onUpdateElements(listOf(terminal.copy(title = title)))
+    }
+
+    /** What every line of input is prefixed with. Blank is no prompt at all. */
+    fun setTerminalPrompt(prompt: String) {
+        formatTerminals { it.copy(prompt = prompt) }
+    }
+
+    /** Floors at a point, like the code block's: type with no size can't be read. */
+    fun setTerminalFontSize(size: Float) {
+        formatTerminals { it.copy(fontSize = size.coerceIn(1f, 400f)) }
+    }
+
+    fun setTerminalTitleBar(enabled: Boolean) {
+        formatTerminals { it.copy(showTitleBar = enabled) }
+    }
+
+    // The terminal setters' [formatSelection], written out here rather than in
+    // the core the way [formatCode] is: the unlocked terminals of the selection,
+    // minus the ones the change left alone, committed as one history entry.
+    private fun formatTerminals(transform: (TerminalElement) -> TerminalElement) {
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is TerminalElement || element.locked) return@mapNotNull null
+            val formatted: TerminalElement = transform(element)
+            return@mapNotNull if (formatted == element) null else formatted
+        }
         if (edits.isEmpty()) return
         viewModel.onUpdateElements(edits)
     }

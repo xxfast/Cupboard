@@ -2,7 +2,20 @@ package io.github.xxfast.cupboard.document
 
 import kotlinx.serialization.Serializable
 
-enum class BuildEffect { FadeUp, Pop, Dissolve }
+enum class BuildEffect {
+    FadeUp,
+    Pop,
+    Dissolve,
+
+    /**
+     * Types the element in rather than bringing it in whole. Only
+     * [TerminalElement] honours it: its command lines type out character by
+     * character over the build's duration, and each block of output lands the
+     * moment the command above it has finished. Every other kind treats it as
+     * [FadeUp], so an effect set on the wrong element still reveals it.
+     */
+    Typewriter,
+}
 
 enum class BuildTrigger {
     /** Advances on its own step (a click in play mode). */
@@ -54,6 +67,14 @@ fun Slide.buildSteps(): Map<String, Int> {
     }
     return steps
 }
+
+/**
+ * The build that reveals [elementId], null when nothing brings it in.
+ *
+ * The first build for an element is its reveal and the rest only change it, per
+ * [buildSteps], so this is the one whose effect a renderer plays on entry.
+ */
+fun Slide.entryBuild(elementId: String): Build? = builds.firstOrNull { it.elementId == elementId }
 
 fun Slide.isVisibleAt(elementId: String, step: Int): Boolean {
     val revealStep = buildSteps()[elementId] ?: return true

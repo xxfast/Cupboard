@@ -51,9 +51,10 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * The stacked layout's 60dp M3 toolbar, per the design's Linux variant: filled
  * Play pill, tonal Add slide, circular insert icon buttons, outlined zoom pill.
  *
- * Text inserts a box, Code a code block, Shape drops the catalog down; Add
- * slide, image and media stay placeholders until the document gains those
- * operations. [onPlay] null (android/web shells) hides Play entirely.
+ * Text inserts a box, Code a code block, Terminal a shell window, Shape drops
+ * the catalog down; Add slide, image and media stay placeholders until the
+ * document gains those operations. [onPlay] null (android/web shells) hides Play
+ * entirely.
  */
 @Composable
 fun EditorToolbar(
@@ -62,6 +63,7 @@ fun EditorToolbar(
     onPlay: (() -> Unit)?,
     onInsertText: () -> Unit,
     onInsertCode: () -> Unit,
+    onInsertTerminal: () -> Unit,
     onInsertShape: (ShapeCatalogEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -128,6 +130,7 @@ fun EditorToolbar(
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 InsertButton(onClick = onInsertText) { TextGlyph(color = tokens.icon) }
                 InsertButton(onClick = onInsertCode) { CodeGlyph(color = tokens.icon) }
+                InsertButton(onClick = onInsertTerminal) { TerminalGlyph(color = tokens.icon) }
                 ShapeInsertButton(onPick = onInsertShape)
                 InsertButton { ImageGlyph(color = tokens.icon) }
                 InsertButton { MediaGlyph(color = tokens.icon) }
@@ -313,6 +316,22 @@ private fun CodeGlyph(color: Color) {
             lineTo(9.4f * s, 10.6f * s)
             moveTo(8f * s, 2.6f * s)
             lineTo(6f * s, 11.4f * s)
+        }
+        drawPath(glyph, color, style = glyphStroke())
+    }
+}
+
+/** A prompt and its caret, ">_", which is what a terminal looks like from afar. */
+@Composable
+private fun TerminalGlyph(color: Color) {
+    Canvas(Modifier.size(15.dp)) {
+        val s: Float = size.width / 14f
+        val glyph: Path = Path().apply {
+            moveTo(1.6f * s, 3.4f * s)
+            lineTo(5.6f * s, 7f * s)
+            lineTo(1.6f * s, 10.6f * s)
+            moveTo(7.6f * s, 10.8f * s)
+            lineTo(12.4f * s, 10.8f * s)
         }
         drawPath(glyph, color, style = glyphStroke())
     }

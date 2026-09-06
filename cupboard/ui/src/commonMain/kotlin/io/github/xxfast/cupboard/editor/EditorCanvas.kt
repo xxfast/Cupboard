@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,6 +76,13 @@ import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
+import io.github.xxfast.cupboard.canvas.TerminalBackground
+import io.github.xxfast.cupboard.canvas.TerminalBorder
+import io.github.xxfast.cupboard.canvas.TerminalCommand
+import io.github.xxfast.cupboard.canvas.TerminalCorner
+import io.github.xxfast.cupboard.canvas.TerminalLineHeight
+import io.github.xxfast.cupboard.canvas.TerminalPadding
+import io.github.xxfast.cupboard.canvas.TerminalTitleBarView
 import io.github.xxfast.cupboard.canvas.alignment
 import io.github.xxfast.cupboard.canvas.chrome
 import io.github.xxfast.cupboard.canvas.highlightCode
@@ -88,6 +96,7 @@ import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.indentLine
 import io.github.xxfast.cupboard.document.lineIndexOf
@@ -95,6 +104,7 @@ import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.outdentLine
+import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.screens.editor.GuideDrag
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
@@ -225,7 +235,7 @@ fun EditorCanvas(
     // to edit. Which of the two it is picks the field below.
     val editing: Element? = slide.elements
         .firstOrNull { it.id == editingElementId }
-        ?.takeIf { it is TextElement || it is CodeElement }
+        ?.takeIf { it.takesCaret }
     val currentGuides by rememberUpdatedState(guides)
     val currentShowGuides by rememberUpdatedState(showGuides)
     val currentSnapTargets by rememberUpdatedState(snapTargets)
@@ -446,10 +456,10 @@ fun EditorCanvas(
                                             val hit: Element? = elementAt(toDoc(start))
                                             val now: Long =
                                                 event.changes.firstOrNull()?.uptimeMillis ?: 0L
-                                            // A second click on the same text box
-                                            // or code block opens it for typing,
-                                            // the way every editor's does. Anything
-                                            // else selects, first click or not.
+                                            // A second click on anything that takes
+                                            // a caret opens it for typing, the way
+                                            // every editor's does. Anything else
+                                            // selects, first click or not.
                                             val again: Boolean = hit != null &&
                                                 hit.id == clickedId &&
                                                 now - clickedAt <= doubleClick
@@ -457,8 +467,7 @@ fun EditorCanvas(
                                             clickedAt = now
                                             when {
                                                 hit == null -> onSelectElement(null)
-                                                again && (hit is TextElement ||
-                                                    hit is CodeElement) && !hit.locked ->
+                                                again && hit.takesCaret && !hit.locked ->
                                                     onBeginTextEdit(hit.id)
 
                                                 else -> onSelectElement(hit.id)
@@ -750,6 +759,14 @@ fun EditorCanvas(
                 )
 
                 is CodeElement -> CodeEditor(
+                    element = editing,
+                    onPreviewElements = onPreviewElements,
+                    onEndTextEdit = onEndTextEdit,
+                    fieldMenuBridge = fieldMenuBridge,
+                    modifier = fieldContextClick,
+                )
+
+                is TerminalElement -> TerminalEditor(
                     element = editing,
                     onPreviewElements = onPreviewElements,
                     onEndTextEdit = onEndTextEdit,
@@ -1202,6 +1219,107 @@ private fun CodeEditor(
 
                                 else -> false
                             }
+                        },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * [element] as an editable terminal, sitting exactly where its transcript draws.
+ *
+ * [CodeEditor]'s pattern throughout, minus the colouring: the transcript is
+ * typed as one plain string, prompts and all, because that is what the document
+ * holds and what the renderer classifies at draw time. Nothing here is a command
+ * or an output line yet, so nothing here is green or dim; what is typed goes
+ * back through the loop as an ordinary element preview and comes out coloured on
+ * the next repaint of the block behind the field.
+ *
+ * The chrome is the renderer's own title bar and its own constants, so opening a
+ * terminal for typing moves nothing. Tab is left to the field as plain focus
+ * traversal: a shell transcript is not indented the way code is.
+ */
+@Composable
+private fun TerminalEditor(
+    element: TerminalElement,
+    onPreviewElements: (List<Element>) -> Unit,
+    onEndTextEdit: () -> Unit,
+    fieldMenuBridge: FieldMenuBridge? = null,
+    modifier: Modifier = Modifier,
+) {
+    // Re-seeded when the caret moves to another terminal, everything selected
+    // the way [TextEditor] seeds a text box.
+    var value: TextFieldValue by remember(element.id) {
+        mutableStateOf(TextFieldValue(element.text, TextRange(0, element.text.length)))
+    }
+    val focusRequester: FocusRequester = remember { FocusRequester() }
+    LaunchedEffect(element.id) { focusRequester.requestFocus() }
+
+    val style: TextStyle = TextStyle(
+        color = TerminalCommand,
+        fontSize = element.fontSize.sp,
+        fontFamily = FontFamily.Monospace,
+        lineHeight = (element.fontSize * TerminalLineHeight).sp,
+    )
+
+    val clipboard: FieldClipboard = rememberFieldClipboard()
+
+    // Every way the value can change goes through here, as the code block's does.
+    val update: (TextFieldValue) -> Unit = { edited ->
+        val typed: Boolean = edited.text != value.text
+        value = edited
+        if (typed) onPreviewElements(listOf(element.copy(text = edited.text)))
+    }
+
+    // As the text box: the menu's verbs are the chords' verbs.
+    RegisterFieldMenu(fieldMenuBridge, element.id, { value }, clipboard, update)
+
+    Box(
+        Modifier
+            .offset(element.frame.x.dp, element.frame.y.dp)
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .graphicsLayer {
+                alpha = element.opacity
+                rotationZ = element.rotation
+                scaleX = if (element.flippedHorizontally) -1f else 1f
+                scaleY = if (element.flippedVertically) -1f else 1f
+                transformOrigin = TransformOrigin.Center
+            }
+            .then(modifier)
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(TerminalBackground, TerminalCorner)
+                .border(1.dp, TerminalBorder, TerminalCorner)
+                .clip(TerminalCorner)
+        ) {
+            Column {
+                if (element.showTitleBar) TerminalTitleBarView(element)
+
+                BasicTextField(
+                    value = value,
+                    onValueChange = update,
+                    textStyle = style,
+                    cursorBrush = SolidColor(TerminalCommand),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(TerminalPadding)
+                        .focusRequester(focusRequester)
+                        // Escape leaves the transcript where it is and the caret
+                        // behind. Enter is the field's, it inserts a newline.
+                        .onPreviewKeyEvent { key ->
+                            if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                            // As the text box: mid-edit the chord is the transcript's.
+                            if (handleClipboardKey(key, value, clipboard, update)) {
+                                return@onPreviewKeyEvent true
+                            }
+
+                            if (key.key != Key.Escape) return@onPreviewKeyEvent false
+                            onEndTextEdit()
+                            true
                         },
                 )
             }

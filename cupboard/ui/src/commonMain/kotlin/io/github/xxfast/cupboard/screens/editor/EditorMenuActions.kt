@@ -2,6 +2,8 @@ package io.github.xxfast.cupboard.screens.editor
 
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
+import io.github.xxfast.cupboard.document.DefaultTerminalHeight
+import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Element
@@ -20,6 +22,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
@@ -231,7 +234,8 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
 }
 
 /**
- * The Insert verbs: a text box, a code block, then the shape catalog as one submenu.
+ * The Insert verbs: a text box, a code block, a terminal, then the shape catalog
+ * as one submenu.
  *
  * Nothing is ever greyed. An insertion asks nothing of the selection, and a
  * locked element on the slide is no reason not to add another one next to it.
@@ -259,6 +263,11 @@ fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                     val frame: Frame =
                         state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight)
                     viewModel.onInsertElement(codeBoxElement(frame))
+                },
+                EditorMenuItem("Terminal", enabled = true) {
+                    val frame: Frame =
+                        state.insertionFrame(DefaultTerminalWidth, DefaultTerminalHeight)
+                    viewModel.onInsertElement(terminalElement(frame))
                 },
                 EditorMenuItem(
                     label = "Shape",

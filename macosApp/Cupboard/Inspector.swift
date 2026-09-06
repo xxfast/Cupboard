@@ -87,6 +87,11 @@ extension EditorView {
                         codeSection(code)
                         palette.divider.frame(height: 1)
                     }
+                    // And the terminal's.
+                    if let terminal = ui.terminal {
+                        terminalSection(terminal)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -527,6 +532,37 @@ extension EditorView {
         languages.firstIndex { $0.caseInsensitiveCompare(language) == .orderedSame }
             ?? languages.firstIndex(of: "Plain")
             ?? 0
+    }
+
+    // MARK: Terminal
+
+    /// The terminal's own style: what its title bar is called, what prefixes a
+    /// line of input, the type size, and whether the bar is drawn at all. Same
+    /// contract as the Code section, except the title, which is content and so
+    /// goes to the primary alone.
+    func terminalSection(_ terminal: TerminalFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Terminal")
+
+            StringField(placeholder: "Title", value: terminal.title, palette: palette) {
+                host.setTerminalTitle(title: $0)
+            }
+
+            HStack(spacing: 8) {
+                StringField(placeholder: "Prompt", value: terminal.prompt, palette: palette) {
+                    host.setTerminalPrompt(prompt: $0)
+                }
+
+                ValueField(label: "", value: terminal.size, palette: palette, unit: "pt") {
+                    host.setTerminalFontSize(size: Float($0))
+                }
+                .frame(width: 78)
+            }
+
+            checkRow("Show Title Bar", on: terminal.showTitleBar) {
+                host.setTerminalTitleBar(enabled: !terminal.showTitleBar)
+            }
+        }
     }
 
     func positionSection(_ element: Selection) -> some View {

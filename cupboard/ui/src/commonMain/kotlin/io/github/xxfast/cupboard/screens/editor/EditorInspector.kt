@@ -75,6 +75,7 @@ import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
@@ -178,6 +179,12 @@ fun EditorInspector(
                     )
 
                     if (primary is CodeElement) CodeSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                    )
+
+                    if (primary is TerminalElement) TerminalSection(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
@@ -833,6 +840,92 @@ private fun CodeSection(
         label = "Wrap",
         checked = primary.wrap,
         onToggle = if (!enabled) null else ({ on -> format { it.copy(wrap = on) } }),
+    )
+
+    PanelDivider()
+}
+
+/**
+ * [transform] applied to every unlocked terminal in the selection, as the ones
+ * that actually changed.
+ *
+ * Here rather than in the document module for [List.formatShapes]' reason: the
+ * inspector is the only caller, since no menu verb formats a terminal.
+ */
+private fun List<Element>.formatTerminals(
+    transform: (TerminalElement) -> TerminalElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is TerminalElement || element.locked) return@mapNotNull null
+    val formatted: TerminalElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+/**
+ * The live TERMINAL section, shown when the primary element is a terminal.
+ *
+ * Reads [primary] and writes the whole selection through [formatTerminals], like
+ * the code section: a mixed selection dresses its terminals and leaves the rest
+ * alone. Nothing here previews, since every control is one settled edit.
+ *
+ * The transcript itself isn't edited here. It is typed on the canvas, the way a
+ * code block's code is. The title is the exception among the fields: it names
+ * the one session rather than the look of every selected one, so it is written
+ * to [primary] alone.
+ */
+@Composable
+private fun TerminalSection(
+    primary: TerminalElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+
+    // False when the transform changed nothing anywhere: no event, and no field
+    // left holding a value the document never took.
+    fun format(transform: (TerminalElement) -> TerminalElement): Boolean {
+        val formatted: List<Element> = elements.formatTerminals(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    SectionLabel("TERMINAL")
+    EntryField(
+        label = "Title",
+        display = primary.title,
+        enabled = enabled,
+        monospace = false,
+    ) { entered ->
+        if (entered == primary.title) false
+        else {
+            onUpdate(listOf(primary.copy(title = entered)))
+            true
+        }
+    }
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        EntryField(
+            label = "Prompt",
+            display = primary.prompt,
+            enabled = enabled,
+            modifier = Modifier.weight(1f),
+        ) { entered ->
+            if (entered == primary.prompt) false else format { it.copy(prompt = entered) }
+        }
+        NumberField(
+            label = "Size",
+            value = primary.fontSize,
+            enabled = enabled,
+            onCommit = { size -> format { it.copy(fontSize = size) } },
+            modifier = Modifier.width(74.dp),
+            minimum = 1f,
+        )
+    }
+
+    AppearanceRow(
+        label = "Show Title Bar",
+        checked = primary.showTitleBar,
+        onToggle = if (!enabled) null else ({ on -> format { it.copy(showTitleBar = on) } }),
     )
 
     PanelDivider()

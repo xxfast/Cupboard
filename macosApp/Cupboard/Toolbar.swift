@@ -96,8 +96,8 @@ extension EditorView {
         .help(help)
     }
 
-    /// The one insert cluster: raised capsule, 30x24 items. Text, Code and Shape
-    /// are live; Table, Chart and Media wait on element types the document model
+    /// The one insert cluster: raised capsule, 30x24 items. Text, Code, Terminal
+    /// and Shape are live; Table, Chart and Media wait on element types the document model
     /// does not hold yet.
     var insertCapsule: some View {
         HStack(spacing: 2) {
@@ -115,6 +115,12 @@ extension EditorView {
             }
             .buttonStyle(.plain)
             .help("Code")
+
+            Button { host.insertTerminal() } label: {
+                insertIcon("terminal")
+            }
+            .buttonStyle(.plain)
+            .help("Terminal")
 
             // A popup rather than a button: what a shape is comes off the
             // catalog, so picking one is picking a row of it.

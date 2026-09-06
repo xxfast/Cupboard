@@ -83,6 +83,48 @@ private fun codeSlide(): Slide {
     )
 }
 
+/**
+ * Shows off the terminal element and its typewriter build: the two commands that
+ * take the core to Windows, typed out one after the other with their output
+ * landing between them.
+ */
+private fun terminalSlide(): Slide {
+    val title = TextElement(
+        frame = Frame(146f, 130f, 1627f, 142f),
+        text = "Native Interop",
+        fontSize = 94f,
+        fontWeight = 700,
+        letterSpacing = -1f,
+        color = 0xFFFFFFFF,
+    )
+    val subtitle = TextElement(
+        frame = Frame(146f, 281f, 1627f, 61f),
+        text = "One core, three shells",
+        fontSize = 39f,
+        color = 0xFFA9A0D8,
+    )
+    val terminal = TerminalElement(
+        frame = Frame(146f, 390f, 1627f, 560f),
+        fontSize = 28f,
+        text = """
+            $ ./gradlew :winuiApp:packNuget
+            BUILD SUCCESSFUL in 41s
+            $ dotnet build winuiApp/WinUiApp
+              Cupboard.Kotlin 0.1.0 -> mingwX64 + macosArm64
+              WinUiApp -> bin/Debug/net10.0-windows/WinUiApp.dll
+        """.trimIndent(),
+    )
+
+    return Slide(
+        title = "Native Interop",
+        elements = listOf(title, subtitle, terminal),
+        // One build, and the whole block types itself out under it.
+        builds = listOf(Build(terminal.id, effect = BuildEffect.Typewriter, durationMs = 2400)),
+        notes = "The same Kotlin core the canvas runs on ships to Windows as a NuGet " +
+            "package. Let the commands type themselves out.",
+    )
+}
+
 /** The "Rendering Pipeline" slide from the design mock, as document data. */
 fun sampleDocument(): Document {
     val title = TextElement(
@@ -157,7 +199,7 @@ fun sampleDocument(): Document {
             pipeline,
             titleSlide("Scene Graph", depth = 1),
             codeSlide(),
-            titleSlide("Native Interop"),
+            terminalSlide(),
             titleSlide("Benchmarks"),
             titleSlide("Roadmap"),
         ),

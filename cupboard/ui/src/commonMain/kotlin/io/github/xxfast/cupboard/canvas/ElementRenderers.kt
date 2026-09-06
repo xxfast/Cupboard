@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Element
@@ -54,6 +56,7 @@ import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
+import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
@@ -78,6 +81,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * the slide's build order. Null, the editor's case, is the whole block. Only a
  * top-level element gets one: a code block inside a group draws whole, since a
  * build names an element the slide holds.
+ *
+ * [entry] is the build that brings the element in, for the kinds that animate
+ * themselves rather than being faded in from outside. Only [TerminalElement]
+ * reads it today, for [BuildEffect.Typewriter]. Null the same way [codeStep] is:
+ * the editor, and anything nested in a group.
  */
 @Composable
 fun ElementView(
@@ -86,6 +94,7 @@ fun ElementView(
     originX: Float = 0f,
     originY: Float = 0f,
     codeStep: CodeStep? = null,
+    entry: Build? = null,
 ) {
     Box(
         modifier = modifier
@@ -104,6 +113,7 @@ fun ElementView(
             is ShapeElement -> ShapeElementView(element)
             is ImageElement -> ImageElementView(element)
             is CodeElement -> CodeElementView(element, codeStep)
+            is TerminalElement -> TerminalElementView(element, entry)
             // The group draws nothing of its own: it is the box its transforms
             // hang off, and its children draw inside it. A nested group recurses
             // through here and re-bases its own children the same way.

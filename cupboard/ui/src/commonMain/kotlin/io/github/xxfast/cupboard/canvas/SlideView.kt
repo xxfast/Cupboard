@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.codeStepFor
+import io.github.xxfast.cupboard.document.entryBuild
 import io.github.xxfast.cupboard.document.isVisibleAt
 
 /** How far the slide number sits off the slide's right and bottom edges, in doc units. */
@@ -46,6 +47,9 @@ fun SlideView(
                 codeStep = if (step != null && element is CodeElement) {
                     slide.codeStepFor(element, step)
                 } else null,
+                // Play only: the editor draws every element at rest, so nothing
+                // there animates itself in.
+                entry = if (step != null) slide.entryBuild(element.id) else null,
             )
         }
         if (slide.showsSlideNumber && number != null) SlideNumberView(number)

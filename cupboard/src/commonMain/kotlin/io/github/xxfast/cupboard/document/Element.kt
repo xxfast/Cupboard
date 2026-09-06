@@ -381,6 +381,56 @@ data class GroupElement(
 @Serializable
 enum class CodeTheme { Atom, Darcula, Monokai, Pastel, Matrix, Notepad }
 
+/**
+ * A terminal window on a slide: a command, what it printed, and the chrome around
+ * both.
+ *
+ * A line that starts with [prompt] and a space, or that is the prompt on its own,
+ * is a command: it draws its prompt green and its own text bright. Every other
+ * line is output and draws dim. That keeps [text] one plain string, so typing,
+ * undo and the file format all stay as they were, the same argument [ListStyle]
+ * makes for its lines.
+ *
+ * [title] is what the title bar says and so is content, not style: it names the
+ * shell this session is, which travels with the text rather than with the look.
+ */
+@Serializable
+@SerialName("terminal")
+data class TerminalElement(
+    override val id: String = newId(),
+    override val frame: Frame,
+    override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
+    val text: String = "",
+    val prompt: String = "$",
+    val title: String = "zsh",
+    val fontSize: Float = 14f,
+    val showTitleBar: Boolean = true,
+) : Element {
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
+}
+
+/** Whether a double click puts a caret in it: the kinds edited in place on the canvas. */
+val Element.takesCaret: Boolean
+    get() = this is TextElement || this is CodeElement || this is TerminalElement
+
 @Serializable
 @SerialName("code")
 data class CodeElement(

@@ -1,17 +1,16 @@
 package io.github.xxfast.cupboard.screens.editor
 
-import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.Slide
-import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
@@ -203,14 +202,14 @@ data class EditorState(
      * resolves, or one that resolves to something with no text or code to edit,
      * is no more an edit session than no id at all.
      *
-     * A text box and a code block are the two that take a caret. They edit
-     * differently on the canvas, one a plain field and one a highlighted one,
-     * but a session is a session either way.
+     * A text box, a code block and a terminal are the three that take a caret.
+     * They edit differently on the canvas, one a plain field and the others
+     * dressed ones, but a session is a session either way.
      */
     val editingElement: Element?
         get() = editingElementId
             ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
-            ?.takeIf { it is TextElement || it is CodeElement }
+            ?.takeIf { it.takesCaret }
 
     /** Whether the caret is in an element, and so whether keys are text rather than commands. */
     val isEditingText: Boolean get() = editingElement != null

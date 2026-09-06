@@ -28,6 +28,8 @@ struct Chrome {
     let shape: ShapeFormat?
     /// The primary's code style, nil unless the primary is a code block.
     let code: CodeFormat?
+    /// The primary's terminal style, nil unless the primary is a terminal.
+    let terminal: TerminalFormat?
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
@@ -52,6 +54,7 @@ struct Chrome {
         text = host.selectedText().map(TextFormat.init)
         shape = host.selectedShape().map(ShapeFormat.init)
         code = host.selectedCode().map(CodeFormat.init)
+        terminal = host.selectedTerminal().map(TerminalFormat.init)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
@@ -203,6 +206,24 @@ struct CodeFormat {
         size = Double(props.fontSize)
         showLineNumbers = props.showLineNumbers
         wrap = props.wrap
+    }
+}
+
+/// The primary selected element's terminal style as a Swift value: what the
+/// Terminal section of the Format panel shows. Read off the primary like
+/// `CodeFormat`, and written back the same way, except the title, which is
+/// content and so goes to the primary alone.
+struct TerminalFormat {
+    let title: String
+    let prompt: String
+    let size: Double
+    let showTitleBar: Bool
+
+    init(_ props: TerminalProps) {
+        title = props.title
+        prompt = props.prompt
+        size = Double(props.fontSize)
+        showTitleBar = props.showTitleBar
     }
 }
 

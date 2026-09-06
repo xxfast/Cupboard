@@ -83,6 +83,16 @@ fun codeBoxElement(frame: Frame): CodeElement = CodeElement(
     language = "Kotlin",
 )
 
+/** The box a fresh terminal inserts into. */
+const val DefaultTerminalWidth: Float = 520f
+const val DefaultTerminalHeight: Float = 200f
+
+/** A fresh terminal filling [frame], with a command and its output to type over. */
+fun terminalElement(frame: Frame): TerminalElement = TerminalElement(
+    frame = frame,
+    text = "$ ./gradlew :cupboard:jvmTest\nBUILD SUCCESSFUL in 4s",
+)
+
 /**
  * One entry of the shape menu: what to insert, what to call it, and how round.
  *
