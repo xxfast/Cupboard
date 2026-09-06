@@ -93,7 +93,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 ## Phase 8: Documents and interop
 
 - [x] `.cupboard` bundle format: a folder bundle (`document.json` + `assets/`) via `CupboardBundle`/`FileAssetStore` in a jvm+native `fileMain` source set; `formatVersion` + `decodeDocument` (Loaded/TooNew/Corrupt); the interim autosave migrates into `~/.cupboard/Untitled.cupboard/`. Zip packaging can come with export. Done ahead of Phase 7 because images need somewhere to keep bytes. (`9def82d`)
-- [ ] Real document lifecycle: open/save/save-as, recents, multiple windows/documents, dirty state, file association.
+- [x] Real document lifecycle: New/Open/Open Recent/Save As/Rename/Close over bundles, one window per deck, `savePending` = Edited in the title, recents in `~/.cupboard/recents.json`, `.cupboard` package association on macOS. Both shells. (`7fe60e7`, needs a visual pass)
 - [ ] Export: PDF (with per-build pages option), PNG/JPEG per slide, movie of a played deck, animated GIF, HTML player; PPTX export (best-effort mapping); print with grid/handout layouts.
 - [ ] Import: PPTX and Keynote best-effort (shapes/text/images land editable; unsupported effects degrade gracefully).
 - [ ] Password-protected documents.
