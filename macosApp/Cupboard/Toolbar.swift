@@ -105,9 +105,17 @@ extension EditorView {
             accessibilityDescription: nil
         ) == nil ? "rectangle.connected.to.line.below" : "point.3.connected.trianglepath.dotted"
 
+    /// The radical glyph, resolved the same way the diagram one is; the
+    /// function glyph stands in where the running system has no square root.
+    static let equationSymbol: String =
+        NSImage(
+            systemSymbolName: "x.squareroot",
+            accessibilityDescription: nil
+        ) == nil ? "function" : "x.squareroot"
+
     /// The one insert cluster: raised capsule, 30x24 items. Text, Code, Terminal,
-    /// Diagram and Shape are live; Table, Chart and Media wait on element types the
-    /// document model does not hold yet.
+    /// Diagram, Equation and Shape are live; Table, Chart and Media wait on element
+    /// types the document model does not hold yet.
     var insertCapsule: some View {
         HStack(spacing: 2) {
             insertPlaceholder("tablecells", help: "Table")
@@ -136,6 +144,12 @@ extension EditorView {
             }
             .buttonStyle(.plain)
             .help("Diagram")
+
+            Button { host.insertEquation() } label: {
+                insertIcon(Self.equationSymbol)
+            }
+            .buttonStyle(.plain)
+            .help("Equation")
 
             // A popup rather than a button: what a shape is comes off the
             // catalog, so picking one is picking a row of it.

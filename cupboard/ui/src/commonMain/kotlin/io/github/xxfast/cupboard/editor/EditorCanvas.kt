@@ -92,6 +92,7 @@ import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
@@ -116,26 +117,29 @@ private val Accent = Color(0xFF7F52FF)
 private val GuideYellow = Color(0xFFF5C518)
 
 /**
- * The sheet a diagram's source is typed on, and what is typed on it.
+ * The sheet a source is typed on, and what is typed on it. Shared by every
+ * element whose content is written rather than drawn: a diagram's chart, an
+ * equation's math.
  *
- * Sheer rather than opaque on purpose: the chart carries on drawing underneath,
- * so the source and the picture it makes are read in the one place. Everything
- * here is the editor's own rather than the renderer's, since none of it survives
- * the edit: what a diagram looks like is the renderer's business alone.
+ * Sheer rather than opaque on purpose: the element carries on drawing
+ * underneath, so the source and the picture it makes are read in the one place.
+ * Everything here is the editor's own rather than the renderer's, since none of
+ * it survives the edit: what the element looks like is the renderer's business
+ * alone.
  */
-private val DiagramSourceSheet = Color(0xE616171D)
-private val DiagramSourceBorder = Color(0xFF2C2E36)
-private val DiagramSourceText = Color(0xFFF1F1F1)
-private val DiagramSourceCorner = RoundedCornerShape(8.dp)
-private val DiagramSourcePadding = 12.dp
+private val SourceSheet = Color(0xE616171D)
+private val SourceBorder = Color(0xFF2C2E36)
+private val SourceText = Color(0xFFF1F1F1)
+private val SourceCorner = RoundedCornerShape(8.dp)
+private val SourcePadding = 12.dp
 
 /**
- * The source is set at this much of the chart's own size, and never smaller than
- * [DiagramSourceMinSize]: a description runs to more lines than the picture it
+ * The source is set at this much of the element's own size, and never smaller
+ * than [SourceMinSize]: a description runs to more lines than the picture it
  * describes, and it has to fit inside the same box.
  */
-private const val DiagramSourceScale: Float = 0.6f
-private const val DiagramSourceMinSize: Float = 12f
+private const val SourceScale: Float = 0.6f
+private const val SourceMinSize: Float = 12f
 
 /**
  * What one nesting level of a list indents by inside the text field. A field
@@ -805,6 +809,14 @@ fun EditorCanvas(
                     modifier = fieldContextClick,
                 )
 
+                is EquationElement -> EquationEditor(
+                    element = editing,
+                    onPreviewElements = onPreviewElements,
+                    onEndTextEdit = onEndTextEdit,
+                    fieldMenuBridge = fieldMenuBridge,
+                    modifier = fieldContextClick,
+                )
+
                 else -> {}
             }
         }
@@ -1395,8 +1407,8 @@ private fun DiagramEditor(
     LaunchedEffect(element.id) { focusRequester.requestFocus() }
 
     val style: TextStyle = TextStyle(
-        color = DiagramSourceText,
-        fontSize = (element.fontSize * DiagramSourceScale).coerceAtLeast(DiagramSourceMinSize).sp,
+        color = SourceText,
+        fontSize = (element.fontSize * SourceScale).coerceAtLeast(SourceMinSize).sp,
         fontFamily = FontFamily.Monospace,
     )
 
@@ -1432,16 +1444,115 @@ private fun DiagramEditor(
             value = value,
             onValueChange = update,
             textStyle = style,
-            cursorBrush = SolidColor(DiagramSourceText),
+            cursorBrush = SolidColor(SourceText),
             modifier = Modifier
                 .fillMaxSize()
-                .background(DiagramSourceSheet, DiagramSourceCorner)
-                .border(1.dp, DiagramSourceBorder, DiagramSourceCorner)
-                .clip(DiagramSourceCorner)
-                .padding(DiagramSourcePadding)
+                .background(SourceSheet, SourceCorner)
+                .border(1.dp, SourceBorder, SourceCorner)
+                .clip(SourceCorner)
+                .padding(SourcePadding)
                 .focusRequester(focusRequester)
                 // Escape leaves the source where it is and the caret behind.
                 // Enter is the field's, it starts the next line of the chart.
+                .onPreviewKeyEvent { key ->
+                    if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                    // As the text box: mid-edit the chord is the source's.
+                    if (handleClipboardKey(key, value, clipboard, update)) {
+                        return@onPreviewKeyEvent true
+                    }
+
+                    if (key.key != Key.Escape) return@onPreviewKeyEvent false
+                    onEndTextEdit()
+                    true
+                },
+        )
+    }
+}
+
+/**
+ * [element] as its editable LaTeX, on a sheer sheet over the math it sets.
+ *
+ * [DiagramEditor]'s pattern exactly, for the same reason: the source is a
+ * description of the picture rather than the picture, so it is typed over the
+ * element on a sheet the setting shows through. Watching `\frac` become a
+ * fraction as it is typed is what makes the syntax learnable without a manual.
+ *
+ * The math under the sheet is drawn here rather than by the canvas' element
+ * loop, which skips whatever is being edited. Each keystroke goes back through
+ * the loop as an ordinary element preview, so what is set behind the field is
+ * the parse of what has been typed so far, half-finished commands and all.
+ *
+ * Monospace and well under the equation's own size: the source is read as code
+ * (braces, backslashes) while the setting behind it is read as math, and an
+ * equation's size is a display size that would run a couple of terms off the box
+ * if the source were set at it.
+ */
+@Composable
+private fun EquationEditor(
+    element: EquationElement,
+    onPreviewElements: (List<Element>) -> Unit,
+    onEndTextEdit: () -> Unit,
+    fieldMenuBridge: FieldMenuBridge? = null,
+    modifier: Modifier = Modifier,
+) {
+    // Re-seeded when the caret moves to another equation, everything selected
+    // the way [TextEditor] seeds a text box.
+    var value: TextFieldValue by remember(element.id) {
+        mutableStateOf(TextFieldValue(element.latex, TextRange(0, element.latex.length)))
+    }
+    val focusRequester: FocusRequester = remember { FocusRequester() }
+    LaunchedEffect(element.id) { focusRequester.requestFocus() }
+
+    val style: TextStyle = TextStyle(
+        color = SourceText,
+        fontSize = (element.fontSize * SourceScale).coerceAtLeast(SourceMinSize).sp,
+        fontFamily = FontFamily.Monospace,
+    )
+
+    val clipboard: FieldClipboard = rememberFieldClipboard()
+
+    // Every way the value can change goes through here, as the diagram's does.
+    val update: (TextFieldValue) -> Unit = { edited ->
+        val typed: Boolean = edited.text != value.text
+        value = edited
+        if (typed) onPreviewElements(listOf(element.copy(latex = edited.text)))
+    }
+
+    // As the text box: the menu's verbs are the chords' verbs.
+    RegisterFieldMenu(fieldMenuBridge, element.id, { value }, clipboard, update)
+
+    // The math, still setting, since the sheet over it lets it through.
+    ElementView(element)
+
+    Box(
+        Modifier
+            .offset(element.frame.x.dp, element.frame.y.dp)
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .graphicsLayer {
+                alpha = element.opacity
+                rotationZ = element.rotation
+                scaleX = if (element.flippedHorizontally) -1f else 1f
+                scaleY = if (element.flippedVertically) -1f else 1f
+                transformOrigin = TransformOrigin.Center
+            }
+            .then(modifier)
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = update,
+            textStyle = style,
+            cursorBrush = SolidColor(SourceText),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(SourceSheet, SourceCorner)
+                .border(1.dp, SourceBorder, SourceCorner)
+                .clip(SourceCorner)
+                .padding(SourcePadding)
+                .focusRequester(focusRequester)
+                // Escape leaves the source where it is and the caret behind.
+                // Enter is the field's: a long equation is typed over lines even
+                // though the setting reads as one.
                 .onPreviewKeyEvent { key ->
                     if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
 

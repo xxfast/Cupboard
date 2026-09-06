@@ -52,9 +52,9 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * Play pill, tonal Add slide, circular insert icon buttons, outlined zoom pill.
  *
  * Text inserts a box, Code a code block, Terminal a shell window, Diagram a
- * chart, Shape drops the catalog down; Add slide, image and media stay
- * placeholders until the document gains those operations. [onPlay] null
- * (android/web shells) hides Play entirely.
+ * chart, Equation a formula, Shape drops the catalog down; Add slide, image and
+ * media stay placeholders until the document gains those operations. [onPlay]
+ * null (android/web shells) hides Play entirely.
  */
 @Composable
 fun EditorToolbar(
@@ -65,6 +65,7 @@ fun EditorToolbar(
     onInsertCode: () -> Unit,
     onInsertTerminal: () -> Unit,
     onInsertDiagram: () -> Unit,
+    onInsertEquation: () -> Unit,
     onInsertShape: (ShapeCatalogEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -133,6 +134,7 @@ fun EditorToolbar(
                 InsertButton(onClick = onInsertCode) { CodeGlyph(color = tokens.icon) }
                 InsertButton(onClick = onInsertTerminal) { TerminalGlyph(color = tokens.icon) }
                 InsertButton(onClick = onInsertDiagram) { DiagramGlyph(color = tokens.icon) }
+                InsertButton(onClick = onInsertEquation) { EquationGlyph(color = tokens.icon) }
                 ShapeInsertButton(onPick = onInsertShape)
                 InsertButton { ImageGlyph(color = tokens.icon) }
                 InsertButton { MediaGlyph(color = tokens.icon) }
@@ -368,6 +370,22 @@ private fun DiagramGlyph(color: Color) {
             lineTo(7.7f * s, 8.1f * s)
         }
         drawPath(arrow, color, style = stroke)
+    }
+}
+
+/** A radical sign, which is the one piece of math notation nothing else uses. */
+@Composable
+private fun EquationGlyph(color: Color) {
+    Canvas(Modifier.size(15.dp)) {
+        val s: Float = size.width / 14f
+        val glyph: Path = Path().apply {
+            moveTo(1.2f * s, 7.6f * s)
+            lineTo(2.6f * s, 6.9f * s)
+            lineTo(4.4f * s, 11.4f * s)
+            lineTo(7f * s, 2.8f * s)
+            lineTo(12.8f * s, 2.8f * s)
+        }
+        drawPath(glyph, color, style = glyphStroke())
     }
 }
 

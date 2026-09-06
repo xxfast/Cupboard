@@ -32,6 +32,8 @@ struct Chrome {
     let terminal: TerminalFormat?
     /// The primary's diagram style, nil unless the primary is a diagram.
     let diagram: DiagramFormat?
+    /// The primary's equation style, nil unless the primary is an equation.
+    let equation: EquationFormat?
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
@@ -58,6 +60,7 @@ struct Chrome {
         code = host.selectedCode().map(CodeFormat.init)
         terminal = host.selectedTerminal().map(TerminalFormat.init)
         diagram = host.selectedDiagram().map(DiagramFormat.init)
+        equation = host.selectedEquation().map(EquationFormat.init)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
@@ -247,6 +250,20 @@ struct DiagramFormat {
         nodeStroke = props.nodeStroke
         nodeText = props.nodeText
         edgeColor = props.edgeColor
+    }
+}
+
+/// The primary selected element's equation style as a Swift value: what the
+/// Equation section of the Format panel shows. Read off the primary like
+/// `DiagramFormat`, and written back the same way. The latex is not here: an
+/// equation's source is content, and content is edited on the canvas.
+struct EquationFormat {
+    let size: Double
+    let color: Int64
+
+    init(_ props: EquationProps) {
+        size = Double(props.fontSize)
+        color = props.color
     }
 }
 

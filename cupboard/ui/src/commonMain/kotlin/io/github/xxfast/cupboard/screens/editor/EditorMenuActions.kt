@@ -4,6 +4,8 @@ import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultDiagramHeight
 import io.github.xxfast.cupboard.document.DefaultDiagramWidth
+import io.github.xxfast.cupboard.document.DefaultEquationHeight
+import io.github.xxfast.cupboard.document.DefaultEquationWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
 import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
@@ -24,6 +26,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
+import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
@@ -237,8 +240,8 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
 }
 
 /**
- * The Insert verbs: a text box, a code block, a terminal, a diagram, then the
- * shape catalog as one submenu.
+ * The Insert verbs: a text box, a code block, a terminal, a diagram, an
+ * equation, then the shape catalog as one submenu.
  *
  * Nothing is ever greyed. An insertion asks nothing of the selection, and a
  * locked element on the slide is no reason not to add another one next to it.
@@ -276,6 +279,11 @@ fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                     val frame: Frame =
                         state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight)
                     viewModel.onInsertElement(diagramElement(frame))
+                },
+                EditorMenuItem("Equation", enabled = true) {
+                    val frame: Frame =
+                        state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight)
+                    viewModel.onInsertElement(equationElement(frame))
                 },
                 EditorMenuItem(
                     label = "Shape",

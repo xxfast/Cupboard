@@ -112,6 +112,22 @@ fun diagramElement(frame: Frame): DiagramElement = DiagramElement(
         "  C -->|no| A",
 )
 
+/** The box a fresh equation inserts into. */
+const val DefaultEquationWidth: Float = 480f
+const val DefaultEquationHeight: Float = 140f
+
+/**
+ * A fresh equation filling [frame], with the identity everyone recognises.
+ *
+ * Euler rather than a placeholder: it uses a superscript, a greek letter, a
+ * relation and an operator, so what the syntax buys is on screen the moment the
+ * element lands rather than in a help page.
+ */
+fun equationElement(frame: Frame): EquationElement = EquationElement(
+    frame = frame,
+    latex = "e^{i\\pi} + 1 = 0",
+)
+
 /**
  * One entry of the shape menu: what to insert, what to call it, and how round.
  *

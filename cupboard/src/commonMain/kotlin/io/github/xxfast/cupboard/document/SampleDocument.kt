@@ -183,6 +183,43 @@ private fun diagramSlide(): Slide {
     )
 }
 
+/**
+ * Shows off the equation element: the frame budget as one line of LaTeX, using
+ * most of what the parser knows.
+ *
+ * No builds. An equation is read whole rather than walked through, and stepping
+ * one is a different feature to drawing one.
+ */
+private fun equationSlide(): Slide {
+    val title = TextElement(
+        frame = Frame(146f, 130f, 1627f, 142f),
+        text = "Frame Budget",
+        fontSize = 94f,
+        fontWeight = 700,
+        letterSpacing = -1f,
+        color = 0xFFFFFFFF,
+    )
+    val subtitle = TextElement(
+        frame = Frame(146f, 281f, 1627f, 61f),
+        text = "Sixteen milliseconds, spent three ways",
+        fontSize = 39f,
+        color = 0xFFA9A0D8,
+    )
+    val equation = EquationElement(
+        frame = Frame(146f, 400f, 1627f, 420f),
+        fontSize = 96f,
+        latex = "t_{frame} = \\sum_{i=1}^{n} \\frac{w_i}{f} + " +
+            "\\sqrt{\\alpha^2 + \\beta^2} \\leq 16.6\\,\\text{ms}",
+    )
+
+    return Slide(
+        title = "Frame Budget",
+        elements = listOf(title, subtitle, equation),
+        notes = "The equation is one line of LaTeX. Every glyph on it is laid out " +
+            "from the document, no webview in sight.",
+    )
+}
+
 /** The "Rendering Pipeline" slide from the design mock, as document data. */
 fun sampleDocument(): Document {
     val title = TextElement(
@@ -259,6 +296,7 @@ fun sampleDocument(): Document {
             codeSlide(),
             terminalSlide(),
             titleSlide("Benchmarks"),
+            equationSlide(),
             titleSlide("Roadmap"),
         ),
     )

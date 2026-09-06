@@ -71,7 +71,7 @@ class EditorViewModelTest {
         val entry = collapsed.outline().first { it.slideId == whyKmp.id }
         assertTrue(entry.hasChildren)
         // Numbering is absolute, so the visible rows keep their original indices.
-        assertEquals(listOf(0, 1, 2, 6, 7, 8), collapsed.outline().map { it.slideIndex })
+        assertEquals(listOf(0, 1, 2, 6, 7, 8, 9), collapsed.outline().map { it.slideIndex })
 
         viewModel.onToggleCollapsed(whyKmp.id)
         val expanded = viewModel.await { it.outline().size == slides.size }

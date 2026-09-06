@@ -430,7 +430,7 @@ data class TerminalElement(
 /** Whether a double click puts a caret in it: the kinds edited in place on the canvas. */
 val Element.takesCaret: Boolean
     get() = this is TextElement || this is CodeElement || this is TerminalElement ||
-        this is DiagramElement
+        this is DiagramElement || this is EquationElement
 
 @Serializable
 @SerialName("code")
@@ -521,6 +521,55 @@ data class DiagramElement(
      * before this field.
      */
     val steps: List<DiagramStep> = emptyList(),
+) : Element {
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
+}
+
+/**
+ * An equation written as LaTeX: a subset of the language in [latex], parsed and
+ * laid out by the renderer rather than stored as boxes and glyphs.
+ *
+ * Text rather than a glyph tree for the same reason a diagram is text: an
+ * equation you edit by typing is one you can correct mid-talk, and one that
+ * diffs. The layout is a pure function of the source (`parseMath` then
+ * `layoutMath`), so it is the same on every target and nothing about a position
+ * is stored.
+ *
+ * A source that doesn't parse is not an error: an unknown command draws as
+ * itself, so a typo costs a glyph rather than the slide.
+ *
+ * [fontSize] is the size of the equation's own body, in document units; scripts,
+ * fractions and limits are all set against it. One colour is the whole of the
+ * look, deliberately: an equation reads as one object, and colouring a subterm
+ * is a different feature to this one.
+ */
+@Serializable
+@SerialName("equation")
+data class EquationElement(
+    override val id: String = newId(),
+    override val frame: Frame,
+    override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
+    val latex: String = "",
+    val fontSize: Float = 40f,
+    val color: Long = 0xFFFFFFFF,
 ) : Element {
     override fun update(
         frame: Frame,

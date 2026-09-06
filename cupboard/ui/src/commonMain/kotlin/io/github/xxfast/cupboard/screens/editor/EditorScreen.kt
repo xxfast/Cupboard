@@ -38,6 +38,8 @@ import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultDiagramHeight
 import io.github.xxfast.cupboard.document.DefaultDiagramWidth
+import io.github.xxfast.cupboard.document.DefaultEquationHeight
+import io.github.xxfast.cupboard.document.DefaultEquationWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
 import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
@@ -52,6 +54,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
+import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.editor.EditorCanvas
@@ -249,6 +252,13 @@ fun EditorView(
                         onInsertElement(
                             diagramElement(
                                 state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight),
+                            ),
+                        )
+                    },
+                    onInsertEquation = {
+                        onInsertElement(
+                            equationElement(
+                                state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight),
                             ),
                         )
                     },

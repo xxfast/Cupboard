@@ -51,6 +51,7 @@ import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
@@ -119,6 +120,7 @@ fun ElementView(
             is CodeElement -> CodeElementView(element, codeStep)
             is TerminalElement -> TerminalElementView(element, entry)
             is DiagramElement -> DiagramElementView(element, diagramStep)
+            is EquationElement -> EquationElementView(element)
             // The group draws nothing of its own: it is the box its transforms
             // hang off, and its children draw inside it. A nested group recurses
             // through here and re-bases its own children the same way.

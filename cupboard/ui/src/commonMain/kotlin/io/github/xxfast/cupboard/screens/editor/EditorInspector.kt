@@ -67,6 +67,7 @@ import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ListStyle
@@ -192,6 +193,12 @@ fun EditorInspector(
                     )
 
                     if (primary is DiagramElement) DiagramSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                    )
+
+                    if (primary is EquationElement) EquationSection(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
@@ -1017,6 +1024,79 @@ private fun DiagramSection(
         color = primary.edgeColor,
         enabled = enabled,
         onCommit = { color -> format { it.copy(edgeColor = color) } },
+    )
+
+    PanelDivider()
+}
+
+/**
+ * [transform] applied to every unlocked equation in the selection, as the ones
+ * that actually changed.
+ *
+ * Here rather than in the document module for [formatDiagrams]' reason: the
+ * inspector is the only caller, since no menu verb formats an equation.
+ */
+private fun List<Element>.formatEquations(
+    transform: (EquationElement) -> EquationElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is EquationElement || element.locked) return@mapNotNull null
+    val formatted: EquationElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+/**
+ * The live EQUATION section, shown when the primary element is an equation.
+ *
+ * Reads [primary] and writes the whole selection through [formatEquations], like
+ * the diagram section: a mixed selection dresses its equations and leaves the
+ * rest alone. Nothing here previews, since every control is one settled edit.
+ *
+ * The LaTeX itself isn't edited here. It is typed on the canvas over the math it
+ * sets, the way a diagram's source is. What is left is the size and the one
+ * colour, and that colour gets the text swatches above its hex field: an
+ * equation is ink on the slide, set in the same serif at the same sizes as a
+ * heading, so the palette that dresses text is the palette that dresses it.
+ */
+@Composable
+private fun EquationSection(
+    primary: EquationElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+
+    // False when the transform changed nothing anywhere: no event, and no field
+    // left holding a value the document never took.
+    fun format(transform: (EquationElement) -> EquationElement): Boolean {
+        val formatted: List<Element> = elements.formatEquations(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    SectionLabel("EQUATION")
+    NumberField(
+        label = "Size",
+        value = primary.fontSize,
+        enabled = enabled,
+        onCommit = { size -> format { it.copy(fontSize = size) } },
+        modifier = Modifier.width(96.dp),
+        minimum = 1f,
+    )
+
+    SwatchLabel("Color")
+    SwatchRow(
+        colors = TEXT_SWATCHES,
+        selected = primary.color,
+        enabled = enabled,
+        onPick = { color -> format { it.copy(color = color) } },
+    )
+    HexField(
+        label = "Hex",
+        color = primary.color,
+        enabled = enabled,
+        onCommit = { color -> format { it.copy(color = color) } },
     )
 
     PanelDivider()

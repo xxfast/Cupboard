@@ -26,6 +26,8 @@ import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultDiagramHeight
 import io.github.xxfast.cupboard.document.DefaultDiagramWidth
+import io.github.xxfast.cupboard.document.DefaultEquationHeight
+import io.github.xxfast.cupboard.document.DefaultEquationWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
 import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
@@ -33,6 +35,7 @@ import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
@@ -54,6 +57,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
+import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
@@ -311,6 +315,20 @@ class DiagramProps(
     val nodeStroke: Long,
     val nodeText: Long,
     val edgeColor: Long,
+)
+
+/**
+ * The primary selected element's equation style, flattened for the native
+ * inspector, and null unless that element is an [EquationElement]. Same
+ * contract as [DiagramProps]: what the panel shows, never a handle onto the
+ * document.
+ *
+ * The latex is not here. An equation's source is content, typed on the canvas,
+ * so the panel only dresses what the layout draws: the size and the colour.
+ */
+class EquationProps(
+    val fontSize: Float,
+    val color: Long,
 )
 
 /**
@@ -643,6 +661,12 @@ class EditorHost {
         viewModel.onInsertElement(diagramElement(frame))
     }
 
+    /** An equation in the middle of the slide, carrying an identity to rewrite. */
+    fun insertEquation() {
+        val frame: Frame = state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight)
+        viewModel.onInsertElement(equationElement(frame))
+    }
+
     /**
      * What the Format inspector shows, or null when nothing is selected: the
      * primary element, with the rest of the selection behind it.
@@ -669,6 +693,7 @@ class EditorHost {
                 is CodeElement -> "Code"
                 is TerminalElement -> "Terminal"
                 is DiagramElement -> "Diagram"
+                is EquationElement -> "Equation"
                 is GroupElement -> "Group"
             },
         )
@@ -1051,6 +1076,46 @@ class EditorHost {
         val edits: List<Element> = state.selectedElements.mapNotNull { element ->
             if (element !is DiagramElement || element.locked) return@mapNotNull null
             val formatted: DiagramElement = transform(element)
+            return@mapNotNull if (formatted == element) null else formatted
+        }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The equation style the Format inspector shows, null when the primary
+     * element is not an equation. Read off the primary, written to every
+     * unlocked equation in the selection, the way the diagram one works.
+     */
+    fun selectedEquation(): EquationProps? =
+        (state.primaryElement as? EquationElement)?.let { equation ->
+            EquationProps(
+                fontSize = equation.fontSize,
+                color = equation.color,
+            )
+        }
+
+    /** One unlocked equation in the selection is enough for the equation controls. */
+    fun canFormatEquations(): Boolean =
+        state.selectedElements.any { it is EquationElement && !it.locked }
+
+    /** Floors at a point, like the diagram's: type with no size can't be read. */
+    fun setEquationFontSize(size: Float) {
+        formatEquations { it.copy(fontSize = size.coerceIn(1f, 400f)) }
+    }
+
+    /** What the whole expression is set in. Packed ARGB, like every colour here. */
+    fun setEquationColor(argb: Long) {
+        formatEquations { it.copy(color = argb) }
+    }
+
+    // The equation setters' [formatSelection], the same shape [formatDiagrams]
+    // takes: the unlocked equations of the selection, minus the ones the change
+    // left alone, committed as one history entry.
+    private fun formatEquations(transform: (EquationElement) -> EquationElement) {
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is EquationElement || element.locked) return@mapNotNull null
+            val formatted: EquationElement = transform(element)
             return@mapNotNull if (formatted == element) null else formatted
         }
         if (edits.isEmpty()) return

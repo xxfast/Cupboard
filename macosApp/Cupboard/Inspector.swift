@@ -97,6 +97,11 @@ extension EditorView {
                         diagramSection(diagram)
                         palette.divider.frame(height: 1)
                     }
+                    // And the equation's.
+                    if let equation = ui.equation {
+                        equationSection(equation)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -605,6 +610,28 @@ extension EditorView {
                 Spacer(minLength: 0)
                 colorWell("Edge", argb: diagram.edgeColor) {
                     host.setDiagramEdgeColor(argb: $0)
+                }
+            }
+        }
+    }
+
+    // MARK: Equation
+
+    /// The equation's own style: the size the expression is set at, and the
+    /// colour it is drawn in. Same contract as the Diagram section. Nothing
+    /// here touches the latex, which is content and is typed on the canvas.
+    func equationSection(_ equation: EquationFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Equation")
+
+            HStack(spacing: 8) {
+                ValueField(label: "", value: equation.size, palette: palette, unit: "pt") {
+                    host.setEquationFontSize(size: Float($0))
+                }
+                .frame(width: 78)
+                Spacer(minLength: 0)
+                colorWell("Color", argb: equation.color) {
+                    host.setEquationColor(argb: $0)
                 }
             }
         }
