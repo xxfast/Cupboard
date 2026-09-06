@@ -10,7 +10,8 @@ import kotlin.uuid.Uuid
 fun newId(): String = Uuid.random().toString()
 
 /**
- * All geometry is in document units: points at 1x on the fixed 1920x1080 slide.
+ * All geometry is in document units: points at 1x on the deck's own slide, which
+ * is [slideWidth] by [slideHeight] and defaults to 1920x1080.
  * Colors are packed ARGB (0xAARRGGBB).
  *
  * Slides are a flat ordered list, Keynote-style: nesting is expressed with
@@ -21,6 +22,11 @@ fun newId(): String = Uuid.random().toString()
 data class Document(
     val id: String = newId(),
     val name: String = "Untitled",
+    /**
+     * The slide every slide and layout in this deck is drawn on, in document
+     * units. See `SlideSize.kt` for the presets and for what moving between
+     * them does to the deck.
+     */
     val slideWidth: Float = SLIDE_WIDTH,
     val slideHeight: Float = SLIDE_HEIGHT,
     val slides: List<Slide> = emptyList(),
@@ -57,6 +63,8 @@ data class Document(
     val defaults: ElementDefaults = ElementDefaults(),
 ) {
     companion object {
+        /** What a deck is on unless it says otherwise, and what a renderer
+         * given no size falls back to: 16:9. */
         const val SLIDE_WIDTH: Float = 1920f
         const val SLIDE_HEIGHT: Float = 1080f
     }

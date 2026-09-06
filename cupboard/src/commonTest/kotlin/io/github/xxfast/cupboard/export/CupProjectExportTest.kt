@@ -9,6 +9,7 @@ import io.github.xxfast.cupboard.document.LineRange
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.resized
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.document.setSlideSkipped
 import io.github.xxfast.cupboard.document.stepCount
@@ -63,6 +64,17 @@ class CupProjectExportTest {
                 "val slide${index + 1} by Slide(stepCount = ${slide.stepCount()}) { step ->",
             )
         }
+    }
+
+    /** The board is the deck's own slide, not the 16:9 one every deck used to be on. */
+    @Test
+    fun theBoardCarriesTheDecksSlideSize() {
+        val document = sampleDocument().resized(1440f, 1080f, scaleContent = true)
+        val support =
+            document.toCupProject().contentsOf("src/commonMain/kotlin/presentation/Support.kt")
+
+        assertContains(support, "const val BoardWidth: Float = 1440.0f")
+        assertContains(support, "const val BoardHeight: Float = 1080.0f")
     }
 
     @Test

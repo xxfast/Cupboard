@@ -38,6 +38,7 @@ import io.github.xxfast.cupboard.document.removeGuide
 import io.github.xxfast.cupboard.document.removeLayout
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
+import io.github.xxfast.cupboard.document.resized
 import io.github.xxfast.cupboard.document.setSlideSkipped
 import io.github.xxfast.cupboard.document.slideAt
 import io.github.xxfast.cupboard.document.slideById
@@ -109,6 +110,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
@@ -1180,6 +1182,20 @@ fun EditorPresenter(
                     redone.clear()
                     state.copy(document = state.document.copy(background = event.background))
                 }
+
+            // Every frame in the deck may move, so this is one entry like any
+            // other edit: `resized` hands back the same document for a size the
+            // deck is already on, which is what makes an unchanged pick free.
+            is SetSlideSize -> {
+                val resized: Document =
+                    state.document.resized(event.width, event.height, event.scaleContent)
+                if (resized === state.document) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = resized)
+                }
+            }
 
             // Focus on its own. The post-step below moves it for every event
             // that implies a pane; this is the one that says so outright.

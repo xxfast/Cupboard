@@ -22,12 +22,13 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.document.Document
 import net.kodein.cup.LocalPresentationState
 import net.kodein.cup.PluginCupAPI
 import net.kodein.cup.Presentation
 import net.kodein.cup.PresentationState
-import net.kodein.cup.SLIDE_SIZE_16_9
 import net.kodein.cup.SlideSpecs
 import net.kodein.cup.Slides
 import net.kodein.cup.TransitionSet
@@ -70,6 +71,12 @@ public fun PresentationPlayer(
     controller: PlayerController = rememberPlayerController(),
 ) {
     val slides = remember(document) { document.toCupSlides() }
+    // CuP's slide is a dp box, and only its aspect matters: the board inside
+    // scales itself into whatever it is given. 360dp tall, so a 16:9 deck comes
+    // out at exactly SLIDE_SIZE_16_9 and the common case is unchanged.
+    val slideSize: DpSize = remember(document.slideWidth, document.slideHeight) {
+        DpSize(360.dp * (document.slideWidth / document.slideHeight), 360.dp)
+    }
     val focusRequester = remember { FocusRequester() }
     val layoutDirection = LocalLayoutDirection.current
 
@@ -92,7 +99,7 @@ public fun PresentationPlayer(
                 slides = Slides(slides),
                 configuration = {
                     defaultSlideSpecs = SlideSpecs(
-                        size = SLIDE_SIZE_16_9,
+                        size = slideSize,
                         startTransitions = transitions,
                         endTransitions = transitions,
                     )

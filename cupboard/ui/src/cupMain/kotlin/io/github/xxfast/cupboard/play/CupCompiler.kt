@@ -33,6 +33,8 @@ internal fun Document.toCupSlides(): List<CupSlide> {
                 step = step,
                 number = number,
                 background = background,
+                slideWidth = slideWidth,
+                slideHeight = slideHeight,
             )
         }
     }

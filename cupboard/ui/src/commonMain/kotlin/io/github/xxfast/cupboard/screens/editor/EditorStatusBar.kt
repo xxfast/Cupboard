@@ -17,8 +17,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlin.math.roundToInt
 
 private val SYNCED_GREEN: Color = Color(0xFF4CAF7D)
 
@@ -30,6 +32,14 @@ fun EditorStatusBar(
     uiLabel: String,
     /** What the count is counting: "layout" while the layouts are what's on show. */
     noun: String = "slide",
+    /**
+     * The deck's slide size, which is what the strip states. The document's own
+     * number rather than what the canvas is currently showing: the zoom lives in
+     * the shell, and a strip that guessed at it would be stating a size the slide
+     * is not.
+     */
+    slideWidth: Float = Document.SLIDE_WIDTH,
+    slideHeight: Float = Document.SLIDE_HEIGHT,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -45,7 +55,7 @@ fun EditorStatusBar(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             StatusText("$noun $slideNumber / $slideCount", tokens.faint)
-            StatusText("944 × 531 @ 1x", tokens.faint)
+            StatusText("${slideWidth.roundToInt()} × ${slideHeight.roundToInt()}", tokens.faint)
             // The one flexible cell: ellipsizes in a narrow window instead of
             // pushing the synced indicator off the end of the row.
             StatusText(uiLabel, tokens.faint, modifier = Modifier.weight(1f))

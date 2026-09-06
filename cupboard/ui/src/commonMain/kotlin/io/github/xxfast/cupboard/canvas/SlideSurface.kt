@@ -28,8 +28,13 @@ val LocalCanvasScale = compositionLocalOf { 1f }
 
 /**
  * Fixed-size slide space scaled to fit its container, CuP-style: the content is
- * laid out at [Document.SLIDE_WIDTH] x [Document.SLIDE_HEIGHT] dp and the density
- * is multiplied by the scale, so 1dp inside == 1 document unit at every zoom.
+ * laid out at [slideWidth] x [slideHeight] dp and the density is multiplied by
+ * the scale, so 1dp inside == 1 document unit at every zoom.
+ *
+ * [slideWidth] and [slideHeight] are the deck's own slide size, `Document.slideWidth`
+ * and `Document.slideHeight`. Defaulted to the constants so a preview or a test
+ * can draw a slide without a document in hand; every call site inside the app
+ * passes the document's.
  *
  * [zoom] null fits the slide to the container; otherwise the slide renders at
  * that fraction of native size and the container clips it (no reflow).
@@ -43,13 +48,15 @@ fun SlideSurface(
     background: Boolean = true,
     slideBackground: SlideBackground? = null,
     zoom: Float? = null,
+    slideWidth: Float = Document.SLIDE_WIDTH,
+    slideHeight: Float = Document.SLIDE_HEIGHT,
     content: @Composable BoxScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val density = LocalDensity.current
         val scale = (zoom ?: min(
-            maxWidth.value / Document.SLIDE_WIDTH,
-            maxHeight.value / Document.SLIDE_HEIGHT,
+            maxWidth.value / slideWidth,
+            maxHeight.value / slideHeight,
         )).coerceAtLeast(0.01f)
         CompositionLocalProvider(
             LocalDensity provides Density(density.density * scale, density.fontScale),
@@ -57,7 +64,7 @@ fun SlideSurface(
         ) {
             Box(
                 modifier = Modifier
-                    .requiredSize(Document.SLIDE_WIDTH.dp, Document.SLIDE_HEIGHT.dp)
+                    .requiredSize(slideWidth.dp, slideHeight.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .let {
                         if (background) it.drawBehind { drawSlideBackground(slideBackground) }

@@ -226,6 +226,14 @@ struct EditorView: View {
     /// the library itself is Kotlin's, and the name goes there on Save.
     @State var savingTheme = false
     @State var saveThemeText = ""
+    /// The Slide Size dialogs. The picked preset waits here while the scale
+    /// question is up, and the typed pair while the custom sheet is. Nothing the
+    /// document knows about: the deck resizes when one of them is answered.
+    @State var pendingSizePreset: Int?
+    @State var customSize = false
+    @State var customWidthText = ""
+    @State var customHeightText = ""
+    @State var customScaleContent = true
 
     var host: EditorHost { model.host }
     var palette: Palette { Palette.of(colorScheme) }

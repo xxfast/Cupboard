@@ -69,6 +69,7 @@ import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.slideById
+import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.editor.EditorCanvas
@@ -172,6 +173,7 @@ fun EditorScreen(
         onSaveAsTheme = viewModel::onSaveAsTheme,
         onDeleteUserTheme = viewModel::onDeleteUserTheme,
         onSetDocumentBackground = viewModel::onSetDocumentBackground,
+        onSetSlideSize = viewModel::onSetSlideSize,
         onPreviewGuide = viewModel::onPreviewGuide,
         onCommitGuide = viewModel::onCommitGuide,
         onRemoveGuide = viewModel::onRemoveGuide,
@@ -224,6 +226,9 @@ fun EditorView(
     onSaveAsTheme: (name: String) -> Unit = {},
     onDeleteUserTheme: (name: String) -> Unit = {},
     onSetDocumentBackground: (SlideBackground?) -> Unit = {},
+    /** The shape every slide in the deck is laid out at, and whether the content
+     * comes across with it. */
+    onSetSlideSize: (width: Float, height: Float, scaleContent: Boolean) -> Unit = { _, _, _ -> },
     /** A guide drag on the canvas: its samples, its drop, the guide it throws
      * away off the slide, and its cancel. What the drag draws is
      * [EditorState.guideDrag], which these four feed. */
@@ -435,6 +440,8 @@ fun EditorView(
                                 onBeginTextEdit = onBeginTextEdit,
                                 onEndTextEdit = onEndTextEdit,
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
+                                slideWidth = state.document.slideWidth,
+                                slideHeight = state.document.slideHeight,
                                 number = state.slideNumber(selectedSlide.id),
                                 guides = state.document.guides,
                                 showRulers = state.showRulers,
@@ -476,6 +483,8 @@ fun EditorView(
                             slideCount = if (state.isEditingLayouts) layouts.size
                             else state.document.allSlides().size,
                             uiLabel = theme.uiLabel + if (dark) " · dark" else " · light",
+                            slideWidth = state.document.slideWidth,
+                            slideHeight = state.document.slideHeight,
                         )
                     }
 
@@ -496,10 +505,14 @@ fun EditorView(
                         userThemes = state.userThemes,
                         themeName = state.document.themeName,
                         documentBackground = state.document.background,
+                        slideWidth = state.document.slideWidth,
+                        slideHeight = state.document.slideHeight,
+                        slideSizePreset = state.document.slideSizePreset(),
                         onChangeTheme = onChangeTheme,
                         onSaveAsTheme = onSaveAsTheme,
                         onDeleteUserTheme = onDeleteUserTheme,
                         onSetDocumentBackground = onSetDocumentBackground,
+                        onSetSlideSize = onSetSlideSize,
                         selectedElements = state.selectedElements,
                         onUpdateElements = onUpdateElements,
                         onPreviewElements = onPreviewElements,

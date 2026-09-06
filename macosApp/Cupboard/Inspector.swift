@@ -946,6 +946,8 @@ extension EditorView {
             } else {
                 themeSection(ui)
                 palette.divider.frame(height: 1)
+                slideSizeSection(ui)
+                palette.divider.frame(height: 1)
                 deckBackgroundSection(ui)
                 palette.divider.frame(height: 1)
                 slideLayoutCard(ui)
@@ -1234,20 +1236,7 @@ extension EditorView {
                     Button(name) { host.changeTheme(name: name) }
                 }
             } label: {
-                HStack(spacing: 8) {
-                    Text(ui.themeName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(palette.text)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    Text("\u{2304}")
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.subtle)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                popupLabel(ui.themeName)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -1275,6 +1264,134 @@ extension EditorView {
             }
             Button("Cancel", role: .cancel) {}
         }
+    }
+
+    /// A panel-wide popup's face: what it is set to, and the chevron. Shared by
+    /// the two deck-wide pickers so they cannot drift apart.
+    func popupLabel(_ title: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+        return HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.text)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text("\u{2304}")
+                .font(.system(size: 10))
+                .foregroundStyle(palette.subtle)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 30)
+        .background(palette.ctrl, in: shape)
+        .contentShape(shape)
+    }
+
+    /// The shape every slide in the deck is cut to. Deck-wide, so it sits with
+    /// the theme rather than with the slide's own background below.
+    ///
+    /// Either pick asks whether the content comes with the slide before it
+    /// moves: both answers are ones people want, and a deck resized the wrong
+    /// way is not something the eye can put back.
+    @ViewBuilder func slideSizeSection(_ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Slide Size")
+
+            Menu {
+                ForEach(Array(ui.slideSize.presetTitles.enumerated()), id: \.offset) { index, title in
+                    Button(title) { pendingSizePreset = index }
+                }
+                Divider()
+                Button("Custom...") {
+                    customWidthText = String(Int(ui.slideSize.width.rounded()))
+                    customHeightText = String(Int(ui.slideSize.height.rounded()))
+                    customSize = true
+                }
+            } label: {
+                popupLabel(ui.slideSize.title)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+        }
+        // The picked preset is the question's subject, so it presents the alert
+        // and clears when it closes: no second flag to fall out of step with.
+        .alert(
+            "Scale content to fit the new size?",
+            isPresented: Binding(
+                get: { pendingSizePreset != nil },
+                set: { shown in if !shown { pendingSizePreset = nil } }
+            ),
+            presenting: pendingSizePreset
+        ) { index in
+            Button("Scale") { host.setSlideSizePreset(index: Int32(index), scaleContent: true) }
+            Button("Don't Scale") { host.setSlideSizePreset(index: Int32(index), scaleContent: false) }
+            Button("Cancel", role: .cancel) {}
+        }
+        // A sheet rather than an alert, because the answer here is a checkbox
+        // beside two fields, and an alert holds nothing but fields and buttons.
+        .sheet(isPresented: $customSize) { customSizeSheet }
+    }
+
+    /// Two measurements and the same scale question the presets ask, answered
+    /// before the resize. Nonsense in either field is no resize: the sheet
+    /// closes and the deck keeps the slide it had.
+    var customSizeSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Custom Slide Size")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.text)
+
+            HStack(spacing: 10) {
+                sizeField("Width", text: $customWidthText)
+                sizeField("Height", text: $customHeightText)
+            }
+
+            Toggle("Scale content", isOn: $customScaleContent)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.text)
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Button("Cancel") { customSize = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("OK") { commitCustomSize() }
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(16)
+        .frame(width: 268)
+    }
+
+    /// One measurement of the custom sheet, in document units.
+    func sizeField(_ label: String, text: Binding<String>) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(palette.subtle)
+            TextField("", text: text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(palette.ctrlText)
+                .multilineTextAlignment(.trailing)
+                .padding(.horizontal, 7)
+                .frame(height: 22)
+                .background(palette.ctrl, in: shape)
+                .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+                .onSubmit { commitCustomSize() }
+        }
+    }
+
+    func commitCustomSize() {
+        customSize = false
+        let width = Double(customWidthText.trimmingCharacters(in: .whitespaces))
+        let height = Double(customHeightText.trimmingCharacters(in: .whitespaces))
+        guard let width, let height else { return }
+        host.setSlideSize(
+            width: Float(width),
+            height: Float(height),
+            scaleContent: customScaleContent
+        )
     }
 
     /// One end of the gradient: the same swatches, said whose they are.

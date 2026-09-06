@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.codeStepFor
@@ -56,8 +57,16 @@ fun SlideView(
     step: Int? = null,
     number: Int? = null,
     background: SlideBackground? = null,
+    /** The deck's slide size, `Document.slideWidth` and `Document.slideHeight`. */
+    slideWidth: Float = Document.SLIDE_WIDTH,
+    slideHeight: Float = Document.SLIDE_HEIGHT,
 ) {
-    SlideSurface(modifier, slideBackground = slide.effectiveBackground(layout, background)) {
+    SlideSurface(
+        modifier = modifier,
+        slideBackground = slide.effectiveBackground(layout, background),
+        slideWidth = slideWidth,
+        slideHeight = slideHeight,
+    ) {
         for (element in slide.inheritedElements(layout)) ElementView(element)
 
         for (element in slide.elements) {

@@ -49,6 +49,7 @@ import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
@@ -63,6 +64,7 @@ import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
@@ -437,12 +439,16 @@ class EditorHost {
     // earlier slide renumbers every row after it without touching one of them.
     // So is the layout it resolved against: a slide draws what it inherits, so
     // editing a layout changes every thumbnail on it without touching a slide.
+    // And so is the slide size, which changes the shape of an empty slide's
+    // thumbnail without changing anything on it.
     private class Thumbnail(
         val slide: Slide,
         val layout: Slide?,
         val number: Int?,
         val background: SlideBackground?,
         val width: Int,
+        val slideWidth: Float,
+        val slideHeight: Float,
         val image: NSImage,
     )
 
@@ -524,6 +530,8 @@ class EditorHost {
                     modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
                     else Modifier.fillMaxSize(),
                     zoom = scale,
+                    slideWidth = state.document.slideWidth,
+                    slideHeight = state.document.slideHeight,
                     // What the slide draws on itself, when it asks to: its place
                     // in the presentation is the document's to work out, not the
                     // canvas's.
@@ -1670,6 +1678,50 @@ class EditorHost {
     }
 
     /**
+     * The slide shapes the size picker offers, in the catalog's order. Titles
+     * alone, the way [shapeCatalog] hands its list over: the position is what
+     * comes back, and the sizes behind the names are the document's business.
+     */
+    fun slideSizePresetTitles(): List<String> = SlideSizePreset.entries.map { it.title }
+
+    /**
+     * Which of [slideSizePresetTitles] the deck is on, -1 for a size that is
+     * none of them. A number rather than a nullable: the popup shows a title or
+     * it shows the measurements, and neither is a null for the shell to spell.
+     */
+    fun slideSizePresetIndex(): Int = state.document.slideSizePreset()?.ordinal ?: -1
+
+    /** The slide the deck is on, in document units. What a custom field starts at. */
+    fun slideWidth(): Float = state.document.slideWidth
+
+    fun slideHeight(): Float = state.document.slideHeight
+
+    /**
+     * Puts the deck on a [width] by [height] slide. [scaleContent] carries the
+     * content across with it; left false, only the slide changes and the new
+     * edges fall where they fall.
+     *
+     * No guard: the core clamps both sides to what a slide may be and drops a
+     * resize onto the size the deck is already on, so a copy of either rule out
+     * here could only ever disagree with it.
+     */
+    fun setSlideSize(width: Float, height: Float, scaleContent: Boolean) {
+        viewModel.onSetSlideSize(width, height, scaleContent)
+    }
+
+    /**
+     * Puts the deck on the [index]th preset, [setSlideSize] by name: the shapes
+     * travel as titles, so the measurements behind one are never the shell's to
+     * hold. An index the catalog doesn't have is no resize rather than a crash,
+     * the way [insertShape] treats its own, since the number crosses a language
+     * boundary on the way back.
+     */
+    fun setSlideSizePreset(index: Int, scaleContent: Boolean) {
+        val preset: SlideSizePreset = SlideSizePreset.entries.getOrNull(index) ?: return
+        setSlideSize(preset.width, preset.height, scaleContent)
+    }
+
+    /**
      * Registers [callback], fired whenever the editor state changes (including
      * edits made inside the Compose canvas), and returns the unsubscribe for the
      * host to call when it goes away. Swift can't observe a Kotlin StateFlow, so
@@ -1814,16 +1866,26 @@ class EditorHost {
 
     private fun render(slide: Slide, layout: Slide?, number: Int?, width: Int): NSImage? {
         val background: SlideBackground? = state.document.background
+        val slideWidth: Float = state.document.slideWidth
+        val slideHeight: Float = state.document.slideHeight
         val cached = thumbnails[slide.id]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
         val usable = cached != null && cached.width == width &&
+            cached.slideWidth == slideWidth && cached.slideHeight == slideHeight &&
             ((cached.slide == slide && cached.layout == layout && cached.number == number &&
                 cached.background == background) || state.isPreviewing)
         if (usable) return cached.image
 
-        val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
+        val height = (width * slideHeight / slideWidth).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
-            SlideView(slide, layout = layout, number = number, background = background)
+            SlideView(
+                slide = slide,
+                layout = layout,
+                number = number,
+                background = background,
+                slideWidth = slideWidth,
+                slideHeight = slideHeight,
+            )
         }
         val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: return null
         val nsData = png.usePinned { pinned ->
@@ -1833,7 +1895,8 @@ class EditorHost {
             setSize(NSMakeSize(width.toDouble(), height.toDouble()))
         } ?: return null
 
-        thumbnails[slide.id] = Thumbnail(slide, layout, number, background, width, image)
+        thumbnails[slide.id] =
+            Thumbnail(slide, layout, number, background, width, slideWidth, slideHeight, image)
         return image
     }
 

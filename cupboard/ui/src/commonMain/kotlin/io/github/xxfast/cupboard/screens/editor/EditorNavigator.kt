@@ -202,6 +202,8 @@ fun EditorNavigator(
                     // its thumbnail draws itself and nothing behind it.
                     layout = document.layoutOf(slide),
                     background = document.background,
+                    slideWidth = document.slideWidth,
+                    slideHeight = document.slideHeight,
                     // A deck of layouts is a deck of near-identical thumbnails, so
                     // there the name is the row. Ordinary rows keep the number alone.
                     title = entry.title.takeIf { isEditingLayouts },
@@ -312,6 +314,9 @@ private fun NavigatorRow(
     layout: Slide?,
     /** The deck's background, which is what a slide on this layout will sit on. */
     background: SlideBackground?,
+    /** The deck's slide size, and so the shape every thumbnail in the panel takes. */
+    slideWidth: Float,
+    slideHeight: Float,
     /** The name under the thumbnail, null for a row that shows none. */
     title: String?,
     entry: OutlineEntry,
@@ -483,6 +488,8 @@ private fun NavigatorRow(
                     slide = slide,
                     layout = layout,
                     background = background,
+                    slideWidth = slideWidth,
+                    slideHeight = slideHeight,
                     width = (136 - 12 * minOf(entry.depth, 3)).dp,
                     cornerRadius = thumbnailRadius,
                     modifier = if (selected) {

@@ -29,7 +29,7 @@ import kotlinx.serialization.Transient
 
 /**
  * How far the layout margins sit in from the slide's edges, as a fraction of the
- * slide: 5%, which on the native 1920x1080 slide is 96 by 54 units.
+ * slide: 5%, which on a 1920x1080 slide is 96 by 54 units.
  */
 private const val LayoutMarginFraction: Float = 0.05f
 
@@ -778,6 +778,19 @@ sealed interface EditorEvent {
      * this is a no-op.
      */
     data class SetDocumentBackground(val background: SlideBackground?) : EditorEvent
+    /**
+     * The shape of every slide in the deck, in document units, clamped to what a
+     * slide may be. [scaleContent] carries the deck's content across with it;
+     * left false, the frames stay where they are and the new edges fall where
+     * they fall. See `Document.resized`.
+     *
+     * One history entry, and a deck already on this size is a no-op.
+     */
+    data class SetSlideSize(
+        val width: Float,
+        val height: Float,
+        val scaleContent: Boolean,
+    ) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent
     data object ToggleSidebar : EditorEvent

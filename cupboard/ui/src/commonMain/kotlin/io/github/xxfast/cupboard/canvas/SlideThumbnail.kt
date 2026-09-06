@@ -29,15 +29,20 @@ fun SlideThumbnail(
     layout: Slide? = null,
     /** The deck's background, behind a slide that has none of its own. */
     background: SlideBackground? = null,
+    /** The deck's slide size, which is also the aspect the miniature takes. */
+    slideWidth: Float = Document.SLIDE_WIDTH,
+    slideHeight: Float = Document.SLIDE_HEIGHT,
 ) {
     SlideView(
         slide = slide,
         layout = layout,
         number = number,
         background = background,
+        slideWidth = slideWidth,
+        slideHeight = slideHeight,
         modifier = modifier
             .width(width)
-            .aspectRatio(Document.SLIDE_WIDTH / Document.SLIDE_HEIGHT)
+            .aspectRatio(slideWidth / slideHeight)
             .clip(RoundedCornerShape(cornerRadius))
             .border(1.dp, Color(0xFF33363D), RoundedCornerShape(cornerRadius)),
     )

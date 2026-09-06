@@ -72,6 +72,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
@@ -204,6 +205,7 @@ class EditorViewModel(
     fun onSaveAsTheme(name: String) { scope.launch { events.emit(SaveAsTheme(name)) } }
     fun onDeleteUserTheme(name: String) { scope.launch { events.emit(DeleteUserTheme(name)) } }
     fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.emit(SetDocumentBackground(background)) } }
+    fun onSetSlideSize(width: Float, height: Float, scaleContent: Boolean) { scope.launch { events.emit(SetSlideSize(width, height, scaleContent)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
     fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }

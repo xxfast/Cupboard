@@ -3,13 +3,16 @@ package io.github.xxfast.cupboard.export
 /**
  * `Support.kt`: the handful of composables every exported slide is built out of.
  *
- * Fixed text rather than something generated per deck, because none of it depends
- * on the document: the board, the placement helper, the build wrapper and the two
- * blocks that draw code and terminals are the same in every export.
- *
- * Deliberately free of string templates so this stays one raw string here.
+ * One raw string rather than something assembled per deck: the placement helper,
+ * the build wrapper and the two blocks that draw code and terminals are the same
+ * in every export. The board is the one thing that is not, because the slide it
+ * lays out is the deck's own shape, so its two constants are written in.
  */
-internal fun supportSource(packageName: String): String = """
+internal fun supportSource(
+    packageName: String,
+    slideWidth: Float,
+    slideHeight: Float,
+): String = """
 package $packageName
 
 import androidx.compose.animation.AnimatedVisibility
@@ -52,9 +55,9 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-/** The slide every deck is laid out on, in document units drawn as dp. */
-const val BoardWidth: Float = 1920f
-const val BoardHeight: Float = 1080f
+/** The slide this deck is laid out on, in document units drawn as dp. */
+const val BoardWidth: Float = ${slideWidth.literal()}
+const val BoardHeight: Float = ${slideHeight.literal()}
 
 /** One element's box on the board, in document units. */
 data class FrameDp(val x: Float, val y: Float, val width: Float, val height: Float)
@@ -110,8 +113,9 @@ fun gradientBrush(start: Long, end: Long, angle: Float, width: Float, height: Fl
     linearGradient(angle, width, height, 0f to start.argb(), 1f to end.argb())
 
 /**
- * The board a slide draws on: a fixed 1920x1080 box scaled uniformly into
- * whatever space the presentation gives it, on the deck's own gradient.
+ * The board a slide draws on: the deck's own [BoardWidth] by [BoardHeight] box
+ * scaled uniformly into whatever space the presentation gives it, on the deck's
+ * own gradient.
  */
 @Composable
 fun Board(content: @Composable BoxScope.() -> Unit) {

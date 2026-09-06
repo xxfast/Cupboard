@@ -24,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +32,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabPosition
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +80,7 @@ import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
@@ -137,10 +140,16 @@ fun EditorInspector(
     themeName: String,
     /** Behind every slide that asks for none of its own; null is the app's dark gradient. */
     documentBackground: SlideBackground?,
+    /** The deck's slide shape, in document units, and the preset it is exactly,
+     * null for a custom one: between them, what the size picker shows. */
+    slideWidth: Float,
+    slideHeight: Float,
+    slideSizePreset: SlideSizePreset?,
     onChangeTheme: (name: String) -> Unit,
     onSaveAsTheme: (name: String) -> Unit,
     onDeleteUserTheme: (name: String) -> Unit,
     onSetDocumentBackground: (SlideBackground?) -> Unit,
+    onSetSlideSize: (width: Float, height: Float, scaleContent: Boolean) -> Unit,
     selectedElements: List<Element>,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
@@ -253,10 +262,14 @@ fun EditorInspector(
                     userThemes = userThemes,
                     themeName = themeName,
                     documentBackground = documentBackground,
+                    slideWidth = slideWidth,
+                    slideHeight = slideHeight,
+                    slideSizePreset = slideSizePreset,
                     onChangeTheme = onChangeTheme,
                     onSaveAsTheme = onSaveAsTheme,
                     onDeleteUserTheme = onDeleteUserTheme,
                     onSetDocumentBackground = onSetDocumentBackground,
+                    onSetSlideSize = onSetSlideSize,
                     onUpdate = onUpdateSlide,
                     onApplyLayout = onApplyLayout,
                     onReapplyLayout = onReapplyLayout,
@@ -559,6 +572,10 @@ private fun segmentTint(selected: Boolean, enabled: Boolean): Color {
 /**
  * [OutlinedField]'s look as a menu button: the current option in the field, the
  * whole list under it, the live one ticked.
+ *
+ * [display] overrides what the field reads, for the one picker whose value says
+ * more than the option it sits on: a custom slide size is picked as "Custom..."
+ * but shown as the size it actually is.
  */
 @Composable
 private fun <T> DropdownField(
@@ -568,6 +585,7 @@ private fun <T> DropdownField(
     enabled: Boolean,
     onPick: (T) -> Unit,
     modifier: Modifier = Modifier,
+    display: String? = null,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
     var open: Boolean by remember { mutableStateOf(false) }
@@ -575,7 +593,7 @@ private fun <T> DropdownField(
     Box(modifier) {
         OutlinedField(
             label = label,
-            value = options.firstOrNull { (option, _) -> option == value }?.second.orEmpty(),
+            value = display ?: options.firstOrNull { (option, _) -> option == value }?.second.orEmpty(),
             trailing = "▾",
             enabled = enabled,
             modifier = Modifier.clickable(enabled = enabled) { open = true },
@@ -1385,10 +1403,14 @@ private fun SlidePanel(
     userThemes: List<Theme>,
     themeName: String,
     documentBackground: SlideBackground?,
+    slideWidth: Float,
+    slideHeight: Float,
+    slideSizePreset: SlideSizePreset?,
     onChangeTheme: (String) -> Unit,
     onSaveAsTheme: (String) -> Unit,
     onDeleteUserTheme: (String) -> Unit,
     onSetDocumentBackground: (SlideBackground?) -> Unit,
+    onSetSlideSize: (Float, Float, Boolean) -> Unit,
     onUpdate: (Slide) -> Unit,
     onApplyLayout: (String, String?) -> Unit,
     onReapplyLayout: (String) -> Unit,
@@ -1448,6 +1470,15 @@ private fun SlidePanel(
                 saving = false
                 onSaveAsTheme(name)
             },
+        )
+
+        PanelDivider()
+
+        SlideSizeSection(
+            width = slideWidth,
+            height = slideHeight,
+            preset = slideSizePreset,
+            onSetSlideSize = onSetSlideSize,
         )
 
         PanelDivider()
@@ -1545,6 +1576,141 @@ private fun SlidePanel(
         enabled = true,
         onClick = if (isEditingLayouts) onExitSlideLayouts else onEditSlideLayouts,
         modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * The SLIDE SIZE section: the named shapes, then Custom for anything else.
+ *
+ * Nothing here resizes on the pick. A slide size is the deck's shape, so both
+ * routes stop and ask the one question that has no default answer: does the
+ * content come along. The preset asks it as three buttons, the custom size as a
+ * checkbox next to the numbers it is already asking for.
+ *
+ * The field reads the size rather than the word "Custom" when the deck is on
+ * one, since 1600 x 900 says what the deck is and "Custom" doesn't.
+ */
+@Composable
+private fun SlideSizeSection(
+    width: Float,
+    height: Float,
+    preset: SlideSizePreset?,
+    onSetSlideSize: (Float, Float, Boolean) -> Unit,
+) {
+    // View-local, like the theme's Save dialog: the size reaches the loop on the
+    // answer and never on the pick.
+    var pending: SlideSizePreset? by remember { mutableStateOf(null) }
+    var customizing: Boolean by remember { mutableStateOf(false) }
+
+    val options: List<Pair<SlideSizePreset?, String>> =
+        SlideSizePreset.entries.map { it to it.title } + (null to "Custom...")
+
+    SectionLabel("SLIDE SIZE")
+    DropdownField(
+        label = "Size",
+        value = preset,
+        options = options,
+        enabled = true,
+        onPick = { picked -> if (picked == null) customizing = true else pending = picked },
+        modifier = Modifier.fillMaxWidth(),
+        display = if (preset == null) "${width.asWholeNumber()} × ${height.asWholeNumber()}" else null,
+    )
+
+    pending?.let { picked ->
+        ScaleContentDialog(
+            title = picked.title,
+            onDismiss = { pending = null },
+            onAnswer = { scale ->
+                pending = null
+                onSetSlideSize(picked.width, picked.height, scale)
+            },
+        )
+    }
+
+    if (customizing) CustomSlideSizeDialog(
+        width = width,
+        height = height,
+        onDismiss = { customizing = false },
+        onCommit = { newWidth, newHeight, scale ->
+            customizing = false
+            onSetSlideSize(newWidth, newHeight, scale)
+        },
+    )
+}
+
+/** The preset's one question, as its two answers plus the way out. */
+@Composable
+private fun ScaleContentDialog(title: String, onDismiss: () -> Unit, onAnswer: (Boolean) -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Scale content to fit?", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+        text = { Text("Moving this deck to $title.", fontSize = 13.sp) },
+        confirmButton = { TextButton(onClick = { onAnswer(true) }) { Text("Scale") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { onAnswer(false) }) { Text("Don't Scale") }
+                TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        },
+    )
+}
+
+/**
+ * A size typed by hand: the two sides prefilled with the deck's own, and the
+ * preset dialog's question as the checkbox under them.
+ *
+ * The fields are [NumberField]s, so each settles on Enter or on leaving it, and
+ * OK sends whatever they have settled on. The bounds are the document's, not
+ * this dialog's: [io.github.xxfast.cupboard.document.resized] clamps.
+ */
+@Composable
+private fun CustomSlideSizeDialog(
+    width: Float,
+    height: Float,
+    onDismiss: () -> Unit,
+    onCommit: (width: Float, height: Float, scaleContent: Boolean) -> Unit,
+) {
+    var newWidth: Float by remember { mutableStateOf(width) }
+    var newHeight: Float by remember { mutableStateOf(height) }
+    var scale: Boolean by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom Slide Size", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    NumberField(
+                        label = "Width",
+                        value = newWidth,
+                        enabled = true,
+                        onCommit = { entered -> newWidth = entered },
+                        modifier = Modifier.weight(1f),
+                        minimum = 1f,
+                    )
+                    NumberField(
+                        label = "Height",
+                        value = newHeight,
+                        enabled = true,
+                        onCommit = { entered -> newHeight = entered },
+                        modifier = Modifier.weight(1f),
+                        minimum = 1f,
+                    )
+                }
+                AppearanceRow(
+                    label = "Scale content",
+                    checked = scale,
+                    onToggle = { on -> scale = on },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onCommit(newWidth, newHeight, scale) }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 

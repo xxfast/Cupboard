@@ -266,6 +266,13 @@ fun EditorCanvas(
     onFieldContextClick: (position: Offset) -> Unit = {},
     modifier: Modifier = Modifier,
     zoom: Float? = null,
+    /**
+     * The deck's slide size, `Document.slideWidth` and `Document.slideHeight`:
+     * what the surface lays out at, what the rulers graduate in, and what tells a
+     * dragged guide whether it is still over the slide.
+     */
+    slideWidth: Float = Document.SLIDE_WIDTH,
+    slideHeight: Float = Document.SLIDE_HEIGHT,
     /** The slide's place in the presentation, drawn only when the slide asks for it. */
     number: Int? = null,
     /** The deck's user guides. Document-owned and shared by every slide. */
@@ -341,6 +348,8 @@ fun EditorCanvas(
             modifier = Modifier.fillMaxSize().padding(start = rulerInset, top = rulerInset),
             slideBackground = slide.effectiveBackground(layout, background),
             zoom = zoom,
+            slideWidth = slideWidth,
+            slideHeight = slideHeight,
         ) {
             // Behind everything the slide owns, and out of every hit test below:
             // the gesture code only ever looks at `slide.elements`.
@@ -605,8 +614,7 @@ fun EditorCanvas(
 
                         fun onSlide(): Boolean {
                             val at: Offset = guidePoint()
-                            return at.x in 0f..Document.SLIDE_WIDTH &&
-                                at.y in 0f..Document.SLIDE_HEIGHT
+                            return at.x in 0f..slideWidth && at.y in 0f..slideHeight
                         }
 
                         fun resized(t: DragTarget.Resize): List<Element> {
@@ -867,6 +875,8 @@ fun EditorCanvas(
         val ruled: Rect? = slideInCanvas
         if (showRulers && ruled != null) Rulers(
             slide = ruled,
+            slideWidth = slideWidth,
+            slideHeight = slideHeight,
             onPreviewGuide = onPreviewGuide,
             onCommitGuide = onCommitGuide,
             onEndGuideDrag = onEndGuideDrag,
@@ -889,6 +899,8 @@ fun EditorCanvas(
 @Composable
 private fun Rulers(
     slide: Rect,
+    slideWidth: Float,
+    slideHeight: Float,
     onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
     onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
     onEndGuideDrag: () -> Unit,
@@ -899,6 +911,8 @@ private fun Rulers(
         RulerStrip(
             horizontal = true,
             slide = slide,
+            slideWidth = slideWidth,
+            slideHeight = slideHeight,
             tokens = tokens,
             onPreviewGuide = onPreviewGuide,
             onCommitGuide = onCommitGuide,
@@ -908,6 +922,8 @@ private fun Rulers(
         RulerStrip(
             horizontal = false,
             slide = slide,
+            slideWidth = slideWidth,
+            slideHeight = slideHeight,
             tokens = tokens,
             onPreviewGuide = onPreviewGuide,
             onCommitGuide = onCommitGuide,
@@ -926,6 +942,8 @@ private fun Rulers(
 private fun RulerStrip(
     horizontal: Boolean,
     slide: Rect,
+    slideWidth: Float,
+    slideHeight: Float,
     tokens: ChromeTokens,
     onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
     onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit,
@@ -935,7 +953,7 @@ private fun RulerStrip(
     val density: Density = LocalDensity.current
     // What the strip graduates: the span it covers in pixels, and in doc units.
     val span: Float = if (horizontal) slide.width else slide.height
-    val units: Float = if (horizontal) Document.SLIDE_WIDTH else Document.SLIDE_HEIGHT
+    val units: Float = if (horizontal) slideWidth else slideHeight
     val origin: Float = if (horizontal) slide.left else slide.top
     // What it pulls out, which is the other axis: a horizontal ruler makes
     // horizontal guides, and a horizontal guide is placed by its y.
@@ -950,9 +968,9 @@ private fun RulerStrip(
                 .pointerInput(slide) {
                     var pointer: Offset = Offset.Zero
                     fun position(): Float = if (horizontal) {
-                        (pointer.y - slide.top) / slide.height * Document.SLIDE_HEIGHT
+                        (pointer.y - slide.top) / slide.height * slideHeight
                     } else {
-                        (pointer.x - slide.left) / slide.width * Document.SLIDE_WIDTH
+                        (pointer.x - slide.left) / slide.width * slideWidth
                     }
 
                     detectDragGestures(

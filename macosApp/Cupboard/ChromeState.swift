@@ -70,6 +70,9 @@ struct Chrome {
     let themeName: String
     /// The deck's own background, what the Document panel's deck controls edit.
     let deck: DeckProps
+    /// The shape every slide in the deck is cut to, and the shapes it can be
+    /// put on. Deck-wide like the theme, whatever the control is called.
+    let slideSize: SlideSize
 
     init(_ host: EditorHost) {
         sidebarOpen = host.sidebarOpen()
@@ -102,6 +105,7 @@ struct Chrome {
         userThemeNames = host.userThemeNames()
         themeName = host.currentThemeName()
         deck = DeckProps(host)
+        slideSize = SlideSize(host)
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
@@ -120,6 +124,38 @@ struct LayoutChoice: Identifiable, Equatable {
         let ids = host.layoutIds()
         let names = host.layoutNames()
         return zip(ids, names).map { LayoutChoice(id: $0, name: $1) }
+    }
+}
+
+/// The slide every slide in the deck is cut to: the named shapes the picker
+/// offers, which of them the deck is on, and the measurements behind it.
+///
+/// The sizes themselves never travel: a preset goes back as its position, the
+/// way a shape does, so the only numbers here are the deck's own, which is what
+/// the custom fields start at.
+struct SlideSize: Equatable {
+    /// The named shapes, in picker order. The position is what goes back.
+    let presetTitles: [String]
+    /// Which of them the deck is on, nil for a size none of them names.
+    let presetIndex: Int?
+    let width: Double
+    let height: Double
+
+    init(_ host: EditorHost) {
+        presetTitles = host.slideSizePresetTitles()
+        let index = Int(host.slideSizePresetIndex())
+        presetIndex = index >= 0 ? index : nil
+        width = Double(host.slideWidth())
+        height = Double(host.slideHeight())
+    }
+
+    /// What the popup reads: the preset's name, or the measurements when the
+    /// deck is on a size no preset names.
+    var title: String {
+        guard let index = presetIndex, presetTitles.indices.contains(index) else {
+            return "\(Int(width.rounded())) × \(Int(height.rounded()))"
+        }
+        return presetTitles[index]
     }
 }
 

@@ -29,7 +29,7 @@ data class ExportedFile(val path: String, val contents: String)
  * ready to be written out and run.
  *
  * The export is a translation, not a re-implementation: a slide's elements come
- * out as composables laid out on a 1920x1080 board scaled into CuP's slide, and
+ * out as composables laid out on the deck's own board scaled into CuP's slide, and
  * the deck's builds come out as CuP steps. What Cupboard draws from a parsed
  * source (diagrams, equations) and what it hasn't loaded yet (images) export as
  * placeholders carrying a TODO, so the project always compiles.
@@ -45,7 +45,10 @@ fun Document.toCupProject(packageName: String = DefaultPackage): List<ExportedFi
         ExportedFile("README.md", readmeSource(name)),
         ExportedFile("$sources/Main.kt", mainSource(this, target)),
         ExportedFile("$sources/Slides.kt", slidesSource(this, target)),
-        ExportedFile("$sources/Support.kt", supportSource(target)),
+        ExportedFile(
+            "$sources/Support.kt",
+            supportSource(target, slideWidth, slideHeight),
+        ),
     )
 }
 
