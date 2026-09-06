@@ -61,7 +61,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 ## Phase 4: Layouts and themes
 
-- [ ] Slide layouts (masters): layout editing view, text/media placeholders, apply/reapply layout, layout inheritance (layout edits propagate; layout objects background-locked on slides).
+- [x] Slide layouts (masters): a layout is a `Slide` in `Document.layouts` (ids resolve across both lists, so element reductions work unchanged in layout mode), placeholders are elements with a `PlaceholderRole` (Title/Body/Media/Code), static layout objects render behind slides and never hit-test. Apply/reapply map by role and keep content, new slides instantiate their anchor's placeholders, layout edits propagate live. Layout mode in the navigator (Done strip, New/Duplicate/Rename/Delete), layout picker + Reapply + placeholder buttons in the Slide/Document panels, View menu toggle, on both shells. Not yet: per-slide Title/Body appearance checkboxes stay inert. (`cf82632`, needs a visual pass)
 - [ ] Themes: save-as-theme, change theme, theme-defined defaults for new elements; ships with a small set of developer-taste themes (dark-first).
 - [ ] Document setup: slide size presets (16:9, 4:3) + custom dimensions; the 1920x1080 native space becomes per-document.
 - [ ] Object styles: save/apply fill+border+shadow combos; default text box appearance.
