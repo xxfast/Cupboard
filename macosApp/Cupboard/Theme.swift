@@ -42,6 +42,13 @@ struct Palette {
     let selectionEdge: Color
     /// The hairline around a thumbnail, identical selected or not.
     let thumbEdge: Color
+    /// Build order rows: the resting fill, the hover, and the numbered badge a
+    /// row wears while its element is not selected. An active row takes the
+    /// accent for both.
+    let rowBg: Color
+    let rowHov: Color
+    let badgeOff: Color
+    let badgeOffText: Color
 
     static let dark = Palette(
         text: Color(rgb: 0xE8E8EA),
@@ -82,7 +89,11 @@ struct Palette {
         tabDivider: Color.white.opacity(0.18),
         selection: Color.white.opacity(0.17),
         selectionEdge: Color.white.opacity(0.30),
-        thumbEdge: Color.white.opacity(0.16)
+        thumbEdge: Color.white.opacity(0.16),
+        rowBg: Color(rgb: 0x333338),
+        rowHov: Color(rgb: 0x3C3C42),
+        badgeOff: Color(rgb: 0x4A4A50),
+        badgeOffText: Color(rgb: 0xD8D8DC)
     )
 
     static let light = Palette(
@@ -124,7 +135,11 @@ struct Palette {
         tabDivider: Color.black.opacity(0.14),
         selection: Color.white.opacity(0.68),
         selectionEdge: Color.white.opacity(0.95),
-        thumbEdge: Color.black.opacity(0.14)
+        thumbEdge: Color.black.opacity(0.14),
+        rowBg: Color(rgb: 0xE7E6E4),
+        rowHov: Color(rgb: 0xDEDEDD),
+        badgeOff: Color(rgb: 0xC9C8C6),
+        badgeOffText: Color(rgb: 0x3A3A3C)
     )
 
     static func of(_ scheme: ColorScheme) -> Palette { scheme == .dark ? .dark : .light }

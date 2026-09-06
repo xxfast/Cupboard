@@ -24,6 +24,26 @@ import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.TerminalElement
 
+/**
+ * Every effect under the name the design gives it: what the inspector's menu
+ * offers and what a canvas badge is labelled with, in one place so the two never
+ * spell one effect two ways.
+ */
+val BuildEffectNames: List<Pair<BuildEffect, String>> = listOf(
+    BuildEffect.Appear to "Appear",
+    BuildEffect.FadeUp to "Fade Up",
+    BuildEffect.Pop to "Pop",
+    BuildEffect.Dissolve to "Dissolve",
+    BuildEffect.MoveIn to "Move In",
+    BuildEffect.Scale to "Scale",
+    BuildEffect.Wipe to "Wipe",
+    BuildEffect.Typewriter to "Typewriter",
+)
+
+/** This effect's name, per [BuildEffectNames]. */
+fun BuildEffect.title(): String =
+    BuildEffectNames.firstOrNull { (effect, _) -> effect == this }?.second ?: name
+
 /** How far a [BuildEffect.FadeUp] travels, as a fraction of the element's own height. */
 private const val FadeUpRise: Float = 0.08f
 

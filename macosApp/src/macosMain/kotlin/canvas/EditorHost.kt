@@ -19,6 +19,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
+import io.github.xxfast.cupboard.document.ActionKind
+import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.BuildAction
+import io.github.xxfast.cupboard.document.BuildDelivery
+import io.github.xxfast.cupboard.document.BuildEffect
+import io.github.xxfast.cupboard.document.BuildKind
+import io.github.xxfast.cupboard.document.BuildTrigger
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
@@ -59,11 +66,13 @@ import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.action
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
+import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
@@ -101,6 +110,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.skia.EncodedImageFormat
 import platform.AppKit.NSCursor
@@ -144,6 +154,137 @@ private val TransitionKindTitles: List<String> =
 /** What a transition may last: too short to see, and long enough to sit through. */
 private const val MIN_TRANSITION_MS: Int = 100
 private const val MAX_TRANSITION_MS: Int = 3000
+
+/**
+ * What the build effects are called in the build order's popup, in
+ * [BuildEffect]'s own order, so a place in this list is an ordinal. Spelled here
+ * for the same reason [TransitionKindTitles] is: two of them read as two words in
+ * a menu and as one in code.
+ */
+private val BuildEffectTitles: List<String> =
+    listOf("Appear", "Fade Up", "Pop", "Dissolve", "Move In", "Scale", "Wipe", "Typewriter")
+
+/** The triggers, in [BuildTrigger]'s order. Same protocol as the effects. */
+private val BuildTriggerTitles: List<String> = listOf("On Click", "With Previous", "After Previous")
+
+/** What an action does to its element, in [ActionKind]'s order. Same protocol. */
+private val ActionKindTitles: List<String> = listOf("Move", "Opacity", "Rotate", "Scale")
+
+/**
+ * The deliveries in [BuildDelivery]'s order. A row offers only the ones its own
+ * element has pieces for, so this is a lookup rather than a menu; see
+ * [deliveriesFor].
+ */
+private val BuildDeliveryTitles: List<String> =
+    listOf("All at Once", "By Paragraph", "By Word", "By Character", "By Line")
+
+/** What a build may last, the way [MIN_TRANSITION_MS] bounds a transition. */
+private const val MIN_BUILD_MS: Int = 100
+private const val MAX_BUILD_MS: Int = 3000
+
+/** What a fresh action build does, so adding one shows something on the canvas. */
+private const val DEFAULT_ACTION_DX: Float = 40f
+
+/** How much of an element's content a build row's title carries. */
+private const val HINT_LENGTH: Int = 26
+
+/**
+ * The deliveries [element] has pieces to hand over in, in the model's order.
+ * Everything can be delivered whole, so the list is never empty and its first
+ * entry is always [BuildDelivery.All].
+ *
+ * A row's `deliveryIndex` is a place in this list rather than an ordinal: what
+ * the popup offers is what the element allows, and a position in a menu is what
+ * comes back across the boundary.
+ */
+private fun deliveriesFor(element: Element?): List<BuildDelivery> = when (element) {
+    is TextElement -> BuildDelivery.entries
+    is CodeElement, is TerminalElement -> listOf(BuildDelivery.All, BuildDelivery.ByLine)
+    else -> listOf(BuildDelivery.All)
+}
+
+/** Whether [element] has steps of its own for a build to walk it through. */
+private fun hasSteps(element: Element?): Boolean = when (element) {
+    is CodeElement -> element.steps.isNotEmpty()
+    is DiagramElement -> element.steps.isNotEmpty()
+    else -> false
+}
+
+/** What the inspector calls this kind of element, one word. */
+private fun Element.kindName(): String = when (this) {
+    is TextElement -> "Text"
+    is ShapeElement -> "Shape"
+    is ImageElement -> "Image"
+    is CodeElement -> "Code"
+    is TerminalElement -> "Terminal"
+    is DiagramElement -> "Diagram"
+    is EquationElement -> "Equation"
+    is GroupElement -> "Group"
+}
+
+/**
+ * What a build row calls the element it plays: its kind, and as much of its
+ * content as fits ("Text: Rendering Pipeline"). The first line that says
+ * anything, since a row is one line high and a code block's second line is not
+ * a name for it.
+ */
+private fun Element.rowTitle(): String {
+    val content: String = when (this) {
+        is TextElement -> text
+        is ShapeElement -> label.ifBlank { kind.name }
+        is ImageElement -> placeholder
+        is CodeElement -> language
+        is TerminalElement -> title
+        is DiagramElement -> source
+        is EquationElement -> latex
+        is GroupElement -> "${children.size} elements"
+    }
+    val hint: String = content.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
+    if (hint.isEmpty()) return kindName()
+    val short: String =
+        if (hint.length <= HINT_LENGTH) hint
+        else hint.take(HINT_LENGTH).trimEnd() + "…"
+    return "${kindName()}: $short"
+}
+
+/** The line under a row's title: what plays, how long it takes, what starts it. */
+private fun Build.rowMeta(): String {
+    val effectTitle: String = BuildEffectTitles.getOrElse(effect.ordinal) { effect.name }
+    val head: String = when (kind) {
+        BuildKind.In -> effectTitle
+        BuildKind.Out -> "Out · $effectTitle"
+        BuildKind.Action -> "Action · ${action?.summary() ?: "None"}"
+    }
+    val triggerTitle: String = BuildTriggerTitles.getOrElse(trigger.ordinal) { trigger.name }
+    return "$head · ${seconds(durationMs)} · $triggerTitle"
+}
+
+/** What one action reads as on a row: what it changes, and by how much. */
+private fun BuildAction.summary(): String = when (kind) {
+    ActionKind.Move -> "Move ${dx.short()}, ${dy.short()}"
+    ActionKind.Opacity -> "Opacity ${opacity.short()}"
+    ActionKind.Rotate -> "Rotate ${rotation.short()}°"
+    ActionKind.Scale -> "Scale ${scale.short()}"
+}
+
+/** Milliseconds as the seconds a row says out loud: "0.4s", "1s". */
+private fun seconds(ms: Int): String = "${(ms / 1000f).short()}s"
+
+/**
+ * A number as a row spells it: two decimals at the most, and no trailing zeros.
+ * Hand-rolled because there is no `String.format` on Kotlin/Native.
+ */
+private fun Float.short(): String {
+    val sign: String = if (this < 0f) "-" else ""
+    val hundredths: Int = (abs(this) * 100).roundToInt()
+    val whole: Int = hundredths / 100
+    val fraction: Int = hundredths % 100
+    return when {
+        fraction == 0 -> "$sign$whole"
+        fraction % 10 == 0 -> "$sign$whole.${fraction / 10}"
+        else -> "$sign$whole.${fraction.toString().padStart(2, '0')}"
+    }
+}
 
 /** macOS 15 is where the frame-resize cursors landed; the app still runs on 14. */
 private val macOsMajorVersion: Long =
@@ -398,6 +539,53 @@ class TransitionProps(
     val automatic: Boolean,
     /** How long an automatic slide sits before it goes. Nothing to a slide that waits. */
     val delayMs: Int,
+)
+
+/**
+ * One row of the slide's build order, flattened for the native Animate panel:
+ * what it says, and every number the editor under the list writes back.
+ * [TransitionProps]'s neighbour, and the same contract, a value rather than a
+ * handle onto the document.
+ *
+ * The enums travel as places in a list, the way a transition's kind does:
+ * [kindIndex] in [BuildKind], [effectIndex] in `buildEffectTitles()`,
+ * [triggerIndex] in `buildTriggerTitles()`, [actionKindIndex] in
+ * `actionKindTitles()` and -1 for a build that carries no action, and
+ * [deliveryIndex] in this row's own [deliveryTitles], which is what its element
+ * allows rather than the whole model's list.
+ *
+ * The action numbers are filled in whatever the kind, the way a slide wearing no
+ * gradient still carries its stops: switching an action from Move to Scale never
+ * has to invent a factor. [elementStep] is -1 for a build that points at no step.
+ */
+class BuildRow(
+    val index: Int,
+    /** The element the build plays, kind and content hint: "Text: Rendering Pipeline". */
+    val title: String,
+    /** What plays and when: "Fade Up · 0.4s · On Click". */
+    val meta: String,
+    val elementId: String,
+    /** The build's element is in the selection, which is what highlights the row. */
+    val active: Boolean,
+    val kindIndex: Int,
+    val effectIndex: Int,
+    val deliveryIndex: Int,
+    val triggerIndex: Int,
+    val durationMs: Int,
+    val delayMs: Int,
+    /** The element's own step this build moves to, -1 when it moves to none. */
+    val elementStep: Int,
+    /** -1 when the build carries no action, which is every build that is not one. */
+    val actionKindIndex: Int,
+    val dx: Float,
+    val dy: Float,
+    val opacity: Float,
+    val rotation: Float,
+    val scale: Float,
+    /** The element has steps of its own, so the row has a step to point at. */
+    val hasStepTarget: Boolean,
+    /** The deliveries this build's element has pieces for, in menu order. */
+    val deliveryTitles: List<String>,
 )
 
 /**
@@ -799,16 +987,7 @@ class EditorHost {
             flippedHorizontally = element.flippedHorizontally,
             flippedVertically = element.flippedVertically,
             locked = element.locked,
-            kind = when (element) {
-                is TextElement -> "Text"
-                is ShapeElement -> "Shape"
-                is ImageElement -> "Image"
-                is CodeElement -> "Code"
-                is TerminalElement -> "Terminal"
-                is DiagramElement -> "Diagram"
-                is EquationElement -> "Equation"
-                is GroupElement -> "Group"
-            },
+            kind = element.kindName(),
         )
     }
 
@@ -1811,6 +1990,162 @@ class EditorHost {
             )
         }
         viewModel.onSetSlideTransition(state.selectedSlide.id, transition)
+    }
+
+    /**
+     * The selected slide's build order, in the order it plays: what the Animate
+     * panel's list draws and what its editor writes back.
+     *
+     * A build naming an element the slide no longer holds still gets a row: the
+     * document says it is there, and a row is how it can be removed.
+     */
+    fun buildRows(): List<BuildRow> {
+        val slide: Slide = state.selectedSlide
+        val selected: List<String> = state.selectedElementIds
+        return slide.builds.mapIndexed { index, build ->
+            val element: Element? = slide.elementById(build.elementId)
+            val deliveries: List<BuildDelivery> = deliveriesFor(element)
+            // What an action control would commit if the build had one, so the
+            // fields under an action popup never start from nothing.
+            val action: BuildAction = build.action ?: BuildAction(ActionKind.Move)
+            return@mapIndexed BuildRow(
+                index = index,
+                title = element?.rowTitle() ?: "Missing element",
+                meta = build.rowMeta(),
+                elementId = build.elementId,
+                active = build.elementId in selected,
+                kindIndex = build.kind.ordinal,
+                effectIndex = build.effect.ordinal,
+                deliveryIndex = deliveries.indexOf(build.delivery).coerceAtLeast(0),
+                triggerIndex = build.trigger.ordinal,
+                durationMs = build.durationMs,
+                delayMs = build.delayMs,
+                elementStep = build.elementStep ?: -1,
+                actionKindIndex = build.action?.kind?.ordinal ?: -1,
+                dx = action.dx,
+                dy = action.dy,
+                opacity = action.opacity,
+                rotation = action.rotation,
+                scale = action.scale,
+                hasStepTarget = hasSteps(element),
+                deliveryTitles = deliveries.map { BuildDeliveryTitles[it.ordinal] },
+            )
+        }
+    }
+
+    /** The effects a build may play, in the model's order. Positions come back. */
+    fun buildEffectTitles(): List<String> = BuildEffectTitles
+
+    /** What may start a build, in the same protocol. */
+    fun buildTriggerTitles(): List<String> = BuildTriggerTitles
+
+    /** What an action may do to its element, in the same protocol. */
+    fun actionKindTitles(): List<String> = ActionKindTitles
+
+    /**
+     * Appends a build that brings the primary element on, which is where a new
+     * one lands: the order is the order they play in. Nothing selected is no
+     * build rather than a guess at whose it would be.
+     */
+    fun addBuildIn() {
+        val element: Element = state.primaryElement ?: return
+        viewModel.onAddBuild(Build(elementId = element.id, kind = BuildKind.In))
+    }
+
+    /** [addBuildIn]'s mirror: the build that takes the primary element away. */
+    fun addBuildOut() {
+        val element: Element = state.primaryElement ?: return
+        viewModel.onAddBuild(
+            Build(elementId = element.id, kind = BuildKind.Out, effect = BuildEffect.Dissolve),
+        )
+    }
+
+    /**
+     * Appends an action on the primary element: a move to start with, far enough
+     * to see, since an action that changes nothing looks like one that failed.
+     */
+    fun addAction() {
+        val element: Element = state.primaryElement ?: return
+        viewModel.onAddBuild(
+            Build.action(
+                elementId = element.id,
+                action = BuildAction(kind = ActionKind.Move, dx = DEFAULT_ACTION_DX),
+            ),
+        )
+    }
+
+    /**
+     * Commits a whole build over the one at [index]: every control in the editor
+     * sends the other values as they stand, the way a typed frame commits all
+     * four of its numbers.
+     *
+     * The kind and the element are the build's own and never change here: what
+     * a build plays is edited, what it plays on is not. [actionKindIndex] -1
+     * clears the action, and a build that is not an action carries none whatever
+     * the index says. An index the slide has no build at is a no-op.
+     */
+    fun updateBuild(
+        index: Int,
+        effectIndex: Int,
+        deliveryIndex: Int,
+        triggerIndex: Int,
+        durationMs: Int,
+        delayMs: Int,
+        elementStep: Int,
+        actionKindIndex: Int,
+        dx: Float,
+        dy: Float,
+        opacity: Float,
+        rotation: Float,
+        scale: Float,
+    ) {
+        val slide: Slide = state.selectedSlide
+        val build: Build = slide.builds.getOrNull(index) ?: return
+        val deliveries: List<BuildDelivery> = deliveriesFor(slide.elementById(build.elementId))
+        val action: BuildAction? =
+            if (build.kind != BuildKind.Action) null
+            else ActionKind.entries.getOrNull(actionKindIndex)?.let { kind ->
+                BuildAction(
+                    kind = kind,
+                    dx = dx,
+                    dy = dy,
+                    opacity = opacity.coerceIn(0f, 1f),
+                    rotation = rotation,
+                    scale = scale,
+                )
+            }
+
+        viewModel.onUpdateBuild(
+            index,
+            build.copy(
+                effect = BuildEffect.entries.getOrNull(effectIndex) ?: build.effect,
+                delivery = deliveries.getOrNull(deliveryIndex) ?: BuildDelivery.All,
+                trigger = BuildTrigger.entries.getOrNull(triggerIndex) ?: build.trigger,
+                durationMs = durationMs.coerceIn(MIN_BUILD_MS, MAX_BUILD_MS),
+                delayMs = delayMs.coerceAtLeast(0),
+                elementStep = elementStep.takeIf { it >= 0 },
+                action = action,
+            ),
+        )
+    }
+
+    /** Drops the build at [index]. The element stays exactly where it is. */
+    fun removeBuild(index: Int) {
+        viewModel.onRemoveBuild(index)
+    }
+
+    /** The list's drag: steps are a function of the order, so this re-times the slide. */
+    fun moveBuild(from: Int, to: Int) {
+        viewModel.onMoveBuild(from, to)
+    }
+
+    /**
+     * Puts the canvas selection on the element the build at [index] plays, so
+     * clicking a row shows what it is about to animate.
+     */
+    fun selectBuildElement(index: Int) {
+        val build: Build = state.selectedSlide.builds.getOrNull(index) ?: return
+        viewModel.onSelectElement(build.elementId)
     }
 
     /**

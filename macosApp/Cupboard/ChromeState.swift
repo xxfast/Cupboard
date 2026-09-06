@@ -83,6 +83,14 @@ struct Chrome {
     /// order. Positions are what go back, the way a placeholder role does.
     let transitionKinds: [String]
     let transitionDirections: [String]
+    /// The selected slide's build order, in the order it plays: what the Animate
+    /// panel's list draws and what its editor writes back.
+    let builds: [BuildEntry]
+    /// What a build may play, what may start it, and what an action may do, in
+    /// Kotlin's order. Positions are what go back, like the transition kinds.
+    let buildEffects: [String]
+    let buildTriggers: [String]
+    let actionKinds: [String]
 
     init(_ host: EditorHost) {
         sidebarOpen = host.sidebarOpen()
@@ -120,6 +128,10 @@ struct Chrome {
         transition = TransitionFormat(host.selectedTransition())
         transitionKinds = host.transitionKinds()
         transitionDirections = host.transitionDirections()
+        builds = host.buildRows().map(BuildEntry.init)
+        buildEffects = host.buildEffectTitles()
+        buildTriggers = host.buildTriggerTitles()
+        actionKinds = host.actionKindTitles()
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
@@ -215,6 +227,77 @@ struct TransitionFormat: Equatable {
         duration = Double(props.durationMs) / 1000
         automatic = props.automatic
         delay = Double(props.delayMs) / 1000
+    }
+}
+
+/// One build in the slide's order as a Swift value: what a row says, and every
+/// number the editor under the list sends back. `TransitionFormat`'s neighbour,
+/// read the same way and written back the same way, whole.
+///
+/// The enums travel as positions: `kind` in `BuildKind`, `effectIndex` in
+/// `buildEffects`, `triggerIndex` in `buildTriggers`, `actionKindIndex` in
+/// `actionKinds` and nil for a build with no action, and `deliveryIndex` in this
+/// row's own `deliveryTitles`, which is what its element allows.
+///
+/// Seconds here, milliseconds on the model, the way the transition reads: the
+/// panel is a slider and a field, and both read in the unit people say out loud.
+struct BuildEntry: Identifiable, Equatable {
+    let id: Int
+    /// The build's place in the order, which is also its badge number less one.
+    var index: Int { id }
+    let title: String
+    let meta: String
+    let elementId: String
+    /// The build's element is selected on the canvas: the row draws active.
+    let active: Bool
+    /// 0 brings the element on, 1 takes it away, 2 animates it where it is.
+    let kind: Int
+    let effectIndex: Int
+    let deliveryIndex: Int
+    let triggerIndex: Int
+    let duration: Double
+    let delay: Double
+    /// The element's own step this build moves to, nil when it moves to none.
+    let elementStep: Int?
+    /// nil when the build carries no action, which is every build that is not one.
+    let actionKindIndex: Int?
+    /// What an action changes, filled in whatever the kind so a switched action
+    /// never has to invent a number.
+    let dx: Double
+    let dy: Double
+    let opacity: Double
+    let rotation: Double
+    let scale: Double
+    /// The element has steps of its own, so the row has a step to point at.
+    let hasStepTarget: Bool
+    /// The deliveries this build's element has pieces for, in menu order.
+    let deliveryTitles: [String]
+
+    /// Whether this build brings its element on or takes it away, and so shows
+    /// an effect and a delivery rather than an action's own controls.
+    var isAction: Bool { kind == 2 }
+
+    init(_ row: BuildRow) {
+        id = Int(row.index)
+        title = row.title
+        meta = row.meta
+        elementId = row.elementId
+        active = row.active
+        kind = Int(row.kindIndex)
+        effectIndex = Int(row.effectIndex)
+        deliveryIndex = Int(row.deliveryIndex)
+        triggerIndex = Int(row.triggerIndex)
+        duration = Double(row.durationMs) / 1000
+        delay = Double(row.delayMs) / 1000
+        elementStep = row.elementStep >= 0 ? Int(row.elementStep) : nil
+        actionKindIndex = row.actionKindIndex >= 0 ? Int(row.actionKindIndex) : nil
+        dx = Double(row.dx)
+        dy = Double(row.dy)
+        opacity = Double(row.opacity)
+        rotation = Double(row.rotation)
+        scale = Double(row.scale)
+        hasStepTarget = row.hasStepTarget
+        deliveryTitles = row.deliveryTitles
     }
 }
 

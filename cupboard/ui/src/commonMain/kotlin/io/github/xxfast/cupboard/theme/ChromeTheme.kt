@@ -69,6 +69,14 @@ data class ChromeTheme(
     val light: ChromeTokens,
     val winR: Dp,
     val thumbR: Dp,
+    /** The build-order row's corner. */
+    val rowR: Dp,
+    /**
+     * Whether the active build-order row wears an accent rail down its leading
+     * edge instead of the tonal fill the other two use. Fluent's treatment, and
+     * the one thing about that row that isn't a colour.
+     */
+    val rowRail: Boolean,
     val uiLabel: String,
 )
 
@@ -163,6 +171,8 @@ val MacChrome: ChromeTheme = ChromeTheme(
     ),
     winR = 19.dp,
     thumbR = 5.dp,
+    rowR = 12.dp,
+    rowRail = false,
     uiLabel = "ui: SwiftUI / AppKit",
 )
 
@@ -257,6 +267,8 @@ val WindowsChrome: ChromeTheme = ChromeTheme(
     ),
     winR = 8.dp,
     thumbR = 4.dp,
+    rowR = 4.dp,
+    rowRail = true,
     uiLabel = "ui: WinUI 3 · Mica",
 )
 
@@ -351,12 +363,21 @@ val LinuxChrome: ChromeTheme = ChromeTheme(
     ),
     winR = 16.dp,
     thumbR = 10.dp,
+    rowR = 12.dp,
+    rowRail = false,
     uiLabel = "ui: Compose Desktop · M3",
 )
 
 /** The resolved palette of the chrome currently drawing, Linux dark by default. */
 val LocalChromeTokens: ProvidableCompositionLocal<ChromeTokens> =
     staticCompositionLocalOf { LinuxChrome.dark }
+
+/**
+ * The chrome currently drawing, whole: the per-OS metrics that aren't colours
+ * and so have no room in [LocalChromeTokens]. Linux by default, like the palette.
+ */
+val LocalChromeTheme: ProvidableCompositionLocal<ChromeTheme> =
+    staticCompositionLocalOf { LinuxChrome }
 
 /**
  * The tokens as an M3 [ColorScheme], so stock Material components (menus, tabs,

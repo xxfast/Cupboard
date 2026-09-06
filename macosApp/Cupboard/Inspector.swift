@@ -16,6 +16,38 @@ func packedArgb(_ color: Color) -> Int64 {
         | channel(srgb.blueComponent)
 }
 
+enum BuildSpace {
+    static let name = "buildOrder"
+}
+
+/// Where each build row sits in [BuildSpace], by its place in the order. Keyed
+/// by index rather than by element: a build is not its element, and one element
+/// may hold several of them.
+struct BuildRowFrames: PreferenceKey {
+    static let defaultValue: [Int: CGRect] = [:]
+
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { _, latest in latest }
+    }
+}
+
+/// A build row on the move, and the gap it is over. SwiftUI state, like the
+/// navigator's drag: nothing but the drop is the document's business.
+struct BuildDrag: Equatable {
+    /// The row being carried, by its place in the order.
+    let index: Int
+    /// The gap the drop lands in, 0 for the one above the first row.
+    let gap: Int
+    /// Where the drop line draws, in [BuildSpace].
+    let lineY: CGFloat
+    /// How far the pointer has carried the row: it travels with the cursor.
+    let translationY: CGFloat
+
+    /// The place the build ends up at, which is one back from the gap whenever
+    /// the row has left a hole above it.
+    var destination: Int { gap > index ? gap - 1 : gap }
+}
+
 extension EditorView {
     /// Header is bare: Share and the tabs moved to the toolbar, which floats
     /// over this glass, so the panel only owns the title under them.
@@ -1068,26 +1100,442 @@ extension EditorView {
 
     // MARK: Animate panel
 
-    /// The slide's transition, which by Keynote's convention is the one that
-    /// plays on the way *out* of it. Builds, the other half of this panel, land
-    /// with the build editor.
+    /// The slide's build order, and under it the transition, which by Keynote's
+    /// convention is the one that plays on the way *out* of the slide.
     ///
     /// Layout mode shows none of it: a layout is a template for what a slide
     /// draws, and nothing on it is ever played.
     @ViewBuilder func animatePanel(_ ui: Chrome) -> some View {
-        VStack(alignment: .leading, spacing: Layout.panelPadding) {
-            if ui.editingLayouts {
-                Text("Layouts have no transitions.")
-                    .font(.system(size: 12))
+        ScrollView {
+            VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                if ui.editingLayouts {
+                    Text("Layouts have no builds or transitions.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.faint)
+                } else {
+                    buildSection(ui)
+                    palette.divider.frame(height: 1)
+                    transitionSection(ui)
+                }
+            }
+            .padding(Layout.panelPadding)
+            .frame(maxWidth: .infinity, alignment: .top)
+        }
+        .scrollContentBackground(.hidden)
+    }
+
+    // MARK: Build order
+
+    /// The order the slide's builds play in, the three ways to add one, and the
+    /// editor for whichever row is picked. The picked row is this view's own
+    /// state: a build is not a thing the document can be "on", so which one is
+    /// being edited is the panel's business alone.
+    @ViewBuilder func buildSection(_ ui: Chrome) -> some View {
+        let slideIndex = host.selectedSlideIndex()
+
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Build Order")
+
+            if ui.builds.isEmpty {
+                Text("Nothing builds on this slide.")
+                    .font(.system(size: 11.5))
                     .foregroundStyle(palette.faint)
             } else {
-                transitionSection(ui)
+                buildList(ui)
             }
 
-            Spacer(minLength: 0)
+            addBuildButtons(ui)
+
+            if let entry = ui.builds.first(where: { $0.index == selectedBuild }) {
+                palette.divider.frame(height: 1)
+                buildEditor(entry, ui)
+            }
         }
-        .padding(Layout.panelPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // The picked row is a place in this slide's order, so it means nothing
+        // on the next slide.
+        .onChange(of: slideIndex) { _, _ in selectedBuild = nil }
+    }
+
+    func buildList(_ ui: Chrome) -> some View {
+        VStack(spacing: 4) {
+            ForEach(ui.builds) { entry in
+                BuildOrderRow(
+                    entry: entry,
+                    picked: entry.index == selectedBuild,
+                    dragging: buildDrag?.index == entry.index,
+                    liftY: buildDrag?.index == entry.index ? buildDrag?.translationY ?? 0 : 0,
+                    palette: palette,
+                    onTap: {
+                        selectedBuild = entry.index
+                        host.selectBuildElement(index: Int32(entry.index))
+                    },
+                    onDrag: { point, translation in
+                        dragBuild(entry, to: point, by: translation, in: ui.builds)
+                    },
+                    onDrop: dropBuild
+                )
+            }
+        }
+        .coordinateSpace(name: BuildSpace.name)
+        .onPreferenceChange(BuildRowFrames.self) { frames in buildRowFrames = frames }
+        .overlay(alignment: .topLeading) { buildDropLine }
+        .animation(.easeInOut(duration: 0.2), value: ui.builds.map(\.index))
+    }
+
+    /// The gap the drag is over: after the last row whose midpoint the pointer
+    /// has passed, and above the first row until it passes one.
+    func dragBuild(_ entry: BuildEntry, to point: CGPoint, by translation: CGSize, in builds: [BuildEntry]) {
+        let placed: [(row: BuildEntry, frame: CGRect)] = builds.compactMap { row in
+            buildRowFrames[row.index].map { (row, $0) }
+        }
+        guard let first = placed.first else { return }
+
+        var gap = 0
+        // Half the 4pt row gap above the first row, so the line sits in the gap
+        // rather than on a row's edge.
+        var lineY: CGFloat = first.frame.minY - 2
+        for (row, frame) in placed {
+            if frame.midY >= point.y { break }
+            gap = row.index + 1
+            lineY = frame.maxY + 2
+        }
+
+        buildDrag = BuildDrag(
+            index: entry.index, gap: gap, lineY: lineY, translationY: translation.height
+        )
+    }
+
+    /// A drop back into the row's own gap moves nothing, so it is not sent. A
+    /// reorder renumbers the rows around it, so the pick follows the row it was
+    /// on and is dropped when it was on another one.
+    func dropBuild() {
+        guard let drag = buildDrag else { return }
+        let destination = drag.destination
+        buildDrag = nil
+        guard destination != drag.index else { return }
+
+        selectedBuild = selectedBuild == drag.index ? destination : nil
+        withAnimation(.easeInOut(duration: 0.2)) {
+            host.moveBuild(from: Int32(drag.index), to: Int32(destination))
+        }
+    }
+
+    @ViewBuilder var buildDropLine: some View {
+        if let drag = buildDrag {
+            palette.accent
+                .frame(height: 2)
+                .offset(y: drag.lineY - 1)
+        }
+    }
+
+    /// The three ways a build starts life, on the primary element. Dead with
+    /// nothing selected: a build is always about some element.
+    func addBuildButtons(_ ui: Chrome) -> some View {
+        HStack(spacing: 6) {
+            addBuildButton("Build In", next: ui.builds.count) { host.addBuildIn() }
+            addBuildButton("Build Out", next: ui.builds.count) { host.addBuildOut() }
+            addBuildButton("Action", next: ui.builds.count) { host.addAction() }
+        }
+        .disabled(ui.element == nil)
+        .opacity(ui.element == nil ? 0.45 : 1)
+    }
+
+    /// A new build lands at the end of the order, so [next] is the row the panel
+    /// opens the editor on. It shows up next pass; picking it now is what makes
+    /// adding one and editing it a single gesture.
+    func addBuildButton(
+        _ label: String,
+        next: Int,
+        action: @escaping () -> Void
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
+        return Button {
+            selectedBuild = next
+            action()
+        } label: {
+            Text(label)
+                .font(.system(size: 11.5))
+                .foregroundStyle(palette.ctrlText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
+                .frame(height: 22)
+                .background(palette.ctrl, in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// What the picked build plays, how long it takes and what starts it. An
+    /// action shows what it does to the element instead of an effect, since it
+    /// is not bringing anything on or taking it away.
+    @ViewBuilder func buildEditor(_ entry: BuildEntry, _ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel(entry.isAction ? "Action" : "Effect")
+
+            if entry.isAction {
+                stylePopup(ui.actionKinds, selected: entry.actionKindIndex ?? 0) {
+                    commitBuild(entry, actionKindIndex: $0)
+                }
+
+                actionFields(entry)
+            } else {
+                stylePopup(ui.buildEffects, selected: entry.effectIndex) {
+                    commitBuild(entry, effectIndex: $0)
+                }
+
+                sectionLabel("Delivery")
+
+                // The element's own list, not the model's: what a build can be
+                // handed over in is whatever it has pieces of.
+                stylePopup(entry.deliveryTitles, selected: entry.deliveryIndex) {
+                    commitBuild(entry, deliveryIndex: $0)
+                }
+            }
+
+            sectionLabel("Duration")
+
+            DurationSlider(value: entry.duration, palette: palette) {
+                commitBuild(entry, duration: $0)
+            }
+
+            sectionLabel("Trigger")
+
+            HStack(spacing: 2) {
+                ForEach(Array(ui.buildTriggers.enumerated()), id: \.offset) { index, name in
+                    segment(name, on: index == entry.triggerIndex) {
+                        commitBuild(entry, triggerIndex: index)
+                    }
+                }
+            }
+            .padding(2)
+            .frame(height: 26)
+            .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+            // Only a build that waits out the one before it has a wait to set.
+            if entry.triggerIndex == 2 {
+                sectionLabel("Delay")
+
+                ValueField(
+                    label: "",
+                    value: entry.delay,
+                    palette: palette,
+                    unit: "s",
+                    decimals: 1
+                ) {
+                    commitBuild(entry, delay: $0)
+                }
+                .frame(width: 104)
+            }
+
+            // Only an element with steps of its own has one to move to.
+            if entry.hasStepTarget {
+                sectionLabel("Step")
+
+                ValueField(label: "", value: Double(entry.elementStep ?? 0), palette: palette) {
+                    commitBuild(entry, elementStep: Int($0.rounded()))
+                }
+                .frame(width: 104)
+            }
+
+            panelButton("Remove Build", symbol: "minus.circle") {
+                selectedBuild = nil
+                host.removeBuild(index: Int32(entry.index))
+            }
+        }
+    }
+
+    /// What the picked action changes: only the fields its kind reads, the way
+    /// the model reads only those and leaves the rest where they are.
+    @ViewBuilder func actionFields(_ entry: BuildEntry) -> some View {
+        switch entry.actionKindIndex ?? 0 {
+        case 0:
+            HStack(spacing: 8) {
+                ValueField(label: "X", value: entry.dx, palette: palette) {
+                    commitBuild(entry, dx: $0)
+                }
+                ValueField(label: "Y", value: entry.dy, palette: palette) {
+                    commitBuild(entry, dy: $0)
+                }
+            }
+
+        case 1:
+            RatioSlider(value: entry.opacity, palette: palette) {
+                commitBuild(entry, opacity: $0)
+            }
+
+        case 2:
+            ValueField(label: "", value: entry.rotation, palette: palette, unit: "°") {
+                commitBuild(entry, rotation: $0)
+            }
+            .frame(width: 104)
+
+        default:
+            ValueField(
+                label: "",
+                value: entry.scale,
+                palette: palette,
+                unit: "×",
+                decimals: 2
+            ) {
+                commitBuild(entry, scale: $0)
+            }
+            .frame(width: 104)
+        }
+    }
+
+    /// A build commits whole, so a control that changes one thing sends the rest
+    /// back as they stand. The same deal `commitTransition` takes.
+    func commitBuild(
+        _ entry: BuildEntry,
+        effectIndex: Int? = nil,
+        deliveryIndex: Int? = nil,
+        triggerIndex: Int? = nil,
+        duration: Double? = nil,
+        delay: Double? = nil,
+        elementStep: Int? = nil,
+        actionKindIndex: Int? = nil,
+        dx: Double? = nil,
+        dy: Double? = nil,
+        opacity: Double? = nil,
+        rotation: Double? = nil,
+        scale: Double? = nil
+    ) {
+        host.updateBuild(
+            index: Int32(entry.index),
+            effectIndex: Int32(effectIndex ?? entry.effectIndex),
+            deliveryIndex: Int32(deliveryIndex ?? entry.deliveryIndex),
+            triggerIndex: Int32(triggerIndex ?? entry.triggerIndex),
+            durationMs: Int32(((duration ?? entry.duration) * 1000).rounded()),
+            delayMs: Int32(((delay ?? entry.delay) * 1000).rounded()),
+            elementStep: Int32(elementStep ?? entry.elementStep ?? -1),
+            actionKindIndex: Int32(actionKindIndex ?? entry.actionKindIndex ?? -1),
+            dx: Float(dx ?? entry.dx),
+            dy: Float(dy ?? entry.dy),
+            opacity: Float(opacity ?? entry.opacity),
+            rotation: Float(rotation ?? entry.rotation),
+            scale: Float(scale ?? entry.scale)
+        )
+    }
+
+    /// One row of the build order: the badge, what it plays, and the grab glyph.
+    /// The row under the editor wears the accent fill and border; a row whose
+    /// element is merely selected on the canvas takes the accent badge alone, so
+    /// the other builds on that element are visible without looking edited.
+    private struct BuildOrderRow: View {
+        let entry: BuildEntry
+        /// This is the row the editor below the list is about.
+        let picked: Bool
+        /// This row is the one being dragged, so it steps back while it travels.
+        let dragging: Bool
+        /// How far this row has been carried by the drag, 0 when it hasn't.
+        let liftY: CGFloat
+        let palette: Palette
+        let onTap: () -> Void
+        /// A drag sample, in [BuildSpace] plus its travel, and the release.
+        let onDrag: (CGPoint, CGSize) -> Void
+        let onDrop: () -> Void
+
+        @State private var hovering = false
+
+        private var shape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+        }
+
+        var body: some View {
+            HStack(spacing: 9) {
+                Text("\(entry.index + 1)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(
+                        picked || entry.active ? palette.accentText : palette.badgeOffText
+                    )
+                    .frame(width: 17, height: 17)
+                    .background(picked || entry.active ? palette.accent : palette.badgeOff, in: Circle())
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(entry.title)
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.text)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(entry.meta)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(palette.subtle)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("⠿")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(palette.subtle)
+            }
+            .padding(EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9))
+            .background(fill, in: shape)
+            .overlay {
+                if picked { shape.inset(by: 0.5).stroke(palette.accent, lineWidth: 1) }
+            }
+            // Lifted: a touch translucent to show the rows it passes over, and
+            // above them while it travels.
+            .opacity(dragging ? 0.85 : 1)
+            .offset(y: liftY)
+            .zIndex(dragging ? 1 : 0)
+            .contentShape(shape)
+            .onTapGesture(perform: onTap)
+            // Enough slop that a click is still a click, like the navigator's.
+            .gesture(
+                DragGesture(minimumDistance: 6, coordinateSpace: .named(BuildSpace.name))
+                    .onChanged { value in onDrag(value.location, value.translation) }
+                    .onEnded { _ in onDrop() }
+            )
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: BuildRowFrames.self,
+                        value: [entry.index: proxy.frame(in: .named(BuildSpace.name))]
+                    )
+                }
+            }
+            .onHover { hovering = $0 }
+        }
+
+        /// The design's active fill is the accent at 22%, which is what the
+        /// picked row wears; everything else is the row fill, lifted on hover.
+        private var fill: Color {
+            if picked { return palette.accent.opacity(0.22) }
+            return hovering ? palette.rowHov : palette.rowBg
+        }
+    }
+
+    /// A fraction the element draws at, 0 to 1 with a percentage beside it. The
+    /// drag rides on this view's own value and the release commits, so the whole
+    /// drag is one edit, exactly like `DurationSlider`.
+    private struct RatioSlider: View {
+        let value: Double
+        let palette: Palette
+        let onCommit: (Double) -> Void
+
+        @State private var dragged: Double? = nil
+
+        var body: some View {
+            HStack(spacing: 10) {
+                Slider(
+                    value: Binding(get: { dragged ?? value }, set: { dragged = $0 }),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        guard !editing, let latest = dragged else { return }
+                        onCommit(latest)
+                    }
+                )
+                .controlSize(.small)
+                .tint(palette.accent)
+
+                Text("\(Int(((dragged ?? value) * 100).rounded()))%")
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(palette.ctrlText)
+                    .frame(width: 40, alignment: .trailing)
+            }
+            .onChange(of: value) { _, _ in dragged = nil }
+        }
     }
 
     /// Default first, then the kinds. What a control shows below depends on
@@ -1713,6 +2161,10 @@ extension EditorView {
             Text(label)
                 .font(.system(size: 12, weight: on ? .semibold : .regular))
                 .foregroundStyle(on ? palette.accentText : palette.subtle)
+                // Three of them across the panel is a tight fit, so a long name
+                // shrinks rather than truncating to nothing readable.
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),

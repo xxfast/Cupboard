@@ -10,11 +10,14 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
@@ -25,6 +28,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -88,6 +92,7 @@ import io.github.xxfast.cupboard.canvas.alignment
 import io.github.xxfast.cupboard.canvas.chrome
 import io.github.xxfast.cupboard.canvas.highlightCode
 import io.github.xxfast.cupboard.canvas.textStyle
+import io.github.xxfast.cupboard.canvas.title
 import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
@@ -105,6 +110,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
+import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.lineIndexOf
 import io.github.xxfast.cupboard.document.listBody
@@ -222,6 +228,12 @@ fun EditorCanvas(
      * is simply an element the slide owns.
      */
     isEditingLayouts: Boolean = false,
+    /**
+     * Whether every element with a build wears its numbers, the way the Animate
+     * tab reads the slide. An annotation like the placeholder outlines: nothing
+     * here is hit-tested, and the badges say only what the build order says.
+     */
+    showBuildBadges: Boolean = false,
     /** The deck's background, behind a slide that has none of its own or its layout's. */
     background: SlideBackground? = null,
     selectedElementIds: List<String>,
@@ -754,6 +766,13 @@ fun EditorCanvas(
                 // can see and never hit.
                 val handles: Boolean = selected.size == 1 && editing == null
                 SelectionOverlay(element, canvasScale, handles = handles)
+            }
+
+            // Over the rings rather than under them: a badge sits on the corner
+            // a ring runs through, and it is the one thing on this canvas that
+            // has to stay readable while the element it names is selected.
+            if (showBuildBadges) {
+                for (badge in slide.buildBadges()) BuildBadgeOverlay(badge, canvasScale)
             }
 
             // The marquee, drawn from state rather than from the gesture's own vars.
@@ -1772,6 +1791,98 @@ private fun PlaceholderOverlay(element: Element, role: PlaceholderRole, scale: F
         )
     }
 }
+
+/**
+ * One element's place in the build order: where it sits, the numbers of the
+ * builds it carries, and the label the very first badge wears.
+ */
+private data class BuildBadge(
+    val frame: Frame,
+    /** Every build on this element, in order, as "1,4". */
+    val numbers: String,
+    /** "Fade Up · 0.4s", on the badge that carries build 1 and nowhere else. */
+    val label: String?,
+)
+
+/**
+ * A badge per element with a build, in the order those elements are first built.
+ *
+ * One badge per element rather than per build: two builds on one element sit in
+ * the same corner, so they stack their numbers instead of each other. A build
+ * naming an element the slide doesn't hold has nowhere to draw and is skipped.
+ */
+private fun Slide.buildBadges(): List<BuildBadge> {
+    val orders: MutableMap<String, MutableList<Int>> = linkedMapOf()
+    for ((index, build) in builds.withIndex()) {
+        orders.getOrPut(build.elementId) { mutableListOf() } += index + 1
+    }
+
+    return orders.mapNotNull { (elementId, numbers) ->
+        val element: Element = elementById(elementId) ?: return@mapNotNull null
+        val first: Int = numbers.first()
+        BuildBadge(
+            frame = element.frame,
+            numbers = numbers.joinToString(","),
+            label = builds[first - 1]
+                .takeIf { first == 1 }
+                ?.let { "${it.effect.title()} · ${it.durationMs.asSeconds()}" },
+        )
+    }
+}
+
+/** Tenths of a second, as the badge labels read them: 400 is "0.4s". */
+private fun Int.asSeconds(): String = "${this / 1000}.${this % 1000 / 100}s"
+
+/**
+ * The design's build badge: an 18dp accent disc of numbers at the element's
+ * top-left, and on the first one the effect it plays.
+ *
+ * Every measurement is divided by [scale], the way the selection ring's is, so
+ * the badge stays the same size on screen at every zoom.
+ */
+@Composable
+private fun BuildBadgeOverlay(badge: BuildBadge, scale: Float) {
+    val size: Float = 18f / scale
+
+    Row(
+        modifier = Modifier
+            .offset((badge.frame.x - size / 2).dp, (badge.frame.y - size / 2).dp)
+            .height(size.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .heightIn(min = size.dp)
+                .widthIn(min = size.dp)
+                .clip(CircleShape)
+                .background(Accent)
+                .padding(horizontal = (4f / scale).dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = badge.numbers,
+                color = Color.White,
+                fontSize = (11f / scale).sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+            )
+        }
+
+        badge.label?.let { label ->
+            Text(
+                text = label,
+                color = BadgeLabel,
+                fontSize = (11f / scale).sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                modifier = Modifier.padding(start = (5f / scale).dp),
+            )
+        }
+    }
+}
+
+/** The badge label's lilac: the accent lightened enough to read on a dark slide. */
+private val BadgeLabel = Color(0xFFA98FFF)
 
 /** The sweep rectangle: a hairline accent border over a wash of the same accent. */
 @Composable

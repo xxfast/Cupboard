@@ -5,11 +5,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -53,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -60,16 +63,28 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
+import io.github.xxfast.cupboard.canvas.BuildEffectNames
 import io.github.xxfast.cupboard.canvas.gradientStop
+import io.github.xxfast.cupboard.canvas.title
+import io.github.xxfast.cupboard.document.ActionKind
+import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.BuildAction
+import io.github.xxfast.cupboard.document.BuildDelivery
+import io.github.xxfast.cupboard.document.BuildKind
+import io.github.xxfast.cupboard.document.BuildTrigger
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
@@ -78,6 +93,7 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
@@ -98,7 +114,9 @@ import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.action
 import io.github.xxfast.cupboard.document.applyingObjectStyle
+import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
@@ -106,7 +124,9 @@ import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
 import io.github.xxfast.cupboard.document.toggleUnderline
+import io.github.xxfast.cupboard.theme.ChromeTheme
 import io.github.xxfast.cupboard.theme.ChromeTokens
+import io.github.xxfast.cupboard.theme.LocalChromeTheme
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import kotlin.math.roundToInt
 
@@ -134,6 +154,13 @@ fun EditorInspector(
     onPreviewSlide: (Slide) -> Unit,
     /** What [slide] plays on its way out, null putting it back on the deck's own. */
     onSetSlideTransition: (slideId: String, transition: SlideTransition?) -> Unit,
+    /** The slide's build order, all four of its verbs: the Animate tab's list. */
+    onAddBuild: (Build) -> Unit,
+    onUpdateBuild: (index: Int, build: Build) -> Unit,
+    onRemoveBuild: (index: Int) -> Unit,
+    onMoveBuild: (from: Int, to: Int) -> Unit,
+    /** A build row picked: the element it animates takes the canvas selection. */
+    onSelectElement: (String?) -> Unit,
     /** The deck's layouts: what the Slide tab's picker offers. */
     layouts: List<Slide>,
     /**
@@ -283,10 +310,15 @@ fun EditorInspector(
                 InspectorTab.Animate -> AnimatePanel(
                     slide = slide,
                     isEditingLayouts = isEditingLayouts,
-                    hasSelection = selectedElements.isNotEmpty(),
+                    selectedElements = selectedElements,
+                    onSelectElement = onSelectElement,
                     onSetTransition = onSetSlideTransition,
                     onPreview = onPreviewSlide,
                     onUpdate = onUpdateSlide,
+                    onAddBuild = onAddBuild,
+                    onUpdateBuild = onUpdateBuild,
+                    onRemoveBuild = onRemoveBuild,
+                    onMoveBuild = onMoveBuild,
                 )
                 InspectorTab.Document -> SlidePanel(
                     slide = slide,
@@ -1593,47 +1625,56 @@ private fun ElementFormatPanel(
 }
 
 /**
- * The Animate tab: what the selected element builds in with, and what the slide
- * itself leaves on.
+ * The Animate tab: the slide's build order, and what the slide itself leaves on.
  *
- * Builds are still the design's mock, so they show only where they would apply,
- * against a selected element. The transition below them is real and always
- * there, because it belongs to the slide rather than to the selection.
+ * Both belong to the slide rather than to the selection, so both are always
+ * there. What the selection changes is only which rows read as live and whether
+ * there is an element for a new build to name.
  *
- * Every control commits one settled edit through [onSetTransition], the duration
- * drag excepted: its samples preview the slide and its release commits one, the
- * way the opacity slider does, so a drag is one history entry rather than one
- * per sample.
+ * Every control commits one settled edit, the two drags excepted: their samples
+ * preview the slide and their release commits one, so a drag is one history
+ * entry rather than one per sample.
  *
- * Layouts have no transitions. A layout is never presented; the slide wearing it
- * is, and it carries its own.
+ * Layouts have neither. A layout is never presented; the slide wearing it is,
+ * and it carries its own.
  */
 @Composable
 private fun AnimatePanel(
     slide: Slide,
     isEditingLayouts: Boolean,
-    hasSelection: Boolean,
+    selectedElements: List<Element>,
+    onSelectElement: (String?) -> Unit,
     onSetTransition: (slideId: String, transition: SlideTransition?) -> Unit,
     onPreview: (Slide) -> Unit,
     onUpdate: (Slide) -> Unit,
+    onAddBuild: (Build) -> Unit,
+    onUpdateBuild: (index: Int, build: Build) -> Unit,
+    onRemoveBuild: (index: Int) -> Unit,
+    onMoveBuild: (from: Int, to: Int) -> Unit,
 ) {
     if (isEditingLayouts) {
         Text(
-            text = "Layouts have no transitions.",
+            text = "Layouts have no builds or transitions.",
             color = LocalChromeTokens.current.subtle,
             fontSize = 12.sp,
         )
         return
     }
 
-    if (hasSelection) {
-        BuildMock()
-        PanelDivider()
-    }
+    BuildSection(
+        slide = slide,
+        selectedElements = selectedElements,
+        onSelectElement = onSelectElement,
+        onPreview = onPreview,
+        onAdd = onAddBuild,
+        onUpdate = onUpdateBuild,
+        onRemove = onRemoveBuild,
+        onMove = onMoveBuild,
+    )
 
-    // The label says which of the two things on this tab it belongs to, but only
-    // where both are on it.
-    SectionLabel(if (hasSelection) "SLIDE TRANSITION" else "TRANSITION")
+    PanelDivider()
+
+    SectionLabel("SLIDE TRANSITION")
     TransitionSection(
         slide = slide,
         onSetTransition = onSetTransition,
@@ -1773,43 +1814,548 @@ private fun Slide.withDuration(sample: Float): Slide {
     return copy(transition = transition.copy(durationMs = sample.asDurationMs()))
 }
 
-/** The design's build mock, still a placeholder: no build is editable yet. */
+/**
+ * The slide's build order: its rows, the three buttons that append one, and the
+ * controls for whichever row is open.
+ *
+ * Which row that is stays view-local, like the canvas zoom: a panel's open row
+ * says nothing about the document, and an index means nothing on another slide's
+ * order, so it is dropped whenever the slide changes. With no row picked the
+ * controls open on the primary element's first build, which is what someone who
+ * selected an element and came here is after.
+ */
 @Composable
-private fun BuildMock() {
-    val tokens: ChromeTokens = LocalChromeTokens.current
+private fun BuildSection(
+    slide: Slide,
+    selectedElements: List<Element>,
+    onSelectElement: (String?) -> Unit,
+    onPreview: (Slide) -> Unit,
+    onAdd: (Build) -> Unit,
+    onUpdate: (index: Int, build: Build) -> Unit,
+    onRemove: (index: Int) -> Unit,
+    onMove: (from: Int, to: Int) -> Unit,
+) {
+    val primary: Element? = selectedElements.firstOrNull()
+    val selectedIds: Set<String> = selectedElements.mapTo(mutableSetOf()) { it.id }
+    var picked: Int? by remember(slide.id) { mutableStateOf(null) }
 
-    SectionLabel("BUILD IN")
-    OutlinedField(label = "Effect", value = "Fade Up", trailing = "▾")
+    SectionLabel("BUILD ORDER")
+
+    if (slide.builds.isEmpty()) Text(
+        text = "Nothing builds on this slide yet.",
+        color = LocalChromeTokens.current.subtle,
+        fontSize = 12.sp,
+    ) else BuildOrderList(
+        slide = slide,
+        activeIds = selectedIds,
+        picked = picked,
+        onPick = { index ->
+            picked = index
+            onSelectElement(slide.builds[index].elementId)
+        },
+        onMove = onMove,
+    )
+
+    // A build names an element, so there is nothing to add until one is picked.
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TonalButton(
+            label = "Build In",
+            enabled = primary != null,
+            onClick = { primary?.let { onAdd(Build(elementId = it.id, kind = BuildKind.In)) } },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "Build Out",
+            enabled = primary != null,
+            onClick = { primary?.let { onAdd(Build(elementId = it.id, kind = BuildKind.Out)) } },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "Action",
+            enabled = primary != null,
+            onClick = {
+                primary?.let {
+                    onAdd(Build.action(it.id, BuildAction(ActionKind.Scale, scale = 1.2f)))
+                }
+            },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    // The row the controls below are pointed at: the one clicked, or the primary
+    // element's first build for someone who came here off a selection. An index
+    // the slide has no build at (the row just removed) is neither.
+    val editing: Int? = picked?.takeIf { it in slide.builds.indices }
+        ?: primary?.let { element ->
+            slide.builds.indexOfFirst { it.elementId == element.id }.takeIf { it >= 0 }
+        }
+
+    if (editing != null) BuildEditor(
+        slide = slide,
+        index = editing,
+        build = slide.builds[editing],
+        onPreview = onPreview,
+        onUpdate = onUpdate,
+        onRemove = { index ->
+            picked = null
+            onRemove(index)
+        },
+    )
+}
+
+/**
+ * The rows, in the order they play, drag-reorderable.
+ *
+ * The drag keeps its own state here, unlike the navigator's: this list is the
+ * inspector's own, nothing on the canvas draws from it, and the drop commits one
+ * [onMove] whatever the travel drew. One gesture is still one history entry.
+ */
+@Composable
+private fun BuildOrderList(
+    slide: Slide,
+    activeIds: Set<String>,
+    picked: Int?,
+    onPick: (Int) -> Unit,
+    onMove: (from: Int, to: Int) -> Unit,
+) {
+    // Layout data, not gesture state, the way the navigator keeps its rows:
+    // nothing draws from this, it only tells a drag what it is over.
+    val bounds: MutableMap<Int, ClosedFloatingPointRange<Float>> = remember { mutableMapOf() }
+    // The row on the move, and how far it has come.
+    var dragging: Int? by remember { mutableStateOf(null) }
+    var travel: Float by remember { mutableStateOf(0f) }
+
+    /**
+     * Where a row carried to [windowY] lands: the count of the rows staying put
+     * whose middle it has passed, which is exactly the index `MoveBuild` inserts
+     * at once [from] is lifted out.
+     */
+    fun targetAt(windowY: Float, from: Int): Int {
+        var to = 0
+        for (index in slide.builds.indices) {
+            if (index == from) continue
+            val range: ClosedFloatingPointRange<Float> = bounds[index] ?: continue
+            if (windowY > (range.start + range.endInclusive) / 2f) to++
+        }
+        return to
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        for ((index, build) in slide.builds.withIndex()) {
+            val moving: Boolean = dragging == index
+            BuildOrderRow(
+                order = index + 1,
+                title = slide.elementById(build.elementId)?.buildTitle() ?: "Missing element",
+                meta = build.meta(index),
+                active = build.elementId in activeIds,
+                picked = index == picked,
+                onClick = { onPick(index) },
+                modifier = Modifier
+                    .zIndex(if (moving) 1f else 0f)
+                    .graphicsLayer { translationY = if (moving) travel else 0f }
+                    // Only while nothing is dragging: a row carried by the
+                    // pointer reports where it is being held, which is no place
+                    // to measure a drop against.
+                    .onGloballyPositioned {
+                        if (dragging != null) return@onGloballyPositioned
+                        val top: Float = it.positionInWindow().y
+                        bounds[index] = top..top + it.size.height
+                    }
+                    .pointerInput(index, slide.builds.size) {
+                        // Where the press landed in window pixels, and the row
+                        // the travel has carried it to.
+                        var startY = 0f
+                        var to: Int = index
+                        detectDragGestures(
+                            onDragStart = { press ->
+                                startY = (bounds[index]?.start ?: 0f) + press.y
+                                dragging = index
+                                travel = 0f
+                                to = index
+                            },
+                            onDragEnd = {
+                                dragging = null
+                                travel = 0f
+                                if (to != index) onMove(index, to)
+                            },
+                            onDragCancel = {
+                                dragging = null
+                                travel = 0f
+                            },
+                        ) { change, amount ->
+                            change.consume()
+                            travel += amount.y
+                            to = targetAt(startY + travel, index)
+                        }
+                    },
+            )
+        }
+    }
+}
+
+/**
+ * One build-order row: its number, what it animates and how, and the grab glyph.
+ *
+ * [active] is the design's live row, whose element is in the canvas selection,
+ * and [picked] the one the controls below are open on, ringed in the accent.
+ * Windows dresses an active row with an accent rail down its leading edge
+ * instead of the tonal fill, which is [ChromeTheme.rowRail].
+ */
+@Composable
+private fun BuildOrderRow(
+    order: Int,
+    title: String,
+    meta: String,
+    active: Boolean,
+    picked: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val theme: ChromeTheme = LocalChromeTheme.current
+    val corner: RoundedCornerShape = RoundedCornerShape(theme.rowR)
+    val rail: Boolean = active && theme.rowRail
+    val filled: Boolean = active && !theme.rowRail
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .clip(corner)
+            .background(if (filled) tokens.tonal else tokens.rowBg)
+            .let { if (picked) it.border(1.dp, tokens.accent, corner) else it }
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (rail) Box(Modifier.width(3.dp).fillMaxHeight().background(tokens.accent))
+
+        Row(
+            modifier = Modifier.weight(1f).padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(if (active) tokens.accent else tokens.badgeOff),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "$order",
+                    color = if (active) tokens.accentText else tokens.badgeOffText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = if (filled) tokens.tonalText else tokens.text,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = meta,
+                    color = tokens.subtle,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text("⠿", color = tokens.subtle, fontSize = 13.sp)
+        }
+    }
+}
+
+/**
+ * The controls for one build: what it does, how much of its element it hands
+ * over at a time, how long it takes, and what starts it.
+ *
+ * Every one of them commits a whole [Build] through [onUpdate], one settled edit
+ * each, the duration and opacity drags excepted: their samples preview the slide
+ * and their release commits, the way the transition's duration does.
+ *
+ * What shows follows the build and its element. A delivery means nothing to an
+ * action, an action's parameters mean nothing to anything else, and only an
+ * element with states of its own can be pointed at one.
+ */
+@Composable
+private fun BuildEditor(
+    slide: Slide,
+    index: Int,
+    build: Build,
+    onPreview: (Slide) -> Unit,
+    onUpdate: (index: Int, build: Build) -> Unit,
+    onRemove: (index: Int) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val element: Element? = slide.elementById(build.elementId)
+    val action: BuildAction? = build.action
+
+    fun edit(change: (Build) -> Build) = onUpdate(index, change(build))
+
+    PanelDivider()
+
+    SectionLabel(
+        when (build.kind) {
+            BuildKind.In -> "BUILD IN"
+            BuildKind.Out -> "BUILD OUT"
+            BuildKind.Action -> "ACTION"
+        },
+    )
+
+    if (build.kind == BuildKind.Action) {
+        // An action build that carries none is a no-op the document tolerates,
+        // so picking a kind here is also what gives it one.
+        DropdownField(
+            label = "Effect",
+            value = action?.kind,
+            options = ACTION_KINDS,
+            enabled = true,
+            // Nothing in the menu is null: the option type carries one only so a
+            // build that has no action yet can show an empty field.
+            onPick = { kind ->
+                if (kind != null) edit {
+                    it.copy(action = (action ?: BuildAction(kind)).copy(kind = kind))
+                }
+            },
+        )
+    } else {
+        DropdownField(
+            label = "Effect",
+            value = build.effect,
+            options = BuildEffectNames,
+            enabled = true,
+            onPick = { effect -> edit { it.copy(effect = effect) } },
+        )
+
+        val deliveries: List<Pair<BuildDelivery, String>> = element.deliveries()
+        if (deliveries.isNotEmpty()) DropdownField(
+            label = "Delivery",
+            value = build.delivery,
+            options = deliveries.withDelivery(build.delivery),
+            enabled = true,
+            onPick = { delivery -> edit { it.copy(delivery = delivery) } },
+        )
+    }
+
+    if (action != null && build.kind == BuildKind.Action) when (action.kind) {
+        ActionKind.Move -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            NumberField(
+                label = "dx",
+                value = action.dx,
+                enabled = true,
+                onCommit = { dx -> edit { it.copy(action = action.copy(dx = dx)) } },
+                modifier = Modifier.weight(1f),
+            )
+            NumberField(
+                label = "dy",
+                value = action.dy,
+                enabled = true,
+                onCommit = { dy -> edit { it.copy(action = action.copy(dy = dy)) } },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        ActionKind.Opacity -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text("Opacity", color = tokens.subtle, fontSize = 12.sp, modifier = Modifier.width(56.dp))
+            SliderRow(
+                fraction = action.opacity,
+                valueLabel = "${(action.opacity * 100).roundToInt()}%",
+                modifier = Modifier.weight(1f),
+                onDrag = { value ->
+                    onPreview(slide.withBuild(index, build.copy(action = action.copy(opacity = value))))
+                },
+                onRelease = { value -> edit { it.copy(action = action.copy(opacity = value)) } },
+            )
+        }
+
+        ActionKind.Rotate -> NumberField(
+            label = "Rotation",
+            value = action.rotation,
+            enabled = true,
+            onCommit = { rotation -> edit { it.copy(action = action.copy(rotation = rotation)) } },
+            modifier = Modifier.width(110.dp),
+        )
+
+        ActionKind.Scale -> NumberField(
+            label = "Scale",
+            value = action.scale,
+            enabled = true,
+            onCommit = { scale -> edit { it.copy(action = action.copy(scale = scale)) } },
+            modifier = Modifier.width(110.dp),
+            minimum = 0.01f,
+            fractional = true,
+        )
+    }
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Duration", color = tokens.subtle, fontSize = 12.sp, modifier = Modifier.width(56.dp))
-        SliderRow(fraction = 0.3f, valueLabel = "0.4s", modifier = Modifier.weight(1f))
-    }
-
-    PanelDivider()
-
-    SectionLabel("BUILD ORDER")
-    BuildOrderCard(order = 1, label = "Title", meta = "Fade Up · 0.4s", active = true)
-    BuildOrderCard(order = 2, label = "Shape", meta = "Pop · 0.3s · after 1", active = false)
-    BuildOrderCard(order = 3, label = "Image", meta = "Dissolve · 0.5s · with 2", active = false)
-    Row(
-        modifier = Modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .background(tokens.tonal)
-            .padding(horizontal = 18.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "+ Add build",
-            color = tokens.tonalText,
-            fontSize = 13.5.sp,
-            fontWeight = FontWeight.Medium,
+        SliderRow(
+            fraction = build.durationMs.asDurationFraction(),
+            valueLabel = build.durationMs.asSeconds(),
+            modifier = Modifier.weight(1f),
+            onDrag = { value ->
+                onPreview(slide.withBuild(index, build.copy(durationMs = value.asDurationMs())))
+            },
+            onRelease = { value -> edit { it.copy(durationMs = value.asDurationMs()) } },
         )
     }
+
+    SegmentedRow(Modifier.fillMaxWidth()) {
+        BUILD_TRIGGERS.forEachIndexed { at, (trigger, title) ->
+            val selected: Boolean = build.trigger == trigger
+            Segment(
+                selected = selected,
+                first = at == 0,
+                onClick = { edit { it.copy(trigger = trigger) } },
+            ) {
+                SegmentLabel(title, selected = selected, enabled = true)
+            }
+        }
+    }
+
+    // Only the build that waits has a wait: everything else starts on its own
+    // trigger, and there is nothing to hold it back from.
+    if (build.trigger == BuildTrigger.AfterPrevious) NumberField(
+        label = "Delay",
+        value = build.delayMs / 1000f,
+        enabled = true,
+        onCommit = { seconds -> edit { it.copy(delayMs = (seconds * 1000).roundToInt()) } },
+        modifier = Modifier.fillMaxWidth(),
+        minimum = 0f,
+        fractional = true,
+    )
+
+    if (element.ownSteps() > 0) NumberField(
+        label = "Step",
+        value = (build.elementStep ?: 0).toFloat(),
+        enabled = true,
+        // 0 is no step build at all rather than the first state: a stepped
+        // element shows its first state from the moment it is on the slide.
+        onCommit = { step -> edit { it.copy(elementStep = step.roundToInt().takeIf { at -> at > 0 }) } },
+        modifier = Modifier.width(110.dp),
+        minimum = 0f,
+    )
+
+    TonalButton(
+        label = "Remove Build",
+        enabled = true,
+        onClick = { onRemove(index) },
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
+
+/** [slide] with one build replaced: what a drag samples before it commits one. */
+private fun Slide.withBuild(index: Int, build: Build): Slide =
+    copy(builds = builds.mapIndexed { at, existing -> if (at == index) build else existing })
+
+/**
+ * What a row calls the element a build animates: its kind, and the first thing
+ * it holds, so two text boxes on one slide read apart.
+ */
+private fun Element.buildTitle(): String = when (this) {
+    is TextElement -> titled("Text", text)
+    is ShapeElement -> titled("Shape", label)
+    is TerminalElement -> titled("Terminal", title)
+    is EquationElement -> titled("Equation", latex)
+    is CodeElement -> "Code"
+    is DiagramElement -> "Diagram"
+    is ImageElement -> "Image"
+    is GroupElement -> "Group"
+}
+
+/** "[kind]: first line of [content]", or [kind] alone where there is none. */
+private fun titled(kind: String, content: String): String {
+    val hint: String = content.lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+    return if (hint.isEmpty()) kind else "$kind: ${hint.take(24)}"
+}
+
+/**
+ * The row's second line: what the build does, how long it takes, and what starts
+ * it. [index] is the build's place in the order, which is what "after 2" counts.
+ */
+private fun Build.meta(index: Int): String {
+    val start: String = when (trigger) {
+        BuildTrigger.OnClick -> "on click"
+        // The first build has nothing ahead of it, so both of these land with
+        // the slide rather than after anything.
+        BuildTrigger.WithPrevious -> if (index == 0) "with slide" else "with $index"
+        BuildTrigger.AfterPrevious -> if (index == 0) "with slide" else "after $index"
+    }
+    val what: String = when (kind) {
+        BuildKind.In -> effect.title()
+        BuildKind.Out -> "Out · ${effect.title()}"
+        BuildKind.Action -> "Action · ${action.title()}"
+    }
+    return "$what · ${durationMs.asSeconds()} · $start"
+}
+
+/** What an action does, in the units it does it in. */
+private fun BuildAction?.title(): String {
+    if (this == null) return "None"
+
+    return when (kind) {
+        ActionKind.Move -> "Move ${dx.asWholeNumber()},${dy.asWholeNumber()}"
+        ActionKind.Opacity -> "Opacity ${(opacity * 100).roundToInt()}%"
+        ActionKind.Rotate -> "Rotate ${rotation.asWholeNumber()}°"
+        ActionKind.Scale -> "Scale ${scale.asMultiplier()}"
+    }
+}
+
+/**
+ * The pieces this element can be handed over in, empty for one that has none:
+ * a shape or an image arrives whole however a build was dressed.
+ */
+private fun Element?.deliveries(): List<Pair<BuildDelivery, String>> = when (this) {
+    is TextElement -> listOf(
+        BuildDelivery.All to "All",
+        BuildDelivery.ByParagraph to "By Paragraph",
+        BuildDelivery.ByWord to "By Word",
+        BuildDelivery.ByCharacter to "By Character",
+    )
+
+    is CodeElement, is TerminalElement -> listOf(
+        BuildDelivery.All to "All",
+        BuildDelivery.ByLine to "By Line",
+    )
+
+    else -> emptyList()
+}
+
+/** [delivery] appended under its own name where the list doesn't carry it, so a
+ * build dressed for another kind of element still shows what it holds. */
+private fun List<Pair<BuildDelivery, String>>.withDelivery(
+    delivery: BuildDelivery,
+): List<Pair<BuildDelivery, String>> =
+    if (any { (option, _) -> option == delivery }) this else this + (delivery to delivery.name)
+
+/** How many states of its own this element has, 0 for one that isn't stepped. */
+private fun Element?.ownSteps(): Int = when (this) {
+    is CodeElement -> steps.size
+    is DiagramElement -> steps.size
+    else -> 0
+}
+
+/** What an action can do, which is the effect list for a build that is one. */
+private val ACTION_KINDS: List<Pair<ActionKind?, String>> =
+    ActionKind.entries.map { kind -> kind to kind.name }
+
+/** Abbreviated: three of these share the panel's width. */
+private val BUILD_TRIGGERS: List<Pair<BuildTrigger, String>> = listOf(
+    BuildTrigger.OnClick to "On Click",
+    BuildTrigger.WithPrevious to "With Prev",
+    BuildTrigger.AfterPrevious to "After Prev",
+)
 
 /**
  * The Slide tab, in either of its two moods. On a slide it is the layout the
@@ -2708,42 +3254,3 @@ private fun SliderRow(
 private fun valueAt(x: Float, width: Int): Float =
     if (width == 0) 0f else (x / width).coerceIn(0f, 1f)
 
-/** One build-order row as a 12dp-radius tonal card, per the Linux mock. */
-@Composable
-private fun BuildOrderCard(order: Int, label: String, meta: String, active: Boolean) {
-    val tokens: ChromeTokens = LocalChromeTokens.current
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(tokens.tonal)
-            .let {
-                if (active) it.border(1.dp, tokens.accent, RoundedCornerShape(12.dp))
-                else it
-            }
-            .padding(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(22.dp)
-                .clip(CircleShape)
-                .background(if (active) tokens.accent else tokens.badgeOff),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "$order",
-                color = if (active) tokens.accentText else tokens.badgeOffText,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Column(Modifier.weight(1f)) {
-            Text(label, color = tokens.tonalText, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-            Text(meta, color = tokens.subtle, fontSize = 11.5.sp)
-        }
-        Text("⠿", color = tokens.subtle, fontSize = 13.sp)
-    }
-}

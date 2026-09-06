@@ -222,6 +222,12 @@ struct EditorView: View {
     /// The row being dragged, and where each row sits for the gap maths.
     @State var slideDrag: SlideDrag?
     @State var rowFrames: [String: CGRect] = [:]
+    /// Which build the Animate panel's editor is about, by its place in the
+    /// slide's order, and the row being dragged with where each one sits. All
+    /// panel state: a build is not something the document can be "on".
+    @State var selectedBuild: Int?
+    @State var buildDrag: BuildDrag?
+    @State var buildRowFrames: [Int: CGRect] = [:]
     /// Save Theme's sheet, and the name being typed into it. Presentation only:
     /// the library itself is Kotlin's, and the name goes there on Save.
     @State var savingTheme = false

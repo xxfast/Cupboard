@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultDiagramHeight
@@ -77,6 +78,7 @@ import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.theme.ChromeTheme
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LinuxChrome
+import io.github.xxfast.cupboard.theme.LocalChromeTheme
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import io.github.xxfast.cupboard.theme.toColorScheme
 
@@ -152,6 +154,10 @@ fun EditorScreen(
         onUpdateSlide = viewModel::onUpdateSlide,
         onPreviewSlide = viewModel::onPreviewSlide,
         onSetSlideTransition = viewModel::onSetSlideTransition,
+        onAddBuild = viewModel::onAddBuild,
+        onUpdateBuild = viewModel::onUpdateBuild,
+        onRemoveBuild = viewModel::onRemoveBuild,
+        onMoveBuild = viewModel::onMoveBuild,
         onPreviewMarquee = viewModel::onPreviewMarquee,
         onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
@@ -208,6 +214,13 @@ fun EditorView(
     /** The transition the slide plays on its way out; null puts it back on the
      * deck's own. The Animate tab's transition section. */
     onSetSlideTransition: (slideId: String, transition: SlideTransition?) -> Unit,
+    /** The selected slide's build order, all four verbs of the Animate tab's
+     * list: what it appends, what its controls write, what its Remove drops, and
+     * what a row dragged to a new place lands as. */
+    onAddBuild: (Build) -> Unit = {},
+    onUpdateBuild: (index: Int, build: Build) -> Unit = { _, _ -> },
+    onRemoveBuild: (index: Int) -> Unit = {},
+    onMoveBuild: (from: Int, to: Int) -> Unit = { _, _ -> },
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
     /** A toolbar insertion, already sized and placed: the element goes on the
@@ -284,7 +297,10 @@ fun EditorView(
     val dark: Boolean = isSystemInDarkTheme()
     val tokens: ChromeTokens = if (dark) theme.dark else theme.light
 
-    CompositionLocalProvider(LocalChromeTokens provides tokens) {
+    CompositionLocalProvider(
+        LocalChromeTokens provides tokens,
+        LocalChromeTheme provides theme,
+    ) {
         MaterialTheme(colorScheme = tokens.toColorScheme(dark)) {
             val selectedSlide: Slide = state.selectedSlide
             // Zoom is view-local, like the macOS shell: 0 means Fit.
@@ -436,6 +452,12 @@ fun EditorView(
                                 slide = selectedSlide,
                                 layout = state.selectedLayout,
                                 isEditingLayouts = state.isEditingLayouts,
+                                // The badges are the Animate tab's own reading
+                                // of the slide, so they show exactly while that
+                                // tab is the one open. A layout has no builds.
+                                showBuildBadges = state.inspectorOpen &&
+                                    state.inspectorTab == InspectorTab.Animate &&
+                                    !state.isEditingLayouts,
                                 background = state.document.background,
                                 selectedElementIds = state.selectedElementIds,
                                 marquee = state.marquee,
@@ -514,6 +536,11 @@ fun EditorView(
                         onUpdateSlide = onUpdateSlide,
                         onPreviewSlide = onPreviewSlide,
                         onSetSlideTransition = onSetSlideTransition,
+                        onAddBuild = onAddBuild,
+                        onUpdateBuild = onUpdateBuild,
+                        onRemoveBuild = onRemoveBuild,
+                        onMoveBuild = onMoveBuild,
+                        onSelectElement = onSelectElement,
                         layouts = state.document.layouts,
                         isEditingLayouts = state.isEditingLayouts,
                         onApplyLayout = onApplyLayout,
