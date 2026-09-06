@@ -3,7 +3,7 @@
 ## Overview
 Main editor window for **Cupboard**, a Keynote-style presentation editor built with Kotlin Multiplatform for macOS, Windows, and Linux desktop. Core architecture principle: **each platform renders its app chrome (toolbars, inspector, controls) with its native UI toolkit, while the slide canvas in the center is one shared Compose Multiplatform (Skia) surface, pixel-identical on all three platforms.**
 
-Target repo: `xxfast/slides-kt` (branch `main`). At design time the repo was a fresh KMP template (`shared/src/commonMain/kotlin/io/github/xxfast/slides/` had only Greeting/Platform scaffolding) — these designs are the UI spec to build toward.
+Target repo: `xxfast/Cupboard` (branch `main`). At design time the repo was a fresh KMP template (`shared/src/commonMain/kotlin/io/github/xxfast/slides/` had only Greeting/Platform scaffolding) — these designs are the UI spec to build toward.
 
 ## About the Design Files
 The files in this bundle are **design references created in HTML** — interactive prototypes showing intended look and behavior, **not production code to copy**. The task is to recreate these designs in the Cupboard codebase:
