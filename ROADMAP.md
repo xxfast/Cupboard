@@ -79,7 +79,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 - [x] Presenter display: our own `PresenterDisplay` (not CuP's JVM-only speaker window): current + next, notes editable mid-show, elapsed timer with reset, clock, four layouts. Second window on both shells sharing the show's `PlayerController`, View menu toggle. (`2cfd01e`, needs a visual pass)
 - [x] Multi-display: show full-screen on the secondary display, presenter on the primary, X / View > Swap Displays swaps live, on both shells. Untested on real dual-display hardware. (`ac00c03`, needs a visual pass)
 - [x] Rehearse mode: Slide > Rehearse Slideshow shows the presenter display alone over a hidden player, both shells. (`260aa68`, needs a visual pass)
-- [ ] Playback types: normal, self-playing (auto-advance, loop, restart after idle), links-only (kiosk); slide/element links (go to slide, next/previous, URLs).
+- [x] Playback types: `PlaybackSettings` (Normal / Self-Playing / Links Only, loop, restart after idle) honoured by the player; `LinkTarget` on text/shape/image (slide, next/previous/first/last, URL, exit) acted on in play, clicks advance a normal show. Playback + Link sections on both shells. (`fafef13`; part of the core sits in `0395660` by a staging slip, needs a visual pass)
 - [ ] In-show controls: keyboard navigation, number+enter jump, slide switcher overlay, shortcut overlay ("?"), pointer show/hide.
 
 ## Phase 7: Media and data
