@@ -84,7 +84,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 ## Phase 7: Media and data
 
-- [ ] Images: insert (file/drag/paste), non-destructive masking (rect + shape), instant-alpha background removal, adjust panel (exposure/saturation/contrast), captions.
+- [x] Images: asset-backed `ImageElement` (insert from file/drag/paste on both shells), non-destructive mask window with any catalog shape, instant alpha (pure flood fill, re-encoded as a new asset), draw-time exposure/saturation/contrast, captions; Image section in both inspectors. (`a377ffa`, needs a visual pass)
 - [ ] Image galleries (carousel object, per-image captions, cycled during a show).
 - [ ] Video/audio: embedded playback, trim, poster frame, loop, volume; web video embeds.
 - [ ] Tables: rows/columns/headers/footers, merged cells, cell styling, sort; cell formats (number/currency/date/percent); conditional highlighting. Formula engine only if demand proves out (it's Numbers-in-Keynote; developers mostly paste results).
