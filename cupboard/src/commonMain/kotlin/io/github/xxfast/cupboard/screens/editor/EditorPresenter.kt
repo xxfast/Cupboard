@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
@@ -27,6 +28,7 @@ import io.github.xxfast.cupboard.document.asTheme
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
+import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.fromShape
 import io.github.xxfast.cupboard.document.fromText
 import io.github.xxfast.cupboard.document.groupElements
@@ -60,6 +62,7 @@ import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -99,6 +102,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -109,6 +113,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
@@ -135,6 +140,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultShapeStyle
@@ -218,6 +224,10 @@ private fun EditorState.editable(elements: List<Element>): List<Element> =
 /** Folds [elements] back into the document through their slide. */
 private fun EditorState.withElements(elements: List<Element>): EditorState =
     copy(document = document.updateSlide(selectedSlide.updateElements(elements)))
+
+/** [withElements] for the slide's build order: the whole list, in playing order. */
+private fun EditorState.withBuilds(builds: List<Build>): EditorState =
+    copy(document = document.updateSlide(selectedSlide.copy(builds = builds)))
 
 /**
  * Takes [ids] off the selected slide and out of the selection, or null when none
@@ -906,6 +916,62 @@ fun EditorPresenter(
                     undone.push(state.document)
                     redone.clear()
                     state.copy(document = updated)
+                }
+            }
+
+            // The build order is the slide's, so all four of these are ordinary
+            // slide edits: one history entry each, and a build that names no
+            // element on the slide is turned away rather than left to hold a
+            // step open for something that isn't there.
+            is AddBuild ->
+                if (state.selectedSlide.elementById(event.build.elementId) == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withBuilds(state.selectedSlide.builds + event.build)
+                }
+
+            is UpdateBuild -> {
+                val builds: List<Build> = state.selectedSlide.builds
+                val stale: Boolean = event.index !in builds.indices ||
+                    state.selectedSlide.elementById(event.build.elementId) == null ||
+                    builds[event.index] == event.build
+
+                if (stale) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withBuilds(
+                        builds.mapIndexed { index, build ->
+                            if (index == event.index) event.build else build
+                        },
+                    )
+                }
+            }
+
+            is RemoveBuild -> {
+                val builds: List<Build> = state.selectedSlide.builds
+                if (event.index !in builds.indices) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withBuilds(builds.filterIndexed { index, _ -> index != event.index })
+                }
+            }
+
+            is MoveBuild -> {
+                val builds: List<Build> = state.selectedSlide.builds
+                val nowhere: Boolean = event.from !in builds.indices ||
+                    event.to !in builds.indices ||
+                    event.from == event.to
+
+                if (nowhere) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    val moved: MutableList<Build> = builds.toMutableList()
+                    moved.add(event.to, moved.removeAt(event.from))
+                    state.withBuilds(moved)
                 }
             }
 

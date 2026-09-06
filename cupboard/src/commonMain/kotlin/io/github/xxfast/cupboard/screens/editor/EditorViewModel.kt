@@ -2,6 +2,7 @@ package io.github.xxfast.cupboard.screens.editor
 
 import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.moleculeFlow
+import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -15,6 +16,7 @@ import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -54,6 +56,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -64,6 +67,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
@@ -90,6 +94,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultShapeStyle
@@ -188,6 +193,10 @@ class EditorViewModel(
     fun onEndSlideDrag() { scope.launch { events.emit(EndSlideDrag) } }
     fun onSetSlideSkipped(id: String, skipped: Boolean) { scope.launch { events.emit(SetSlideSkipped(id, skipped)) } }
     fun onSetSlideTransition(slideId: String, transition: SlideTransition?) { scope.launch { events.emit(SetSlideTransition(slideId, transition)) } }
+    fun onAddBuild(build: Build) { scope.launch { events.emit(AddBuild(build)) } }
+    fun onUpdateBuild(index: Int, build: Build) { scope.launch { events.emit(UpdateBuild(index, build)) } }
+    fun onRemoveBuild(index: Int) { scope.launch { events.emit(RemoveBuild(index)) } }
+    fun onMoveBuild(from: Int, to: Int) { scope.launch { events.emit(MoveBuild(from, to)) } }
     fun onCopyElements(ids: List<String>) { scope.launch { events.emit(CopyElements(ids)) } }
     fun onCutElements(ids: List<String>) { scope.launch { events.emit(CutElements(ids)) } }
     fun onCopySlide(id: String) { scope.launch { events.emit(CopySlide(id)) } }

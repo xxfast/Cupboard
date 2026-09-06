@@ -1,5 +1,8 @@
 package io.github.xxfast.cupboard.canvas
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +40,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -55,6 +60,7 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
@@ -66,6 +72,7 @@ import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
+import io.github.xxfast.cupboard.document.pieces
 import kotlin.math.hypot
 
 fun Long.toComposeColor(): Color = Color(this)
@@ -91,6 +98,13 @@ fun Long.toComposeColor(): Color = Color(this)
  * reads it today, for [BuildEffect.Typewriter]. Null the same way [codeStep] is:
  * the editor, and anything nested in a group.
  *
+ * [pieces] is how much of the element is out, for a build that hands it over a
+ * piece at a time: a text box styles the pieces still to come out of sight, and
+ * a terminal cuts its transcript to the lines that have arrived. A code block is
+ * cut by [codeStep] instead, since a step is already what says which of its lines
+ * are showing. Null is the whole element, which is the editor and every build
+ * that delivers [io.github.xxfast.cupboard.document.BuildDelivery.All].
+ *
  * [transform] overrides the element's own opacity and rotation and rides a
  * translation and a scale on top of its frame, for an element in flight: a Magic
  * Move between two slides is the one thing that draws one. Null is the element at
@@ -105,6 +119,7 @@ fun ElementView(
     codeStep: CodeStep? = null,
     diagramStep: DiagramStep? = null,
     entry: Build? = null,
+    pieces: PieceReveal? = null,
     transform: ElementTransform? = null,
 ) {
     Box(
@@ -122,11 +137,11 @@ fun ElementView(
             }
     ) {
         when (element) {
-            is TextElement -> TextElementView(element)
+            is TextElement -> TextElementView(element, pieces)
             is ShapeElement -> ShapeElementView(element)
             is ImageElement -> ImageElementView(element)
             is CodeElement -> CodeElementView(element, codeStep)
-            is TerminalElement -> TerminalElementView(element, entry)
+            is TerminalElement -> TerminalElementView(element, entry, pieces?.linesShown())
             is DiagramElement -> DiagramElementView(element, diagramStep)
             is EquationElement -> EquationElementView(element)
             // The group draws nothing of its own: it is the box its transforms
@@ -196,15 +211,43 @@ internal fun TextElement.alignment(): Alignment = when (align) {
     TextAlign.End -> Alignment.TopEnd
 }
 
+/**
+ * The element's text, as much of it as [pieces] says is out.
+ *
+ * A delivery styles rather than shortens: what is still to come is drawn
+ * transparent, so the box is laid out for the whole text from the first piece on
+ * and nothing under a line moves as the rest of it arrives. The newest piece
+ * fades in over the build's duration, which is the whole of what a piece landing
+ * looks like.
+ */
 @Composable
-private fun androidx.compose.foundation.layout.BoxScope.TextElementView(element: TextElement) {
+private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
+    element: TextElement,
+    pieces: PieceReveal? = null,
+) {
     val style: TextStyle = element.textStyle()
+
+    val ranges: List<IntRange> = remember(element.text, pieces?.build?.delivery) {
+        pieces?.let { element.pieces(it.build.delivery) }.orEmpty()
+    }
+
+    // A fade per piece rather than per element: the count is what changes when a
+    // click lands, so it is what the newest piece's alpha is keyed on.
+    val shown: Int = pieces?.shown ?: 0
+    val fade: Animatable<Float, AnimationVector1D> = remember(element.id) { Animatable(1f) }
+    LaunchedEffect(element.id, shown) {
+        if (ranges.isEmpty()) return@LaunchedEffect
+        fade.snapTo(0f)
+        fade.animateTo(1f, tween(pieces?.build?.durationMs ?: 0))
+    }
 
     // Plain text is one Text, exactly as it always was: only a list pays for the
     // row-per-line layout its markers need.
     if (element.listStyle == ListStyle.None) {
         Text(
-            text = element.text,
+            text =
+                if (ranges.isEmpty()) AnnotatedString(element.text)
+                else deliveredText(element.text, 0, ranges, shown, fade.value, style.color),
             style = style,
             modifier = Modifier.align(element.alignment()),
         )
@@ -213,17 +256,32 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(element:
 
     val lines: List<String> = element.text.split("\n")
     val markers: List<String> = listMarkers(element.text, element.listStyle)
+
+    // Where each line starts in the element's text, so a line set on its own row
+    // can still be styled against ranges measured over the whole of it.
+    val starts: List<Int> = remember(element.text) {
+        lines.runningFold(0) { at, line -> at + line.length + 1 }
+    }
+
     Column(modifier = Modifier.align(element.alignment()).fillMaxWidth()) {
         for ((index, line) in lines.withIndex()) {
             val indent: Float = line.listIndentLevel() * ListIndent
+            val body: String = line.listBody()
+            // Where this line's own text begins, which is what both its marker
+            // and its body are styled against: a marker arrives with its line.
+            val at: Int = starts[index] + (line.length - body.length)
             Row(modifier = Modifier.fillMaxWidth().padding(start = indent.dp)) {
                 Text(
-                    text = markers[index],
+                    text =
+                        if (ranges.isEmpty()) AnnotatedString(markers[index])
+                        else deliveredText(markers[index], at, ranges, shown, fade.value, style.color),
                     style = style.copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
                     modifier = Modifier.width(ListIndent.dp).padding(end = ListMarkerGap.dp),
                 )
                 Text(
-                    text = line.listBody(),
+                    text =
+                        if (ranges.isEmpty()) AnnotatedString(body)
+                        else deliveredText(body, at, ranges, shown, fade.value, style.color),
                     style = style,
                     modifier = Modifier.weight(1f),
                 )

@@ -225,6 +225,18 @@ private fun Element.subtreeIds(): List<String> =
     listOf(id) + ((this as? GroupElement)?.children?.flatMap { it.subtreeIds() } ?: emptyList())
 
 /**
+ * The element [id] names, at any depth, null when the slide holds no such
+ * element. Builds key off ids at any depth for [subtreeIds]' reason, so a build
+ * naming a grouped element resolves to it rather than to nothing.
+ */
+fun Slide.elementById(id: String): Element? = elements.firstNotNullOfOrNull { it.subtreeElement(id) }
+
+private fun Element.subtreeElement(id: String): Element? {
+    if (this.id == id) return this
+    return (this as? GroupElement)?.children?.firstNotNullOfOrNull { it.subtreeElement(id) }
+}
+
+/**
  * The same element under a fresh id, its children renamed too all the way down.
  *
  * What copy, paste and duplicate are made of: everything else about the element

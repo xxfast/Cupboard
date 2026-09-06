@@ -406,8 +406,9 @@ class DocumentTest {
     @Test
     fun stepCountCountsOnClickBuildsOnly() {
         val slide = sampleDocument().allSlides().first { it.title == "Rendering Pipeline" }
-        // 4 OnClick stage builds; WithPrevious arrows don't add steps
-        assertEquals(5, slide.stepCount())
+        // 4 OnClick stage builds, then the body a paragraph a click (2 more) and
+        // the drop frame's exit; the WithPrevious arrows add no steps of their own.
+        assertEquals(8, slide.stepCount())
     }
 
     @Test

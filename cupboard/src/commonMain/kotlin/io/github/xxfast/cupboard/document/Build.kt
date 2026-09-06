@@ -4,19 +4,51 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 enum class BuildEffect {
+    /** No animation at all: the element is simply there on its step, and gone on its exit. */
+    Appear,
     FadeUp,
     Pop,
     Dissolve,
+
+    /** In from the leading edge, out the same way. */
+    MoveIn,
+
+    /** Grows out of nothing, and shrinks back into it. */
+    Scale,
+
+    /** Uncovered top to bottom, its box growing with it, and re-covered on the way out. */
+    Wipe,
 
     /**
      * Types the element in rather than bringing it in whole. Only
      * [TerminalElement] honours it: its command lines type out character by
      * character over the build's duration, and each block of output lands the
      * moment the command above it has finished. Every other kind treats it as
-     * [FadeUp], so an effect set on the wrong element still reveals it.
+     * [Dissolve], so an effect set on the wrong element still reveals it.
      */
     Typewriter,
 }
+
+/**
+ * Whether a build brings its element on or takes it away.
+ *
+ * An element with no [In] build at all is on the slide from the start, so an
+ * [Out] build on its own is how something that opens with the slide leaves it.
+ * Actions (a build that moves or emphasises an element in place) come next, and
+ * are deliberately not one of these: they change nothing about visibility.
+ */
+enum class BuildKind { In, Out }
+
+/**
+ * How much of the element one build hands over: all of it, or one piece at a
+ * time.
+ *
+ * The pieces are the element's own text ([ByParagraph], [ByWord], [ByCharacter])
+ * or its lines ([ByLine], which is also how a code block and a terminal are
+ * walked). A delivery its element has no pieces for is one piece, so a delivery
+ * set on the wrong kind still reveals it whole.
+ */
+enum class BuildDelivery { All, ByParagraph, ByWord, ByCharacter, ByLine }
 
 enum class BuildTrigger {
     /** Advances on its own step (a click in play mode). */
@@ -24,6 +56,13 @@ enum class BuildTrigger {
 
     /** Plays together with the previous build's step. */
     WithPrevious,
+
+    /**
+     * Plays on the step the previous build ends on, [Build.delayMs] after that
+     * build has finished. No click of its own: a chain of these runs itself out
+     * once the click that started it has landed.
+     */
+    AfterPrevious,
 }
 
 /**
@@ -37,53 +76,222 @@ enum class BuildTrigger {
  * before it.
  *
  * The tag stays "codeStep": decks were written before the field grew past code,
- * and a rename on disk would be a rename of every one of them.
+ * and a rename on disk would be a rename of every one of them. Everything added
+ * since defaults to what a deck written before it meant, so a file on disk opens
+ * as the build order it was saved as.
  */
 @Serializable
 data class Build(
     val elementId: String,
+    val kind: BuildKind = BuildKind.In,
     val effect: BuildEffect = BuildEffect.FadeUp,
     val durationMs: Int = 400,
+    val delivery: BuildDelivery = BuildDelivery.All,
     val trigger: BuildTrigger = BuildTrigger.OnClick,
+    /**
+     * How long after its trigger the build starts. Waited out on top of whatever
+     * the chain before it is still doing, which is what makes a
+     * [BuildTrigger.AfterPrevious] run of builds a sequence rather than a pile.
+     */
+    val delayMs: Int = 0,
     @SerialName("codeStep") val elementStep: Int? = null,
 )
 
 /**
- * Step model (maps 1:1 onto CuP's stepCount):
- * step 0 shows everything without a build; each OnClick build starts a new step,
- * WithPrevious builds join the step of the build before them.
+ * One build's place in the slide's step model: the steps it spans, and how long
+ * after its step opens it starts.
+ *
+ * [firstStep] and [lastStep] are the same step for everything but a
+ * [BuildTrigger.OnClick] build with pieces, which takes one step per piece: each
+ * piece is its own click, the way Keynote hands out a bulleted list.
  */
-fun Slide.stepCount(): Int = 1 + builds.count { it.trigger == BuildTrigger.OnClick }
+data class BuildAt(
+    val index: Int,
+    val build: Build,
+    val firstStep: Int,
+    val lastStep: Int,
+    /** The build's own delay plus everything the chain ahead of it is still waiting on. */
+    val delayMs: Int,
+)
+
+/**
+ * How much of an element is out at a step, for a build that hands it over in
+ * pieces: the [build] doing the delivering, the count of pieces showing, and how
+ * many there are in all.
+ */
+data class PieceReveal(val build: Build, val shown: Int, val total: Int)
+
+/**
+ * How many pieces this build hands [slide]'s element over in: 1 for
+ * [BuildDelivery.All], and otherwise what the element has to give.
+ *
+ * A delivery the element has no pieces for (words of a code block, paragraphs of
+ * a terminal) is worth one piece rather than none: a build always reveals
+ * something, whatever it was pointed at.
+ */
+fun Build.pieceCount(slide: Slide): Int {
+    if (delivery == BuildDelivery.All) return 1
+
+    val element: Element = slide.elementById(elementId) ?: return 1
+    val pieces: Int = when (element) {
+        is TextElement -> element.pieces(delivery).size
+        is CodeElement -> if (delivery == BuildDelivery.ByLine) element.code.lineRanges().size else 1
+        is TerminalElement -> if (delivery == BuildDelivery.ByLine) element.text.lineRanges().size else 1
+        else -> 1
+    }
+    return maxOf(1, pieces)
+}
+
+/**
+ * The character ranges [delivery] hands this element's text over in, in order.
+ *
+ * Ranges into [TextElement.text] rather than the substrings themselves, so a
+ * renderer can style the part that hasn't arrived yet instead of setting a
+ * different string every step. Whitespace between pieces belongs to neither: it
+ * comes in with the piece ahead of it.
+ */
+fun TextElement.pieces(delivery: BuildDelivery): List<IntRange> = when (delivery) {
+    BuildDelivery.All -> if (text.isEmpty()) emptyList() else listOf(0..text.lastIndex)
+    BuildDelivery.ByLine -> text.lineRanges()
+    BuildDelivery.ByParagraph -> text.lineRanges().filter { range ->
+        (range.first..minOf(range.last, text.lastIndex)).any { !text[it].isWhitespace() }
+    }
+
+    BuildDelivery.ByWord -> text.wordRanges()
+    BuildDelivery.ByCharacter -> text.indices.filter { !text[it].isWhitespace() }.map { it..it }
+}
+
+/**
+ * Every line's range, blank ones included and the newlines themselves in none of
+ * them. A blank line is an empty range, which is a piece that reveals nothing
+ * and still takes its turn.
+ */
+private fun String.lineRanges(): List<IntRange> {
+    val ranges = mutableListOf<IntRange>()
+    var start = 0
+    for (index in indices) {
+        if (this[index] != '\n') continue
+        ranges += start..index - 1
+        start = index + 1
+    }
+    ranges += start..lastIndex
+    return ranges
+}
+
+/** Every run of non-whitespace, in order. */
+private fun String.wordRanges(): List<IntRange> {
+    val ranges = mutableListOf<IntRange>()
+    var start = -1
+    for (index in indices) {
+        val blank: Boolean = this[index].isWhitespace()
+        if (!blank && start < 0) start = index
+        if (blank && start >= 0) {
+            ranges += start..index - 1
+            start = -1
+        }
+    }
+    if (start >= 0) ranges += start..lastIndex
+    return ranges
+}
+
+/**
+ * Where every build lands, resolved in order: the one function the rest of the
+ * step model is written on.
+ *
+ * An [BuildTrigger.OnClick] build opens the next step and holds one step per
+ * piece. A [BuildTrigger.WithPrevious] build joins the step the one before it
+ * opened, and an [BuildTrigger.AfterPrevious] build the step the one before it
+ * ended, waiting out that build's delay and duration before it starts. Both ride
+ * their anchor's step whatever their delivery says: pieces cost clicks, and
+ * those two triggers are exactly the ones that don't take one.
+ */
+fun Slide.buildTimeline(): List<BuildAt> {
+    val timeline = mutableListOf<BuildAt>()
+    for ((index, build) in builds.withIndex()) {
+        val previous: BuildAt? = timeline.lastOrNull()
+        timeline += when (build.trigger) {
+            BuildTrigger.OnClick -> {
+                val first: Int = (previous?.lastStep ?: 0) + 1
+                val last: Int = first + build.pieceCount(this) - 1
+                BuildAt(index, build, first, last, build.delayMs)
+            }
+
+            BuildTrigger.WithPrevious -> {
+                val step: Int = previous?.firstStep ?: 0
+                BuildAt(index, build, step, step, build.delayMs)
+            }
+
+            BuildTrigger.AfterPrevious -> {
+                val step: Int = previous?.lastStep ?: 0
+                val waited: Int =
+                    if (previous == null) 0 else previous.delayMs + previous.build.durationMs
+                BuildAt(index, build, step, step, waited + build.delayMs)
+            }
+        }
+    }
+    return timeline
+}
+
+/**
+ * Step model (maps 1:1 onto CuP's stepCount):
+ * step 0 shows everything without a build, and every step past it is one click.
+ * A build delivered in pieces holds a step per piece, so a body handed over
+ * paragraph by paragraph costs as many clicks as it has paragraphs.
+ */
+fun Slide.stepCount(): Int = 1 + (buildTimeline().maxOfOrNull { it.lastStep } ?: 0)
 
 /**
  * The step at which each element with a build becomes visible.
  *
- * An element's *first* build is the one that reveals it, and later builds for
- * the same element only change it. That matters now that more than one build per
- * element is ordinary: a code block brought in at step 1 and advanced at steps 2
- * and 3 has to stay on screen throughout, not wait for its last build.
+ * An element's *first* [BuildKind.In] build is the one that reveals it, and later
+ * builds for the same element only change it. That matters now that more than one
+ * build per element is ordinary: a code block brought in at step 1 and advanced at
+ * steps 2 and 3 has to stay on screen throughout, not wait for its last build.
+ *
+ * An element with only [BuildKind.Out] builds is not in here at all: it opens with
+ * the slide, and a caller reading this as "when does it appear" gets the same
+ * answer it always did.
  */
 fun Slide.buildSteps(): Map<String, Int> {
     val steps = mutableMapOf<String, Int>()
-    var step = 0
-    for (build in builds) {
-        if (build.trigger == BuildTrigger.OnClick) step++
-        if (build.elementId !in steps) steps[build.elementId] = step
+    for (at in buildTimeline()) {
+        if (at.build.kind != BuildKind.In) continue
+        if (at.build.elementId !in steps) steps[at.build.elementId] = at.firstStep
     }
     return steps
 }
 
 /**
- * The build that reveals [elementId], null when nothing brings it in.
- *
- * The first build for an element is its reveal and the rest only change it, per
- * [buildSteps], so this is the one whose effect a renderer plays on entry.
+ * The build that reveals [elementId] and where it lands, null when nothing brings
+ * it in. The first [BuildKind.In] build for the element, per [buildSteps].
  */
-fun Slide.entryBuild(elementId: String): Build? = builds.firstOrNull { it.elementId == elementId }
+fun Slide.entryBuildAt(elementId: String): BuildAt? = buildTimeline()
+    .firstOrNull { it.build.elementId == elementId && it.build.kind == BuildKind.In }
 
+/** [entryBuildAt]'s build alone: the effect a renderer plays the element in on. */
+fun Slide.entryBuild(elementId: String): Build? = entryBuildAt(elementId)?.build
+
+/** [entryBuildAt]'s mirror: the first build that takes [elementId] away, null when none does. */
+fun Slide.exitBuildAt(elementId: String): BuildAt? = buildTimeline()
+    .firstOrNull { it.build.elementId == elementId && it.build.kind == BuildKind.Out }
+
+/** [exitBuildAt]'s build alone: the effect a renderer plays the element out on. */
+fun Slide.exitBuild(elementId: String): Build? = exitBuildAt(elementId)?.build
+
+/**
+ * Whether [elementId] is on the slide at [step]: the last of its builds to have
+ * landed says so, an [BuildKind.In] showing it and an [BuildKind.Out] taking it
+ * away.
+ *
+ * An element none of whose builds has landed yet is off the slide when something
+ * later brings it in, and on it when nothing does: an element with only exits was
+ * there from the start, and one with no builds at all is always there.
+ */
 fun Slide.isVisibleAt(elementId: String, step: Int): Boolean {
-    val revealStep = buildSteps()[elementId] ?: return true
-    return step >= revealStep
+    val mine: List<BuildAt> = buildTimeline().filter { it.build.elementId == elementId }
+    val landed: BuildAt = mine.lastOrNull { it.firstStep <= step }
+        ?: return mine.none { it.build.kind == BuildKind.In }
+    return landed.build.kind == BuildKind.In
 }
 
 /**
@@ -96,17 +304,36 @@ fun Slide.isVisibleAt(elementId: String, step: Int): Boolean {
  * element reads that as step 0, since a stepped element shows its first state
  * from the moment it is visible; an element with no steps isn't stepped at all.
  */
-fun Slide.elementStepAt(elementId: String, step: Int): Int? {
-    var buildStep = 0
-    var current: Int? = null
-    for (build in builds) {
-        if (build.trigger == BuildTrigger.OnClick) buildStep++
-        // Build steps only ever climb, so nothing past here can land in range.
-        if (buildStep > step) break
-        if (build.elementId == elementId && build.elementStep != null) current = build.elementStep
-    }
-    return current
+fun Slide.elementStepAt(elementId: String, step: Int): Int? = buildTimeline()
+    .lastOrNull { it.firstStep <= step && it.build.elementId == elementId && it.build.elementStep != null }
+    ?.build
+    ?.elementStep
+
+/**
+ * How much of [elementId] is out at [step], null when it shows whole.
+ *
+ * The element's latest landed [BuildKind.In] build that delivers in pieces, and
+ * how many of them that build has handed over by [step]. A build that takes a
+ * step per piece counts them off one click at a time; one riding another build's
+ * step brings all of its pieces at once, having no clicks of its own to spend.
+ */
+fun Slide.pieceRevealAt(elementId: String, step: Int): PieceReveal? {
+    val at: BuildAt = buildTimeline().lastOrNull {
+        it.build.elementId == elementId &&
+            it.build.kind == BuildKind.In &&
+            it.build.delivery != BuildDelivery.All &&
+            it.firstStep <= step
+    } ?: return null
+
+    val total: Int = at.build.pieceCount(this)
+    val shown: Int =
+        if (at.firstStep == at.lastStep) total
+        else (step - at.firstStep + 1).coerceIn(1, total)
+    return PieceReveal(at.build, shown, total)
 }
+
+/** [pieceRevealAt]'s count alone: how many pieces of [elementId] are out at [step]. */
+fun Slide.piecesShownAt(elementId: String, step: Int): Int? = pieceRevealAt(elementId, step)?.shown
 
 /**
  * The state [element] draws in at [step], or null when it has no steps to draw

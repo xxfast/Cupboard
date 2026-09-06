@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
@@ -621,6 +622,33 @@ sealed interface EditorEvent {
         val slideId: String,
         val transition: SlideTransition?,
     ) : EditorEvent
+    /**
+     * Appends a build to the selected slide's build order, which is where a new
+     * one lands: the order is the order they play in.
+     *
+     * One history entry. A build naming an element the slide doesn't hold is a
+     * no-op, at any depth: a build for nothing would hold a step open for an
+     * element that isn't there to reveal.
+     */
+    data class AddBuild(val build: Build) : EditorEvent
+    /**
+     * Replaces the build at [index] with [build]: what every control in the build
+     * order writes, from its effect to its trigger. One history entry, and an
+     * index the slide has no build at, an element it doesn't hold, or a build
+     * already exactly like this, is a no-op.
+     */
+    data class UpdateBuild(val index: Int, val build: Build) : EditorEvent
+    /** Drops the build at [index]. One history entry; an index out of range is a
+     * no-op. The element stays exactly where it is, and shows from step 0 again
+     * once nothing brings it in. */
+    data class RemoveBuild(val index: Int) : EditorEvent
+    /**
+     * Moves the build at [from] to [to], the reorder the build order's rows do.
+     * Steps are a function of the order, so this is what re-times a slide. One
+     * history entry, and either index out of range, or a move to where it
+     * already is, is a no-op.
+     */
+    data class MoveBuild(val from: Int, val to: Int) : EditorEvent
     /**
      * Puts the elements [ids] resolves to on the clipboard, in z-order rather
      * than selection order: the slide's order is the one a paste has to keep.

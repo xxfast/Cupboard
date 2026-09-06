@@ -167,11 +167,20 @@ private const val TerminalCursor: String = "▍"
  * reads it is [BuildEffect.Typewriter]: the transcript then types itself out
  * over the build's duration with a block caret on the line in flight. Every
  * other effect, and the editor's null, draws the whole thing at rest.
+ *
+ * [lineLimit] cuts the transcript to its first so many lines, for a build handing
+ * the block over a line at a time. Null is all of it, which is the editor and
+ * every build that reveals the terminal whole.
  */
 @Composable
-internal fun TerminalElementView(element: TerminalElement, entry: Build? = null) {
-    val lines: List<TerminalLine> = remember(element.text, element.prompt) {
-        terminalLines(element.text, element.prompt)
+internal fun TerminalElementView(
+    element: TerminalElement,
+    entry: Build? = null,
+    lineLimit: Int? = null,
+) {
+    val lines: List<TerminalLine> = remember(element.text, element.prompt, lineLimit) {
+        val all: List<TerminalLine> = terminalLines(element.text, element.prompt)
+        if (lineLimit == null) all else all.take(lineLimit)
     }
 
     // The one effect this element plays itself. Every other one is a reveal the

@@ -294,7 +294,8 @@ fun sampleDocument(): Document {
     val image = ImageElement(frame = Frame(146f, 757f, 773f, 224f))
     val body = TextElement(
         frame = Frame(960f, 757f, 814f, 244f),
-        text = "Each stage hands the previous one's output to the next. " +
+        // Two paragraphs, because the build below hands them over one at a time.
+        text = "Each stage hands the previous one's output to the next.\n" +
             "The Draw stage is where Skia records the display list that " +
             "Present hands to Metal.",
         fontSize = 31f,
@@ -314,6 +315,10 @@ fun sampleDocument(): Document {
             Build(stages[2].id),
             Build(arrows[2].id, trigger = BuildTrigger.WithPrevious),
             Build(stages[3].id),
+            // A paragraph a click, then the drop frame goes to leave the caption
+            // on its own: an Out build on an element nothing brought in.
+            Build(body.id, delivery = BuildDelivery.ByParagraph),
+            Build(image.id, kind = BuildKind.Out, effect = BuildEffect.Dissolve),
         ),
         transition = SlideTransition(
             kind = TransitionKind.Push,

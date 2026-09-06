@@ -1,10 +1,14 @@
 package io.github.xxfast.cupboard.canvas
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -15,20 +19,24 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.diagramStepFor
 import io.github.xxfast.cupboard.document.effectiveBackground
-import io.github.xxfast.cupboard.document.entryBuild
+import io.github.xxfast.cupboard.document.entryBuildAt
+import io.github.xxfast.cupboard.document.exitBuildAt
 import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isVisibleAt
 import io.github.xxfast.cupboard.document.magicMovePairs
+import io.github.xxfast.cupboard.document.pieceRevealAt
 
 /** How far the slide number sits off the slide's right and bottom edges, in doc units. */
 private const val SlideNumberInset: Float = 64f
@@ -106,31 +114,59 @@ fun SlideView(
         for (element in slide.inheritedElements(layout)) ElementView(element)
 
         for (element in slide.elements) {
-            if (step != null && !slide.isVisibleAt(element.id, step)) continue
             if (leaving && travelling.any { (from, _) -> from.id == element.id }) continue
 
             val origin: Element? =
                 if (arriving) travelling.firstOrNull { (_, to) -> to.id == element.id }?.first
                 else null
 
-            ElementView(
-                element = element,
-                codeStep = if (step != null && element is CodeElement) {
-                    slide.codeStepFor(element, step)
-                } else null,
-                diagramStep = if (step != null && element is DiagramElement) {
-                    slide.diagramStepFor(element, step)
-                } else null,
-                // Play only: the editor draws every element at rest, so nothing
-                // there animates itself in.
-                entry = if (step != null) slide.entryBuild(element.id) else null,
-                transform = when {
-                    origin != null -> magicMoveTransform(origin, element, progress.value)
-                    // Nothing to travel from, so it arrives the ordinary way.
-                    arriving -> element.fadingTransform(progress.value)
-                    else -> null
-                },
-            )
+            val transform: ElementTransform? = when {
+                origin != null -> magicMoveTransform(origin, element, progress.value)
+                // Nothing to travel from, so it arrives the ordinary way.
+                arriving -> element.fadingTransform(progress.value)
+                else -> null
+            }
+
+            // The editor draws every element at rest: nothing is hidden, nothing
+            // animates itself in, and no build is read at all.
+            if (step == null) {
+                ElementView(element, transform = transform)
+                continue
+            }
+
+            val entry: BuildAt? = slide.entryBuildAt(element.id)
+            val exit: BuildAt? = slide.exitBuildAt(element.id)
+            val reveal: PieceReveal? = slide.pieceRevealAt(element.id, step)
+
+            // The frame rides the wrapper rather than the element, so an effect
+            // that clips (a wipe) or slides does it around the element's own box
+            // instead of around the slide's corner.
+            Box(
+                modifier = Modifier
+                    .offset(element.frame.x.dp, element.frame.y.dp)
+                    .size(element.frame.width.dp, element.frame.height.dp),
+            ) {
+                AnimatedVisibility(
+                    visible = slide.isVisibleAt(element.id, step),
+                    enter = buildEnter(element, entry?.build, entry?.delayMs ?: 0),
+                    exit = buildExit(element, exit?.build, exit?.delayMs ?: 0),
+                ) {
+                    ElementView(
+                        element = element,
+                        originX = element.frame.x,
+                        originY = element.frame.y,
+                        codeStep = if (element is CodeElement) {
+                            slide.codeStepFor(element, step) ?: deliveredStep(reveal)
+                        } else null,
+                        diagramStep = if (element is DiagramElement) {
+                            slide.diagramStepFor(element, step)
+                        } else null,
+                        entry = entry?.build,
+                        pieces = reveal,
+                        transform = transform,
+                    )
+                }
+            }
         }
         if (slide.showsSlideNumber && number != null) SlideNumberView(number)
     }
