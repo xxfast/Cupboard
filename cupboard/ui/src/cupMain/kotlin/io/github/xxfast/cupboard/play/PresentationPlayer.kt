@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.play
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -13,9 +14,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -24,6 +27,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEvent
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpSize
@@ -40,6 +45,7 @@ import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.stepCount
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import net.kodein.cup.LocalPresentationState
 import net.kodein.cup.PluginCupAPI
 import net.kodein.cup.Presentation
@@ -134,10 +140,13 @@ public fun rememberPlayerController(): PlayerController = remember { PlayerContr
 
 /**
  * Plays [document] with CuP, starting at [startIndex] and [startStep] within it.
- * Handles arrows, space, enter, and backspace itself when focused (requested on
- * entry); Escape invokes [onExit]. Hosts can also drive it through [controller],
- * e.g. from a window level key handler when focus has wandered, and read where
- * the show has got to off the same controller.
+ * Handles arrows, space, enter, backspace, Home and End itself when focused
+ * (requested on entry), along with the in-show controls a talk reaches for: a
+ * slide number then Enter, `S` for the slide switcher, `?` for the shortcut
+ * sheet, `P` for the laser. Escape closes those first and invokes [onExit] with
+ * nothing left open. Hosts can also drive it through [controller], e.g. from a
+ * window level key handler when focus has wandered, and read where the show has
+ * got to off the same controller.
  *
  * How much of that actually advances the deck is `Document.playback`'s business:
  * a self-playing deck walks itself along, and a links-only one moves for nothing
@@ -180,19 +189,52 @@ public fun PresentationPlayer(
     }
     val focusRequester = remember { FocusRequester() }
 
+    // What the show has open on top of itself. Player-local by design: an
+    // overlay is a thing this window is showing, not a thing the document says.
+    val overlays: ShowOverlays = remember { ShowOverlays() }
+    // Where the pointer is, for the laser to follow. A flow rather than snapshot
+    // state because it is written from a pointer handler; see [LaserDot].
+    val pointer: MutableStateFlow<Offset?> = remember { MutableStateFlow(null) }
+
+    // Digits go stale fast: a number half-typed and then abandoned must not be
+    // waiting to swallow the next Enter.
+    LaunchedEffect(overlays.jump) {
+        if (overlays.jump.isEmpty()) return@LaunchedEffect
+
+        delay(JUMP_BUFFER_MS)
+        overlays.jump = ""
+    }
+
     Box(
         modifier = modifier
             .focusRequester(focusRequester)
             .focusable()
             .onPreviewKeyEvent { event ->
-                handleKey(event, controller, playback, onExit) { activity++ }
+                handleKey(event, controller, playback, overlays, playing.size, onExit) {
+                    activity++
+                }
             }
             // A click anywhere the slide isn't already using. Links sit above
-            // this and consume their own taps, so a link is never also a step.
+            // this and consume their own taps, so a link is never also a step,
+            // and an open overlay swallows the click rather than stepping the
+            // deck out from underneath what is being read.
             .pointerInput(playback) {
                 detectTapGestures {
                     activity++
+                    if (overlays.isOpen) return@detectTapGestures
                     if (playback.type == PlaybackType.Normal) controller.advance(playback.loop)
+                }
+            }
+            // Only while the laser is lit: an idle show should not be tracking
+            // a pointer nobody is watching.
+            .pointerInput(overlays.laser) {
+                if (!overlays.laser) return@pointerInput
+
+                awaitPointerEventScope {
+                    while (true) {
+                        val event: PointerEvent = awaitPointerEvent(PointerEventPass.Initial)
+                        pointer.value = event.changes.lastOrNull()?.position
+                    }
                 }
             },
     ) {
@@ -311,6 +353,33 @@ public fun PresentationPlayer(
                 )
             }
         }
+
+        // Everything the presenter has put on top of the show, drawn over it in
+        // the order they overlap: the laser under the panels, since a panel is
+        // being read and the dot is being waved about.
+        if (overlays.laser) LaserDot(pointer)
+
+        if (overlays.jump.isNotEmpty()) JumpBadge(
+            buffer = overlays.jump,
+            slideCount = playing.size,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(28.dp),
+        )
+
+        overlays.switcher?.let { highlight ->
+            SlideSwitcher(
+                document = document,
+                slides = playing,
+                current = controller.slideIndex,
+                highlight = highlight,
+                onPick = { index ->
+                    controller.goTo(index, 0)
+                    overlays.closeAll()
+                },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+
+        if (overlays.shortcuts) ShortcutSheet(Modifier.align(Alignment.Center))
     }
 
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
@@ -319,16 +388,27 @@ public fun PresentationPlayer(
 /**
  * The keys the show answers to, and what [playback] lets them do.
  *
- * Escape always exits, whatever kind of show this is: a deck that could not be
- * closed from the keyboard would be a deck that had taken the screen hostage.
+ * Escape closes whatever the presenter has open before it closes the show: a key
+ * that both dismisses a panel and quits the talk would quit the talk. With
+ * nothing open it always exits, whatever kind of show this is, because a deck
+ * that could not be closed from the keyboard would be a deck that had taken the
+ * screen hostage.
+ *
  * The rest move the deck in every kind but [PlaybackType.LinksOnly], where only
- * the links on the slides move anything. [onActivity] fires for every key press
- * regardless, since the idle restart is about the room rather than about the deck.
+ * the links on the slides move anything: an unattended kiosk has no presenter to
+ * type at it, so it is given no keys either. [onActivity] fires for every key
+ * press regardless, since the idle restart is about the room rather than about
+ * the deck.
+ *
+ * [slideCount] is the length of the played order, which is what a typed number
+ * and the switcher's highlight are both indices into.
  */
 private fun handleKey(
     event: KeyEvent,
     controller: PlayerController,
     playback: PlaybackSettings,
+    overlays: ShowOverlays,
+    slideCount: Int,
     onExit: (() -> Unit)?,
     onActivity: () -> Unit,
 ): Boolean {
@@ -336,10 +416,79 @@ private fun handleKey(
     onActivity()
 
     if (event.key == Key.Escape) {
+        if (overlays.isOpen) {
+            overlays.closeAll()
+            return true
+        }
+
         onExit?.invoke()
         return onExit != null
     }
     if (playback.type == PlaybackType.LinksOnly) return false
+
+    // Shift is what makes it a "?", but no layout puts anything else on this key
+    // mid-show, so the sheet answers to the slash either way.
+    if (event.key == Key.Slash) {
+        overlays.shortcuts = !overlays.shortcuts
+        return true
+    }
+
+    // While the strip is up it owns the keys that move things: the arrows walk
+    // the highlight instead of the deck, and nothing moves until Enter.
+    val highlight: Int? = overlays.switcher
+    if (highlight != null) return when (event.key) {
+        Key.DirectionRight, Key.DirectionDown -> {
+            overlays.switcher = movedHighlight(highlight, 1, slideCount)
+            true
+        }
+        Key.DirectionLeft, Key.DirectionUp -> {
+            overlays.switcher = movedHighlight(highlight, -1, slideCount)
+            true
+        }
+        Key.MoveHome -> {
+            overlays.switcher = 0
+            true
+        }
+        Key.MoveEnd -> {
+            overlays.switcher = movedHighlight(0, slideCount, slideCount)
+            true
+        }
+        Key.Enter, Key.Spacebar -> {
+            controller.goTo(highlight, 0)
+            overlays.closeAll()
+            true
+        }
+        Key.S, Key.Tab -> {
+            overlays.switcher = null
+            true
+        }
+        else -> false
+    }
+
+    if (event.key == Key.S || event.key == Key.Tab) {
+        overlays.jump = ""
+        overlays.switcher = controller.slideIndex
+        return true
+    }
+    if (event.key == Key.P) {
+        overlays.laser = !overlays.laser
+        return true
+    }
+
+    val digit: Int? = event.key.digit()
+    if (digit != null) {
+        // Three digits is more deck than anyone presents, and a cap keeps a
+        // leaning key from building a number the badge cannot show.
+        overlays.jump = (overlays.jump + digit).take(3)
+        return true
+    }
+
+    // Enter is the deck's next step until a number is waiting on it.
+    if (event.key == Key.Enter && overlays.jump.isNotEmpty()) {
+        jumpTarget(overlays.jump, slideCount)?.let { controller.goTo(it, 0) }
+        overlays.jump = ""
+        return true
+    }
 
     return when (event.key) {
         Key.DirectionRight, Key.DirectionDown, Key.Spacebar, Key.Enter -> {
@@ -351,6 +500,35 @@ private fun handleKey(
             else controller.retreat(playback.loop)
             true
         }
+        Key.MoveHome -> {
+            controller.goToStart()
+            true
+        }
+        Key.MoveEnd -> {
+            controller.goToEnd()
+            true
+        }
         else -> false
     }
 }
+
+/** The digit this key types, or null for every key that types none. */
+private fun Key.digit(): Int? {
+    val row: Int = Digits.indexOf(this)
+    if (row >= 0) return row
+
+    return NumPadDigits.indexOf(this).takeIf { it >= 0 }
+}
+
+private val Digits: List<Key> = listOf(
+    Key.Zero, Key.One, Key.Two, Key.Three, Key.Four,
+    Key.Five, Key.Six, Key.Seven, Key.Eight, Key.Nine,
+)
+
+private val NumPadDigits: List<Key> = listOf(
+    Key.NumPad0, Key.NumPad1, Key.NumPad2, Key.NumPad3, Key.NumPad4,
+    Key.NumPad5, Key.NumPad6, Key.NumPad7, Key.NumPad8, Key.NumPad9,
+)
+
+/** How long a half-typed slide number waits for the rest of itself. */
+private const val JUMP_BUFFER_MS: Long = 2_000

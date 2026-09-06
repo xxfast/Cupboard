@@ -437,14 +437,3 @@ internal fun elapsed(elapsedMs: Long): String {
 }
 
 private fun Long.padded(): String = toString().padStart(2, '0')
-
-// The presenter display's own chrome, fixed rather than themed: it is a second
-// window on a second screen, and it stays dark whatever the editor is wearing.
-private val PresenterBackground: Color = Color(0xFF111216)
-private val PresenterPanel: Color = Color(0xFF17181C)
-private val PresenterControl: Color = Color(0xFF2B2D35)
-private val PresenterBorder: Color = Color(0xFF33363D)
-private val PresenterText: Color = Color(0xFFE8E8EA)
-private val PresenterDim: Color = Color(0xFFA0A0A8)
-private val PresenterFaint: Color = Color(0xFF6E6E76)
-private val PresenterAccent: Color = Color(0xFF7F52FF)
