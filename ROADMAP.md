@@ -92,7 +92,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 ## Phase 8: Documents and interop
 
-- [ ] `.cupboard` bundle format: folder/zip with document JSON + assets; replaces the interim single-JSON KStore file; document versioning for forward compat.
+- [x] `.cupboard` bundle format: a folder bundle (`document.json` + `assets/`) via `CupboardBundle`/`FileAssetStore` in a jvm+native `fileMain` source set; `formatVersion` + `decodeDocument` (Loaded/TooNew/Corrupt); the interim autosave migrates into `~/.cupboard/Untitled.cupboard/`. Zip packaging can come with export. Done ahead of Phase 7 because images need somewhere to keep bytes. (`9def82d`)
 - [ ] Real document lifecycle: open/save/save-as, recents, multiple windows/documents, dirty state, file association.
 - [ ] Export: PDF (with per-build pages option), PNG/JPEG per slide, movie of a played deck, animated GIF, HTML player; PPTX export (best-effort mapping); print with grid/handout layouts.
 - [ ] Import: PPTX and Keynote best-effort (shapes/text/images land editable; unsupported effects degrade gracefully).
