@@ -26,6 +26,10 @@ struct Chrome {
     let text: TextFormat?
     /// The primary's shape style, nil unless the primary is a shape.
     let shape: ShapeFormat?
+    /// The deck's saved shape looks, what the Shape section's style strip shows.
+    /// The whole library whatever is selected: one of them may be marked as the
+    /// one the primary shape is wearing, but none of them go away.
+    let objectStyles: [ObjectStyleChoice]
     /// The primary's code style, nil unless the primary is a code block.
     let code: CodeFormat?
     /// The primary's terminal style, nil unless the primary is a terminal.
@@ -86,6 +90,7 @@ struct Chrome {
         element = host.selectedElement().map(Selection.init)
         text = host.selectedText().map(TextFormat.init)
         shape = host.selectedShape().map(ShapeFormat.init)
+        objectStyles = host.objectStyles().map(ObjectStyleChoice.init)
         code = host.selectedCode().map(CodeFormat.init)
         terminal = host.selectedTerminal().map(TerminalFormat.init)
         diagram = host.selectedDiagram().map(DiagramFormat.init)
@@ -292,6 +297,45 @@ struct ShapeFormat {
         endArrow = props.endArrow
         label = props.label
         labelSize = Double(props.labelSize)
+    }
+}
+
+/// One saved shape look as a Swift value: a swatch in the Shape section's style
+/// strip paints itself from these, and the id is the whole of what goes back
+/// when it is clicked, renamed or dropped.
+///
+/// Only what a swatch draws, not what a shape does: no gradient angle, no shadow
+/// colour or blur. A 28pt square is not a shape preview, it is a look at a
+/// glance, and the numbers it cannot show would only be numbers to keep in sync.
+struct ObjectStyleChoice: Identifiable {
+    let id: String
+    let name: String
+    /// Packed ARGB, the document model's colour format. So is every colour below.
+    let fill: Int64
+    /// Whether the gradient paints. The fill is what paints when it does not.
+    let hasGradient: Bool
+    let gradientStart: Int64
+    let gradientEnd: Int64
+    let strokeColor: Int64
+    let strokeWidth: Double
+    let hasShadow: Bool
+    let cornerRadius: Double
+    /// Whether the primary shape is already wearing exactly this look. Kotlin's
+    /// answer, measured against the whole appearance rather than a stored id.
+    let isCurrent: Bool
+
+    init(_ props: ObjectStyleProps) {
+        id = props.id
+        name = props.name
+        fill = props.fill
+        hasGradient = props.hasGradient
+        gradientStart = props.gradientStart
+        gradientEnd = props.gradientEnd
+        strokeColor = props.strokeColor
+        strokeWidth = Double(props.strokeWidth)
+        hasShadow = props.hasShadow
+        cornerRadius = Double(props.cornerRadius)
+        isCurrent = props.current
     }
 }
 

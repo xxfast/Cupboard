@@ -19,6 +19,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
@@ -35,6 +36,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteUserTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
@@ -62,9 +64,11 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
@@ -86,6 +90,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultShapeStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultTextStyle
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -204,6 +210,12 @@ class EditorViewModel(
     fun onChangeTheme(name: String) { scope.launch { events.emit(ChangeTheme(name)) } }
     fun onSaveAsTheme(name: String) { scope.launch { events.emit(SaveAsTheme(name)) } }
     fun onDeleteUserTheme(name: String) { scope.launch { events.emit(DeleteUserTheme(name)) } }
+    fun onApplyObjectStyle(ids: List<String>, styleId: String) { scope.launch { events.emit(ApplyObjectStyle(ids, styleId)) } }
+    fun onSaveObjectStyle(shapeId: String, name: String) { scope.launch { events.emit(SaveObjectStyle(shapeId, name)) } }
+    fun onDeleteObjectStyle(styleId: String) { scope.launch { events.emit(DeleteObjectStyle(styleId)) } }
+    fun onRenameObjectStyle(styleId: String, name: String) { scope.launch { events.emit(RenameObjectStyle(styleId, name)) } }
+    fun onUseAsDefaultTextStyle(id: String) { scope.launch { events.emit(UseAsDefaultTextStyle(id)) } }
+    fun onUseAsDefaultShapeStyle(id: String) { scope.launch { events.emit(UseAsDefaultShapeStyle(id)) } }
     fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.emit(SetDocumentBackground(background)) } }
     fun onSetSlideSize(width: Float, height: Float, scaleContent: Boolean) { scope.launch { events.emit(SetSlideSize(width, height, scaleContent)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }

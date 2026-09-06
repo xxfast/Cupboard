@@ -180,6 +180,22 @@ func formatEntries(_ host: EditorHost, enabled: Bool) -> [MenuEntry] {
         list("Bullet List", CupboardCanvas.ListStyle.bullet),
         list("Numbered List", CupboardCanvas.ListStyle.numbered),
         list("No List", CupboardCanvas.ListStyle.none),
+
+        .separator(),
+
+        // The two that write the deck's defaults rather than the selection, and
+        // so the two with their own enabled state: each needs the primary to be
+        // the kind it takes a look off, which [enabled] above says nothing about.
+        MenuEntry(
+            title: "Use as Default Text Box Appearance",
+            enabled: host.canUseAsDefaultTextStyle(),
+            action: { host.useAsDefaultTextStyle() }
+        ),
+        MenuEntry(
+            title: "Use as Default Shape Style",
+            enabled: host.canUseAsDefaultShapeStyle(),
+            action: { host.useAsDefaultShapeStyle() }
+        ),
     ]
 }
 

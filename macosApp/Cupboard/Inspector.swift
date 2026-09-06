@@ -81,7 +81,7 @@ extension EditorView {
                     // Same rule for the shape's own: a shape has these and
                     // nothing else does.
                     if let shape = ui.shape {
-                        shapeSection(shape)
+                        shapeSection(shape, styles: ui.objectStyles)
                         palette.divider.frame(height: 1)
                     }
                     // And the code block's, by the same rule.
@@ -334,8 +334,15 @@ extension EditorView {
     /// sample it sends, so a slow drag through it spends an undo entry per
     /// sample. The text colour takes the same deal, with the same mitigation:
     /// the core drops a write that changes nothing.
-    @ViewBuilder func shapeSection(_ shape: ShapeFormat) -> some View {
+    @ViewBuilder func shapeSection(
+        _ shape: ShapeFormat,
+        styles: [ObjectStyleChoice]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 9) {
+            styleStrip(styles)
+
+            palette.divider.frame(height: 1)
+
             sectionLabel("Shape")
 
             // Switching to a kind the shape is not wearing commits it there and
@@ -455,6 +462,103 @@ extension EditorView {
                 }
             }
         }
+    }
+
+    /// The deck's saved shape looks, as a wrapping row of swatches. A click
+    /// dresses the whole selection in one, a right-click renames or drops one,
+    /// and the button under them lifts the primary shape's look into the library.
+    ///
+    /// The ring marks the look the primary is already wearing, which Kotlin works
+    /// out by appearance rather than by a stored id: a shape edited away from a
+    /// style is wearing none, and the strip says so by ringing nothing.
+    func styleStrip(_ styles: [ObjectStyleChoice]) -> some View {
+        let column = GridItem(.adaptive(minimum: 28, maximum: 28), spacing: 8, alignment: .leading)
+        return VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Styles")
+
+            LazyVGrid(columns: [column], alignment: .leading, spacing: 8) {
+                ForEach(styles) { style in
+                    styleSwatch(style)
+                }
+            }
+
+            panelButton("Save Style...", symbol: "square.and.arrow.down") {
+                saveStyleText = ""
+                savingStyle = true
+            }
+        }
+        // Both verbs that need a name take an alert, the way Save Theme does.
+        // Rename carries the id it was opened on: the menu it came from is gone
+        // by the time the field is typed into.
+        .alert("Save Style", isPresented: $savingStyle) {
+            TextField("Name", text: $saveStyleText)
+            Button("Save") {
+                let typed = saveStyleText.trimmingCharacters(in: .whitespaces)
+                guard !typed.isEmpty else { return }
+                host.saveObjectStyle(name: typed)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Rename Style", isPresented: $renamingStyle) {
+            TextField("Name", text: $renameStyleText)
+            Button("Rename") {
+                let typed = renameStyleText.trimmingCharacters(in: .whitespaces)
+                guard !typed.isEmpty else { return }
+                host.renameObjectStyle(styleId: renameStyleId, name: typed)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    /// One saved look, painted: the fill or its gradient, the border over it, and
+    /// a soft drop shadow when the style carries one. The name is the tooltip,
+    /// since a 28pt square has nowhere to write it.
+    ///
+    /// The corner is clamped rather than scaled: a swatch has no shape's width to
+    /// scale a radius against, and square against rounded is the part of it worth
+    /// showing at this size.
+    func styleSwatch(_ style: ObjectStyleChoice) -> some View {
+        let shape = RoundedRectangle(cornerRadius: min(style.cornerRadius, 8), style: .continuous)
+        return Button { host.applyObjectStyle(styleId: style.id) } label: {
+            shape
+                .fill(styleFill(style))
+                .frame(width: 28, height: 28)
+                .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+                .overlay {
+                    shape.inset(by: 0.5).stroke(
+                        Color(argb: style.strokeColor),
+                        lineWidth: max(1, min(style.strokeWidth, 3))
+                    )
+                }
+                .shadow(color: style.hasShadow ? .black.opacity(0.5) : .clear, radius: 3, y: 1)
+                .overlay {
+                    if style.isCurrent { shape.inset(by: -2.5).stroke(palette.accent, lineWidth: 2) }
+                }
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(style.name)
+        .contextMenu {
+            Button("Rename...") {
+                renameStyleId = style.id
+                renameStyleText = style.name
+                renamingStyle = true
+            }
+            Button("Delete") { host.deleteObjectStyle(styleId: style.id) }
+        }
+    }
+
+    /// What a swatch paints with: the style's gradient when it carries one, its
+    /// flat fill when it does not. No angle at this size, so the stops run down.
+    func styleFill(_ style: ObjectStyleChoice) -> AnyShapeStyle {
+        guard style.hasGradient else { return AnyShapeStyle(Color(argb: style.fill)) }
+        return AnyShapeStyle(
+            LinearGradient(
+                colors: [Color(argb: style.gradientStart), Color(argb: style.gradientEnd)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     /// A gradient commits whole, so a control that edits one of its three sends

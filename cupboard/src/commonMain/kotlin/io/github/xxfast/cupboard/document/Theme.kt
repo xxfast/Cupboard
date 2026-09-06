@@ -10,10 +10,10 @@ import kotlinx.serialization.Serializable
  * element types were hardcoded to before themes existed, so a document that
  * carries no defaults at all loads looking exactly as it did.
  *
- * Deliberately short: eight facts, shared across every element kind, rather than
- * a palette per kind. A diagram's nodes are shapes and its edges are body text,
- * an equation is text, a code block is its syntax palette. Anything a kind needs
- * beyond that is the element's own business, not the theme's.
+ * Deliberately short: a dozen facts, shared across every element kind, rather
+ * than a palette per kind. A diagram's nodes are shapes and its edges are body
+ * text, an equation is text, a code block is its syntax palette. Anything a kind
+ * needs beyond that is the element's own business, not the theme's.
  */
 @Serializable
 data class ElementDefaults(
@@ -22,6 +22,19 @@ data class ElementDefaults(
     /** Body copy, and the dimmer ink beside a heading: bullets, subtitles, edges. */
     val bodyColor: Long = 0xFFB8B3D6,
     val textFont: TextFont = TextFont.Sans,
+    /**
+     * How a fresh text box is set: the four facts Use As Default carries across
+     * from one, on top of [textColor] and [textFont].
+     *
+     * [textSize] is the size the text box factory was hardcoded to before these
+     * existed, not [TextElement]'s own default: a fresh box on a slide is a
+     * heading-sized thing, and what these preserve is what inserting one did.
+     */
+    val textSize: Float = 32f,
+    /** Bold is a point on this scale rather than a flag; see [TextElement.fontWeight]. */
+    val textWeight: Int = 400,
+    val textAlign: TextAlign = TextAlign.Start,
+    val textLineHeight: Float = 1.3f,
     val shapeFill: Long = 0x387F52FF,
     val shapeStroke: Long = 0xB3A98FFF,
     /** The ink on a shape's label, and on a diagram's nodes. */
@@ -34,6 +47,39 @@ data class ElementDefaults(
      * app.
      */
     val accent: Long = 0xFF7F52FF,
+)
+
+/**
+ * These defaults with [text]'s look written into them: Use As Default, for a text
+ * box. Everything the next fresh box takes off the deck comes from this one.
+ *
+ * Appearance only, the same line [ObjectStyle] draws: not the text, not the link,
+ * not the frame. The per-run switches ([TextElement.italic],
+ * [TextElement.underline], [TextElement.listStyle]) stay out too, deliberately.
+ * They read as decisions about one box rather than as a deck-wide default, and a
+ * deck where every new text box arrived underlined would be a deck to fight.
+ */
+fun ElementDefaults.fromText(text: TextElement): ElementDefaults = copy(
+    textColor = text.color,
+    textFont = text.fontFamily,
+    textSize = text.fontSize,
+    textWeight = text.fontWeight,
+    textAlign = text.align,
+    textLineHeight = text.lineHeight,
+)
+
+/**
+ * These defaults with [shape]'s colours written into them: Use As Default, for a
+ * shape. [fromText]'s twin, and the three facts a fresh shape is dressed in.
+ *
+ * The border, the shadow and the corner radius are no part of it: those are what
+ * an [ObjectStyle] is for, and a shape's whole look saved twice under two features
+ * is a look that goes out of sync with itself.
+ */
+fun ElementDefaults.fromShape(shape: ShapeElement): ElementDefaults = copy(
+    shapeFill = shape.fill,
+    shapeStroke = shape.strokeColor,
+    shapeLabelColor = shape.labelColor,
 )
 
 /**
@@ -56,6 +102,16 @@ data class Theme(
     val background: SlideBackground?,
     val defaults: ElementDefaults,
     val layouts: List<Slide>,
+    /**
+     * The shape looks a deck on this theme gets. Empty is the built-ins' answer
+     * and the useful default: [Document.applyingTheme] then regenerates the six
+     * [defaultObjectStyles] from [defaults], so a theme that says nothing about
+     * styles still hands the deck six in its own colours.
+     *
+     * A theme saved out of a deck carries whatever that deck had, which is what
+     * makes a hand-built style library travel with a saved look.
+     */
+    val objectStyles: List<ObjectStyle> = emptyList(),
 )
 
 /**
@@ -152,6 +208,10 @@ private fun theme(name: String, background: SlideBackground?, defaults: ElementD
  * The matched slides are then reapplied, so placeholder instances take the new
  * frames and the new ink while keeping their own text, their own ids and their
  * own builds. That is the whole of what changing a theme does to a slide.
+ *
+ * The style library comes from the theme, or is regenerated from its defaults when
+ * it brought none: a style is made of the deck's colours, so six styles in the old
+ * theme's palette would be six ways to undo the change one shape at a time.
  */
 fun Document.applyingTheme(theme: Theme): Document {
     val fresh: List<Slide> = theme.layouts.map { it.duplicated() }
@@ -162,6 +222,7 @@ fun Document.applyingTheme(theme: Theme): Document {
         themeName = theme.name,
         background = theme.background,
         defaults = theme.defaults,
+        objectStyles = theme.objectStyles.ifEmpty { defaultObjectStyles(theme.defaults) },
         layouts = fresh,
         slides = slides.map { slide ->
             slide.applyingLayout(slide.layoutId?.let { titles[it] }?.let { byTitle[it] })
@@ -175,5 +236,10 @@ fun Document.applyingTheme(theme: Theme): Document {
  * The layouts go across as they are, ids included; [applyingTheme] is what makes
  * fresh ones, so the copy happens on the way in rather than on the way out.
  */
-fun Document.asTheme(name: String): Theme =
-    Theme(name = name, background = background, defaults = defaults, layouts = layouts)
+fun Document.asTheme(name: String): Theme = Theme(
+    name = name,
+    background = background,
+    defaults = defaults,
+    layouts = layouts,
+    objectStyles = objectStyles,
+)

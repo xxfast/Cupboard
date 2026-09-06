@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,9 +46,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -64,6 +69,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.canvas.gradientStop
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
@@ -73,6 +79,7 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
@@ -87,6 +94,7 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
@@ -150,6 +158,12 @@ fun EditorInspector(
     onDeleteUserTheme: (name: String) -> Unit,
     onSetDocumentBackground: (SlideBackground?) -> Unit,
     onSetSlideSize: (width: Float, height: Float, scaleContent: Boolean) -> Unit,
+    /** The deck's saved shape looks: what the shape section's style strip offers. */
+    objectStyles: List<ObjectStyle>,
+    onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit,
+    onSaveObjectStyle: (shapeId: String, name: String) -> Unit,
+    onRenameObjectStyle: (styleId: String, name: String) -> Unit,
+    onDeleteObjectStyle: (styleId: String) -> Unit,
     selectedElements: List<Element>,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
@@ -215,6 +229,11 @@ fun EditorInspector(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
+                        styles = objectStyles,
+                        onApplyStyle = onApplyObjectStyle,
+                        onSaveStyle = onSaveObjectStyle,
+                        onRenameStyle = onRenameObjectStyle,
+                        onDeleteStyle = onDeleteObjectStyle,
                     )
 
                     if (primary is CodeElement) CodeSection(
@@ -647,16 +666,36 @@ private fun List<Element>.formatShapes(
  * What shows follows the kind. A corner radius means nothing to an oval, an
  * arrowhead nothing to a rectangle, and a line has no inside to write a label
  * in, so each of those appears only where it does something.
+ *
+ * The deck's saved looks sit at the top, above the controls they are made of:
+ * a style is the whole of this section in one click, so it comes before the
+ * long way round rather than after it.
  */
 @Composable
 private fun ShapeSection(
     primary: ShapeElement,
     elements: List<Element>,
     onUpdate: (List<Element>) -> Unit,
+    styles: List<ObjectStyle>,
+    onApplyStyle: (ids: List<String>, styleId: String) -> Unit,
+    onSaveStyle: (shapeId: String, name: String) -> Unit,
+    onRenameStyle: (styleId: String, name: String) -> Unit,
+    onDeleteStyle: (styleId: String) -> Unit,
 ) {
     val enabled: Boolean = !primary.locked
     val gradient: ShapeGradient? = primary.gradient
     val shadow: ShapeShadow? = primary.shadow
+
+    ObjectStyleSection(
+        styles = styles,
+        primary = primary,
+        ids = elements.map { it.id },
+        enabled = enabled,
+        onApply = onApplyStyle,
+        onSave = onSaveStyle,
+        onRename = onRenameStyle,
+        onDelete = onDeleteStyle,
+    )
 
     // False when the transform changed nothing anywhere, so a field that typed
     // its way to the value the document already holds puts itself back.
@@ -847,6 +886,202 @@ private fun ShapeSection(
 
 /** Where a shape's gradient runs to when it is switched on and has none yet. */
 private const val SHAPE_GRADIENT_END: Long = 0xFF2A2452
+
+/** How many style swatches fit across the 282dp panel, gaps and padding in. */
+private const val StylesPerRow: Int = 6
+
+/** The swatch, its corner (the palette's), and the lip of shadow one with a
+ * shadow shows under it. */
+private val StyleSwatchSize: Dp = 28.dp
+private val StyleCorner: Dp = 6.dp
+private val StyleShadowHint: Dp = 3.dp
+
+/** As heavy as a swatch draws a border, however heavy the style's own is: past
+ * this it is a swatch made of border. */
+private val StyleStrokeCap: Dp = 3.dp
+
+/**
+ * The STYLES block: the deck's saved shape looks, one swatch each, and the
+ * button that adds the selected shape to them.
+ *
+ * A swatch is the style painted rather than named, since what a style is worth
+ * saying is what it looks like. Clicking one dresses the whole selection in it,
+ * and the presenter drops whatever in that selection isn't an unlocked shape.
+ *
+ * Rename and Delete hang off a long press on the swatch: two verbs that belong
+ * to one style and nothing else, so they live on the style rather than in a row
+ * of buttons that would have to ask which one first.
+ *
+ * Save Style is live even on a locked shape. Reading a look is not editing the
+ * element, which is the rule the event follows too.
+ */
+@Composable
+private fun ObjectStyleSection(
+    styles: List<ObjectStyle>,
+    primary: ShapeElement,
+    ids: List<String>,
+    enabled: Boolean,
+    onApply: (ids: List<String>, styleId: String) -> Unit,
+    onSave: (shapeId: String, name: String) -> Unit,
+    onRename: (styleId: String, name: String) -> Unit,
+    onDelete: (styleId: String) -> Unit,
+) {
+    // View-local, like the theme card's: a name reaches the loop on OK and
+    // never before.
+    var saving: Boolean by remember { mutableStateOf(false) }
+    var renaming: ObjectStyle? by remember { mutableStateOf(null) }
+
+    SectionLabel("STYLES")
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (row in styles.chunked(StylesPerRow)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (style in row) ObjectStyleSwatch(
+                    style = style,
+                    // The look the shape is already wearing, which is the one
+                    // click that would change nothing: exactly what a ring says.
+                    selected = primary.applyingObjectStyle(style) == primary,
+                    enabled = enabled,
+                    onApply = { onApply(ids, style.id) },
+                    onRename = { renaming = style },
+                    onDelete = { onDelete(style.id) },
+                )
+            }
+        }
+    }
+
+    TonalButton(
+        label = "Save Style...",
+        enabled = true,
+        onClick = { saving = true },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    // Unprefilled: a saved style is always a new entry, so there is no name to
+    // start from the way Save Theme has the one the deck is on.
+    if (saving) NameDialog(
+        title = "Save Style",
+        confirmLabel = "Save",
+        name = "",
+        onDismiss = { saving = false },
+        onCommit = { name ->
+            saving = false
+            onSave(primary.id, name)
+        },
+    )
+
+    renaming?.let { style ->
+        NameDialog(
+            title = "Rename Style",
+            confirmLabel = "Rename",
+            name = style.name,
+            onDismiss = { renaming = null },
+            onCommit = { name ->
+                renaming = null
+                onRename(style.id, name)
+            },
+        )
+    }
+
+    PanelDivider()
+}
+
+/**
+ * One style, painted: its fill or its gradient in a rounded rect, its border
+ * traced inside that, and a lip of its shadow under it where it has one.
+ *
+ * The hairline is what keeps a transparent style off a dark panel, and the
+ * accent ring replaces it on the one the shape is wearing, which is how every
+ * other swatch in this panel reads.
+ */
+@Composable
+private fun ObjectStyleSwatch(
+    style: ObjectStyle,
+    selected: Boolean,
+    enabled: Boolean,
+    onApply: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var menuOpen: Boolean by remember { mutableStateOf(false) }
+
+    Box {
+        Canvas(
+            modifier = Modifier
+                .size(StyleSwatchSize)
+                .pointerInput(style.id, enabled) {
+                    detectTapGestures(
+                        onLongPress = { menuOpen = true },
+                        onTap = { if (enabled) onApply() },
+                    )
+                },
+        ) {
+            val hint: Float = if (style.shadow == null) 0f else StyleShadowHint.toPx()
+            val body: Size = Size(size.width, size.height - hint)
+            val corner: CornerRadius = CornerRadius(StyleCorner.toPx())
+
+            style.shadow?.let { shadow ->
+                drawRoundRect(
+                    color = Color(shadow.color),
+                    topLeft = Offset(hint, hint),
+                    size = Size(body.width - hint * 2, body.height),
+                    cornerRadius = corner,
+                )
+            }
+
+            drawRoundRect(brush = style.brush(body), size = body, cornerRadius = corner)
+
+            val stroke: Float = minOf(style.strokeWidth.dp, StyleStrokeCap).toPx()
+            if (stroke > 0f) drawRoundRect(
+                color = Color(style.strokeColor),
+                topLeft = Offset(stroke / 2f, stroke / 2f),
+                size = Size(body.width - stroke, body.height - stroke),
+                cornerRadius = corner,
+                style = Stroke(stroke),
+            )
+
+            val ring: Float = if (selected) 2.dp.toPx() else 1.dp.toPx()
+            drawRoundRect(
+                color = if (selected) tokens.accent else tokens.outline,
+                topLeft = Offset(ring / 2f, ring / 2f),
+                size = Size(body.width - ring, body.height - ring),
+                cornerRadius = corner,
+                style = Stroke(ring),
+            )
+        }
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Rename...", fontSize = 13.sp) },
+                onClick = {
+                    menuOpen = false
+                    onRename()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", fontSize = 13.sp) },
+                onClick = {
+                    menuOpen = false
+                    onDelete()
+                },
+            )
+        }
+    }
+}
+
+/** What a style paints its swatch with: its gradient over [size] when it has
+ * one, its solid fill otherwise. The angle is the canvas's, so a swatch leans
+ * the way the shape will. */
+private fun ObjectStyle.brush(size: Size): Brush {
+    val gradient: ShapeGradient = gradient ?: return SolidColor(Color(fill))
+
+    return Brush.linearGradient(
+        colors = listOf(Color(gradient.start), Color(gradient.end)),
+        start = gradientStop(size, gradient.angle, -1f),
+        end = gradientStop(size, gradient.angle, 1f),
+    )
+}
 
 /**
  * The live CODE section, shown when the primary element is a code block.

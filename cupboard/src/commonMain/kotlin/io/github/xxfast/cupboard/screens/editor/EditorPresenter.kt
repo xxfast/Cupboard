@@ -10,18 +10,25 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
+import io.github.xxfast.cupboard.document.ObjectStyle
+import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.addElements
 import io.github.xxfast.cupboard.document.addLayout
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingLayout
+import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.applyingStyle
 import io.github.xxfast.cupboard.document.applyingTheme
+import io.github.xxfast.cupboard.document.asObjectStyle
 import io.github.xxfast.cupboard.document.asTheme
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
+import io.github.xxfast.cupboard.document.fromShape
+import io.github.xxfast.cupboard.document.fromText
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.insertionIndexAfter
 import io.github.xxfast.cupboard.document.instantiating
@@ -57,6 +64,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
@@ -73,6 +81,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteUserTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
@@ -100,9 +109,11 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
@@ -124,6 +135,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultShapeStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultTextStyle
 import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -1174,6 +1187,87 @@ fun EditorPresenter(
             is DeleteUserTheme ->
                 if (state.userThemes.none { it.name == event.name }) state
                 else state.copy(userThemes = state.userThemes.filterNot { it.name == event.name })
+
+            // The object-style events. This library is the document's rather than
+            // a file on the side, so unlike the theme ones all four are ordinary
+            // edits, one history entry each, undone like anything else.
+            is ApplyObjectStyle -> state.document.objectStyles
+                .firstOrNull { it.id == event.styleId }
+                ?.let { style ->
+                    state.unlockedElements(event.ids)
+                        .filterIsInstance<ShapeElement>()
+                        .map { it.applyingObjectStyle(style) }
+                }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { styled ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(styled)
+                }
+                ?: state
+
+            // Reading a look is not editing the element it comes off, so a locked
+            // shape saves its style like any other, the way CopyStyle reads one.
+            is SaveObjectStyle -> (state.element(event.shapeId) as? ShapeElement)
+                ?.let { shape ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = state.document.copy(
+                            objectStyles = state.document.objectStyles +
+                                shape.asObjectStyle(event.name),
+                        ),
+                    )
+                }
+                ?: state
+
+            // Nothing already wearing the style changes: a style is applied by
+            // copy, so deleting one takes the entry and leaves the shapes.
+            is DeleteObjectStyle -> state.document.objectStyles
+                .filterNot { it.id == event.styleId }
+                .takeIf { it.size != state.document.objectStyles.size }
+                ?.let { styles ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(objectStyles = styles))
+                }
+                ?: state
+
+            is RenameObjectStyle -> {
+                val styles: List<ObjectStyle> = state.document.objectStyles
+                    .map { if (it.id == event.styleId) it.copy(name = event.name) else it }
+
+                if (styles == state.document.objectStyles) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(objectStyles = styles))
+                }
+            }
+
+            // Use As Default writes the deck's defaults and nothing else: every
+            // element already on a slide stays exactly as it is, and the next
+            // insertion is the first thing to notice. A locked element donates
+            // its look like any other, for SaveObjectStyle's reason.
+            is UseAsDefaultTextStyle -> (state.element(event.id) as? TextElement)
+                ?.let { state.document.defaults.fromText(it) }
+                ?.takeIf { it != state.document.defaults }
+                ?.let { defaults ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(defaults = defaults))
+                }
+                ?: state
+
+            is UseAsDefaultShapeStyle -> (state.element(event.id) as? ShapeElement)
+                ?.let { state.document.defaults.fromShape(it) }
+                ?.takeIf { it != state.document.defaults }
+                ?.let { defaults ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(defaults = defaults))
+                }
+                ?: state
 
             is SetDocumentBackground ->
                 if (state.document.background == event.background) state

@@ -226,6 +226,14 @@ struct EditorView: View {
     /// the library itself is Kotlin's, and the name goes there on Save.
     @State var savingTheme = false
     @State var saveThemeText = ""
+    /// Save Style's alert, and Rename's, which also holds the style it is about:
+    /// the strip's context menu points at a swatch, and the id has to outlive the
+    /// menu for the alert to know whose name is being typed.
+    @State var savingStyle = false
+    @State var saveStyleText = ""
+    @State var renamingStyle = false
+    @State var renameStyleId = ""
+    @State var renameStyleText = ""
     /// The Slide Size dialogs. The picked preset waits here while the scale
     /// question is up, and the typed pair while the custom sheet is. Nothing the
     /// document knows about: the deck resizes when one of them is answered.

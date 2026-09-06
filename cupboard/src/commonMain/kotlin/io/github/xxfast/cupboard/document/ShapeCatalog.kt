@@ -53,13 +53,23 @@ fun shapeElement(
 const val DefaultCodeBoxWidth: Float = 420f
 const val DefaultCodeBoxHeight: Float = 160f
 
-/** A fresh text box filling [frame], with the placeholder a shell drops the caret into. */
+/**
+ * A fresh text box filling [frame], with the placeholder a shell drops the caret
+ * into and the deck's text defaults on it.
+ *
+ * Every one of the six is [defaults]', which is what makes Use As Default work: a
+ * box set the way you like it writes itself back into the deck, and the next box
+ * arrives already set that way.
+ */
 fun textBoxElement(frame: Frame, defaults: ElementDefaults = ElementDefaults()): TextElement =
     TextElement(
         frame = frame,
         text = "Text",
-        fontSize = 32f,
+        fontSize = defaults.textSize,
+        fontWeight = defaults.textWeight,
+        lineHeight = defaults.textLineHeight,
         color = defaults.textColor,
+        align = defaults.textAlign,
         fontFamily = defaults.textFont,
     )
 

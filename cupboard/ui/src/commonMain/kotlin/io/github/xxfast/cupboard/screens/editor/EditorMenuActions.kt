@@ -236,6 +236,21 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                 EditorMenuItem(label, formattable, onPick = format { it.copy(listStyle = style) })
             },
         ),
+        // Use As Default reads the primary element rather than the selection:
+        // the deck has one text look and one shape look, so a batch of them
+        // would be a race the last element won. A locked element donates like
+        // any other, since neither verb edits what it reads.
+        EditorMenuSection(
+            listOf(
+                EditorMenuItem(
+                    label = "Use as Default Text Box Appearance",
+                    enabled = state.canUseAsDefaultTextStyle,
+                ) { state.primaryElement?.let { viewModel.onUseAsDefaultTextStyle(it.id) } },
+                EditorMenuItem("Use as Default Shape Style", state.canUseAsDefaultShapeStyle) {
+                    state.primaryElement?.let { viewModel.onUseAsDefaultShapeStyle(it.id) }
+                },
+            ),
+        ),
     )
 }
 

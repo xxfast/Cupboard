@@ -61,6 +61,13 @@ data class Document(
     val background: SlideBackground? = null,
     /** What a fresh element on this deck is dressed in. See [ElementDefaults]. */
     val defaults: ElementDefaults = ElementDefaults(),
+    /**
+     * The shape looks this deck has saved, the six [defaultObjectStyles] to start
+     * with. In the document rather than in a library on the side, unlike the user's
+     * themes: a style is made of the deck's own colours, so it travels with the
+     * deck the way its layouts do. [applyingTheme] regenerates them.
+     */
+    val objectStyles: List<ObjectStyle> = defaultObjectStyles(ElementDefaults()),
 ) {
     companion object {
         /** What a deck is on unless it says otherwise, and what a renderer

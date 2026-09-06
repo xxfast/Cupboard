@@ -56,6 +56,7 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
@@ -269,6 +270,30 @@ class ShapeProps(
     val endArrow: Boolean,
     val label: String,
     val labelSize: Float,
+)
+
+/**
+ * One saved shape look from the deck's library, flattened for the style strip in
+ * the Shape section. A picture and an id: the swatch paints itself from these
+ * numbers, and [id] is the whole of what goes back when it is clicked.
+ *
+ * [hasGradient] carries stops either way, the way [ShapeProps] does, so a swatch
+ * never has to invent a colour. [current] is the strip's ring: the primary shape
+ * is already wearing exactly this look, fill, border, shadow and all.
+ */
+class ObjectStyleProps(
+    val id: String,
+    val name: String,
+    /** Packed ARGB, the document model's color format. So is every color below. */
+    val fill: Long,
+    val gradientStart: Long,
+    val gradientEnd: Long,
+    val hasGradient: Boolean,
+    val strokeColor: Long,
+    val strokeWidth: Float,
+    val hasShadow: Boolean,
+    val cornerRadius: Float,
+    val current: Boolean,
 )
 
 /**
@@ -951,6 +976,82 @@ class EditorHost {
         }
         if (edits.isEmpty()) return
         viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The deck's saved shape looks, in library order: what the style strip
+     * offers. Always the whole list, whatever is selected, so the strip is a
+     * library rather than something that empties out under you.
+     *
+     * `current` is measured against the primary shape, and is false for every
+     * style while the primary is not a shape: nothing is wearing a look when
+     * nothing there has one.
+     */
+    fun objectStyles(): List<ObjectStyleProps> {
+        val shape: ShapeElement? = state.primaryElement as? ShapeElement
+        return state.objectStyles.map { style ->
+            val gradient: ShapeGradient = style.gradient ?: ShapeGradient(style.fill, style.fill)
+            return@map ObjectStyleProps(
+                id = style.id,
+                name = style.name,
+                fill = style.fill,
+                gradientStart = gradient.start,
+                gradientEnd = gradient.end,
+                hasGradient = style.gradient != null,
+                strokeColor = style.strokeColor,
+                strokeWidth = style.strokeWidth,
+                hasShadow = style.shadow != null,
+                cornerRadius = style.cornerRadius,
+                // The look applied changing nothing is the look already worn.
+                current = shape != null && shape.applyingObjectStyle(style) == shape,
+            )
+        }
+    }
+
+    /**
+     * Dresses the whole selection in the saved style [styleId], the way the shape
+     * setters write the whole selection. What is not an unlocked shape in there
+     * is the core's to skip, and one pick is one history entry however many
+     * shapes it moved.
+     */
+    fun applyObjectStyle(styleId: String) {
+        viewModel.onApplyObjectStyle(state.selectedElements.map { it.id }, styleId)
+    }
+
+    /** The primary shape's look saved to the deck's library as [name]. */
+    fun saveObjectStyle(name: String) {
+        val shape: ShapeElement = state.primaryElement as? ShapeElement ?: return
+        viewModel.onSaveObjectStyle(shape.id, name)
+    }
+
+    /** Drops [styleId] from the library. Nothing wearing it changes: a style is
+     * applied by copy, so the shapes keep the look they were given. */
+    fun deleteObjectStyle(styleId: String) {
+        viewModel.onDeleteObjectStyle(styleId)
+    }
+
+    fun renameObjectStyle(styleId: String, name: String) {
+        viewModel.onRenameObjectStyle(styleId, name)
+    }
+
+    /** Whether Use As Default has a text box to take the deck's text look off. */
+    fun canUseAsDefaultTextStyle(): Boolean = state.canUseAsDefaultTextStyle
+
+    /**
+     * Writes the primary text box's look into the deck's defaults, so the next
+     * fresh text box arrives set that way. Nothing already on a slide moves.
+     */
+    fun useAsDefaultTextStyle() {
+        val id: String = state.primaryElement?.id ?: return
+        viewModel.onUseAsDefaultTextStyle(id)
+    }
+
+    fun canUseAsDefaultShapeStyle(): Boolean = state.canUseAsDefaultShapeStyle
+
+    /** [useAsDefaultTextStyle] for a shape: the deck's fill, stroke and label colour. */
+    fun useAsDefaultShapeStyle() {
+        val id: String = state.primaryElement?.id ?: return
+        viewModel.onUseAsDefaultShapeStyle(id)
     }
 
     /**

@@ -7,9 +7,12 @@ import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -212,6 +215,9 @@ data class EditorState(
      */
     val defaults: ElementDefaults get() = document.defaults
 
+    /** The shape looks a style picker offers, which are the deck's. [defaults]' twin. */
+    val objectStyles: List<ObjectStyle> get() = document.objectStyles
+
     /**
      * The selected slide, which in layout mode is a layout: both lists answer to
      * one id, so every reduction from the element edits down works on a layout
@@ -249,6 +255,17 @@ data class EditorState(
      * aligns the rest to in every editor that has an opinion.
      */
     val primaryElement: Element? get() = selectedElements.firstOrNull()
+
+    /**
+     * Whether Use As Default has something to take the deck's text look off, and
+     * [canUseAsDefaultShapeStyle] the same for its shape look.
+     *
+     * The primary element's type and nothing else: a locked element donates its
+     * look like any other, because neither verb edits the element it reads.
+     */
+    val canUseAsDefaultTextStyle: Boolean get() = primaryElement is TextElement
+
+    val canUseAsDefaultShapeStyle: Boolean get() = primaryElement is ShapeElement
 
     /**
      * The element the caret is in, null when none is: an id that no longer
@@ -771,6 +788,53 @@ sealed interface EditorEvent {
     /** Drops the user theme called [name]. The library only, so no history entry
      * and nothing on any slide moves. A name no user theme answers to is a no-op. */
     data class DeleteUserTheme(val name: String) : EditorEvent
+    /**
+     * Dresses the unlocked shapes [ids] resolves to in the saved style [styleId]:
+     * its fill, its border and its shadow, never their kind, label or frame.
+     *
+     * Shapes only, because that is all an `ObjectStyle` describes: anything else in
+     * the selection is skipped one by one, the way locked elements are. One history
+     * entry however many shapes it dresses, and a style no one answers to, or a
+     * selection with no unlocked shape in it, is a no-op.
+     */
+    data class ApplyObjectStyle(val ids: List<String>, val styleId: String) : EditorEvent
+    /**
+     * Saves the shape [shapeId]'s look into the deck's library under [name]: Save
+     * Style. Appends rather than replaces, so saving twice is two entries; the six
+     * defaults are the ones that regenerate in place.
+     *
+     * The library is the document here, unlike the theme library, so this is one
+     * history entry like any other edit. An id that is not a shape on the selected
+     * slide saves nothing. A locked shape saves like any other: reading a look is
+     * not editing the element.
+     */
+    data class SaveObjectStyle(val shapeId: String, val name: String) : EditorEvent
+    /**
+     * Drops the saved style [styleId]. Nothing already wearing it changes: a style
+     * is applied by copy, so the shapes keep the look they were given. One history
+     * entry, and an id the deck doesn't hold is a no-op.
+     *
+     * The library may empty out completely. A deck with no saved styles is a deck
+     * that saves its own, and a floor of one would only ever be one in the way.
+     */
+    data class DeleteObjectStyle(val styleId: String) : EditorEvent
+    /** Renames the saved style [styleId]. One history entry, and a style already
+     * called this is a no-op. */
+    data class RenameObjectStyle(val styleId: String, val name: String) : EditorEvent
+    /**
+     * Use As Default: writes the text element [id]'s look into the deck's
+     * [ElementDefaults], so the next fresh text box arrives set that way.
+     *
+     * What travels is `ElementDefaults.fromText`'s business: colour, font, size,
+     * weight, alignment and line height. Nothing already on a slide moves. One
+     * history entry, and an id that is not a text element, or one the deck is
+     * already dressed like, is a no-op.
+     */
+    data class UseAsDefaultTextStyle(val id: String) : EditorEvent
+    /** [UseAsDefaultTextStyle] for a shape, over `ElementDefaults.fromShape`: fill,
+     * stroke and label colour. The border and the shadow are an [ApplyObjectStyle]
+     * away and deliberately no part of this. */
+    data class UseAsDefaultShapeStyle(val id: String) : EditorEvent
     /**
      * What sits behind every slide that asks for none of its own, null being the
      * app's dark gradient: the deck-wide end of the background fallback, under

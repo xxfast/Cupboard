@@ -172,6 +172,10 @@ fun EditorScreen(
         onChangeTheme = viewModel::onChangeTheme,
         onSaveAsTheme = viewModel::onSaveAsTheme,
         onDeleteUserTheme = viewModel::onDeleteUserTheme,
+        onApplyObjectStyle = viewModel::onApplyObjectStyle,
+        onSaveObjectStyle = viewModel::onSaveObjectStyle,
+        onRenameObjectStyle = viewModel::onRenameObjectStyle,
+        onDeleteObjectStyle = viewModel::onDeleteObjectStyle,
         onSetDocumentBackground = viewModel::onSetDocumentBackground,
         onSetSlideSize = viewModel::onSetSlideSize,
         onPreviewGuide = viewModel::onPreviewGuide,
@@ -225,6 +229,13 @@ fun EditorView(
     onChangeTheme: (name: String) -> Unit = {},
     onSaveAsTheme: (name: String) -> Unit = {},
     onDeleteUserTheme: (name: String) -> Unit = {},
+    /** The deck's saved shape looks, all four of them the shape section's style
+     * strip: the one it puts on the selection, the one it saves off it, and the
+     * two that keep the library tidy. */
+    onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit = { _, _ -> },
+    onSaveObjectStyle: (shapeId: String, name: String) -> Unit = { _, _ -> },
+    onRenameObjectStyle: (styleId: String, name: String) -> Unit = { _, _ -> },
+    onDeleteObjectStyle: (styleId: String) -> Unit = {},
     onSetDocumentBackground: (SlideBackground?) -> Unit = {},
     /** The shape every slide in the deck is laid out at, and whether the content
      * comes across with it. */
@@ -513,6 +524,11 @@ fun EditorView(
                         onDeleteUserTheme = onDeleteUserTheme,
                         onSetDocumentBackground = onSetDocumentBackground,
                         onSetSlideSize = onSetSlideSize,
+                        objectStyles = state.objectStyles,
+                        onApplyObjectStyle = onApplyObjectStyle,
+                        onSaveObjectStyle = onSaveObjectStyle,
+                        onRenameObjectStyle = onRenameObjectStyle,
+                        onDeleteObjectStyle = onDeleteObjectStyle,
                         selectedElements = state.selectedElements,
                         onUpdateElements = onUpdateElements,
                         onPreviewElements = onPreviewElements,
