@@ -72,7 +72,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 - [x] Builds in/out per element: `Build` has a kind, effect (Appear/Fade Up/Pop/Dissolve/Move In/Scale/Wipe/Typewriter), delivery (all/paragraph/word/character/line, each piece a click), delay and After Previous; `Slide.buildTimeline` is the step model, play renders through `AnimatedVisibility`. Add/Update/Remove/Move build events. Authoring UI is the build order panel below. (`008754d`, needs a visual pass)
 - [x] Action builds: `BuildKind.Action` + `BuildAction` (move, opacity, rotate, scale), chained through `Slide.actionStateAt`, animated in play with the build's duration and delay. Move is a straight line for now; paths wait on demand. (`1804c1a`, needs a visual pass)
 - [x] Build order panel: the Animate inspector on both shells lists every build (drag to reorder, click selects row + element), adds In/Out/Action builds, and edits effect, delivery, action parameters, duration, trigger (on click / with / after previous), delay and element step; canvas badges per the design while the tab is up. (`f0cb3a2`, needs a visual pass)
-- [ ] Play-mode fidelity: the CuP adapter (or its successor) honors all of the above; transition/build settings become part of the document model.
+- [x] Play-mode fidelity: transition and build settings live in the document model and the CuP adapter honours them; `PlayFidelityTest` renders every sample slide at every step. `previewOf` + Preview buttons on both shells, player start step + position plumbing for the presenter display, export maps effects/timings. (`2c17f79`)
 
 ## Phase 6: Presenting
 
