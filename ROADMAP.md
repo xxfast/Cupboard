@@ -70,7 +70,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 - [x] Transition catalog per slide: `SlideTransition` (Dissolve/Push/Move In/Wipe on CuP `SlideSpecs`, Magic Move by matching elements on type + content and animating them on the arriving slide), duration, on-click or automatic with delay (player auto-advances). Transition section in both Animate inspectors, export emits the nearest CuP set. (`5145b12`, needs a visual pass)
 - [x] Builds in/out per element: `Build` has a kind, effect (Appear/Fade Up/Pop/Dissolve/Move In/Scale/Wipe/Typewriter), delivery (all/paragraph/word/character/line, each piece a click), delay and After Previous; `Slide.buildTimeline` is the step model, play renders through `AnimatedVisibility`. Add/Update/Remove/Move build events. Authoring UI is the build order panel below. (`008754d`, needs a visual pass)
-- [ ] Action builds: move along path, opacity, rotate, scale; chainable.
+- [x] Action builds: `BuildKind.Action` + `BuildAction` (move, opacity, rotate, scale), chained through `Slide.actionStateAt`, animated in play with the build's duration and delay. Move is a straight line for now; paths wait on demand. (`1804c1a`, needs a visual pass)
 - [ ] Build order panel: cross-element reordering, timing modes (on click / with / after previous, per-build delay); this is the Animate inspector's content.
 - [ ] Play-mode fidelity: the CuP adapter (or its successor) honors all of the above; transition/build settings become part of the document model.
 
