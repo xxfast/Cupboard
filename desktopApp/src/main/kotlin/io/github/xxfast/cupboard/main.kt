@@ -65,6 +65,7 @@ import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
 import java.awt.Component
 import java.awt.Cursor
+import java.awt.Desktop
 import java.awt.EventQueue
 import java.awt.GraphicsEnvironment
 import java.awt.Point
@@ -74,6 +75,7 @@ import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
+import java.net.URI
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.awt.Menu as AwtMenu
@@ -895,6 +897,7 @@ fun main() {
                     modifier = Modifier.fillMaxSize(),
                     onExit = close,
                     controller = controller,
+                    onOpenUrl = ::openInBrowser,
                 )
             }
 
@@ -923,6 +926,7 @@ fun main() {
                     modifier = Modifier.size(1.dp),
                     onExit = close,
                     controller = controller,
+                    onOpenUrl = ::openInBrowser,
                 )
 
                 PresenterView(
@@ -941,5 +945,27 @@ fun main() {
                 )
             }
         }
+    }
+}
+
+/**
+ * Where a link out of the deck goes on this shell: the player knows a URL is a
+ * string and nothing else, and AWT is the half of the app that owns a browser.
+ *
+ * Every way this fails is a link that does nothing rather than a show that ends.
+ * A headless session supports no desktop, a bare Linux box may register no
+ * browser, and a URL typed into the inspector may not parse: none of the three
+ * is worth taking the presentation down for.
+ */
+private fun openInBrowser(url: String) {
+    try {
+        if (!Desktop.isDesktopSupported()) return
+
+        val desktop: Desktop = Desktop.getDesktop()
+        if (!desktop.isSupported(Desktop.Action.BROWSE)) return
+
+        desktop.browse(URI(url))
+    } catch (error: Exception) {
+        println("Cupboard: could not open $url ($error)")
     }
 }

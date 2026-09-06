@@ -60,7 +60,9 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
@@ -192,6 +194,8 @@ fun EditorScreen(
         onDeleteObjectStyle = viewModel::onDeleteObjectStyle,
         onSetDocumentBackground = viewModel::onSetDocumentBackground,
         onSetSlideSize = viewModel::onSetSlideSize,
+        onSetPlayback = viewModel::onSetPlayback,
+        onSetElementLinks = viewModel::onSetElementLinks,
         onPreviewGuide = viewModel::onPreviewGuide,
         onCommitGuide = viewModel::onCommitGuide,
         onRemoveGuide = viewModel::onRemoveGuide,
@@ -267,6 +271,10 @@ fun EditorView(
     /** The shape every slide in the deck is laid out at, and whether the content
      * comes across with it. */
     onSetSlideSize: (width: Float, height: Float, scaleContent: Boolean) -> Unit = { _, _, _ -> },
+    /** What kind of show the deck is: the Slide tab's playback section. */
+    onSetPlayback: (settings: PlaybackSettings) -> Unit = {},
+    /** Where the selection points, null for nowhere. */
+    onSetElementLinks: (ids: List<String>, target: LinkTarget?) -> Unit = { _, _ -> },
     /** A guide drag on the canvas: its samples, its drop, the guide it throws
      * away off the slide, and its cancel. What the drag draws is
      * [EditorState.guideDrag], which these four feed. */
@@ -550,6 +558,7 @@ fun EditorView(
                         onPlayPreview = onPlayPreview,
                         onSelectElement = onSelectElement,
                         layouts = state.document.layouts,
+                        slides = state.document.slides,
                         isEditingLayouts = state.isEditingLayouts,
                         onApplyLayout = onApplyLayout,
                         onReapplyLayout = onReapplyLayout,
@@ -564,11 +573,14 @@ fun EditorView(
                         slideWidth = state.document.slideWidth,
                         slideHeight = state.document.slideHeight,
                         slideSizePreset = state.document.slideSizePreset(),
+                        playback = state.document.playback,
                         onChangeTheme = onChangeTheme,
                         onSaveAsTheme = onSaveAsTheme,
                         onDeleteUserTheme = onDeleteUserTheme,
                         onSetDocumentBackground = onSetDocumentBackground,
                         onSetSlideSize = onSetSlideSize,
+                        onSetPlayback = onSetPlayback,
+                        onSetElementLinks = onSetElementLinks,
                         objectStyles = state.objectStyles,
                         onApplyObjectStyle = onApplyObjectStyle,
                         onSaveObjectStyle = onSaveObjectStyle,

@@ -135,6 +135,12 @@ extension EditorView {
                         equationSection(equation)
                         palette.divider.frame(height: 1)
                     }
+                    // Text, shape and image are the kinds that hold a link, so
+                    // the section is here for those three and nowhere else.
+                    if let link = ui.link {
+                        linkSection(link, ui)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -353,6 +359,61 @@ extension EditorView {
 
     static func listIndex(_ style: CupboardCanvas.ListStyle) -> Int {
         lists.firstIndex { $0 == style } ?? 0
+    }
+
+    // MARK: Link
+
+    /// Where the element takes the show when it is clicked. Every kind commits
+    /// on the pick, url and slide included, so what the popup says is what the
+    /// document holds rather than something waiting on a second control.
+    ///
+    /// The two kinds that carry a value show it: an address to open, or the
+    /// slide to jump to. The rest are the ordinary walk, and have nothing else
+    /// to say.
+    @ViewBuilder func linkSection(_ link: LinkFormat, _ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Link")
+
+            stylePopup(ui.linkKinds, selected: link.kindIndex) { index in
+                host.setSelectedLink(kindIndex: Int32(index), url: link.url, slideId: link.slideId)
+            }
+
+            if link.kindIndex == Self.urlLinkKind {
+                StringField(placeholder: "https://", value: link.url, palette: palette) { typed in
+                    host.setSelectedLink(
+                        kindIndex: Int32(Self.urlLinkKind),
+                        url: typed,
+                        slideId: link.slideId
+                    )
+                }
+            }
+
+            if link.kindIndex == Self.slideLinkKind {
+                stylePopup(
+                    ui.slideChoices.map(\.name),
+                    selected: Self.slideChoiceIndex(link.slideId, in: ui.slideChoices)
+                ) { index in
+                    guard ui.slideChoices.indices.contains(index) else { return }
+                    host.setSelectedLink(
+                        kindIndex: Int32(Self.slideLinkKind),
+                        url: link.url,
+                        slideId: ui.slideChoices[index].id
+                    )
+                }
+            }
+        }
+    }
+
+    /// Where the two kinds that carry a value sit in `linkKinds`. Kotlin states
+    /// the order and this reads it back: the position is the whole protocol, so
+    /// it is spelled once, here.
+    static let urlLinkKind = 6
+    static let slideLinkKind = 7
+
+    /// The slide the link points at, or the first: a deck always has one, and a
+    /// popup marking nothing would read as a link pointing nowhere.
+    static func slideChoiceIndex(_ id: String, in choices: [SlideChoice]) -> Int {
+        choices.firstIndex { $0.id == id } ?? 0
     }
 
     // MARK: Shape
@@ -1661,6 +1722,8 @@ extension EditorView {
                 palette.divider.frame(height: 1)
                 slideSizeSection(ui)
                 palette.divider.frame(height: 1)
+                playbackSection(ui)
+                palette.divider.frame(height: 1)
                 deckBackgroundSection(ui)
                 palette.divider.frame(height: 1)
                 slideLayoutCard(ui)
@@ -1933,6 +1996,81 @@ extension EditorView {
                     .foregroundStyle(palette.faint)
             }
         }
+    }
+
+    /// How the whole deck plays: the kind of show, and the numbers that only
+    /// some kinds have. Deck-wide, so it sits with the theme and the slide size
+    /// rather than with the slide's own background below.
+    ///
+    /// A self-playing deck is the only one that advances on its own, and a
+    /// links-only deck the only one that goes back to the start on its own, so
+    /// each field is here only while it means something.
+    @ViewBuilder func playbackSection(_ ui: Chrome) -> some View {
+        let playback = ui.playback
+
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Playback")
+
+            stylePopup(ui.playbackTypes, selected: playback.typeIndex) {
+                commitPlayback(playback, typeIndex: $0)
+            }
+
+            if playback.typeIndex == Self.selfPlayingType {
+                playbackField("Advance every", value: playback.advance) {
+                    commitPlayback(playback, advance: $0)
+                }
+            }
+
+            checkRow("Loop", on: playback.loop) {
+                commitPlayback(playback, loop: !playback.loop)
+            }
+
+            if playback.typeIndex == Self.linksOnlyType {
+                playbackField("Restart after", value: playback.restartAfterIdle) {
+                    commitPlayback(playback, restartAfterIdle: $0)
+                }
+            }
+        }
+    }
+
+    /// The two type indices with a number of their own, in `playbackTypes`
+    /// order, which is the enum's. Spelled once here, like the link kinds.
+    static let selfPlayingType = 1
+    static let linksOnlyType = 2
+
+    /// One of the playback numbers: what it is, and how many seconds it is.
+    func playbackField(
+        _ label: String,
+        value: Double,
+        onCommit: @escaping (Double) -> Void
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(palette.subtle)
+            Spacer(minLength: 0)
+            ValueField(label: "", value: value, palette: palette, unit: "s", onCommit: onCommit)
+                .frame(width: 86)
+        }
+    }
+
+    /// Playback commits whole, so a control that changes one thing sends the
+    /// other three back as they stand. The same deal `commitTransition` takes.
+    func commitPlayback(
+        _ playback: PlaybackFormat,
+        typeIndex: Int? = nil,
+        advance: Double? = nil,
+        loop: Bool? = nil,
+        restartAfterIdle: Double? = nil
+    ) {
+        host.setPlayback(
+            typeIndex: Int32(typeIndex ?? playback.typeIndex),
+            autoAdvanceMs: Int32(((advance ?? playback.advance) * 1000).rounded()),
+            loop: loop ?? playback.loop,
+            restartAfterIdleMs: Int32(
+                ((restartAfterIdle ?? playback.restartAfterIdle) * 1000).rounded()
+            )
+        )
     }
 
     /// The look the whole deck is on: the pick that swaps it, and the two verbs

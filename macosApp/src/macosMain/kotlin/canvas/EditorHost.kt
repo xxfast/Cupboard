@@ -48,8 +48,11 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.PlaybackSettings
+import io.github.xxfast.cupboard.document.PlaybackType
 import io.github.xxfast.cupboard.document.ShapeCatalog
 import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.document.ShapeElement
@@ -81,6 +84,7 @@ import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.previewOf
+import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
@@ -131,12 +135,14 @@ import platform.AppKit.NSCursorFrameResizePositionBottomRight
 import platform.AppKit.NSCursorFrameResizePositionTopRight
 import platform.AppKit.NSImage
 import platform.AppKit.NSView
+import platform.AppKit.NSWorkspace
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSMakeRect
 import platform.Foundation.NSMakeSize
 import platform.Foundation.NSProcessInfo
+import platform.Foundation.NSURL
 import platform.Foundation.dataWithBytes
 
 /**
@@ -164,6 +170,61 @@ private const val DEFAULT_GRADIENT_END: Long = 0xFF101223
  */
 private val TransitionKindTitles: List<String> =
     listOf("None", "Dissolve", "Push", "Move In", "Wipe", "Magic Move")
+
+/**
+ * What the playback types are called in the Document panel's popup, in
+ * [PlaybackType]'s own order, so a place in this list is an ordinal. Spelled
+ * here rather than on the enum for the reason [TransitionKindTitles] is: two of
+ * them read as two words in a menu and as one in code.
+ */
+private val PlaybackTypeTitles: List<String> = listOf("Normal", "Self-Playing", "Links Only")
+
+/**
+ * Where a link may point, in the order the popup offers them, "None" first for
+ * an element that points nowhere. A place in this list is the whole protocol,
+ * the way a transition's kind is a place in its own, except that [LinkTarget] is
+ * a sealed interface rather than an enum: there is no ordinal to travel, so this
+ * list is where the order lives, and [linkKindIndex] is the only reader of it.
+ */
+private val LinkKindTitles: List<String> = listOf(
+    "None",
+    "Next Slide",
+    "Previous Slide",
+    "First Slide",
+    "Last Slide",
+    "Exit Show",
+    "Webpage",
+    "Slide",
+)
+
+/** Where [target] sits in [LinkKindTitles]. Null points nowhere, which is 0. */
+private fun linkKindIndex(target: LinkTarget?): Int = when (target) {
+    null -> 0
+    LinkTarget.Next -> 1
+    LinkTarget.Previous -> 2
+    LinkTarget.First -> 3
+    LinkTarget.Last -> 4
+    LinkTarget.ExitShow -> 5
+    is LinkTarget.Url -> 6
+    is LinkTarget.Slide -> 7
+}
+
+/**
+ * The other way round: what the [kindIndex]th entry of [LinkKindTitles] points
+ * at. [url] and [slideId] are only read by the two kinds that carry one, so the
+ * shell may send both whatever it picked.
+ */
+private fun linkTargetOf(kindIndex: Int, url: String, slideId: String): LinkTarget? =
+    when (kindIndex) {
+        1 -> LinkTarget.Next
+        2 -> LinkTarget.Previous
+        3 -> LinkTarget.First
+        4 -> LinkTarget.Last
+        5 -> LinkTarget.ExitShow
+        6 -> LinkTarget.Url(url)
+        7 -> LinkTarget.Slide(slideId)
+        else -> null
+    }
 
 /** What a transition may last: too short to see, and long enough to sit through. */
 private const val MIN_TRANSITION_MS: Int = 100
@@ -534,6 +595,43 @@ class EquationProps(
 )
 
 /**
+ * Where the primary selected element points when it is clicked in a show, and
+ * null unless that element is one of the three kinds that hold a link at all.
+ * [TextProps]'s family again: what the panel shows, never a handle onto the
+ * document, and the setter behind it writes the whole selection.
+ *
+ * The kind travels as a place in `linkKindTitles()`, the way a transition's does.
+ * [url] and [slideId] are filled in whatever the kind, the way a shape wearing no
+ * gradient still carries its stops: switching a link from Next to Webpage never
+ * has to invent an address, and switching it to Slide never has to invent a
+ * destination.
+ */
+class LinkProps(
+    /** A place in `linkKindTitles()`, 0 for an element that points nowhere. */
+    val kindIndex: Int,
+    val url: String,
+    val slideId: String,
+)
+
+/**
+ * How the whole deck plays, flattened for the Document panel: the kind of show,
+ * and the three numbers behind it. A property of the deck rather than of a run
+ * of it, so it sits with the theme and the slide size.
+ *
+ * [autoAdvanceMs] means something only to a self-playing deck and
+ * [restartAfterIdleMs] only to a links-only one, but both are carried whatever
+ * the type: a panel switching kinds shows what that kind would run with rather
+ * than a zero it has to invent.
+ */
+class PlaybackProps(
+    /** A place in `playbackTypeTitles()`, which is a [PlaybackType] ordinal. */
+    val typeIndex: Int,
+    val autoAdvanceMs: Int,
+    val loop: Boolean,
+    val restartAfterIdleMs: Int,
+)
+
+/**
  * The selected slide's transition, flattened for the native Animate panel: what
  * plays on the way out of the slide. [ElementProps]'s opposite number one level
  * up, and the same contract, a value rather than a handle.
@@ -712,6 +810,12 @@ class PlaySession internal constructor(
             startIndex = startIndex,
             modifier = Modifier.fillMaxSize(),
             onExit = onExit,
+            // The player has no idea what a browser is, and neither does
+            // anything else in the shared module: a URL link comes out here.
+            // A string that is not an address opens nothing rather than throwing.
+            onOpenUrl = { url ->
+                NSURL.URLWithString(url)?.let { NSWorkspace.sharedWorkspace.openURL(it) }
+            },
             controller = player,
         )
     }
@@ -1599,6 +1703,71 @@ class EditorHost {
         viewModel.onUpdateElements(edits)
     }
 
+    /**
+     * Where a link may point, in menu order. Titles alone, the way
+     * [transitionKinds] hands its list over: the position is the whole of what
+     * comes back, and the targets behind the names are the document's business.
+     */
+    fun linkKindTitles(): List<String> = LinkKindTitles
+
+    /**
+     * The primary element's link, null when that element is not one of the kinds
+     * that hold one. Read off the primary; [setSelectedLink] writes the whole
+     * selection, the way every other Format control does.
+     *
+     * A text box answers off its target or its older URL string, whichever it
+     * carries, since that is the one question `resolvedLink` answers.
+     */
+    fun selectedLink(): LinkProps? {
+        val element: Element = state.primaryElement ?: return null
+        if (element !is TextElement && element !is ShapeElement && element !is ImageElement) {
+            return null
+        }
+        val target: LinkTarget? = element.resolvedLink()
+        return LinkProps(
+            kindIndex = linkKindIndex(target),
+            url = (target as? LinkTarget.Url)?.url ?: "",
+            // What picking Slide would commit: the deck's first slide, so the
+            // popup marks something rather than opening on nothing.
+            slideId = (target as? LinkTarget.Slide)?.slideId
+                ?: state.document.slides.firstOrNull()?.id.orEmpty(),
+        )
+    }
+
+    /**
+     * The slides a link may point at, as the popup spells them: their place in
+     * the presentation and their name. A skipped slide is offered by name alone,
+     * having no place to spell, and jumping to one goes nowhere, which is the
+     * document model's rule rather than a reason to hide the row.
+     *
+     * Parallel to [slideChoiceIds], and off one read of the document, the way the
+     * layout popup's two lists are: a menu shows a name and hands back the id
+     * beside it.
+     */
+    fun slideChoices(): List<String> = state.document.slides.map { slide ->
+        val number: Int? = state.slideNumber(slide.id)
+        return@map if (number == null) slide.title else "$number. ${slide.title}"
+    }
+
+    fun slideChoiceIds(): List<String> = state.document.slides.map { it.id }
+
+    /**
+     * Points every selected element at the [kindIndex]th kind, [url] and
+     * [slideId] being what the two kinds that carry one take. Index 0 unlinks.
+     *
+     * No guard beyond the index: the core leaves out what is locked and what
+     * holds no link, and drops a batch that changed nothing, so one pick is one
+     * history entry however many elements it moved. An index the list doesn't
+     * have writes nothing rather than unlinking, since the number crosses a
+     * language boundary on the way back.
+     */
+    fun setSelectedLink(kindIndex: Int, url: String, slideId: String) {
+        if (kindIndex !in LinkKindTitles.indices) return
+        val ids: List<String> = state.selectedElementIds
+        if (ids.isEmpty()) return
+        viewModel.onSetElementLinks(ids, linkTargetOf(kindIndex, url, slideId))
+    }
+
     /** Two unlocked elements are what a group is made of. */
     fun canGroup(): Boolean = canGroup(state.selectedElements)
 
@@ -2366,6 +2535,45 @@ class EditorHost {
     fun setSlideSizePreset(index: Int, scaleContent: Boolean) {
         val preset: SlideSizePreset = SlideSizePreset.entries.getOrNull(index) ?: return
         setSlideSize(preset.width, preset.height, scaleContent)
+    }
+
+    /**
+     * The kinds of show the deck may be, in the popup's order. Titles alone,
+     * like every other list that crosses here: a place in it is an ordinal.
+     */
+    fun playbackTypeTitles(): List<String> = PlaybackTypeTitles
+
+    /** How the deck plays right now, what the Playback section shows. */
+    fun playback(): PlaybackProps {
+        val settings: PlaybackSettings = state.document.playback
+        return PlaybackProps(
+            typeIndex = settings.type.ordinal,
+            autoAdvanceMs = settings.autoAdvanceMs,
+            loop = settings.loop,
+            restartAfterIdleMs = settings.restartAfterIdleMs,
+        )
+    }
+
+    /**
+     * Commits the lot, the way the background controls commit a whole kind: each
+     * control sends its own value beside the three the panel is already holding,
+     * so one click is one history entry and no setting is ever half-written.
+     *
+     * A type the enum doesn't have writes nothing, the way [setSnap] treats a
+     * kind it doesn't know: the number crosses a language boundary on the way
+     * back. Settings the deck already carries are dropped in the core, so a
+     * control set to what it already said spends no history entry.
+     */
+    fun setPlayback(typeIndex: Int, autoAdvanceMs: Int, loop: Boolean, restartAfterIdleMs: Int) {
+        val type: PlaybackType = PlaybackType.entries.getOrNull(typeIndex) ?: return
+        viewModel.onSetPlayback(
+            PlaybackSettings(
+                type = type,
+                autoAdvanceMs = autoAdvanceMs.coerceAtLeast(0),
+                loop = loop,
+                restartAfterIdleMs = restartAfterIdleMs.coerceAtLeast(0),
+            ),
+        )
     }
 
     /**

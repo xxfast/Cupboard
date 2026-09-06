@@ -38,6 +38,15 @@ struct Chrome {
     let diagram: DiagramFormat?
     /// The primary's equation style, nil unless the primary is an equation.
     let equation: EquationFormat?
+    /// Where the primary points when it is clicked in a show, nil unless it is
+    /// one of the three kinds that hold a link at all.
+    let link: LinkFormat?
+    /// Where a link may point, in Kotlin's order. Positions are what go back,
+    /// the way the transition kinds travel.
+    let linkKinds: [String]
+    /// The slides a link may point at: what the Slide popup offers. Numbers and
+    /// names paired with their ids, the way the layouts are.
+    let slideChoices: [SlideChoice]
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
@@ -77,6 +86,10 @@ struct Chrome {
     /// The shape every slide in the deck is cut to, and the shapes it can be
     /// put on. Deck-wide like the theme, whatever the control is called.
     let slideSize: SlideSize
+    /// How the whole deck plays, and the kinds of show it may be. Deck-wide
+    /// like the slide size, and read the same way.
+    let playback: PlaybackFormat
+    let playbackTypes: [String]
     /// The selected slide's transition, what the Animate panel edits.
     let transition: TransitionFormat
     /// The transitions the popup offers and the ways one may run, in Kotlin's
@@ -109,6 +122,9 @@ struct Chrome {
         terminal = host.selectedTerminal().map(TerminalFormat.init)
         diagram = host.selectedDiagram().map(DiagramFormat.init)
         equation = host.selectedEquation().map(EquationFormat.init)
+        link = host.selectedLink().map(LinkFormat.init)
+        linkKinds = host.linkKindTitles()
+        slideChoices = SlideChoice.all(host)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
@@ -125,6 +141,8 @@ struct Chrome {
         themeName = host.currentThemeName()
         deck = DeckProps(host)
         slideSize = SlideSize(host)
+        playback = PlaybackFormat(host.playback())
+        playbackTypes = host.playbackTypeTitles()
         transition = TransitionFormat(host.selectedTransition())
         transitionKinds = host.transitionKinds()
         transitionDirections = host.transitionDirections()
@@ -150,6 +168,62 @@ struct LayoutChoice: Identifiable, Equatable {
         let ids = host.layoutIds()
         let names = host.layoutNames()
         return zip(ids, names).map { LayoutChoice(id: $0, name: $1) }
+    }
+}
+
+/// One slide a link may point at: its place in the presentation and its name,
+/// beside the id that goes back. Zipped off one read the way `LayoutChoice` is,
+/// so a menu row cannot show one slide's name over another's id.
+struct SlideChoice: Identifiable, Equatable {
+    let id: String
+    let name: String
+
+    static func all(_ host: EditorHost) -> [SlideChoice] {
+        zip(host.slideChoiceIds(), host.slideChoices()).map { SlideChoice(id: $0, name: $1) }
+    }
+}
+
+/// Where the primary element points when it is clicked in a show: what the Link
+/// section of the Format panel shows. Read off the primary, written to the whole
+/// selection, like every other Format control.
+///
+/// The kind is a place in `linkKinds`, 0 for an element pointing nowhere. The
+/// url and the slide are filled in whatever the kind, the way a shape with no
+/// gradient still carries its stops: switching kinds never has to invent one.
+struct LinkFormat: Equatable {
+    let kindIndex: Int
+    /// "" is no address yet: the field has no null to spell, like the text link's.
+    let url: String
+    let slideId: String
+
+    init(_ props: LinkProps) {
+        kindIndex = Int(props.kindIndex)
+        url = props.url
+        slideId = props.slideId
+    }
+}
+
+/// How the whole deck plays as a Swift value: what the Document panel's Playback
+/// section shows. A property of the deck rather than of a run of it, so it reads
+/// like the slide size rather than like anything a show holds.
+///
+/// Seconds here, milliseconds on the model, the way the transition reads: both
+/// controls are fields, and a field reads in the unit people say out loud.
+struct PlaybackFormat: Equatable {
+    /// A place in `playbackTypes`: 0 normal, 1 self-playing, 2 links only.
+    let typeIndex: Int
+    /// How long a self-playing deck holds each step. Nothing to the other two.
+    let advance: Double
+    let loop: Bool
+    /// How long a links-only deck waits before going back to the first slide,
+    /// 0 being off: a deck that stays wherever it was left.
+    let restartAfterIdle: Double
+
+    init(_ props: PlaybackProps) {
+        typeIndex = Int(props.typeIndex)
+        advance = Double(props.autoAdvanceMs) / 1000
+        loop = props.loop
+        restartAfterIdle = Double(props.restartAfterIdleMs) / 1000
     }
 }
 

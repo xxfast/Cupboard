@@ -94,9 +94,12 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.PlaybackSettings
+import io.github.xxfast.cupboard.document.PlaybackType
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
@@ -120,6 +123,7 @@ import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
@@ -168,6 +172,8 @@ fun EditorInspector(
     onSelectElement: (String?) -> Unit,
     /** The deck's layouts: what the Slide tab's picker offers. */
     layouts: List<Slide>,
+    /** The deck's slides, in play order: what a link to a slide picks out of. */
+    slides: List<Slide>,
     /**
      * Whether [slide] is one of [layouts], being edited. The Slide tab is then a
      * layout editor: it names the layout and fills it with placeholders instead
@@ -193,11 +199,16 @@ fun EditorInspector(
     slideWidth: Float,
     slideHeight: Float,
     slideSizePreset: SlideSizePreset?,
+    /** What kind of show the deck is, and the two times that go with its kinds. */
+    playback: PlaybackSettings,
     onChangeTheme: (name: String) -> Unit,
     onSaveAsTheme: (name: String) -> Unit,
     onDeleteUserTheme: (name: String) -> Unit,
     onSetDocumentBackground: (SlideBackground?) -> Unit,
     onSetSlideSize: (width: Float, height: Float, scaleContent: Boolean) -> Unit,
+    onSetPlayback: (settings: PlaybackSettings) -> Unit,
+    /** Where the selection points, over the whole selection at once. */
+    onSetElementLinks: (ids: List<String>, target: LinkTarget?) -> Unit,
     /** The deck's saved shape looks: what the shape section's style strip offers. */
     objectStyles: List<ObjectStyle>,
     onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit,
@@ -309,6 +320,8 @@ fun EditorInspector(
                         onFlip = onFlipElements,
                         onGroup = onGroupElements,
                         onUngroup = onUngroupElements,
+                        slides = slides,
+                        onSetLinks = onSetElementLinks,
                     )
                 }
 
@@ -337,11 +350,13 @@ fun EditorInspector(
                     slideWidth = slideWidth,
                     slideHeight = slideHeight,
                     slideSizePreset = slideSizePreset,
+                    playback = playback,
                     onChangeTheme = onChangeTheme,
                     onSaveAsTheme = onSaveAsTheme,
                     onDeleteUserTheme = onDeleteUserTheme,
                     onSetDocumentBackground = onSetDocumentBackground,
                     onSetSlideSize = onSetSlideSize,
+                    onSetPlayback = onSetPlayback,
                     onUpdate = onUpdateSlide,
                     onApplyLayout = onApplyLayout,
                     onReapplyLayout = onReapplyLayout,
@@ -580,17 +595,6 @@ private fun TextSection(
             onPick = { style -> format { it.copy(listStyle = style) } },
             modifier = Modifier.weight(1f),
         )
-    }
-
-    // Empty clears it: a link nobody typed is no link, not an empty one.
-    EntryField(
-        label = "Link",
-        display = primary.link.orEmpty(),
-        enabled = enabled,
-        monospace = false,
-    ) { entered ->
-        val link: String? = entered.trim().takeIf { it.isNotEmpty() }
-        if (link == primary.link) false else format { it.copy(link = link) }
     }
 
     PanelDivider()
@@ -1481,6 +1485,9 @@ private fun ElementFormatPanel(
     onFlip: (List<String>, FlipAxis) -> Unit,
     onGroup: (List<String>) -> Unit,
     onUngroup: (String) -> Unit,
+    /** The deck's slides, which is what a link to one picks out of. */
+    slides: List<Slide>,
+    onSetLinks: (List<String>, LinkTarget?) -> Unit,
 ) {
     val primary: Element = elements.first()
     val ids: List<String> = elements.map { it.id }
@@ -1564,6 +1571,21 @@ private fun ElementFormatPanel(
         onRelease = { value -> onUpdate(elements.map { it.update(opacity = value) }) },
     )
 
+    // Only the three kinds that hold one. A group is one object to drag and
+    // several to click, so it links nowhere, and neither does a chart or a code
+    // block: the section is absent rather than dead.
+    if (primary is TextElement || primary is ShapeElement || primary is ImageElement) {
+        PanelDivider()
+
+        LinkSection(
+            primary = primary,
+            ids = ids,
+            enabled = enabled,
+            slides = slides,
+            onSetLinks = onSetLinks,
+        )
+    }
+
     PanelDivider()
 
     SectionLabel("ARRANGE")
@@ -1629,6 +1651,118 @@ private fun ElementFormatPanel(
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+/**
+ * Where the selection points, as Keynote's one menu.
+ *
+ * The eight rows are the seven [LinkTarget]s plus None, and the destination the
+ * two open-ended ones need comes from a second control under the menu rather
+ * than from a dialog: a URL is typed, a slide is picked.
+ *
+ * Shown against the primary and committed over the whole selection, like every
+ * other control in the panel. The value is [Element.resolvedLink], so a deck
+ * written before targets existed shows its old whole-box URL as the URL it is.
+ */
+@Composable
+private fun LinkSection(
+    primary: Element,
+    ids: List<String>,
+    enabled: Boolean,
+    slides: List<Slide>,
+    onSetLinks: (List<String>, LinkTarget?) -> Unit,
+) {
+    val target: LinkTarget? = primary.resolvedLink()
+
+    // The six settled rows commit on the pick, so the two open-ended ones are the
+    // only reason this is state at all: "URL..." has to open its field before
+    // there is a URL for the document to hold. Keyed on the live target, so an
+    // undo or a new selection puts the menu back where the document is.
+    var choice: LinkChoice by remember(primary.id, target) { mutableStateOf(target.choice()) }
+
+    SectionLabel("LINK")
+    DropdownField(
+        label = "Action",
+        value = choice,
+        options = LINK_CHOICES,
+        enabled = enabled,
+        onPick = { picked ->
+            choice = picked
+            when (picked) {
+                LinkChoice.None -> onSetLinks(ids, null)
+                LinkChoice.Next -> onSetLinks(ids, LinkTarget.Next)
+                LinkChoice.Previous -> onSetLinks(ids, LinkTarget.Previous)
+                LinkChoice.First -> onSetLinks(ids, LinkTarget.First)
+                LinkChoice.Last -> onSetLinks(ids, LinkTarget.Last)
+                LinkChoice.ExitShow -> onSetLinks(ids, LinkTarget.ExitShow)
+                // These two name no destination yet. Their own field commits.
+                LinkChoice.Url, LinkChoice.Slide -> Unit
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    val url: String? = (target as? LinkTarget.Url)?.url
+
+    // Empty is not a link: the field reverts rather than sending a URL that
+    // opens nothing.
+    if (choice == LinkChoice.Url) EntryField(
+        label = "Address",
+        display = url.orEmpty(),
+        enabled = enabled,
+        monospace = false,
+    ) { entered ->
+        val typed: String = entered.trim()
+        if (typed.isEmpty() || typed == url) return@EntryField false
+
+        onSetLinks(ids, LinkTarget.Url(typed))
+        return@EntryField true
+    }
+
+    // Layouts are not offered: a layout is never played, so a link into one goes
+    // nowhere.
+    if (choice == LinkChoice.Slide) DropdownField(
+        label = "Slide",
+        value = (target as? LinkTarget.Slide)?.slideId,
+        options = slides.mapIndexed { index, slide -> slide.id to slide.linkTitle(index + 1) },
+        enabled = enabled,
+        onPick = { id -> if (id != null) onSetLinks(ids, LinkTarget.Slide(id)) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * Which row of the link menu is live.
+ *
+ * [LinkTarget] itself won't do as the menu's value: two of its seven carry what
+ * they point at, and a row has to mean "a URL" before there is a URL.
+ */
+private enum class LinkChoice { None, Next, Previous, First, Last, ExitShow, Url, Slide }
+
+private val LINK_CHOICES: List<Pair<LinkChoice, String>> = listOf(
+    LinkChoice.None to "None",
+    LinkChoice.Next to "Next Slide",
+    LinkChoice.Previous to "Previous Slide",
+    LinkChoice.First to "First Slide",
+    LinkChoice.Last to "Last Slide",
+    LinkChoice.ExitShow to "Exit Show",
+    LinkChoice.Url to "URL...",
+    LinkChoice.Slide to "Slide...",
+)
+
+private fun LinkTarget?.choice(): LinkChoice = when (this) {
+    null -> LinkChoice.None
+    LinkTarget.Next -> LinkChoice.Next
+    LinkTarget.Previous -> LinkChoice.Previous
+    LinkTarget.First -> LinkChoice.First
+    LinkTarget.Last -> LinkChoice.Last
+    LinkTarget.ExitShow -> LinkChoice.ExitShow
+    is LinkTarget.Url -> LinkChoice.Url
+    is LinkTarget.Slide -> LinkChoice.Slide
+}
+
+/** A slide in the link picker: its number always, its title when it has one. */
+private fun Slide.linkTitle(number: Int): String =
+    if (title.isBlank()) "$number" else "$number. $title"
 
 /**
  * The Animate tab: the slide's build order, and what the slide itself leaves on.
@@ -2404,11 +2538,13 @@ private fun SlidePanel(
     slideWidth: Float,
     slideHeight: Float,
     slideSizePreset: SlideSizePreset?,
+    playback: PlaybackSettings,
     onChangeTheme: (String) -> Unit,
     onSaveAsTheme: (String) -> Unit,
     onDeleteUserTheme: (String) -> Unit,
     onSetDocumentBackground: (SlideBackground?) -> Unit,
     onSetSlideSize: (Float, Float, Boolean) -> Unit,
+    onSetPlayback: (PlaybackSettings) -> Unit,
     onUpdate: (Slide) -> Unit,
     onApplyLayout: (String, String?) -> Unit,
     onReapplyLayout: (String) -> Unit,
@@ -2478,6 +2614,10 @@ private fun SlidePanel(
             preset = slideSizePreset,
             onSetSlideSize = onSetSlideSize,
         )
+
+        PanelDivider()
+
+        PlaybackSection(playback = playback, onSetPlayback = onSetPlayback)
 
         PanelDivider()
 
@@ -2576,6 +2716,68 @@ private fun SlidePanel(
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
+/**
+ * The PLAYBACK section: what kind of show the deck is.
+ *
+ * The type is the deck's, not the slide's, which is why this sits next to the
+ * theme and the slide size rather than under the slide's own appearance. Each
+ * kind brings only its own settings: an auto-advance on a normal deck would be a
+ * number that means nothing, so the field isn't there to read.
+ *
+ * Both times are typed in seconds and held in milliseconds, rounded to the whole
+ * second the field shows: a kiosk is not set to 4.7 seconds a slide.
+ */
+@Composable
+private fun PlaybackSection(playback: PlaybackSettings, onSetPlayback: (PlaybackSettings) -> Unit) {
+    SectionLabel("PLAYBACK")
+    DropdownField(
+        label = "Type",
+        value = playback.type,
+        options = PLAYBACK_TYPES,
+        enabled = true,
+        onPick = { type -> onSetPlayback(playback.copy(type = type)) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (playback.type == PlaybackType.SelfPlaying) {
+        NumberField(
+            label = "Advance every (s)",
+            value = playback.autoAdvanceMs.asSecondsValue(),
+            enabled = true,
+            onCommit = { seconds -> onSetPlayback(playback.copy(autoAdvanceMs = seconds.asMs())) },
+            modifier = Modifier.fillMaxWidth(),
+            minimum = 1f,
+        )
+        AppearanceRow(
+            label = "Loop",
+            checked = playback.loop,
+            onToggle = { loop -> onSetPlayback(playback.copy(loop = loop)) },
+        )
+    }
+
+    // 0 is the deck that stays wherever the last person left it, which is a real
+    // answer rather than a missing one, so the field says so instead of blanking.
+    if (playback.type == PlaybackType.LinksOnly) NumberField(
+        label = "Restart after idle (s, 0 = never)",
+        value = playback.restartAfterIdleMs.asSecondsValue(),
+        enabled = true,
+        onCommit = { seconds -> onSetPlayback(playback.copy(restartAfterIdleMs = seconds.asMs())) },
+        modifier = Modifier.fillMaxWidth(),
+        minimum = 0f,
+    )
+}
+
+/** Keynote's three kinds of show, titled the way its menu titles them. */
+private val PLAYBACK_TYPES: List<Pair<PlaybackType, String>> = listOf(
+    PlaybackType.Normal to "Normal",
+    PlaybackType.SelfPlaying to "Self-Playing",
+    PlaybackType.LinksOnly to "Links Only",
+)
+
+private fun Int.asSecondsValue(): Float = this / 1000f
+
+private fun Float.asMs(): Int = roundToInt() * 1000
 
 /**
  * The SLIDE SIZE section: the named shapes, then Custom for anything else.
