@@ -76,7 +76,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 ## Phase 6: Presenting
 
-- [ ] Presenter display: current + next slide, notes, elapsed timer, clock; customizable layout; notes editable mid-show. (CuP's JVM speaker window can seed this on Compose shells.)
+- [x] Presenter display: our own `PresenterDisplay` (not CuP's JVM-only speaker window): current + next, notes editable mid-show, elapsed timer with reset, clock, four layouts. Second window on both shells sharing the show's `PlayerController`, View menu toggle. (`2cfd01e`, needs a visual pass)
 - [ ] Multi-display: slideshow on one display, presenter display on another, swap live.
 - [ ] Rehearse mode (presenter display without an external display).
 - [ ] Playback types: normal, self-playing (auto-advance, loop, restart after idle), links-only (kiosk); slide/element links (go to slide, next/previous, URLs).
