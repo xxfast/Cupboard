@@ -86,7 +86,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 - [x] Images: asset-backed `ImageElement` (insert from file/drag/paste on both shells), non-destructive mask window with any catalog shape, instant alpha (pure flood fill, re-encoded as a new asset), draw-time exposure/saturation/contrast, captions; Image section in both inspectors. (`a377ffa`, needs a visual pass)
 - [x] Image galleries: `GalleryElement` (asset images + captions), cycled in play through `elementStep` builds (Add Slide Steps), crossfade + dots; multi-select insert, multi-drop, Gallery inspector section on both shells. (`2be0f9d`, needs a visual pass)
-- [ ] Video/audio: embedded playback, trim, poster frame, loop, volume; web video embeds.
+- [ ] Video/audio: core landed (`90f06d1`): `VideoElement`/`AudioElement` with asset or web URL, poster, trim, loop, volume, autoplay, a `MediaPlayerHost` hook the player calls in play. Still owed: Insert/inspector surfaces on both shells, the macOS AVPlayer overlay, and a JVM answer for playback (no codec on the classpath; poster + open-in-OS-player is the fallback).
 - [ ] Tables: rows/columns/headers/footers, merged cells, cell styling, sort; cell formats (number/currency/date/percent); conditional highlighting. Formula engine only if demand proves out (it's Numbers-in-Keynote; developers mostly paste results).
 - [ ] Charts: 2D set (column/bar/line/area/pie/donut/scatter) with a data editor; interactive/animated data sets later; 3D never.
 
@@ -94,7 +94,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 - [x] `.cupboard` bundle format: a folder bundle (`document.json` + `assets/`) via `CupboardBundle`/`FileAssetStore` in a jvm+native `fileMain` source set; `formatVersion` + `decodeDocument` (Loaded/TooNew/Corrupt); the interim autosave migrates into `~/.cupboard/Untitled.cupboard/`. Zip packaging can come with export. Done ahead of Phase 7 because images need somewhere to keep bytes. (`9def82d`)
 - [x] Real document lifecycle: New/Open/Open Recent/Save As/Rename/Close over bundles, one window per deck, `savePending` = Edited in the title, recents in `~/.cupboard/recents.json`, `.cupboard` package association on macOS. Both shells. (`7fe60e7`, needs a visual pass)
-- [ ] Export: PDF (with per-build pages option), PNG/JPEG per slide, movie of a played deck, animated GIF, HTML player; PPTX export (best-effort mapping); print with grid/handout layouts.
+- [x] Export: pure-Kotlin PDF (every-build pages, 1/2/4/6-up handouts, notes), PNG per slide, animated GIF, HTML player, best-effort PPTX (raster + editable text), Print via a handout PDF; rasters from `SlideRasterizer` on every skiko target. File > Export submenu on both shells. Not done: JPEG (no pure encoder) and movie export (needs a codec). (`e028f33`, needs a visual pass)
 - [ ] Import: PPTX and Keynote best-effort (shapes/text/images land editable; unsupported effects degrade gracefully).
 - [ ] Password-protected documents.
 
