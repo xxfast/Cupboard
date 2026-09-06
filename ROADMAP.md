@@ -68,7 +68,7 @@ Where we beat Keynote for our audience; worth shipping before broad parity.
 
 ## Phase 5: Animation
 
-- [ ] Transition catalog per slide: dissolve/push/move-in/wipe + a Magic Move analog (matched elements animate between slides); duration, on-click vs auto with delay.
+- [x] Transition catalog per slide: `SlideTransition` (Dissolve/Push/Move In/Wipe on CuP `SlideSpecs`, Magic Move by matching elements on type + content and animating them on the arriving slide), duration, on-click or automatic with delay (player auto-advances). Transition section in both Animate inspectors, export emits the nearest CuP set. (`5145b12`, needs a visual pass)
 - [ ] Builds in/out per element: appear/dissolve/move/scale/wipe; text delivery by paragraph/word/character; code delivery by line (meets Phase 3's code steps).
 - [ ] Action builds: move along path, opacity, rotate, scale; chainable.
 - [ ] Build order panel: cross-element reordering, timing modes (on click / with / after previous, per-build delay); this is the Animate inspector's content.
