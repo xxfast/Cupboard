@@ -135,6 +135,13 @@ data class Slide(
      * Always null on a layout itself: layouts never stack.
      */
     val layoutId: String? = null,
+    /**
+     * How this slide gives way to the next, null being the deck's default, which
+     * is the horizontal move play has always used. See [SlideTransition]: it is
+     * the slide being left that owns the animation, so a slide's transition is
+     * the one that plays on the way out of it.
+     */
+    val transition: SlideTransition? = null,
 )
 
 /**
@@ -620,6 +627,24 @@ fun Document.setSlideSkipped(id: String, skipped: Boolean): Document {
     return copy(
         slides = slides.mapIndexed { at, slide ->
             if (at == index) slide.copy(skipped = skipped) else slide
+        },
+    )
+}
+
+/**
+ * Dresses the slide with [id] in [transition], null putting it back on the deck's
+ * default.
+ *
+ * Slides only, never layouts: a layout is a template for what a slide draws, and
+ * nothing on it is ever played. An unknown id, or a slide already carrying this
+ * transition, returns this same instance so the caller can skip the history entry.
+ */
+fun Document.setSlideTransition(id: String, transition: SlideTransition?): Document {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1 || slides[index].transition == transition) return this
+    return copy(
+        slides = slides.mapIndexed { at, slide ->
+            if (at == index) slide.copy(transition = transition) else slide
         },
     )
 }

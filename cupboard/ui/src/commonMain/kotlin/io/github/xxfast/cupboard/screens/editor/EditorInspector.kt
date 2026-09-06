@@ -88,11 +88,15 @@ import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideSizePreset
+import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.Theme
+import io.github.xxfast.cupboard.document.TransitionDirection
+import io.github.xxfast.cupboard.document.TransitionKind
+import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.formatCode
@@ -114,8 +118,8 @@ import kotlin.math.roundToInt
  * the primary element is a text box, the shape styling where it is a shape, the
  * code styling where it is a code block, then the geometry, rotation, opacity,
  * z-order and lock of the selection. With nothing selected it falls back to the
- * design's text mock. Animate is still a mock, and so is the Slide tab's layout
- * card; the rest of that tab edits the slide.
+ * design's text mock. Animate edits the slide's transition and mocks its builds,
+ * and the Slide tab's layout card is a mock; the rest of that tab edits the slide.
  *
  * The "Slide" tab is [InspectorTab.Document]: same pane, per-platform label.
  */
@@ -126,6 +130,10 @@ fun EditorInspector(
     /** The selected slide, which the Slide tab edits. */
     slide: Slide,
     onUpdateSlide: (Slide) -> Unit,
+    /** An in-flight sample of [slide], for the Animate tab's duration drag. */
+    onPreviewSlide: (Slide) -> Unit,
+    /** What [slide] plays on its way out, null putting it back on the deck's own. */
+    onSetSlideTransition: (slideId: String, transition: SlideTransition?) -> Unit,
     /** The deck's layouts: what the Slide tab's picker offers. */
     layouts: List<Slide>,
     /**
@@ -272,7 +280,14 @@ fun EditorInspector(
                     )
                 }
 
-                InspectorTab.Animate -> AnimatePanel()
+                InspectorTab.Animate -> AnimatePanel(
+                    slide = slide,
+                    isEditingLayouts = isEditingLayouts,
+                    hasSelection = selectedElements.isNotEmpty(),
+                    onSetTransition = onSetSlideTransition,
+                    onPreview = onPreviewSlide,
+                    onUpdate = onUpdateSlide,
+                )
                 InspectorTab.Document -> SlidePanel(
                     slide = slide,
                     layouts = layouts,
@@ -1577,8 +1592,190 @@ private fun ElementFormatPanel(
     )
 }
 
+/**
+ * The Animate tab: what the selected element builds in with, and what the slide
+ * itself leaves on.
+ *
+ * Builds are still the design's mock, so they show only where they would apply,
+ * against a selected element. The transition below them is real and always
+ * there, because it belongs to the slide rather than to the selection.
+ *
+ * Every control commits one settled edit through [onSetTransition], the duration
+ * drag excepted: its samples preview the slide and its release commits one, the
+ * way the opacity slider does, so a drag is one history entry rather than one
+ * per sample.
+ *
+ * Layouts have no transitions. A layout is never presented; the slide wearing it
+ * is, and it carries its own.
+ */
 @Composable
-private fun AnimatePanel() {
+private fun AnimatePanel(
+    slide: Slide,
+    isEditingLayouts: Boolean,
+    hasSelection: Boolean,
+    onSetTransition: (slideId: String, transition: SlideTransition?) -> Unit,
+    onPreview: (Slide) -> Unit,
+    onUpdate: (Slide) -> Unit,
+) {
+    if (isEditingLayouts) {
+        Text(
+            text = "Layouts have no transitions.",
+            color = LocalChromeTokens.current.subtle,
+            fontSize = 12.sp,
+        )
+        return
+    }
+
+    if (hasSelection) {
+        BuildMock()
+        PanelDivider()
+    }
+
+    // The label says which of the two things on this tab it belongs to, but only
+    // where both are on it.
+    SectionLabel(if (hasSelection) "SLIDE TRANSITION" else "TRANSITION")
+    TransitionSection(
+        slide = slide,
+        onSetTransition = onSetTransition,
+        onPreview = onPreview,
+        onUpdate = onUpdate,
+    )
+}
+
+/** The slide's own transition, the whole of it stateless against [slide]. */
+@Composable
+private fun TransitionSection(
+    slide: Slide,
+    onSetTransition: (String, SlideTransition?) -> Unit,
+    onPreview: (Slide) -> Unit,
+    onUpdate: (Slide) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val transition: SlideTransition? = slide.transition
+
+    // Null is the deck's own transition rather than no transition at all, which
+    // is what "Default" says and TransitionKind.None doesn't.
+    DropdownField(
+        label = "Effect",
+        value = transition?.kind,
+        options = TRANSITION_KINDS,
+        enabled = true,
+        onPick = { kind ->
+            val picked: SlideTransition? =
+                kind?.let { (transition ?: SlideTransition()).copy(kind = it) }
+            onSetTransition(slide.id, picked)
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (transition == null) return
+
+    if (transition.kind in DIRECTIONAL_KINDS) SegmentedRow(Modifier.fillMaxWidth()) {
+        TransitionDirection.entries.forEachIndexed { index, direction ->
+            val selected: Boolean = transition.direction == direction
+            Segment(
+                selected = selected,
+                first = index == 0,
+                onClick = { onSetTransition(slide.id, transition.copy(direction = direction)) },
+            ) {
+                SegmentLabel(direction.name, selected = selected, enabled = true)
+            }
+        }
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Duration", color = tokens.subtle, fontSize = 12.sp, modifier = Modifier.width(56.dp))
+        SliderRow(
+            fraction = transition.durationMs.asDurationFraction(),
+            valueLabel = transition.durationMs.asSeconds(),
+            modifier = Modifier.weight(1f),
+            onDrag = { value -> onPreview(slide.withDuration(value)) },
+            onRelease = { value -> onUpdate(slide.withDuration(value)) },
+        )
+    }
+
+    SegmentedRow(Modifier.fillMaxWidth()) {
+        TRANSITION_TRIGGERS.forEachIndexed { index, (trigger, title) ->
+            val selected: Boolean = transition.trigger == trigger
+            Segment(
+                selected = selected,
+                first = index == 0,
+                onClick = { onSetTransition(slide.id, transition.copy(trigger = trigger)) },
+            ) {
+                SegmentLabel(title, selected = selected, enabled = true)
+            }
+        }
+    }
+
+    // Only the automatic slide has one: a slide waiting for a click waits as
+    // long as it is left waiting.
+    if (transition.trigger == TransitionTrigger.Automatic) NumberField(
+        label = "Delay",
+        value = transition.delayMs / 1000f,
+        enabled = true,
+        onCommit = { seconds ->
+            val delayMs: Int = (seconds * 1000).roundToInt()
+            onSetTransition(slide.id, transition.copy(delayMs = delayMs))
+        },
+        modifier = Modifier.fillMaxWidth(),
+        minimum = 0f,
+        fractional = true,
+    )
+}
+
+/** "Default" is the deck's transition, and the only option that isn't a kind. */
+private val TRANSITION_KINDS: List<Pair<TransitionKind?, String>> = listOf(
+    null to "Default",
+    TransitionKind.None to "None",
+    TransitionKind.Dissolve to "Dissolve",
+    TransitionKind.Push to "Push",
+    TransitionKind.MoveIn to "Move In",
+    TransitionKind.Wipe to "Wipe",
+    TransitionKind.MagicMove to "Magic Move",
+)
+
+/** The kinds that travel, and so the only ones a direction means anything to. */
+private val DIRECTIONAL_KINDS: Set<TransitionKind> =
+    setOf(TransitionKind.Push, TransitionKind.MoveIn, TransitionKind.Wipe)
+
+private val TRANSITION_TRIGGERS: List<Pair<TransitionTrigger, String>> = listOf(
+    TransitionTrigger.OnClick to "On Click",
+    TransitionTrigger.Automatic to "Automatically",
+)
+
+/** The duration slider's ends, and the tenth of a second its samples land on. */
+private const val MIN_DURATION_MS: Int = 100
+private const val MAX_DURATION_MS: Int = 3000
+private const val DURATION_STEP_MS: Int = 100
+
+/** Where a duration sits along the slider, as 0..1. */
+private fun Int.asDurationFraction(): Float =
+    (this - MIN_DURATION_MS).toFloat() / (MAX_DURATION_MS - MIN_DURATION_MS)
+
+/** A slider sample as a duration, snapped so the label reads in whole tenths. */
+private fun Float.asDurationMs(): Int {
+    val raw: Float = MIN_DURATION_MS + this * (MAX_DURATION_MS - MIN_DURATION_MS)
+    return (raw / DURATION_STEP_MS).roundToInt() * DURATION_STEP_MS
+}
+
+/** Tenths of a second, as fine as the slider goes: 600 reads "0.6s". */
+private fun Int.asSeconds(): String = "${this / 1000}.${this % 1000 / 100}s"
+
+/**
+ * The slide with a duration off a slider sample. Only ever called on a slide
+ * that has a transition, since only that slide draws the slider.
+ */
+private fun Slide.withDuration(sample: Float): Slide {
+    val transition: SlideTransition = this.transition ?: SlideTransition()
+    return copy(transition = transition.copy(durationMs = sample.asDurationMs()))
+}
+
+/** The design's build mock, still a placeholder: no build is editable yet. */
+@Composable
+private fun BuildMock() {
     val tokens: ChromeTokens = LocalChromeTokens.current
 
     SectionLabel("BUILD IN")

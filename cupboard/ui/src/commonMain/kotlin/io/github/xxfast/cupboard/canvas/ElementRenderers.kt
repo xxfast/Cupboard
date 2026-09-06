@@ -90,6 +90,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * themselves rather than being faded in from outside. Only [TerminalElement]
  * reads it today, for [BuildEffect.Typewriter]. Null the same way [codeStep] is:
  * the editor, and anything nested in a group.
+ *
+ * [transform] overrides the element's own opacity and rotation and rides a
+ * translation and a scale on top of its frame, for an element in flight: a Magic
+ * Move between two slides is the one thing that draws one. Null is the element at
+ * rest, which is everything else.
  */
 @Composable
 fun ElementView(
@@ -100,16 +105,19 @@ fun ElementView(
     codeStep: CodeStep? = null,
     diagramStep: DiagramStep? = null,
     entry: Build? = null,
+    transform: ElementTransform? = null,
 ) {
     Box(
         modifier = modifier
             .offset((element.frame.x - originX).dp, (element.frame.y - originY).dp)
             .size(element.frame.width.dp, element.frame.height.dp)
             .graphicsLayer {
-                alpha = element.opacity
-                rotationZ = element.rotation
-                scaleX = if (element.flippedHorizontally) -1f else 1f
-                scaleY = if (element.flippedVertically) -1f else 1f
+                alpha = transform?.opacity ?: element.opacity
+                rotationZ = transform?.rotation ?: element.rotation
+                scaleX = (if (element.flippedHorizontally) -1f else 1f) * (transform?.scaleX ?: 1f)
+                scaleY = (if (element.flippedVertically) -1f else 1f) * (transform?.scaleY ?: 1f)
+                translationX = (transform?.translationX ?: 0f).dp.toPx()
+                translationY = (transform?.translationY ?: 0f).dp.toPx()
                 transformOrigin = TransformOrigin.Center
             }
     ) {

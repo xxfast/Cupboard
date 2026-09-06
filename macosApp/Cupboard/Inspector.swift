@@ -45,8 +45,7 @@ extension EditorView {
             } else if ui.tab == InspectorTab.format {
                 formatPanel(ui)
             } else {
-                // The Animate body lands with the build editor.
-                Spacer(minLength: 0)
+                animatePanel(ui)
             }
         }
         .frame(width: Layout.inspector)
@@ -1027,6 +1026,164 @@ extension EditorView {
             text = typed
             onCommit(typed)
         }
+    }
+
+    /// How long the transition takes, in seconds, with the number beside it.
+    /// The drag rides on this view's own value and the release is what commits,
+    /// so the whole drag is one edit and one undo entry, the way the opacity
+    /// slider's release is. A transition has no preview event to stream through
+    /// the loop the way an element's opacity does, which is the one difference.
+    ///
+    /// The dragged value is cleared by the state coming back rather than by the
+    /// release, so the thumb never flicks back to where it started for the frame
+    /// between the two.
+    private struct DurationSlider: View {
+        let value: Double
+        let palette: Palette
+        let onCommit: (Double) -> Void
+
+        @State private var dragged: Double? = nil
+
+        var body: some View {
+            HStack(spacing: 10) {
+                Slider(
+                    value: Binding(get: { dragged ?? value }, set: { dragged = $0 }),
+                    in: 0.1...3,
+                    onEditingChanged: { editing in
+                        guard !editing, let latest = dragged else { return }
+                        onCommit(latest)
+                    }
+                )
+                .controlSize(.small)
+                .tint(palette.accent)
+
+                Text(String(format: "%.1fs", dragged ?? value))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(palette.ctrlText)
+                    .frame(width: 40, alignment: .trailing)
+            }
+            .onChange(of: value) { _, _ in dragged = nil }
+        }
+    }
+
+    // MARK: Animate panel
+
+    /// The slide's transition, which by Keynote's convention is the one that
+    /// plays on the way *out* of it. Builds, the other half of this panel, land
+    /// with the build editor.
+    ///
+    /// Layout mode shows none of it: a layout is a template for what a slide
+    /// draws, and nothing on it is ever played.
+    @ViewBuilder func animatePanel(_ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: Layout.panelPadding) {
+            if ui.editingLayouts {
+                Text("Layouts have no transitions.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.faint)
+            } else {
+                transitionSection(ui)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(Layout.panelPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Default first, then the kinds. What a control shows below depends on
+    /// which is picked: only the kinds that travel have a direction, and only an
+    /// automatic slide has a delay to sit through.
+    @ViewBuilder func transitionSection(_ ui: Chrome) -> some View {
+        let transition = ui.transition
+
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Transition")
+
+            // Default is the head of the list rather than a segment of its own,
+            // so the whole choice is one popup: -1 and the kinds, off by one.
+            stylePopup(["Default"] + ui.transitionKinds, selected: transition.kindIndex + 1) {
+                commitTransition(transition, kindIndex: $0 - 1)
+            }
+
+            if Self.directionalKinds.contains(transitionKindTitle(ui)) {
+                HStack(spacing: 2) {
+                    ForEach(Array(ui.transitionDirections.enumerated()), id: \.offset) { index, name in
+                        segment(name, on: index == transition.directionIndex) {
+                            commitTransition(transition, directionIndex: index)
+                        }
+                    }
+                }
+                .padding(2)
+                .frame(height: 26)
+                .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            }
+
+            if transition.kindIndex >= 0 {
+                sectionLabel("Duration")
+
+                DurationSlider(value: transition.duration, palette: palette) {
+                    commitTransition(transition, duration: $0)
+                }
+
+                sectionLabel("Trigger")
+
+                HStack(spacing: 2) {
+                    segment("On Click", on: !transition.automatic) {
+                        commitTransition(transition, automatic: false)
+                    }
+                    segment("Automatically", on: transition.automatic) {
+                        commitTransition(transition, automatic: true)
+                    }
+                }
+                .padding(2)
+                .frame(height: 26)
+                .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                if transition.automatic {
+                    ValueField(
+                        label: "",
+                        value: transition.delay,
+                        palette: palette,
+                        unit: "s",
+                        decimals: 1
+                    ) {
+                        commitTransition(transition, delay: $0)
+                    }
+                    .frame(width: 104)
+                }
+            }
+        }
+    }
+
+    /// What the popup is set to, "" while the slide is on the deck's default.
+    func transitionKindTitle(_ ui: Chrome) -> String {
+        let index = ui.transition.kindIndex
+        guard ui.transitionKinds.indices.contains(index) else { return "" }
+        return ui.transitionKinds[index]
+    }
+
+    /// The kinds that travel, and so the only ones with a direction to pick. By
+    /// name rather than by position: an ordinal from the other side of the
+    /// boundary is not something this file should be spelling.
+    static let directionalKinds: Set<String> = ["Push", "Move In", "Wipe"]
+
+    /// A transition commits whole, so a control that changes one thing sends the
+    /// other four back as they stand. The same deal `setFrame` takes.
+    func commitTransition(
+        _ transition: TransitionFormat,
+        kindIndex: Int? = nil,
+        directionIndex: Int? = nil,
+        duration: Double? = nil,
+        automatic: Bool? = nil,
+        delay: Double? = nil
+    ) {
+        host.setTransition(
+            kindIndex: Int32(kindIndex ?? transition.kindIndex),
+            directionIndex: Int32(directionIndex ?? transition.directionIndex),
+            durationMs: Int32(((duration ?? transition.duration) * 1000).rounded()),
+            automatic: automatic ?? transition.automatic,
+            delayMs: Int32(((delay ?? transition.delay) * 1000).rounded())
+        )
     }
 
     // MARK: Document panel

@@ -13,6 +13,9 @@ import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.TransitionDirection
+import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
@@ -49,7 +52,11 @@ internal fun slidesSource(document: Document, packageName: String): String {
         for (note in slide.notes.split("\n")) {
             if (note.isNotBlank()) out.line("// Notes: ${note.trim()}")
         }
-        out.block("val ${slideIdentifier(index)} by Slide(stepCount = ${slide.stepCount()}) { step ->") {
+        val specs: String = slide.transition.specsArgument(out)
+        out.block(
+            "val ${slideIdentifier(index)} by " +
+                "Slide(stepCount = ${slide.stepCount()}$specs) { step ->",
+        ) {
             out.block("Board {") {
                 for (element in slide.elements) out.element(slide, element, 1f, null)
             }
@@ -57,6 +64,33 @@ internal fun slidesSource(document: Document, packageName: String): String {
     }
 
     return out.toFile(packageName)
+}
+
+/**
+ * The `specs = ` argument the slide is exported with, empty for a slide on the
+ * deck's default.
+ *
+ * Best effort, and only the transition on the way out: CuP ships four sets and
+ * we have six kinds, so the two that have no CuP equivalent take the nearest one
+ * (Magic Move crossfades, a wipe moves along its axis). What the export is for is
+ * a project that builds and plays, not a frame-perfect copy of our own player.
+ */
+private fun SlideTransition?.specsArgument(out: SourceWriter): String {
+    val set: String = when (this?.kind) {
+        null, TransitionKind.None -> return ""
+        TransitionKind.Dissolve, TransitionKind.MagicMove -> "TransitionSet.fade"
+        TransitionKind.Push, TransitionKind.MoveIn, TransitionKind.Wipe -> when (direction) {
+            TransitionDirection.Left, TransitionDirection.Right -> {
+                out.import("androidx.compose.ui.unit.LayoutDirection")
+                "TransitionSet.moveHorizontal(LayoutDirection.Ltr)"
+            }
+
+            TransitionDirection.Up, TransitionDirection.Down -> "TransitionSet.moveVertical"
+        }
+    }
+
+    out.import("net.kodein.cup.SlideSpecs", "net.kodein.cup.TransitionSet")
+    return ", specs = SlideSpecs(endTransitions = $set)"
 }
 
 /**

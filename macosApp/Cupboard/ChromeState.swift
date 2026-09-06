@@ -77,6 +77,12 @@ struct Chrome {
     /// The shape every slide in the deck is cut to, and the shapes it can be
     /// put on. Deck-wide like the theme, whatever the control is called.
     let slideSize: SlideSize
+    /// The selected slide's transition, what the Animate panel edits.
+    let transition: TransitionFormat
+    /// The transitions the popup offers and the ways one may run, in Kotlin's
+    /// order. Positions are what go back, the way a placeholder role does.
+    let transitionKinds: [String]
+    let transitionDirections: [String]
 
     init(_ host: EditorHost) {
         sidebarOpen = host.sidebarOpen()
@@ -111,6 +117,9 @@ struct Chrome {
         themeName = host.currentThemeName()
         deck = DeckProps(host)
         slideSize = SlideSize(host)
+        transition = TransitionFormat(host.selectedTransition())
+        transitionKinds = host.transitionKinds()
+        transitionDirections = host.transitionDirections()
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
@@ -180,6 +189,32 @@ struct DeckProps: Equatable {
         color = host.deckBackgroundColor()
         gradientStart = host.deckBackgroundGradientStart()
         gradientEnd = host.deckBackgroundGradientEnd()
+    }
+}
+
+/// The selected slide's transition as a Swift value: what the Animate panel
+/// shows. Read and written the way the background is, down to the values a
+/// slide wearing no transition still carries, so switching off Default never
+/// has to invent a duration.
+///
+/// Seconds here, milliseconds on the model: the panel is a slider and a field,
+/// and both of them read in the unit people say out loud.
+struct TransitionFormat: Equatable {
+    /// A place in `transitionKinds`, or -1 for the deck's default.
+    let kindIndex: Int
+    /// A place in `transitionDirections`. Only the kinds that travel show it.
+    let directionIndex: Int
+    let duration: Double
+    /// Whether the slide leaves on its own rather than waiting for a click.
+    let automatic: Bool
+    let delay: Double
+
+    init(_ props: TransitionProps) {
+        kindIndex = Int(props.kindIndex)
+        directionIndex = Int(props.directionIndex)
+        duration = Double(props.durationMs) / 1000
+        automatic = props.automatic
+        delay = Double(props.delayMs) / 1000
     }
 }
 

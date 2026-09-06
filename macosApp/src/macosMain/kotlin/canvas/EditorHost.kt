@@ -50,10 +50,14 @@ import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideSizePreset
+import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.TransitionDirection
+import io.github.xxfast.cupboard.document.TransitionKind
+import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingObjectStyle
@@ -128,6 +132,18 @@ private val NOTES = 122.dp
 private const val DEFAULT_BACKGROUND_COLOR: Long = 0xFF101223
 private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
 private const val DEFAULT_GRADIENT_END: Long = 0xFF101223
+
+/**
+ * What the transition kinds are called in the popup, in [TransitionKind]'s own
+ * order, so a place in this list is an ordinal. Spelled here rather than on the
+ * enum because two of them read as two words in a menu and as one in code.
+ */
+private val TransitionKindTitles: List<String> =
+    listOf("None", "Dissolve", "Push", "Move In", "Wipe", "Magic Move")
+
+/** What a transition may last: too short to see, and long enough to sit through. */
+private const val MIN_TRANSITION_MS: Int = 100
+private const val MAX_TRANSITION_MS: Int = 3000
 
 /** macOS 15 is where the frame-resize cursors landed; the app still runs on 14. */
 private val macOsMajorVersion: Long =
@@ -360,6 +376,28 @@ class DiagramProps(
 class EquationProps(
     val fontSize: Float,
     val color: Long,
+)
+
+/**
+ * The selected slide's transition, flattened for the native Animate panel: what
+ * plays on the way out of the slide. [ElementProps]'s opposite number one level
+ * up, and the same contract, a value rather than a handle.
+ *
+ * [kindIndex] -1 is the slide carrying no transition of its own, i.e. the deck's
+ * default. The other four are then what switching off Default would commit,
+ * filled in the way the slide background fills its colours in, so a shell
+ * changing kinds never has to invent a duration or a direction.
+ */
+class TransitionProps(
+    /** A place in `transitionKinds()`, or -1 for the deck's default. */
+    val kindIndex: Int,
+    /** A place in `transitionDirections()`. Means nothing to the kinds that don't travel. */
+    val directionIndex: Int,
+    val durationMs: Int,
+    /** Whether the slide leaves on its own rather than waiting for a click. */
+    val automatic: Boolean,
+    /** How long an automatic slide sits before it goes. Nothing to a slide that waits. */
+    val delayMs: Int,
 )
 
 /**
@@ -1709,6 +1747,70 @@ class EditorHost {
         val slide: Slide = state.selectedSlide
         if (slide.background == background) return
         viewModel.onUpdateSlide(slide.copy(background = background))
+    }
+
+    /**
+     * The transitions the Animate panel's popup offers, in the model's order.
+     * Titles alone, the way [shapeCatalog] hands its list over: the position is
+     * the whole of what comes back, and the kinds are the document's business.
+     */
+    fun transitionKinds(): List<String> = TransitionKindTitles
+
+    /** The four ways a travelling transition may run, in the same protocol. */
+    fun transitionDirections(): List<String> = TransitionDirection.entries.map { it.name }
+
+    /**
+     * The selected slide's transition, for the Animate panel. A slide wearing
+     * none answers -1 with the values switching off Default would commit, the
+     * way [backgroundColor] answers for a slide wearing another kind, so no
+     * control ever has to invent a number.
+     *
+     * In layout mode this reads the layout, which never carries one: a layout is
+     * a template for what a slide draws, and nothing on it is ever played.
+     */
+    fun selectedTransition(): TransitionProps {
+        val transition: SlideTransition = state.selectedSlide.transition ?: SlideTransition()
+        return TransitionProps(
+            kindIndex = state.selectedSlide.transition?.kind?.ordinal ?: -1,
+            directionIndex = transition.direction.ordinal,
+            durationMs = transition.durationMs,
+            automatic = transition.trigger == TransitionTrigger.Automatic,
+            delayMs = transition.delayMs,
+        )
+    }
+
+    /**
+     * Dresses the selected slide in a whole transition: every control commits
+     * all five values, the other four as they stand, the way a typed frame
+     * commits all four of its numbers.
+     *
+     * [kindIndex] -1 puts the slide back on the deck's default, i.e. carrying no
+     * transition at all. An index no kind answers to writes nothing rather than
+     * clearing, since the number crosses a language boundary on the way back.
+     *
+     * No layout guard: the core writes slides alone and drops a transition onto
+     * the one it is already wearing, so a copy of either rule out here could only
+     * ever disagree with it.
+     */
+    fun setTransition(
+        kindIndex: Int,
+        directionIndex: Int,
+        durationMs: Int,
+        automatic: Boolean,
+        delayMs: Int,
+    ) {
+        val transition: SlideTransition? = if (kindIndex < 0) null else {
+            val kind: TransitionKind = TransitionKind.entries.getOrNull(kindIndex) ?: return
+            SlideTransition(
+                kind = kind,
+                direction = TransitionDirection.entries.getOrNull(directionIndex)
+                    ?: TransitionDirection.Left,
+                durationMs = durationMs.coerceIn(MIN_TRANSITION_MS, MAX_TRANSITION_MS),
+                trigger = if (automatic) TransitionTrigger.Automatic else TransitionTrigger.OnClick,
+                delayMs = delayMs.coerceAtLeast(0),
+            )
+        }
+        viewModel.onSetSlideTransition(state.selectedSlide.id, transition)
     }
 
     /**

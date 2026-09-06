@@ -9,6 +9,7 @@ import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
@@ -78,6 +79,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackgroun
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
@@ -185,6 +187,7 @@ class EditorViewModel(
     fun onPreviewSlideDrag(slideId: String, afterId: String?, nest: Boolean = false, translationY: Float = 0f) { scope.launch { events.emit(PreviewSlideDrag(slideId, afterId, nest, translationY)) } }
     fun onEndSlideDrag() { scope.launch { events.emit(EndSlideDrag) } }
     fun onSetSlideSkipped(id: String, skipped: Boolean) { scope.launch { events.emit(SetSlideSkipped(id, skipped)) } }
+    fun onSetSlideTransition(slideId: String, transition: SlideTransition?) { scope.launch { events.emit(SetSlideTransition(slideId, transition)) } }
     fun onCopyElements(ids: List<String>) { scope.launch { events.emit(CopyElements(ids)) } }
     fun onCutElements(ids: List<String>) { scope.launch { events.emit(CutElements(ids)) } }
     fun onCopySlide(id: String) { scope.launch { events.emit(CopySlide(id)) } }

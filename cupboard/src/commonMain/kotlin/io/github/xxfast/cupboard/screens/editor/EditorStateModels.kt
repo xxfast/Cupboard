@@ -12,6 +12,7 @@ import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
@@ -611,6 +612,15 @@ sealed interface EditorEvent {
      * a slide already like this is a no-op.
      */
     data class SetSlideSkipped(val id: String, val skipped: Boolean) : EditorEvent
+    /**
+     * Dresses the slide in the transition that plays on the way out of it, null
+     * putting it back on the deck's default. One history entry, and a slide
+     * already wearing this transition is a no-op.
+     */
+    data class SetSlideTransition(
+        val slideId: String,
+        val transition: SlideTransition?,
+    ) : EditorEvent
     /**
      * Puts the elements [ids] resolves to on the clipboard, in z-order rather
      * than selection order: the slide's order is the one a paste has to keep.

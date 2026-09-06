@@ -9,6 +9,7 @@ import io.github.xxfast.cupboard.document.LineRange
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.resized
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.document.setSlideSkipped
@@ -59,11 +60,44 @@ class CupProjectExportTest {
 
         assertEquals(document.slides.size, slides.occurrences("by Slide("))
         document.slides.forEachIndexed { index, slide ->
+            // Prefix only: a slide with a transition carries its specs on the
+            // same line, which `aSlidesTransitionRidesOutWithIt` covers.
             assertContains(
                 slides,
-                "val slide${index + 1} by Slide(stepCount = ${slide.stepCount()}) { step ->",
+                "val slide${index + 1} by Slide(stepCount = ${slide.stepCount()}",
             )
         }
+    }
+
+    /**
+     * The transition goes out with the slide it plays on the way out of, as CuP's
+     * nearest set. Best effort: the export is a project that plays, not a copy of
+     * our own player.
+     */
+    @Test
+    fun aSlidesTransitionRidesOutWithIt() {
+        val document = sampleDocument()
+        val slides = document.toCupProject().contentsOf("src/commonMain/kotlin/presentation/Slides.kt")
+
+        val magic: Int = document.slides.indexOfFirst {
+            it.transition?.kind == TransitionKind.MagicMove
+        }
+        val push: Int = document.slides.indexOfFirst { it.transition?.kind == TransitionKind.Push }
+        assertTrue(magic != -1 && push != -1)
+
+        assertContains(slides, "import net.kodein.cup.SlideSpecs")
+        assertContains(
+            slides,
+            "val slide${magic + 1} by Slide(stepCount = 1, " +
+                "specs = SlideSpecs(endTransitions = TransitionSet.fade)) { step ->",
+        )
+        assertContains(
+            slides,
+            "specs = SlideSpecs(endTransitions = " +
+                "TransitionSet.moveHorizontal(LayoutDirection.Ltr))",
+        )
+        // A slide on the deck's default says nothing at all.
+        assertEquals(2, slides.occurrences("specs = SlideSpecs("))
     }
 
     /** The board is the deck's own slide, not the 16:9 one every deck used to be on. */

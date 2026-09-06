@@ -47,6 +47,7 @@ import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.resized
 import io.github.xxfast.cupboard.document.setSlideSkipped
+import io.github.xxfast.cupboard.document.setSlideTransition
 import io.github.xxfast.cupboard.document.slideAt
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideGroup
@@ -123,6 +124,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackgroun
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
@@ -888,6 +890,17 @@ fun EditorPresenter(
 
             is SetSlideSkipped -> {
                 val updated: Document = state.document.setSlideSkipped(event.id, event.skipped)
+                if (updated === state.document) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated)
+                }
+            }
+
+            is SetSlideTransition -> {
+                val updated: Document =
+                    state.document.setSlideTransition(event.slideId, event.transition)
                 if (updated === state.document) state
                 else {
                     undone.push(state.document)

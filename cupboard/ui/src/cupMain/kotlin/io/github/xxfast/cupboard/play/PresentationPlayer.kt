@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.play
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -24,10 +25,18 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import io.github.xxfast.cupboard.canvas.LocalPlayTransition
+import io.github.xxfast.cupboard.canvas.PlayTransition
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.TransitionTrigger
+import io.github.xxfast.cupboard.document.stepCount
+import kotlinx.coroutines.delay
 import net.kodein.cup.LocalPresentationState
 import net.kodein.cup.PluginCupAPI
 import net.kodein.cup.Presentation
+import net.kodein.cup.PresentationPosition
 import net.kodein.cup.PresentationState
 import net.kodein.cup.SlideSpecs
 import net.kodein.cup.Slides
@@ -70,7 +79,11 @@ public fun PresentationPlayer(
     onExit: (() -> Unit)? = null,
     controller: PlayerController = rememberPlayerController(),
 ) {
-    val slides = remember(document) { document.toCupSlides() }
+    val layoutDirection = LocalLayoutDirection.current
+    val slides = remember(document, layoutDirection) { document.toCupSlides(layoutDirection) }
+    // The same list CuP is playing, as our own slides: what the automatic
+    // trigger and the Magic Move below both read the document off.
+    val playing: List<Slide> = remember(document) { document.playedSlides() }
     // CuP's slide is a dp box, and only its aspect matters: the board inside
     // scales itself into whatever it is given. 360dp tall, so a 16:9 deck comes
     // out at exactly SLIDE_SIZE_16_9 and the common case is unchanged.
@@ -78,7 +91,6 @@ public fun PresentationPlayer(
         DpSize(360.dp * (document.slideWidth / document.slideHeight), 360.dp)
     }
     val focusRequester = remember { FocusRequester() }
-    val layoutDirection = LocalLayoutDirection.current
 
     Box(
         modifier = modifier
@@ -95,17 +107,52 @@ public fun PresentationPlayer(
                 onDispose { if (controller.state === state) controller.state = null }
             }
             val transitions = remember { TransitionSet.moveHorizontal(layoutDirection) }
-            Presentation(
-                slides = Slides(slides),
-                configuration = {
-                    defaultSlideSpecs = SlideSpecs(
-                        size = slideSize,
-                        startTransitions = transitions,
-                        endTransitions = transitions,
-                    )
-                },
-                backgroundColor = Color(0xFF101223),
-            )
+            val position: PresentationPosition = state.currentPosition
+
+            // The change now on screen, for the slides that draw across it
+            // rather than on one side of it. Worked out in composition rather
+            // than in an effect, so the arriving slide has it on the very first
+            // frame it is composed for.
+            val play: PlayTransition? = remember(playing, position.slideIndex, state.forward) {
+                val to: Slide = playing.getOrNull(position.slideIndex) ?: return@remember null
+                val neighbour: Int =
+                    if (state.forward) position.slideIndex - 1 else position.slideIndex + 1
+                val from: Slide = playing.getOrNull(neighbour) ?: return@remember null
+                // The leaving slide owns the animation going forward, the
+                // arriving one owns it coming back: either way it is the
+                // earlier slide's, played in the direction of travel.
+                val governing: SlideTransition =
+                    (if (state.forward) from.transition else to.transition) ?: return@remember null
+                PlayTransition(from, to, state.forward, governing)
+            }
+
+            // A slide that leaves on its own: once it is out of builds, it waits
+            // its delay out and goes. Never off the end of the deck, which would
+            // be the presentation closing itself.
+            LaunchedEffect(playing, position) {
+                val slide: Slide = playing.getOrNull(position.slideIndex) ?: return@LaunchedEffect
+                val transition: SlideTransition = slide.transition ?: return@LaunchedEffect
+                if (transition.trigger != TransitionTrigger.Automatic) return@LaunchedEffect
+                if (position.step < slide.stepCount() - 1) return@LaunchedEffect
+                if (position.slideIndex >= playing.lastIndex) return@LaunchedEffect
+
+                delay(transition.delayMs.toLong())
+                state.goToNextSlide()
+            }
+
+            CompositionLocalProvider(LocalPlayTransition provides play) {
+                Presentation(
+                    slides = Slides(slides),
+                    configuration = {
+                        defaultSlideSpecs = SlideSpecs(
+                            size = slideSize,
+                            startTransitions = transitions,
+                            endTransitions = transitions,
+                        )
+                    },
+                    backgroundColor = Color(0xFF101223),
+                )
+            }
         }
     }
 

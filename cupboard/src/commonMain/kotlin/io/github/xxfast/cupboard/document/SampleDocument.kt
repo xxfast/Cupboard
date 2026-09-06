@@ -17,6 +17,32 @@ private fun titleSlide(title: String, depth: Int = 0): Slide = Slide(
 )
 
 /**
+ * The line that travels: on "Why KMP" it is the subtitle, on the pipeline slide
+ * that follows it is a caption in the top corner, and Magic Move carries it from
+ * one to the other because both boxes say the same thing.
+ */
+private const val CarriedLine: String = "One codebase, three shells"
+
+/**
+ * "Why KMP", dressed in the Magic Move that hands [CarriedLine] to the pipeline
+ * slide behind it.
+ */
+private fun whyKmpSlide(): Slide {
+    val slide: Slide = titleSlide("Why KMP")
+    val subtitle = TextElement(
+        frame = Frame(146f, 281f, 1627f, 61f),
+        text = CarriedLine,
+        fontSize = 39f,
+        color = 0xFFA9A0D8,
+    )
+
+    return slide.copy(
+        elements = slide.elements + subtitle,
+        transition = SlideTransition(kind = TransitionKind.MagicMove),
+    )
+}
+
+/**
  * Shows off the highlighted code element, and the code steps it is walked
  * through: the deck's own document model, written out a piece at a time.
  *
@@ -257,6 +283,14 @@ fun sampleDocument(): Document {
             align = TextAlign.Center,
         )
     }
+    // Where the "Why KMP" subtitle lands: same words, so Magic Move flies it up
+    // here and shrinks it into a caption.
+    val carried = TextElement(
+        frame = Frame(1200f, 60f, 600f, 50f),
+        text = CarriedLine,
+        fontSize = 24f,
+        color = 0xFFA9A0D8,
+    )
     val image = ImageElement(frame = Frame(146f, 757f, 773f, 224f))
     val body = TextElement(
         frame = Frame(960f, 757f, 814f, 244f),
@@ -271,7 +305,7 @@ fun sampleDocument(): Document {
     val pipeline = Slide(
         title = "Rendering Pipeline",
         depth = 1,
-        elements = listOf(title, subtitle) + stages + arrows + listOf(image, body),
+        elements = listOf(title, subtitle, carried) + stages + arrows + listOf(image, body),
         builds = listOf(
             Build(stages[0].id),
             Build(arrows[0].id, trigger = BuildTrigger.WithPrevious),
@@ -280,6 +314,10 @@ fun sampleDocument(): Document {
             Build(stages[2].id),
             Build(arrows[2].id, trigger = BuildTrigger.WithPrevious),
             Build(stages[3].id),
+        ),
+        transition = SlideTransition(
+            kind = TransitionKind.Push,
+            direction = TransitionDirection.Left,
         ),
         notes = "Walk the pipeline left to right. Pause on Draw: this is the part " +
             "we replicate identically on all three platforms.",
@@ -290,7 +328,7 @@ fun sampleDocument(): Document {
         slides = listOf(
             titleSlide("Cupboard"),
             titleSlide("Agenda"),
-            titleSlide("Why KMP"),
+            whyKmpSlide(),
             pipeline,
             diagramSlide(),
             codeSlide(),

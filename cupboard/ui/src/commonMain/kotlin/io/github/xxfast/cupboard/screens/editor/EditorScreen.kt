@@ -62,6 +62,7 @@ import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
@@ -149,6 +150,8 @@ fun EditorScreen(
         onMoveSlide = viewModel::onMoveSlide,
         onEndSlideDrag = viewModel::onEndSlideDrag,
         onUpdateSlide = viewModel::onUpdateSlide,
+        onPreviewSlide = viewModel::onPreviewSlide,
+        onSetSlideTransition = viewModel::onSetSlideTransition,
         onPreviewMarquee = viewModel::onPreviewMarquee,
         onEndMarquee = viewModel::onEndMarquee,
         onCancelPreview = viewModel::onCancelPreview,
@@ -200,6 +203,11 @@ fun EditorView(
     onEndMarquee: () -> Unit,
     onCancelPreview: () -> Unit,
     onUpdateSlide: (Slide) -> Unit,
+    /** An in-flight sample of a slide, the inspector's transition duration drag. */
+    onPreviewSlide: (Slide) -> Unit,
+    /** The transition the slide plays on its way out; null puts it back on the
+     * deck's own. The Animate tab's transition section. */
+    onSetSlideTransition: (slideId: String, transition: SlideTransition?) -> Unit,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
     /** A toolbar insertion, already sized and placed: the element goes on the
@@ -504,6 +512,8 @@ fun EditorView(
                         onSelectTab = onSelectInspectorTab,
                         slide = selectedSlide,
                         onUpdateSlide = onUpdateSlide,
+                        onPreviewSlide = onPreviewSlide,
+                        onSetSlideTransition = onSetSlideTransition,
                         layouts = state.document.layouts,
                         isEditingLayouts = state.isEditingLayouts,
                         onApplyLayout = onApplyLayout,
