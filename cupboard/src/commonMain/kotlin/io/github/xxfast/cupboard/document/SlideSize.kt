@@ -109,6 +109,10 @@ private fun Element.scaled(scaleX: Float, scaleY: Float, scaleType: Float): Elem
         is EquationElement -> copy(frame = scaledFrame, fontSize = fontSize * scaleType)
         is ImageElement -> copy(frame = scaledFrame)
         is GalleryElement -> copy(frame = scaledFrame)
+        // Nothing about a movie or a sound is set in document units but its box:
+        // the pixels are the asset's own, and a trim is measured in milliseconds.
+        is VideoElement -> copy(frame = scaledFrame)
+        is AudioElement -> copy(frame = scaledFrame)
         is GroupElement -> update(frame = scaledFrame)
     }
 }

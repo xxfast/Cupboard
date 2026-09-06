@@ -258,6 +258,58 @@ private fun fitInside(frame: Frame, width: Float, height: Float): Frame {
     )
 }
 
+/**
+ * The box a fresh movie inserts into: 16:9 at half of a widescreen slide, which
+ * is the shape all but a handful of movies already are.
+ *
+ * Not fitted to the movie's own aspect the way an image is, because nothing here
+ * has decoded it: the natural size of a movie is a platform player's to report,
+ * and the box is resized once it does rather than guessed at now.
+ */
+const val DefaultVideoWidth: Float = 960f
+const val DefaultVideoHeight: Float = 540f
+
+/**
+ * A fresh movie filling [frame], playing [assetId]'s bytes or standing for the
+ * page at [webUrl].
+ *
+ * Both are nullable and both may be given: the bytes are what plays and the url
+ * is then only where they came from. Neither is a media frame with nothing behind
+ * it yet, which is what an insert leaves when its file goes missing.
+ *
+ * [defaults] is taken and not read, the way [imageElement] takes it: a movie has
+ * no colours to inherit, and one signature across the insert factories is worth
+ * more than the parameter costs.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun videoElement(
+    frame: Frame,
+    assetId: String? = null,
+    webUrl: String? = null,
+    defaults: ElementDefaults = ElementDefaults(),
+): VideoElement = VideoElement(frame = frame, assetId = assetId, webUrl = webUrl)
+
+/** The pill a fresh sound inserts as: wide enough for a name, one line high. */
+const val DefaultAudioWidth: Float = 320f
+const val DefaultAudioHeight: Float = 64f
+
+/**
+ * A fresh sound filling [frame], playing [assetId]'s bytes under [title].
+ *
+ * The title is the whole of what the audience sees of a sound, so it is a
+ * parameter rather than something set afterwards: an insert names the file it
+ * came from and the pill reads as that from the moment it lands.
+ *
+ * [defaults] is taken and not read, for [videoElement]'s reason.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun audioElement(
+    frame: Frame,
+    assetId: String,
+    title: String = "",
+    defaults: ElementDefaults = ElementDefaults(),
+): AudioElement = AudioElement(frame = frame, assetId = assetId, title = title)
+
 /** The box a fresh equation inserts into. */
 const val DefaultEquationWidth: Float = 480f
 const val DefaultEquationHeight: Float = 140f

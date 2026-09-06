@@ -760,3 +760,121 @@ data class EquationElement(
         locked = locked,
     )
 }
+
+/**
+ * A movie on a slide: either bytes the deck owns or a page somewhere else.
+ *
+ * [assetId] is the embedded route, an id the asset store resolves the way an
+ * image's is, and it is what a player is handed. [webUrl] is the other one: a
+ * video that lives on a site, which nothing here downloads and no canvas draws.
+ * Both null is an element with nothing behind it yet, which draws the placeholder
+ * a media frame does.
+ *
+ * Set together, the bytes win: an embedded movie is the one that plays offline,
+ * and the url is then only where it came from. That is why a tap on a web-only
+ * video opens the page instead of playing anything.
+ *
+ * [posterAssetId] is the still the slide shows while nothing is playing, and the
+ * whole of what the shared canvas can draw of a movie: decoding frames is a
+ * platform player's job, and this element is what it is asked with. See
+ * `MediaPlayerHost`.
+ *
+ * [trimStartMs] and [trimEndMs] are the window of the movie that plays, in
+ * milliseconds from its own start. [trimEndMs] 0 means to the end, so a movie
+ * nobody has trimmed carries no duration it would have to be kept in step with.
+ *
+ * [volume] is 0 to 1 of the host's own level, and [title] is what the slide says
+ * the movie is: content rather than style, which is why a pasted style leaves it.
+ */
+@Serializable
+@SerialName("video")
+data class VideoElement(
+    override val id: String = newId(),
+    override val frame: Frame,
+    override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
+    /** What the asset store resolves to this movie's bytes. Null is a web or empty video. */
+    val assetId: String? = null,
+    /** A video hosted elsewhere, opened rather than played. Ignored when [assetId] is set. */
+    val webUrl: String? = null,
+    /** The still the canvas draws. Null draws the dark media box instead. */
+    val posterAssetId: String? = null,
+    val trimStartMs: Int = 0,
+    /** 0 plays to the end, so an untrimmed movie carries no duration of its own. */
+    val trimEndMs: Int = 0,
+    val loop: Boolean = false,
+    /** 0 to 1 of whatever the host is playing at. */
+    val volume: Float = 1f,
+    /** Plays as soon as the build order brings the element on screen. */
+    val autoplay: Boolean = false,
+    val title: String = "",
+) : Element {
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
+}
+
+/**
+ * A sound on a slide: bytes the deck owns, drawn as the pill that says they are
+ * there.
+ *
+ * The same trim, loop, volume and autoplay a [VideoElement] carries, and for the
+ * same reason: what a host is asked to play is one set of facts whether or not
+ * there are pixels in it. There is no web route and no poster, because neither
+ * means anything without a picture: a sound is either in the bundle or it is
+ * nothing the slide can play.
+ *
+ * [title] is what the pill reads, which is the whole of what the audience sees of
+ * a sound. Empty is a pill that names itself.
+ */
+@Serializable
+@SerialName("audio")
+data class AudioElement(
+    override val id: String = newId(),
+    override val frame: Frame,
+    override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
+    /** What the asset store resolves to this sound's bytes. Null is an empty pill. */
+    val assetId: String? = null,
+    val trimStartMs: Int = 0,
+    /** 0 plays to the end. See [VideoElement.trimEndMs]. */
+    val trimEndMs: Int = 0,
+    val loop: Boolean = false,
+    val volume: Float = 1f,
+    val autoplay: Boolean = false,
+    val title: String = "",
+) : Element {
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
+}

@@ -74,6 +74,11 @@ fun Element.matchKey(): String = when (this) {
     // the cut: which one it is showing at the moment of the cut is not part of
     // what makes it the same object.
     is GalleryElement -> "gallery:${images.firstOrNull()?.assetId.orEmpty()}"
+    // What the movie is, whichever way it is held: the bytes when the deck owns
+    // them, the page when it doesn't. Trim, volume and loop are how it plays
+    // rather than what it is, so a retrimmed movie still travels across the cut.
+    is VideoElement -> "video:${assetId ?: webUrl.orEmpty()}"
+    is AudioElement -> "audio:${assetId.orEmpty()}"
     is GroupElement -> "group:${children.joinToString("|") { it.matchKey() }}"
 }
 

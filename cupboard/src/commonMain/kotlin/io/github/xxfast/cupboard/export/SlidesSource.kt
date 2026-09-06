@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.export
 
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.BuildDelivery
@@ -11,6 +12,8 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GalleryElement
+import io.github.xxfast.cupboard.document.GalleryImage
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
@@ -24,6 +27,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.buildTimeline
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.highlightedLines
@@ -180,6 +184,9 @@ private fun SourceWriter.body(slide: Slide, element: Element) {
         is DiagramElement -> diagram(element)
         is EquationElement -> equation(element)
         is ImageElement -> image(element)
+        is GalleryElement -> gallery(element)
+        is VideoElement -> video(element)
+        is AudioElement -> audio(element)
         // Groups never reach here: they are flattened into their children above.
         is GroupElement -> Unit
     }
@@ -422,6 +429,68 @@ private fun SourceWriter.equation(element: EquationElement) {
         line("textAlign = TextAlign.Center,")
         line("modifier = Modifier.fillMaxWidth(),")
     }
+}
+
+/**
+ * A gallery exports as the one picture the editor is showing.
+ *
+ * Its steps are dropped rather than written out: the images have no bytes in the
+ * export to cycle through, so a carousel of placeholders would say less than the
+ * one frame the deck was authored on.
+ */
+private fun SourceWriter.gallery(element: GalleryElement) {
+    line("// TODO(cupboard): a gallery exports as its current image, without its steps")
+    image(element.currentImage())
+}
+
+/** The gallery as the single image it is showing, for anything that draws one picture. */
+private fun GalleryElement.currentImage(): ImageElement {
+    val at: Int = current.coerceIn(0, images.lastIndex.coerceAtLeast(0))
+    val image: GalleryImage? = images.getOrNull(at)
+    return ImageElement(
+        id = id,
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+        placeholder = "Gallery",
+        assetId = image?.assetId,
+        naturalWidth = image?.naturalWidth ?: 0,
+        naturalHeight = image?.naturalHeight ?: 0,
+        adjust = adjust,
+        caption = if (showCaptions) image?.caption.orEmpty() else "",
+    )
+}
+
+/**
+ * A movie as the still it stands for. Nothing plays: the export is a Compose
+ * source file, and playing is a platform player's job on the far side of
+ * `MediaPlayerHost`, which an exported deck has none of.
+ */
+private fun SourceWriter.video(element: VideoElement) {
+    line("// TODO(cupboard): a video exports as a still, and neither plays nor embeds")
+    image(
+        ImageElement(
+            id = element.id,
+            frame = element.frame,
+            placeholder = element.title.ifBlank { element.webUrl ?: "Video" },
+            assetId = element.posterAssetId,
+        ),
+    )
+}
+
+/** A sound as the box that says it is there, for [video]'s reason. */
+private fun SourceWriter.audio(element: AudioElement) {
+    line("// TODO(cupboard): an audio element exports as its title, and does not play")
+    image(
+        ImageElement(
+            id = element.id,
+            frame = element.frame,
+            placeholder = element.title.ifBlank { "Audio" },
+        ),
+    )
 }
 
 private fun SourceWriter.image(element: ImageElement) {

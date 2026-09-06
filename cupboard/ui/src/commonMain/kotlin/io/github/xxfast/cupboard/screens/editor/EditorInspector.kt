@@ -89,6 +89,7 @@ import io.github.xxfast.cupboard.canvas.gradientStop
 import io.github.xxfast.cupboard.canvas.title
 import io.github.xxfast.cupboard.document.ActionKind
 import io.github.xxfast.cupboard.document.AssetStore
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAction
 import io.github.xxfast.cupboard.document.BuildDelivery
@@ -129,6 +130,7 @@ import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TransitionTrigger
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.action
 import io.github.xxfast.cupboard.document.applyingObjectStyle
@@ -2955,6 +2957,8 @@ private fun Element.buildTitle(): String = when (this) {
     is DiagramElement -> "Diagram"
     is ImageElement -> "Image"
     is GalleryElement -> titled("Gallery", images.firstOrNull()?.caption.orEmpty())
+    is VideoElement -> titled("Video", title.ifBlank { webUrl.orEmpty() })
+    is AudioElement -> titled("Audio", title)
     is GroupElement -> "Group"
 }
 

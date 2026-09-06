@@ -6,10 +6,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,6 +50,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +62,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
@@ -74,6 +79,7 @@ import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ImageMask
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.ShapeElement
@@ -84,6 +90,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.colorMatrix
 import io.github.xxfast.cupboard.document.imageSourceRect
 import io.github.xxfast.cupboard.document.listBody
@@ -129,6 +136,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * the image being authored ([GalleryElement.current]) and none of the dots the
  * audience gets.
  *
+ * [playing] is whether this is the show rather than the editor, and the whole of
+ * what a movie and a sound need to know about which: only there do they autoplay,
+ * answer a tap and stop themselves on the way out. The editor draws the same
+ * poster and the same pill, at rest.
+ *
  * [transform] overrides the element's own opacity and rotation and rides a
  * translation and a scale on top of its frame, for an element in flight: a Magic
  * Move between two slides is the one thing that draws one. Null is the element at
@@ -146,6 +158,7 @@ fun ElementView(
     entry: Build? = null,
     pieces: PieceReveal? = null,
     transform: ElementTransform? = null,
+    playing: Boolean = false,
 ) {
     Box(
         modifier = modifier
@@ -173,6 +186,8 @@ fun ElementView(
                 indicators = galleryIndex != null,
             )
 
+            is VideoElement -> VideoElementView(element, playing)
+            is AudioElement -> AudioElementView(element, playing)
             is CodeElement -> CodeElementView(element, codeStep)
             is TerminalElement -> TerminalElementView(element, entry, pieces?.linesShown())
             is DiagramElement -> DiagramElementView(element, diagramStep)
@@ -684,6 +699,221 @@ private fun GalleryDots(count: Int, current: Int, modifier: Modifier = Modifier)
                 color = Color.White.copy(alpha = if (dot == current) 0.9f else 0.35f),
                 radius = radius,
                 center = Offset(radius + dot * stride, radius),
+            )
+        }
+    }
+}
+
+/**
+ * The near-black a movie box and an audio pill are drawn on: darker than the
+ * slide, so a media element reads as a hole in it rather than as a panel on it.
+ */
+private const val MediaSurface: Long = 0xFF0E0F13
+
+/** The play badge's diameter, and how far a movie's title sits off the bottom edge. */
+private const val PlayGlyphSize: Float = 64f
+private const val MediaTitleInset: Float = 10f
+
+/** The pill's speaker, and the room between it and the title beside it. */
+private const val SpeakerGlyphSize: Float = 22f
+private const val AudioPillPadding: Float = 16f
+private const val AudioGlyphGap: Float = 12f
+private const val AudioTitleSize: Float = 16f
+private const val AudioTrackHeight: Float = 3f
+
+/**
+ * A movie at rest: its poster frame, the badge that says it plays, and what it
+ * is called.
+ *
+ * The still is all the shared canvas ever draws. Decoding a movie is a platform
+ * player's job, so [playing] mode hands the element to [LocalMediaPlayer] and the
+ * host puts its own surface over this box; what stays here is what the slide
+ * looks like before it does, which is also the whole of the editor's canvas.
+ *
+ * A tap plays, except on a movie that is only a [VideoElement.webUrl]: there is
+ * nothing to play, so it opens the page through [LocalLinkHandler] instead, the
+ * way any other link on a slide is opened.
+ */
+@Composable
+private fun VideoElementView(element: VideoElement, playing: Boolean) {
+    val poster: ImageBitmap? = rememberAssetImage(element.posterAssetId)
+    val player: MediaPlayerHost = LocalMediaPlayer.current
+    val links: (LinkTarget) -> Unit = LocalLinkHandler.current
+    val caption: String = element.title.ifBlank { element.webUrl.orEmpty() }
+
+    // Leaving the slide is the composition going away: an element a build takes
+    // back out, a step that cuts to the next slide and the show ending all read
+    // the same way here, which is what keeps a movie from playing on over them.
+    if (playing) {
+        DisposableEffect(element.id, player) { onDispose { player.stop(element.id) } }
+
+        LaunchedEffect(element.id, player, element.autoplay) {
+            if (element.autoplay) player.play(element.mediaRequest())
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .then(
+                if (!playing) Modifier
+                else Modifier.pointerInput(element, player, links) {
+                    detectTapGestures {
+                        val web: String? = element.webUrl
+                        if (element.assetId == null && web != null) links(LinkTarget.Url(web))
+                        else player.play(element.mediaRequest())
+                    }
+                },
+            ),
+    ) {
+        if (poster == null) {
+            Box(
+                modifier = Modifier
+                    .size(element.frame.width.dp, element.frame.height.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MediaSurface.toComposeColor()),
+            )
+        } else {
+            AssetImageContent(
+                image = poster,
+                adjust = ImageAdjust(),
+                mask = null,
+                // Not recorded on the element: a poster is a still of the movie
+                // rather than a picture in its own right, so it is measured off
+                // the bitmap the way an image written before decode is.
+                naturalWidth = 0,
+                naturalHeight = 0,
+                width = element.frame.width,
+                height = element.frame.height,
+            )
+        }
+
+        PlayGlyph(Modifier.align(Alignment.Center))
+
+        if (caption.isNotEmpty()) {
+            Caption(
+                text = caption,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = MediaTitleInset.dp),
+            )
+        }
+    }
+}
+
+/** The badge over a movie: a translucent disc with a triangle in it. */
+@Composable
+private fun PlayGlyph(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(PlayGlyphSize.dp)) {
+        val radius: Float = size.minDimension / 2
+        drawCircle(color = Color.Black.copy(alpha = 0.45f), radius = radius)
+        drawCircle(
+            color = Color.White.copy(alpha = 0.85f),
+            radius = radius - 1.dp.toPx(),
+            style = Stroke(width = 2.dp.toPx()),
+        )
+
+        // Nudged right of centre by an eighth of the radius: a triangle balances
+        // on its area rather than on its box, and centred by its box it reads as
+        // leaning backwards.
+        val half: Float = radius * 0.42f
+        val nose: Float = center.x + radius * 0.48f
+        drawPath(
+            path = Path().apply {
+                moveTo(center.x - radius * 0.24f, center.y - half)
+                lineTo(center.x - radius * 0.24f, center.y + half)
+                lineTo(nose, center.y)
+                close()
+            },
+            color = Color.White.copy(alpha = 0.9f),
+        )
+    }
+}
+
+/**
+ * A sound: the pill that says one is on the slide, its name, and a track under it.
+ *
+ * The track is drawn and never moves. What a sound is doing is the host player's,
+ * and nothing the host knows comes back through the document, so a bar that
+ * looked live would be lying; what it is here for is to say the pill is a
+ * transport rather than a label. See [MediaPlayerHost].
+ */
+@Composable
+private fun AudioElementView(element: AudioElement, playing: Boolean) {
+    val player: MediaPlayerHost = LocalMediaPlayer.current
+
+    if (playing) {
+        DisposableEffect(element.id, player) { onDispose { player.stop(element.id) } }
+
+        LaunchedEffect(element.id, player, element.autoplay) {
+            if (element.autoplay) player.play(element.mediaRequest())
+        }
+    }
+
+    Row(
+        modifier = Modifier
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .clip(RoundedCornerShape(percent = 50))
+            .background(MediaSurface.toComposeColor())
+            .then(
+                if (!playing) Modifier
+                else Modifier.pointerInput(element, player) {
+                    detectTapGestures { player.play(element.mediaRequest()) }
+                },
+            )
+            .padding(horizontal = AudioPillPadding.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SpeakerGlyph()
+
+        Column(modifier = Modifier.weight(1f).padding(start = AudioGlyphGap.dp)) {
+            Text(
+                text = element.title.ifBlank { "Audio" },
+                color = Color.White.copy(alpha = 0.85f),
+                fontSize = AudioTitleSize.sp,
+                fontFamily = FontFamily.SansSerif,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Canvas(modifier = Modifier.fillMaxWidth().height(AudioTrackHeight.dp)) {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.25f),
+                    start = Offset(0f, size.height / 2),
+                    end = Offset(size.width, size.height / 2),
+                    strokeWidth = size.height,
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
+    }
+}
+
+/** The pill's speaker: a cone and two arcs, drawn rather than set in a font. */
+@Composable
+private fun SpeakerGlyph(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier.size(SpeakerGlyphSize.dp)) {
+        val ink: Color = Color.White.copy(alpha = 0.8f)
+        val unit: Float = size.minDimension / 22f
+
+        drawPath(
+            path = Path().apply {
+                moveTo(3 * unit, 8 * unit)
+                lineTo(7 * unit, 8 * unit)
+                lineTo(12 * unit, 3 * unit)
+                lineTo(12 * unit, 19 * unit)
+                lineTo(7 * unit, 14 * unit)
+                lineTo(3 * unit, 14 * unit)
+                close()
+            },
+            color = ink,
+        )
+
+        for (arc in 1..2) {
+            drawCircle(
+                color = ink.copy(alpha = 0.8f / arc),
+                radius = (2 + arc * 2.5f) * unit,
+                center = Offset(13 * unit, 11 * unit),
+                style = Stroke(width = 1.5f * unit),
             )
         }
     }

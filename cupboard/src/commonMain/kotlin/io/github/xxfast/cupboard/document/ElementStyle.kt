@@ -16,6 +16,8 @@ package io.github.xxfast.cupboard.document
  * [ImageElement.caption], [ShapeElement.label], [CodeElement.code],
  * [CodeElement.language], [TerminalElement.text], [TerminalElement.title],
  * [DiagramElement.source], [DiagramElement.steps], [EquationElement.latex],
+ * [VideoElement.assetId], [VideoElement.webUrl], [VideoElement.posterAssetId],
+ * [AudioElement.assetId], the trims, both titles and both autoplays,
  * [ShapeElement.kind]), the
  * geometry (frame, rotation, flips) and the lock.
  * Copying a style is not copying an element, and pasting one onto a laid-out
@@ -101,6 +103,21 @@ fun Element.applyingStyle(source: Element): Element = when {
         opacity = source.opacity,
         adjust = source.adjust,
         showCaptions = source.showCaptions,
+    )
+
+    // How loudly and how many times a movie plays is the whole of its look: what
+    // it is (the bytes, the url, the poster), where it is cut and whether it
+    // starts on its own are content, and mean nothing on a different movie.
+    this is VideoElement && source is VideoElement -> copy(
+        opacity = source.opacity,
+        loop = source.loop,
+        volume = source.volume,
+    )
+
+    this is AudioElement && source is AudioElement -> copy(
+        opacity = source.opacity,
+        loop = source.loop,
+        volume = source.volume,
     )
 
     // A group has no style of its own, and neither does any pair of types that

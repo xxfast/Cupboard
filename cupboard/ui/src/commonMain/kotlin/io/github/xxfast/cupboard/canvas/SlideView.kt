@@ -200,6 +200,10 @@ fun SlideView(
                         entry = entry?.build,
                         pieces = reveal,
                         transform = transform,
+                        // A step is what makes this the show: a movie autoplays,
+                        // answers a tap and stops itself here, and does none of
+                        // the three on the editor's canvas.
+                        playing = true,
                     )
                 }
             }

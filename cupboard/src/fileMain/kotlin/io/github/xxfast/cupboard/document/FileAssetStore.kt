@@ -41,6 +41,18 @@ class FileAssetStore(private val directory: Path) : AssetStore {
     }
 
     /**
+     * Where [id]'s bytes sit on disk, whether or not anything is there yet.
+     *
+     * The one thing an [AssetStore] deliberately cannot answer, and the one thing
+     * a platform media player needs: AVPlayer and MediaPlayer open a file, not a
+     * ByteArray, and a movie is far too large to be read through [read] just to
+     * be written back out to a temporary file. So the hosts that have a real
+     * bundle hand the path over, and the ones that don't ([InMemoryAssetStore])
+     * have no movies to play in the first place.
+     */
+    fun pathOf(id: String): String = fileFor(id).toString()
+
+    /**
      * Ids name a file in [directory] and nothing else. Anything with a separator
      * in it would reach out of the bundle, which is a bug in the caller rather
      * than a case to handle.

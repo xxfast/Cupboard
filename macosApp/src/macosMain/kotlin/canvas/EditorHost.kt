@@ -29,6 +29,7 @@ import io.github.xxfast.cupboard.recentDocuments
 import io.github.xxfast.cupboard.saveAs
 import io.github.xxfast.cupboard.document.ActionKind
 import io.github.xxfast.cupboard.document.AssetStore
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAction
 import io.github.xxfast.cupboard.document.BuildDelivery
@@ -83,6 +84,7 @@ import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TransitionTrigger
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.action
 import io.github.xxfast.cupboard.document.allSlides
@@ -364,6 +366,8 @@ private fun Element.kindName(): String = when (this) {
     is ShapeElement -> "Shape"
     is ImageElement -> "Image"
     is GalleryElement -> "Gallery"
+    is VideoElement -> "Video"
+    is AudioElement -> "Audio"
     is CodeElement -> "Code"
     is TerminalElement -> "Terminal"
     is DiagramElement -> "Diagram"
@@ -383,6 +387,8 @@ private fun Element.rowTitle(): String {
         is ShapeElement -> label.ifBlank { kind.name }
         is ImageElement -> placeholder
         is GalleryElement -> "${images.size} images"
+        is VideoElement -> title.ifBlank { webUrl.orEmpty() }
+        is AudioElement -> title
         is CodeElement -> language
         is TerminalElement -> title
         is DiagramElement -> source
