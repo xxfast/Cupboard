@@ -16,3 +16,14 @@ import platform.Foundation.NSHomeDirectory
  */
 fun Cupboard.editor(dispatcher: CoroutineDispatcher = Dispatchers.Main): EditorViewModel =
     editor(CupboardBundle.default(Path(NSHomeDirectory(), ".cupboard")), dispatcher)
+
+/**
+ * [openDocument] on the main dispatcher, which is the only one a SwiftUI host
+ * has. The dispatcher-taking version is there for the hosts with no main loop of
+ * their own; Swift cannot name a `CoroutineDispatcher` anyway.
+ */
+fun Cupboard.openDocument(path: String): OpenResult = openDocument(path, Dispatchers.Main)
+
+/** [saveAs] on the main dispatcher. [openDocument]'s reasoning. */
+fun Cupboard.saveAs(viewModel: EditorViewModel, path: String): EditorViewModel =
+    saveAs(viewModel, path, Dispatchers.Main)

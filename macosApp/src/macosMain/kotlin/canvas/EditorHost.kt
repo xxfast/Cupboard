@@ -21,6 +21,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.renderComposeScene
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
+import io.github.xxfast.cupboard.OpenResult
+import io.github.xxfast.cupboard.forgetRecent
+import io.github.xxfast.cupboard.newDocument
+import io.github.xxfast.cupboard.openDocument
+import io.github.xxfast.cupboard.recentDocuments
+import io.github.xxfast.cupboard.saveAs
 import io.github.xxfast.cupboard.document.ActionKind
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAction
@@ -888,12 +894,27 @@ class PlaySession internal constructor(
  * Only the canvas is Compose; the chrome around it is the host's business.
  * No state lives here, it all belongs to the view model.
  */
-class EditorHost {
-    // Private: the framework only exports this file's types, so the view model
-    // stays a Kotlin-side detail. Swift talks to it through the methods below.
-    // The factory owns the store and the path, which is deliberately the one the
-    // Compose Desktop shell uses: two front ends onto one document, not two apps.
-    private val viewModel = Cupboard.editor()
+class EditorHost(
+    /**
+     * The editor this host is a front end onto. Internal, not private: Swift
+     * talks to the view model through the methods below and never holds one, but
+     * [Documents] hands a host the editor it just opened, so one window can be
+     * on a deck the user picked rather than on this machine's default one.
+     *
+     */
+    internal val viewModel: EditorViewModel,
+) {
+    /**
+     * A host on this machine's default deck, which is what the first window
+     * opens on. Deliberately the bundle the Compose Desktop shell opens: two
+     * front ends onto one document, not two apps.
+     *
+     * A secondary constructor rather than a default argument: ObjC export only
+     * emits the full initializer, so a defaulted parameter would leave Swift
+     * with no way to ask for the default deck.
+     */
+    constructor() : this(Cupboard.editor())
+
 
     /** The state the sidebar reads right now. Never stale: the canvas and this
      * are the same flow, so an edit made in Compose shows up here too. */
@@ -2785,6 +2806,28 @@ class EditorHost {
     }
 
     /**
+     * The bundle this window is on. What the shell compares an Open against, so
+     * a deck that is already up gets its window raised instead of a second one.
+     * Empty for a host with no bundle behind it.
+     */
+    fun location(): String = viewModel.location
+
+    /** The deck's name, which is what the toolbar puts where a title bar would be. */
+    fun title(): String = state.title
+
+    /**
+     * Whether the last few edits are still on their way to disk, which is what
+     * the toolbar's "Edited" tag is behind. Not dirtiness: everything is saved,
+     * this only says the debounced write has not landed yet.
+     */
+    fun isEdited(): Boolean = state.savePending
+
+    /** File > Rename. The bundle keeps its own name; only the deck is renamed. */
+    fun renameDocument(name: String) {
+        viewModel.onRenameDocument(name)
+    }
+
+    /**
      * Stops the editor (autosave included) and tears the scope down. Optional: a
      * document app keeps one editor for its whole life, so a host that never
      * closes the editor can leave this alone and let process exit do it.
@@ -2794,3 +2837,54 @@ class EditorHost {
         viewModel.close()
     }
 }
+
+/**
+ * What File > New, Open, Save As and Open Recent come down to, as flat functions
+ * a SwiftUI menu can call.
+ *
+ * A namespace rather than state: nothing is held here, every call goes straight
+ * to `Cupboard`'s factories and comes back as an [EditorHost] the shell puts in
+ * a window. Kept out of [EditorHost] because none of it is about one window: a
+ * host that is being saved as is the argument, not the receiver.
+ */
+object Documents {
+    /**
+     * Lays out a fresh `Untitled.cupboard` in Cupboard's own folder and says
+     * where it went. Open it with [open] like any other deck; nothing is opened
+     * here, so New and a double-clicked file are one path.
+     */
+    fun newDocument(): String = Cupboard.newDocument()
+
+    /** The deck at [path] in a host of its own, or why it could not be opened. */
+    fun open(path: String): OpenOutcome = when (val result: OpenResult = Cupboard.openDocument(path)) {
+        is OpenResult.Opened -> OpenOutcome(EditorHost(result.viewModel), null)
+        is OpenResult.Failed -> OpenOutcome(null, result.reason)
+    }
+
+    /**
+     * [host]'s deck copied into a new bundle at [path], and a host on that.
+     *
+     * The window swaps to what comes back and closes the one it passed in: a
+     * view model's bundle is fixed for its life, so Save As is a new editor
+     * rather than a moved one.
+     */
+    fun saveAs(host: EditorHost, path: String): EditorHost =
+        EditorHost(Cupboard.saveAs(host.viewModel, path))
+
+    /** The decks this machine opened last, newest first, for Open Recent. */
+    fun recents(): List<String> = Cupboard.recentDocuments()
+
+    /** Takes [path] out of that list, for the menu's Clear. */
+    fun forgetRecent(path: String) {
+        Cupboard.forgetRecent(path)
+    }
+}
+
+/**
+ * Either the host a deck opened into or the sentence saying why it did not.
+ *
+ * A pair rather than a nullable host because a failure has something to say, and
+ * a plain class rather than a sealed hierarchy because Swift reads two optional
+ * properties more easily than it type-checks an exported ObjC class.
+ */
+class OpenOutcome(val host: EditorHost?, val error: String?)

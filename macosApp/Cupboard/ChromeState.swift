@@ -8,6 +8,10 @@ import CupboardCanvas
 /// Everything a click shows comes back through here, never from a local copy.
 /// A value, so the window and the menus read the same editor the same way.
 struct Chrome {
+    /// The deck's name, and whether the last few edits are still on their way to
+    /// disk. What the toolbar puts where a title bar would be.
+    let documentTitle: String
+    let edited: Bool
     let sidebarOpen: Bool
     let inspectorOpen: Bool
     let tab: InspectorTab
@@ -106,6 +110,8 @@ struct Chrome {
     let actionKinds: [String]
 
     init(_ host: EditorHost) {
+        documentTitle = host.title()
+        edited = host.isEdited()
         sidebarOpen = host.sidebarOpen()
         inspectorOpen = host.inspectorOpen()
         tab = host.inspectorTab()

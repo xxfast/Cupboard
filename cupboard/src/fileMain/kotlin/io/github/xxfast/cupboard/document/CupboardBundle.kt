@@ -6,6 +6,7 @@ import io.github.xxfast.kstore.file.storeOf
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.readString
 import kotlinx.io.writeString
 
 /**
@@ -76,6 +77,20 @@ object CupboardBundle {
         SystemFileSystem.createDirectories(Path(path, ASSETS_DIRECTORY))
         SystemFileSystem.sink(documentFile(path)).buffered()
             .use { it.writeString(document.encodeToString()) }
+    }
+
+    /**
+     * The deck's JSON as it sits in [bundle], or null when there is none.
+     *
+     * Read straight rather than through [documentStore] so [decodeDocument] can
+     * name what is wrong with it: a store hands back its default for a file it
+     * cannot read, which is how a deck from a newer Cupboard would quietly open
+     * as the sample one.
+     */
+    internal fun read(bundle: Path): String? {
+        val file: Path = documentFile(bundle)
+        if (!SystemFileSystem.exists(file)) return null
+        return SystemFileSystem.source(file).buffered().use { it.readString() }
     }
 
     /**

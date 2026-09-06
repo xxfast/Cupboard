@@ -46,11 +46,22 @@ extension EditorView {
         .frame(height: Layout.header)
     }
 
+    /// Where a title bar would be, since there isn't one: the deck's name, and
+    /// under it whether the last few edits have made it to disk yet. The tag is
+    /// a fixed-height row rather than one that comes and goes, so the name does
+    /// not shift up and down as the autosave lands.
     var documentName: some View {
-        HStack(spacing: 5) {
-            Text("Untitled")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.title)
+        let ui = chrome
+        return HStack(spacing: 5) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(ui.documentTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.title)
+                Text("Edited")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.faint)
+                    .opacity(ui.edited ? 1 : 0)
+            }
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(palette.faint)

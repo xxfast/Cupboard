@@ -1,50 +1,89 @@
 package io.github.xxfast.cupboard
 
 import io.github.xxfast.cupboard.document.CupboardBundle
-import io.github.xxfast.cupboard.document.Document
-import io.github.xxfast.cupboard.document.FileAssetStore
-import io.github.xxfast.cupboard.document.Theme
-import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
-import io.github.xxfast.kstore.KStore
-import io.github.xxfast.kstore.file.storeOf
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.files.Path
 
 /**
+ * Cupboard's own folder on this machine: the recents list and the theme library,
+ * and the default deck until the user saves one somewhere of their own.
+ *
+ * Never a deck's folder. Both of those files are the person's rather than the
+ * document's, so they stay out of any bundle that might get mailed on.
+ */
+fun cupboardDirectory(): Path = Path(System.getProperty("user.home"), ".cupboard")
+
+/**
  * An editor over a `.cupboard` bundle, creating it if missing, defaulting to
- * `~/.cupboard/Untitled.cupboard` so this shell and the macOS one edit one deck.
+ * `~/.cupboard/Untitled.cupboard` so this shell and the macOS one open on the
+ * same deck.
  *
- * Still one deck per machine until open/save-as lands, but the thing on disk is
- * now the real format: a folder with `document.json` and `assets/` in it. A
- * pre-bundle `~/.cupboard/document.json` moves into it on the way past, see
- * [CupboardBundle.migrate].
- *
- * The theme library is not the deck's, it is the machine's, so it stays beside
- * the bundle rather than inside it: `<bundle's folder>/themes.json`.
+ * A pre-bundle `~/.cupboard/document.json` moves into it on the way past, see
+ * [CupboardBundle.migrate]. Opening remembers the bundle, so it is in the
+ * recents list the shell shows next time.
  *
  * [dispatcher] is the host's serialized main dispatcher; never Unconfined, see
  * [EditorViewModel]'s scope note.
  *
- * The body duplicates the native factory's few lines on purpose: the layout is
- * shared through [CupboardBundle], and what is left is a `runBlocking` that has
- * no common declaration across jvm and native to be written once.
+ * [directory] is where the recents list and theme library go, the folder the
+ * bundle sits in by default. A shell opening decks the user picked passes
+ * [cupboardDirectory] instead, which is what [openDocument] defaults to: files
+ * belonging to the app do not follow the deck around the filesystem.
+ *
+ * Blocking is right here: there is no editor to show until the document loads.
  */
 fun Cupboard.editor(
-    bundle: Path = CupboardBundle.default(Path(System.getProperty("user.home"), ".cupboard")),
+    bundle: Path = CupboardBundle.default(cupboardDirectory()),
     dispatcher: CoroutineDispatcher = Dispatchers.Main,
-): EditorViewModel {
-    val directory: Path = bundle.parent ?: Path(".")
-    CupboardBundle.migrate(directory, bundle)
-    val store: KStore<Document> = CupboardBundle.documentStore(bundle)
-    val assets: FileAssetStore = CupboardBundle.assetStore(bundle)
-    val themes: KStore<List<Theme>> = storeOf(
-        file = Path(directory, THEME_LIBRARY_FILE_NAME),
-        default = emptyList(),
-    )
-    // Blocking is right here: there is no editor to show until the document loads.
-    val initial: Document = runBlocking { store.get() } ?: sampleDocument()
-    return EditorViewModel(initial, store, themes, assets, dispatcher)
+    directory: Path = bundle.parent ?: cupboardDirectory(),
+): EditorViewModel = runBlocking { openEditor(bundle, directory, dispatcher) }
+
+/**
+ * An editor over the deck at [bundle], or why it could not be opened. What File
+ * > Open comes down to, and what a double-clicked `.cupboard` does.
+ *
+ * See [OpenResult]: a deck this build cannot read comes back as a sentence to
+ * show rather than as a half-loaded document.
+ */
+fun Cupboard.openDocument(
+    bundle: Path,
+    dispatcher: CoroutineDispatcher = Dispatchers.Main,
+    directory: Path = cupboardDirectory(),
+): OpenResult = runBlocking { openBundle(bundle, directory, dispatcher) }
+
+/**
+ * A brand new bundle in [directory], named after the first [name] nothing else
+ * answers to, and where it went. Open it with [openDocument] like any other.
+ */
+fun Cupboard.newDocument(directory: Path = cupboardDirectory(), name: String = "Untitled"): Path =
+    createBundle(directory, name)
+
+/**
+ * [viewModel]'s deck copied into a new bundle at [target], and an editor on it.
+ *
+ * The returned view model is a new one: the caller shows it and closes the one
+ * it passed in. `.cupboard` is appended to [target] if the save dialog handed
+ * one back without it.
+ */
+fun Cupboard.saveAs(
+    viewModel: EditorViewModel,
+    target: Path,
+    dispatcher: CoroutineDispatcher = Dispatchers.Main,
+    directory: Path = cupboardDirectory(),
+): EditorViewModel = runBlocking { saveBundleAs(viewModel, target, directory, dispatcher) }
+
+/**
+ * The decks this machine opened last, newest first, at most ten, and only the
+ * ones still on disk. Paths as strings, which is what a File > Open Recent menu
+ * renders and what [openDocument] takes back through `Path(...)`.
+ */
+fun Cupboard.recentDocuments(directory: Path = cupboardDirectory()): List<String> =
+    runBlocking { recentsIn(directory).list() }
+
+/** Takes [path] out of the recents list, for the menu's Clear. */
+fun Cupboard.forgetRecent(path: Path, directory: Path = cupboardDirectory()) {
+    runBlocking { recentsIn(directory).forget(path) }
 }

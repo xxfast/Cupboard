@@ -119,6 +119,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
@@ -1408,6 +1409,17 @@ fun EditorPresenter(
                     state.copy(document = state.document.copy(background = event.background))
                 }
 
+            // A rename is a document edit like any other, which is what makes it
+            // undoable: the name rides in the deck, not beside it.
+            is RenameDocument -> event.name.trim()
+                .takeIf { it.isNotBlank() && it != state.document.name }
+                ?.let { name ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(name = name))
+                }
+                ?: state
+
             // Every frame in the deck may move, so this is one entry like any
             // other edit: `resized` hands back the same document for a size the
             // deck is already on, which is what makes an unchanged pick free.
@@ -1452,6 +1464,11 @@ fun EditorPresenter(
                 canPaste = clipboard != null,
                 canPasteStyle = styleSource != null,
                 focusedPane = focused ?: reduced.focusedPane,
+                // Raised here rather than in the autosave effect so it is true in
+                // the same state the edit arrives in: a shell must never paint a
+                // frame showing the edit and claiming it is already written. The
+                // effect below lowers it once the bytes are down.
+                savePending = reduced.savePending || reduced.document !== state.document,
             )
         }
     }
@@ -1461,22 +1478,34 @@ fun EditorPresenter(
     val opened: Document = remember { initialState.document }
 
     /*
-     * Interim persistence: one whole Document as a single JSON file, no history,
-     * no assets on the side. The real `.cupboard` bundle format comes later and
-     * this goes away with it. Replaces the old DocumentAutosaver, which had to
-     * be wired to the store's change callback by every shell.
+     * Autosave: the whole document, written to whatever store the host opened
+     * (`document.json` inside a `.cupboard` bundle for the shells, memory for
+     * the previews). A function of the document rather than a subscriber every
+     * shell has to start and stop in step with the editor.
      *
      * Debounce comes free from the effect's cancellation: a new document cancels
      * the pending delay, so a run of edits costs one write.
+     *
+     * [EditorState.savePending] is this effect's other end. The event loop raises
+     * it with the edit; here it comes down, and only for the document that was
+     * actually written: an edit that lands mid-write restarts this effect, and
+     * the run it cancelled must not answer for it.
      */
     LaunchedEffect(state.document) {
+        val document: Document = state.document
         // Only a plain open is exempt. Undoing all the way back lands on the very
         // document we opened, and that has to be written: the edit it undoes is
         // already on disk. History being non-empty is what tells the two apart.
         val untouched = undone.isEmpty() && redone.isEmpty()
-        if (state.document === opened && untouched) return@LaunchedEffect
+        if (document === opened && untouched) {
+            // A cancelled gesture puts the opened document back without ever
+            // reaching disk, so nothing else would take the flag down.
+            if (state.savePending) state = state.copy(savePending = false)
+            return@LaunchedEffect
+        }
         delay(AutosaveDebounce)
-        documentStore.set(state.document)
+        documentStore.set(document)
+        if (state.document === document) state = state.copy(savePending = false)
     }
 
     // The library as the file last held it, null until it has been read back.

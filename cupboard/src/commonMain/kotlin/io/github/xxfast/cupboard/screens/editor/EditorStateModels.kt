@@ -118,6 +118,18 @@ data class EditorState(
      * nothing to paste, hence [Transient] on both. */
     @Transient val canPaste: Boolean = false,
     @Transient val canPasteStyle: Boolean = false,
+    /**
+     * Whether an edit is still on its way to disk: true from the moment the
+     * document changes, false once the debounced autosave has written it.
+     *
+     * What a shell puts its edited dot in the title bar behind, and what a close
+     * confirmation asks about. Not "is this deck dirty" in the Keynote sense:
+     * everything is saved, this only says the last few keystrokes are still in
+     * flight, which is the honest thing to show for an editor that autosaves.
+     *
+     * Transient: a state read back off disk was written by that very save.
+     */
+    @Transient val savePending: Boolean = false,
     /** Whether the navigator is showing. Chrome visibility is view state, but it
      * is the editor's view state: every shell has the same three panels, and a
      * shell that kept its own copy would lose it on the next window it opens. */
@@ -209,6 +221,14 @@ data class EditorState(
      */
     @Transient val userThemes: List<Theme> = emptyList(),
 ) {
+    /**
+     * What a window puts in its title bar, which is the deck's name and nothing
+     * else: the bundle it came out of is named after it, so a shell that showed
+     * the file name would be showing the same string the long way round.
+     * Renamed through [EditorEvent.RenameDocument].
+     */
+    val title: String get() = document.name
+
     /** Every theme this editor can put the deck on: the built-ins, then the user's. */
     val themes: List<Theme> get() = BuiltInThemes.all + userThemes
 
@@ -897,6 +917,17 @@ sealed interface EditorEvent {
      * this is a no-op.
      */
     data class SetDocumentBackground(val background: SlideBackground?) : EditorEvent
+    /**
+     * What the deck is called, which is what [EditorState.title] shows. One
+     * history entry, so a rename typed into a title bar is undone like any other
+     * edit, and a name the deck already has is a no-op. Blank is refused rather
+     * than accepted: an untitled deck is called "Untitled", not nothing.
+     *
+     * The bundle on disk keeps whatever name it was saved under. Renaming the
+     * folder is the shell's business (it owns the file dialogs), and a deck that
+     * renamed its own bundle out from under an open window would be worse.
+     */
+    data class RenameDocument(val name: String) : EditorEvent
     /**
      * The shape of every slide in the deck, in document units, clamped to what a
      * slide may be. [scaleContent] carries the deck's content across with it;

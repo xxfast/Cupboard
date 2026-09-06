@@ -10,6 +10,10 @@ dependencies {
     // api-exposes the :cupboard core, so the document model comes along.
     implementation(project(":cupboard:ui"))
 
+    // The document lifecycle takes paths as kotlinx-io's, and `:cupboard` keeps
+    // that an implementation detail, so the shell names it for itself.
+    implementation(libs.kotlinx.io.core)
+
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinx.coroutinesSwing)
 

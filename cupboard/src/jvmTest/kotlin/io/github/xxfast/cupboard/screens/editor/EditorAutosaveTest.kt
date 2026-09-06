@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineStart.UNDISPATCHED
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
@@ -66,6 +67,31 @@ class EditorAutosaveTest {
         viewModel.close()
     }
 
+    /**
+     * The other end of [EditorState.savePending]: the event loop raises it with
+     * the edit, and only the write puts it back down. A shell's edited dot is
+     * this flag, so a false one that never clears is an editor that looks like
+     * it lost your work.
+     */
+    @Test
+    fun anEditStopsBeingPendingOnceItIsWritten() = runBlocking {
+        val file = tempFile()
+        val viewModel = EditorViewModel(sampleDocument(), storeOf(file = file))
+        val shell = collect(viewModel)
+
+        viewModel.onUpdateSlide(viewModel.states.value.selectedSlide.copy(title = "Persisted"))
+
+        assertNotNull(awaitState(viewModel) { it.savePending }, "the edit was never pending")
+        assertNotNull(
+            awaitState(viewModel) { !it.savePending },
+            "the edit was still pending after the write",
+        )
+        assertNotNull(awaitDocument(file) { document -> document.allSlides().any { it.title == "Persisted" } })
+
+        shell.cancel()
+        viewModel.close()
+    }
+
     @Test
     fun openingADocumentDoesNotRewriteIt() = runBlocking {
         val file = tempFile()
@@ -90,6 +116,12 @@ class EditorAutosaveTest {
      */
     private fun CoroutineScope.collect(viewModel: EditorViewModel): Job =
         launch(Dispatchers.Default, start = UNDISPATCHED) { viewModel.states.collect { } }
+
+    /** The first state to answer [predicate], or null if none does in time. */
+    private suspend fun awaitState(
+        viewModel: EditorViewModel,
+        predicate: (EditorState) -> Boolean,
+    ): EditorState? = withTimeoutOrNull(5.seconds) { viewModel.states.first(predicate) }
 
     private fun tempFile(): Path =
         Path(createTempDirectory("cupboard-autosave").toString(), "document.json")

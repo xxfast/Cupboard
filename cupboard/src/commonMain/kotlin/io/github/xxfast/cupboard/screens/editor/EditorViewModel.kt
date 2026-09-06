@@ -74,6 +74,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
@@ -148,6 +149,21 @@ class EditorViewModel(
      */
     val assets: AssetStore = InMemoryAssetStore(),
     dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
+    /**
+     * The bundle this editor is open on, as a path string; empty for a host with
+     * no bundle behind it (the preview shells, most tests).
+     *
+     * A plain [String] rather than a `Path` because this is the one thing every
+     * shell asks the view model about that isn't state: which document is this
+     * window, so a second Open of the same deck raises the window that already
+     * has it. The ObjC and .NET hosts see a string; nothing about kotlinx-io
+     * crosses to them.
+     *
+     * Fixed for the life of the view model. Save As opens a new one on the new
+     * bundle rather than moving this one, so a window's identity never changes
+     * under it, see `Cupboard.saveAs`.
+     */
+    val location: String = "",
 ) {
     /** Opens [initialDocument] on its first slide with content. */
     constructor(
@@ -156,7 +172,15 @@ class EditorViewModel(
         themeStore: KStore<List<Theme>>? = null,
         assets: AssetStore = InMemoryAssetStore(),
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
-    ) : this(EditorState.opening(initialDocument), documentStore, themeStore, assets, dispatcher)
+        location: String = "",
+    ) : this(
+        EditorState.opening(initialDocument),
+        documentStore,
+        themeStore,
+        assets,
+        dispatcher,
+        location,
+    )
 
     // Private: this class is exported to ObjC (and later to .NET), and a
     // CoroutineScope on the public surface is a Kotlin type those hosts have no
@@ -249,6 +273,7 @@ class EditorViewModel(
     fun onUseAsDefaultTextStyle(id: String) { scope.launch { events.emit(UseAsDefaultTextStyle(id)) } }
     fun onUseAsDefaultShapeStyle(id: String) { scope.launch { events.emit(UseAsDefaultShapeStyle(id)) } }
     fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.emit(SetDocumentBackground(background)) } }
+    fun onRenameDocument(name: String) { scope.launch { events.emit(RenameDocument(name)) } }
     fun onSetSlideSize(width: Float, height: Float, scaleContent: Boolean) { scope.launch { events.emit(SetSlideSize(width, height, scaleContent)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }

@@ -6,9 +6,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -28,6 +30,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.MenuBar
@@ -81,6 +84,7 @@ import java.time.format.DateTimeFormatter
 import java.awt.Menu as AwtMenu
 import java.awt.MenuItem as AwtMenuItem
 import kotlinx.coroutines.delay
+import kotlinx.io.files.Path
 import org.jetbrains.skiko.currentSystemTheme
 import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
 
@@ -393,557 +397,675 @@ fun main() {
     // other JVMs and platforms ignore it. Must be set before the first window.
     System.setProperty("apple.awt.application.appearance", "system")
 
-    // One view model for the whole app: the editor window and the play window are
-    // two views onto it, not two editors. Autosave lives inside it. Where the
-    // document lives and how it loads is the factory's business, not this shell's.
-    val viewModel = Cupboard.editor()
+    // The deck this machine was last on, opened before there is a window to put
+    // it in: loading blocks, and an editor window with no editor has nothing to
+    // draw. Every deck after this one arrives through the File menu.
+    val documents = Documents(Cupboard.editor())
 
     application {
-        var playing by remember { mutableStateOf<PlayRequest?>(null) }
-
-        // Whether a show also puts up the presenter display. This shell's own
-        // preference rather than the editor's: it is about the windows on this
-        // machine, and nothing in the document has an opinion on it. Closing the
-        // presenter window sets it back, which is why one flag covers both.
-        var showPresenter by remember { mutableStateOf(true) }
-
-        // The displays as the running show found them. Empty until one starts,
-        // which is fine: nothing reads it before then.
-        var screens: List<Rectangle> by remember { mutableStateOf(emptyList()) }
-
-        val state: EditorState by viewModel.states.collectAsState()
-
-        // Swapping the displays is the show's index flipping: both windows are
-        // placed off it, so the show takes the other screen and the presenter
-        // display takes the one it left. Null with a single display, or over a
-        // preview or a rehearsal, neither of which has a show window to move,
-        // which is what greys the menu item and drops the X key.
-        val swapDisplays: (() -> Unit)? = playing
-            ?.takeIf { !it.preview && !it.rehearse && screens.size > 1 }
-            ?.let { request ->
-                { playing = request.copy(showScreen = if (request.showScreen == 0) 1 else 0) }
-            }
-
-        // A rehearsal is the talk with nowhere to project it: the presenter
-        // display alone, on this machine's own screen, running the same player
-        // the show would. Starts from the selected slide, like Play, and is off
-        // in layout mode for the same reason Play is.
-        val rehearseSlideshow: (() -> Unit)? = if (state.isEditingLayouts) null else {
-            {
-                screens = playScreens()
-                playing = PlayRequest(
-                    document = state.document,
-                    slideIndex = state.selectedSlideIndex().coerceAtLeast(0),
-                    rehearse = true,
+        // One window per open deck. Keyed by the editor, not by its place in the
+        // list: closing the middle one has to take that window away rather than
+        // hand its state to the deck that shuffles up into the slot.
+        for (document in documents.editors) {
+            key(document) {
+                EditorWindow(
+                    viewModel = document,
+                    documents = documents,
+                    onExit = { exitApplication() },
                 )
             }
         }
+    }
+}
 
-        // Preview is Play on the slide alone: the deck's furniture, one slide of
-        // it, opened at its first step so the builds run from the top. Off in
-        // layout mode for the same reason Play is, there is no slide of the talk
-        // selected there, and null is what greys the button and the menu item.
-        val previewSlide: (() -> Unit)? = if (state.isEditingLayouts) null else {
-            {
-                playing = PlayRequest(
-                    document = state.document.previewOf(state.selectedSlide.id),
-                    slideIndex = 0,
-                    preview = true,
-                )
-            }
+/**
+ * One open deck: the editor window, and whatever shows it has up.
+ *
+ * Play, preview and the presenter display belong to this window rather than to
+ * the app. Two decks open side by side are two talks, and rehearsing one has
+ * nothing to say about the other.
+ */
+@Composable
+private fun EditorWindow(
+    viewModel: EditorViewModel,
+    documents: Documents,
+    onExit: () -> Unit,
+) {
+    var playing by remember { mutableStateOf<PlayRequest?>(null) }
+
+    // Whether a show also puts up the presenter display. This shell's own
+    // preference rather than the editor's: it is about the windows on this
+    // machine, and nothing in the document has an opinion on it. Closing the
+    // presenter window sets it back, which is why one flag covers both.
+    var showPresenter by remember { mutableStateOf(true) }
+
+    // The displays as the running show found them. Empty until one starts,
+    // which is fine: nothing reads it before then.
+    var screens: List<Rectangle> by remember { mutableStateOf(emptyList()) }
+
+    val state: EditorState by viewModel.states.collectAsState()
+
+    // Swapping the displays is the show's index flipping: both windows are
+    // placed off it, so the show takes the other screen and the presenter
+    // display takes the one it left. Null with a single display, or over a
+    // preview or a rehearsal, neither of which has a show window to move,
+    // which is what greys the menu item and drops the X key.
+    val swapDisplays: (() -> Unit)? = playing
+        ?.takeIf { !it.preview && !it.rehearse && screens.size > 1 }
+        ?.let { request ->
+            { playing = request.copy(showScreen = if (request.showScreen == 0) 1 else 0) }
         }
 
-        Window(
-            onCloseRequest = { viewModel.close(); exitApplication() },
-            title = "Cupboard",
-            // Forward delete, the half the menu accelerator can't carry: Delete
-            // shows as Backspace there, which is the delete key on a mac board.
-            // Dispatches exactly like the menu item does, focus and all: with the
-            // navigator focused this takes the slide away, which is Keynote's
-            // behaviour. Guarded on the same canDelete, so the key is only ours
-            // when there is something to take away. Nothing in the window takes
-            // typing yet, so there is no field to steal from.
-            onKeyEvent = { event ->
-                if (event.type == KeyEventType.KeyDown && event.key == Key.Delete && state.canDelete) {
-                    viewModel.onDelete()
-                    true
-                } else {
-                    false
-                }
-            },
-        ) {
-            MenuBar {
-                // What's left of the element-scoped enablement, for the items
-                // that stay element-scoped: the style pair below. The label
-                // follows the primary element, the events carry the whole
-                // selection, and the edit needs something unlocked, the same
-                // rule the presenter applies.
-                val primary: Element? = state.primaryElement
-                val ids: List<String> = state.selectedElementIds
-                val editable: Boolean = state.selectedElements.any { !it.locked }
-                // Clear All speaks for the slide rather than the selection, so
-                // it asks the slide the same question: is there anything
-                // unlocked left to take away.
-                val clearable: Boolean = state.selectedSlide.elements.any { !it.locked }
+    // A rehearsal is the talk with nowhere to project it: the presenter
+    // display alone, on this machine's own screen, running the same player
+    // the show would. Starts from the selected slide, like Play, and is off
+    // in layout mode for the same reason Play is.
+    val rehearseSlideshow: (() -> Unit)? = if (state.isEditingLayouts) null else {
+        {
+            screens = playScreens()
+            playing = PlayRequest(
+                document = state.document,
+                slideIndex = state.selectedSlideIndex().coerceAtLeast(0),
+                rehearse = true,
+            )
+        }
+    }
 
-                // The deck as a CuP project someone else can run: the generator
-                // makes the files, this only asks where they go.
-                Menu("File", mnemonic = 'F') {
-                    Item(
-                        text = "Export as CuP Project...",
-                        onClick = { exportCupProject(state.document, window) },
-                    )
-                }
+    // Preview is Play on the slide alone: the deck's furniture, one slide of
+    // it, opened at its first step so the builds run from the top. Off in
+    // layout mode for the same reason Play is, there is no slide of the talk
+    // selected there, and null is what greys the button and the menu item.
+    val previewSlide: (() -> Unit)? = if (state.isEditingLayouts) null else {
+        {
+            playing = PlayRequest(
+                document = state.document.previewOf(state.selectedSlide.id),
+                slideIndex = 0,
+                preview = true,
+            )
+        }
+    }
 
-                Menu("Edit", mnemonic = 'E') {
-                    Item(
-                        text = "Undo",
-                        shortcut = editShortcut(Key.Z),
-                        enabled = state.canUndo,
-                        onClick = viewModel::onUndo,
-                    )
-                    Item(
-                        text = "Redo",
-                        shortcut = editShortcut(Key.Z, shift = true),
-                        enabled = state.canRedo,
-                        onClick = viewModel::onRedo,
-                    )
+    Window(
+        // No are-you-sure: everything is autosaved, so a closed window has
+        // nothing left to lose. The last one going takes the app with it.
+        onCloseRequest = { if (documents.close(viewModel)) onExit() },
+        // The deck's name, and whether an edit is still on its way to disk.
+        // Autosave settles within the moment, so (Edited) is a flicker rather
+        // than a warning: it is the document apps' word for the same thing.
+        title = state.title + if (state.savePending) " (Edited)" else "",
+        // Forward delete, the half the menu accelerator can't carry: Delete
+        // shows as Backspace there, which is the delete key on a mac board.
+        // Dispatches exactly like the menu item does, focus and all: with the
+        // navigator focused this takes the slide away, which is Keynote's
+        // behaviour. Guarded on the same canDelete, so the key is only ours
+        // when there is something to take away. Nothing in the window takes
+        // typing yet, so there is no field to steal from.
+        onKeyEvent = { event ->
+            if (event.type == KeyEventType.KeyDown && event.key == Key.Delete && state.canDelete) {
+                viewModel.onDelete()
+                true
+            } else {
+                false
+            }
+        },
+    ) {
+        // So an Open of a deck that is already up can raise this window rather
+        // than open it twice.
+        DisposableEffect(window) {
+            documents.register(viewModel, window)
+            onDispose { }
+        }
 
-                    Separator()
+        // The recents list as of the last time this window came forward.
+        //
+        // Compose's menus have no opened hook, so the read hangs off focus
+        // instead: another window's Save As lands in the list while this one is
+        // in the background, and coming back to it is the step before reaching
+        // for the menu. Cheap enough to redo on every focus, one small file.
+        val focused: Boolean = LocalWindowInfo.current.isWindowFocused
+        var recents: List<String> by remember { mutableStateOf(emptyList()) }
+        LaunchedEffect(focused, documents.editors.size) {
+            if (focused) recents = Cupboard.recentDocuments()
+        }
 
-                    // These four follow the focus, like Keynote's: the slide in
-                    // the navigator, the elements on the canvas. The core
-                    // resolves which, both in the verb and in what greys it,
-                    // so nothing here asks about the selection. Paste was
-                    // always generic and stays so, it follows the clipboard.
-                    Item(
-                        text = "Cut",
-                        shortcut = editShortcut(Key.X),
-                        enabled = state.canCut,
-                        onClick = viewModel::onCut,
-                    )
-                    Item(
-                        text = "Copy",
-                        shortcut = editShortcut(Key.C),
-                        enabled = state.canCopy,
-                        onClick = viewModel::onCopy,
-                    )
-                    Item(
-                        // The one accelerator here still live over a caret.
-                        // Cut and Copy grey out mid-edit and a greyed item lets
-                        // its key through to the field, which is how Delete's
-                        // bare Backspace has always deleted characters rather
-                        // than the element. Paste greys on an empty clipboard
-                        // and nothing else, so its accelerator has to come off
-                        // by hand for Cmd+V to be the field's paste.
-                        text = "Paste",
-                        shortcut = editShortcut(Key.V).takeIf { !state.isEditingText },
-                        enabled = state.canPaste,
-                        onClick = viewModel::onPaste,
-                    )
-                    Item(
-                        text = "Duplicate",
-                        shortcut = editShortcut(Key.D),
-                        enabled = state.canDuplicate,
-                        onClick = viewModel::onDuplicate,
-                    )
+        MenuBar {
+            // What's left of the element-scoped enablement, for the items
+            // that stay element-scoped: the style pair below. The label
+            // follows the primary element, the events carry the whole
+            // selection, and the edit needs something unlocked, the same
+            // rule the presenter applies.
+            val primary: Element? = state.primaryElement
+            val ids: List<String> = state.selectedElementIds
+            val editable: Boolean = state.selectedElements.any { !it.locked }
+            // Clear All speaks for the slide rather than the selection, so
+            // it asks the slide the same question: is there anything
+            // unlocked left to take away.
+            val clearable: Boolean = state.selectedSlide.elements.any { !it.locked }
 
-                    Separator()
+            // The document verbs. Every one of them is [Documents]' business
+            // rather than this window's: what they do is add, replace or take
+            // away a window, and this is only the one that was asked.
+            Menu("File", mnemonic = 'F') {
+                Item(
+                    text = "New",
+                    shortcut = editShortcut(Key.N),
+                    onClick = { documents.new(window) },
+                )
+                Item(
+                    text = "Open...",
+                    shortcut = editShortcut(Key.O),
+                    onClick = { chooseBundle(window)?.let { documents.open(it, window) } },
+                )
 
-                    Item(
-                        text = "Delete",
-                        shortcut = KeyShortcut(Key.Backspace),
-                        enabled = state.canDelete,
-                        onClick = viewModel::onDelete,
-                    )
-                    Item(
-                        text = "Clear All",
-                        enabled = clearable,
-                        onClick = viewModel::onClearAll,
-                    )
-
-                    Separator()
-
-                    // The style clipboard is its own thing, so these two ask
-                    // about it rather than about the one above.
-                    Item(
-                        text = "Copy Style",
-                        shortcut = editShortcut(Key.C, alt = true),
-                        enabled = primary != null,
-                        onClick = { primary?.let { viewModel.onCopyStyle(it.id) } },
-                    )
-                    Item(
-                        text = "Paste Style",
-                        shortcut = editShortcut(Key.V, alt = true),
-                        enabled = state.canPasteStyle && editable,
-                        onClick = { viewModel.onPasteStyle(ids) },
-                    )
-                }
-
-                // Insert takes no accelerators either: nothing here is a
-                // verb the user reaches for mid-gesture, and the toolbar's
-                // Text and Shape buttons render the same catalog.
-                Menu("Insert", mnemonic = 'I') {
-                    MenuItems(insertSections(state, viewModel))
-                }
-
-                // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
-                // element ones next door, and Paste is dropped here for the same
-                // reason, Edit already owns it. Rendered from the shared specs,
-                // like Arrange: the navigator's context menu offers the same
-                // verbs against whichever row it opened on.
-                Menu("Slide", mnemonic = 'S') {
-                    MenuItems(
-                        slideSections(
-                            state = state,
-                            viewModel = viewModel,
-                            slideId = state.selectedSlide.id,
-                            includePaste = false,
-                        ),
-                    )
-
-                    Separator()
-
-                    // Written here rather than into the shared spec: it is a slide
-                    // verb the navigator's menu has no business offering on a
-                    // layout, and in layout mode there is no slide to reapply to.
-                    Item(
-                        text = "Reapply Layout",
-                        enabled = !state.isEditingLayouts && state.selectedLayout != null,
-                        onClick = { viewModel.onReapplyLayout(state.selectedSlide.id) },
-                    )
-
-                    // No accelerator: Play has the one people reach for, and a
-                    // preview is a look at one slide rather than a mode you live
-                    // in. The Animate tab's button is the other way to it.
-                    Item(
-                        text = "Preview Slide",
-                        enabled = previewSlide != null,
-                        onClick = { previewSlide?.invoke() },
-                    )
-
-                    // No accelerator either, and no toolbar button: the toolbar
-                    // has one Play pill and no room beside it, so the menu is
-                    // where a rehearsal starts.
-                    Item(
-                        text = "Rehearse Slideshow",
-                        enabled = rehearseSlideshow != null,
-                        onClick = { rehearseSlideshow?.invoke() },
-                    )
-                }
-
-                // Whole-box text styling. Bold, Italic and Underline take the
-                // accelerators every editor gives them; Strikethrough has no
-                // conventional one, so it goes without rather than inventing one.
-                Menu("Format", mnemonic = 'O') {
-                    MenuItems(formatSections(state, viewModel)) { item ->
-                        when (item.label) {
-                            "Bold" -> editShortcut(Key.B)
-                            "Italic" -> editShortcut(Key.I)
-                            "Underline" -> editShortcut(Key.U)
-                            else -> null
-                        }
-                    }
-                }
-
-                // Rendered from the shared specs, not written here: the canvas
-                // context menu offers the same verbs, and a rule written twice
-                // is a rule that drifts.
-                Menu("Arrange", mnemonic = 'A') {
-                    MenuItems(arrangeSections(state, viewModel))
-                }
-
-                // Written here rather than as a shared spec: every entry is a
-                // switch showing its own state, and [EditorMenuItem] has no
-                // checkmark to carry. Nothing is ever greyed, a view toggle
-                // asks nothing of the selection. The state these read is the
-                // editor's, not this window's, so a reopened window comes back
-                // the way it was left.
-                Menu("View", mnemonic = 'V') {
-                    CheckboxItem(
-                        text = "Show Navigator",
-                        checked = state.sidebarOpen,
-                        onCheckedChange = { viewModel.onToggleSidebar() },
-                    )
-                    // The only way to put the inspector away on this shell: the
-                    // tabs switch panels but never close one, which is the mac
-                    // shell's behaviour and stays there (design/README.md).
-                    CheckboxItem(
-                        text = "Show Inspector",
-                        checked = state.inspectorOpen,
-                        onCheckedChange = { viewModel.onToggleInspector() },
-                    )
-                    CheckboxItem(
-                        text = "Show Presenter Notes",
-                        checked = state.showNotes,
-                        onCheckedChange = { viewModel.onToggleNotes() },
-                    )
-                    // Live rather than a setting you arm beforehand: ticked
-                    // mid-show the presenter display comes up on the spot, and
-                    // unticked it goes away without touching the show.
-                    CheckboxItem(
-                        text = "Show Presenter Display",
-                        checked = showPresenter,
-                        onCheckedChange = { showPresenter = it },
-                    )
-                    // A verb rather than a switch: neither display is the
-                    // right one, they are just the two the show is using. X
-                    // does the same from either show window, which is where
-                    // the hands are once the talk is up.
-                    Item(
-                        text = "Swap Displays",
-                        enabled = swapDisplays != null,
-                        onClick = { swapDisplays?.invoke() },
-                    )
-
-                    Separator()
-
-                    CheckboxItem(
-                        text = "Show Rulers",
-                        checked = state.showRulers,
-                        shortcut = editShortcut(Key.R),
-                        onCheckedChange = { viewModel.onToggleRulers() },
-                    )
-                    CheckboxItem(
-                        text = "Show Guides",
-                        checked = state.showGuides,
-                        onCheckedChange = { viewModel.onToggleGuides() },
-                    )
-
-                    Separator()
-
-                    // The parent already says Snap, so the rows don't repeat it.
-                    // Driven off [SnapLabels] so a fifth kind is one line there
-                    // and nothing here.
-                    Menu("Snap") {
-                        for ((kind, label) in SnapLabels) {
-                            CheckboxItem(
-                                text = label,
-                                checked = state.snapsTo(kind),
-                                onCheckedChange = { enabled -> viewModel.onSetSnap(kind, enabled) },
-                            )
-                        }
+                // Names rather than paths, like every other app's: two decks
+                // called the same thing is a rarer confusion than a menu of
+                // home directories.
+                Menu("Open Recent") {
+                    for (recent in recents) {
+                        Item(
+                            text = deckName(recent),
+                            onClick = { documents.open(Path(recent), window) },
+                        )
                     }
 
-                    Separator()
+                    if (recents.isNotEmpty()) Separator()
 
-                    // A plain item rather than a checkbox: layout mode is a place
-                    // the editor goes, not a thing it shows, so the entry says
-                    // which way it is about to go.
                     Item(
-                        text = if (state.isEditingLayouts) "Exit Slide Layouts"
-                        else "Edit Slide Layouts",
+                        text = "Clear Menu",
+                        enabled = recents.isNotEmpty(),
                         onClick = {
-                            if (state.isEditingLayouts) viewModel.onExitSlideLayouts()
-                            else viewModel.onEditSlideLayouts()
+                            for (recent in recents) Cupboard.forgetRecent(Path(recent))
+                            recents = emptyList()
                         },
                     )
                 }
+
+                Separator()
+
+                // No Save: the editor autosaves, so there is never a save to
+                // make. Save As is a copy to somewhere the user picked, and
+                // this window carries on over that copy.
+                Item(
+                    text = "Save As...",
+                    shortcut = editShortcut(Key.S, shift = true),
+                    onClick = {
+                        chooseSaveBundle(window, state.title)
+                            ?.let { documents.saveAs(viewModel, it) }
+                    },
+                )
+                Item(
+                    text = "Rename...",
+                    onClick = {
+                        askDocumentName(window, state.title)?.let(viewModel::onRenameDocument)
+                    },
+                )
+
+                Separator()
+
+                Item(
+                    text = "Close Window",
+                    shortcut = editShortcut(Key.W),
+                    onClick = { if (documents.close(viewModel)) onExit() },
+                )
+
+                Separator()
+
+                // The deck as a CuP project someone else can run: the generator
+                // makes the files, this only asks where they go.
+                Item(
+                    text = "Export as CuP Project...",
+                    onClick = { exportCupProject(state.document, window) },
+                )
             }
 
-            // Desktop Compose reads the OS theme once, lazily (LocalSystemTheme's
-            // default is a one-shot skiko read), so a running app never sees the
-            // system switch. Re-providing it from a poll keeps the shared shell's
-            // isSystemInDarkTheme() live.
-            CompositionLocalProvider(
-                LocalSystemTheme provides pollSystemTheme(),
-                LocalResizeCursors provides AwtResizeCursors,
-            ) {
-                // Added to the window once; each right-click rebuilds its items.
-                // Null on Linux, which keeps the shared m3 dropdown.
-                val nativeMenu: PopupMenu? = remember {
-                    if (isMacOs || isWindows) PopupMenu().also(window.contentPane::add)
-                    else null
-                }
-                val density: Float = LocalDensity.current.density
+            Menu("Edit", mnemonic = 'E') {
+                Item(
+                    text = "Undo",
+                    shortcut = editShortcut(Key.Z),
+                    enabled = state.canUndo,
+                    onClick = viewModel::onUndo,
+                )
+                Item(
+                    text = "Redo",
+                    shortcut = editShortcut(Key.Z, shift = true),
+                    enabled = state.canRedo,
+                    onClick = viewModel::onRedo,
+                )
 
-                EditorScreen(
-                    viewModel = viewModel,
-                    // The document and index the editor has right now: play is a
-                    // snapshot, later edits don't reach the running presentation.
-                    //
-                    // Off in layout mode: a layout is not a slide of the talk, and
-                    // the index the player would start from names nothing there.
-                    onPlay = if (state.isEditingLayouts) null else {
-                        { document, index ->
-                            val displays: List<Rectangle> = playScreens()
-                            screens = displays
-                            playing = PlayRequest(
-                                document = document,
-                                slideIndex = index,
-                                // The talk goes to the projector and the lectern
-                                // keeps the laptop: the show opens on the first
-                                // display that isn't the primary one.
-                                showScreen = if (displays.size > 1) 1 else 0,
-                            )
-                        }
-                    },
-                    onPlayPreview = previewSlide,
-                    onShowContextMenu = nativeMenu?.let { menu ->
-                        { elementId, positionInWindow ->
-                            showNativeMenu(
-                                popup = menu,
-                                parent = window.contentPane,
-                                density = density,
-                                positionInWindow = positionInWindow,
-                                sections = canvasContextSections(state, viewModel, elementId),
-                            )
-                        }
-                    },
-                    // The same popup: two menus can't be open at once anyway, and
-                    // the row's verbs carry its id, so nothing here has to guess
-                    // what the click did to the selection.
-                    onShowSlideContextMenu = nativeMenu?.let { menu ->
-                        { slideId, positionInWindow, onRename ->
-                            showNativeMenu(
-                                popup = menu,
-                                parent = window.contentPane,
-                                density = density,
-                                positionInWindow = positionInWindow,
-                                // In layout mode the row is a layout, so the verbs
-                                // are the layout ones. Rename's dialog belongs to
-                                // the editor view, which hands its opener in.
-                                sections = if (state.isEditingLayouts) {
-                                    layoutSections(viewModel, slideId, onRename)
-                                } else {
-                                    slideSections(
-                                        state = state,
-                                        viewModel = viewModel,
-                                        slideId = slideId,
-                                        includePaste = true,
-                                    )
-                                },
-                            )
-                        }
+                Separator()
+
+                // These four follow the focus, like Keynote's: the slide in
+                // the navigator, the elements on the canvas. The core
+                // resolves which, both in the verb and in what greys it,
+                // so nothing here asks about the selection. Paste was
+                // always generic and stays so, it follows the clipboard.
+                Item(
+                    text = "Cut",
+                    shortcut = editShortcut(Key.X),
+                    enabled = state.canCut,
+                    onClick = viewModel::onCut,
+                )
+                Item(
+                    text = "Copy",
+                    shortcut = editShortcut(Key.C),
+                    enabled = state.canCopy,
+                    onClick = viewModel::onCopy,
+                )
+                Item(
+                    // The one accelerator here still live over a caret.
+                    // Cut and Copy grey out mid-edit and a greyed item lets
+                    // its key through to the field, which is how Delete's
+                    // bare Backspace has always deleted characters rather
+                    // than the element. Paste greys on an empty clipboard
+                    // and nothing else, so its accelerator has to come off
+                    // by hand for Cmd+V to be the field's paste.
+                    text = "Paste",
+                    shortcut = editShortcut(Key.V).takeIf { !state.isEditingText },
+                    enabled = state.canPaste,
+                    onClick = viewModel::onPaste,
+                )
+                Item(
+                    text = "Duplicate",
+                    shortcut = editShortcut(Key.D),
+                    enabled = state.canDuplicate,
+                    onClick = viewModel::onDuplicate,
+                )
+
+                Separator()
+
+                Item(
+                    text = "Delete",
+                    shortcut = KeyShortcut(Key.Backspace),
+                    enabled = state.canDelete,
+                    onClick = viewModel::onDelete,
+                )
+                Item(
+                    text = "Clear All",
+                    enabled = clearable,
+                    onClick = viewModel::onClearAll,
+                )
+
+                Separator()
+
+                // The style clipboard is its own thing, so these two ask
+                // about it rather than about the one above.
+                Item(
+                    text = "Copy Style",
+                    shortcut = editShortcut(Key.C, alt = true),
+                    enabled = primary != null,
+                    onClick = { primary?.let { viewModel.onCopyStyle(it.id) } },
+                )
+                Item(
+                    text = "Paste Style",
+                    shortcut = editShortcut(Key.V, alt = true),
+                    enabled = state.canPasteStyle && editable,
+                    onClick = { viewModel.onPasteStyle(ids) },
+                )
+            }
+
+            // Insert takes no accelerators either: nothing here is a
+            // verb the user reaches for mid-gesture, and the toolbar's
+            // Text and Shape buttons render the same catalog.
+            Menu("Insert", mnemonic = 'I') {
+                MenuItems(insertSections(state, viewModel))
+            }
+
+            // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
+            // element ones next door, and Paste is dropped here for the same
+            // reason, Edit already owns it. Rendered from the shared specs,
+            // like Arrange: the navigator's context menu offers the same
+            // verbs against whichever row it opened on.
+            Menu("Slide", mnemonic = 'S') {
+                MenuItems(
+                    slideSections(
+                        state = state,
+                        viewModel = viewModel,
+                        slideId = state.selectedSlide.id,
+                        includePaste = false,
+                    ),
+                )
+
+                Separator()
+
+                // Written here rather than into the shared spec: it is a slide
+                // verb the navigator's menu has no business offering on a
+                // layout, and in layout mode there is no slide to reapply to.
+                Item(
+                    text = "Reapply Layout",
+                    enabled = !state.isEditingLayouts && state.selectedLayout != null,
+                    onClick = { viewModel.onReapplyLayout(state.selectedSlide.id) },
+                )
+
+                // No accelerator: Play has the one people reach for, and a
+                // preview is a look at one slide rather than a mode you live
+                // in. The Animate tab's button is the other way to it.
+                Item(
+                    text = "Preview Slide",
+                    enabled = previewSlide != null,
+                    onClick = { previewSlide?.invoke() },
+                )
+
+                // No accelerator either, and no toolbar button: the toolbar
+                // has one Play pill and no room beside it, so the menu is
+                // where a rehearsal starts.
+                Item(
+                    text = "Rehearse Slideshow",
+                    enabled = rehearseSlideshow != null,
+                    onClick = { rehearseSlideshow?.invoke() },
+                )
+            }
+
+            // Whole-box text styling. Bold, Italic and Underline take the
+            // accelerators every editor gives them; Strikethrough has no
+            // conventional one, so it goes without rather than inventing one.
+            Menu("Format", mnemonic = 'O') {
+                MenuItems(formatSections(state, viewModel)) { item ->
+                    when (item.label) {
+                        "Bold" -> editShortcut(Key.B)
+                        "Italic" -> editShortcut(Key.I)
+                        "Underline" -> editShortcut(Key.U)
+                        else -> null
+                    }
+                }
+            }
+
+            // Rendered from the shared specs, not written here: the canvas
+            // context menu offers the same verbs, and a rule written twice
+            // is a rule that drifts.
+            Menu("Arrange", mnemonic = 'A') {
+                MenuItems(arrangeSections(state, viewModel))
+            }
+
+            // Written here rather than as a shared spec: every entry is a
+            // switch showing its own state, and [EditorMenuItem] has no
+            // checkmark to carry. Nothing is ever greyed, a view toggle
+            // asks nothing of the selection. The state these read is the
+            // editor's, not this window's, so a reopened window comes back
+            // the way it was left.
+            Menu("View", mnemonic = 'V') {
+                CheckboxItem(
+                    text = "Show Navigator",
+                    checked = state.sidebarOpen,
+                    onCheckedChange = { viewModel.onToggleSidebar() },
+                )
+                // The only way to put the inspector away on this shell: the
+                // tabs switch panels but never close one, which is the mac
+                // shell's behaviour and stays there (design/README.md).
+                CheckboxItem(
+                    text = "Show Inspector",
+                    checked = state.inspectorOpen,
+                    onCheckedChange = { viewModel.onToggleInspector() },
+                )
+                CheckboxItem(
+                    text = "Show Presenter Notes",
+                    checked = state.showNotes,
+                    onCheckedChange = { viewModel.onToggleNotes() },
+                )
+                // Live rather than a setting you arm beforehand: ticked
+                // mid-show the presenter display comes up on the spot, and
+                // unticked it goes away without touching the show.
+                CheckboxItem(
+                    text = "Show Presenter Display",
+                    checked = showPresenter,
+                    onCheckedChange = { showPresenter = it },
+                )
+                // A verb rather than a switch: neither display is the
+                // right one, they are just the two the show is using. X
+                // does the same from either show window, which is where
+                // the hands are once the talk is up.
+                Item(
+                    text = "Swap Displays",
+                    enabled = swapDisplays != null,
+                    onClick = { swapDisplays?.invoke() },
+                )
+
+                Separator()
+
+                CheckboxItem(
+                    text = "Show Rulers",
+                    checked = state.showRulers,
+                    shortcut = editShortcut(Key.R),
+                    onCheckedChange = { viewModel.onToggleRulers() },
+                )
+                CheckboxItem(
+                    text = "Show Guides",
+                    checked = state.showGuides,
+                    onCheckedChange = { viewModel.onToggleGuides() },
+                )
+
+                Separator()
+
+                // The parent already says Snap, so the rows don't repeat it.
+                // Driven off [SnapLabels] so a fifth kind is one line there
+                // and nothing here.
+                Menu("Snap") {
+                    for ((kind, label) in SnapLabels) {
+                        CheckboxItem(
+                            text = label,
+                            checked = state.snapsTo(kind),
+                            onCheckedChange = { enabled -> viewModel.onSetSnap(kind, enabled) },
+                        )
+                    }
+                }
+
+                Separator()
+
+                // A plain item rather than a checkbox: layout mode is a place
+                // the editor goes, not a thing it shows, so the entry says
+                // which way it is about to go.
+                Item(
+                    text = if (state.isEditingLayouts) "Exit Slide Layouts"
+                    else "Edit Slide Layouts",
+                    onClick = {
+                        if (state.isEditingLayouts) viewModel.onExitSlideLayouts()
+                        else viewModel.onEditSlideLayouts()
                     },
                 )
             }
         }
 
-        playing?.let { request ->
-            val controller = rememberPlayerController()
-            val close = { playing = null }
-
-            // A preview sits in a window on top of the editor: you are still
-            // working on the slide, so the deck should not take the screen
-            // away to show it to you. Escape closes it either way.
-            val showState: WindowState = if (request.preview) {
-                rememberWindowState(
-                    size = DpSize(PreviewWindowWidth, PreviewWindowHeight),
-                    position = WindowPosition(Alignment.Center),
-                )
-            } else {
-                rememberWindowState(placement = WindowPlacement.Maximized)
+        // Desktop Compose reads the OS theme once, lazily (LocalSystemTheme's
+        // default is a one-shot skiko read), so a running app never sees the
+        // system switch. Re-providing it from a poll keeps the shared shell's
+        // isSystemInDarkTheme() live.
+        CompositionLocalProvider(
+            LocalSystemTheme provides pollSystemTheme(),
+            LocalResizeCursors provides AwtResizeCursors,
+        ) {
+            // Added to the window once; each right-click rebuilds its items.
+            // Null on Linux, which keeps the shared m3 dropdown.
+            val nativeMenu: PopupMenu? = remember {
+                if (isMacOs || isWindows) PopupMenu().also(window.contentPane::add)
+                else null
             }
+            val density: Float = LocalDensity.current.density
 
-            // The presenter display's window state lives out here so it keeps
-            // its display across a trip through the View menu: put away and
-            // brought back, it comes up where the swap left it. A rehearsal
-            // takes the screen instead: it is the only window of the show.
-            val presenterState: WindowState = if (request.rehearse) {
-                rememberWindowState(placement = WindowPlacement.Maximized)
-            } else {
-                rememberWindowState(
-                    size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
-                    position = WindowPosition(Alignment.Center),
-                )
-            }
-
-            // The primary display, explicitly: rehearsing with a projector
-            // still plugged in belongs on the screen in front of you.
-            if (request.rehearse) LaunchedEffect(Unit) {
-                screens.firstOrNull()?.let { presenterState.moveOnto(it, WindowPlacement.Maximized) }
-            }
-
-            // Two displays or more: the show fills one of them and the
-            // presenter display fills the other, and both move when the index
-            // does. A single display keeps what it always did, the show
-            // maximized with the presenter display windowed on top.
-            if (!request.preview && !request.rehearse && screens.size > 1) LaunchedEffect(request.showScreen) {
-                showState.moveOnto(screens[request.showScreen], WindowPlacement.Fullscreen)
-                presenterState.moveOnto(
-                    bounds = screens[if (request.showScreen == 0) 1 else 0],
-                    placement = WindowPlacement.Maximized,
-                )
-            }
-
-            // No show window for a rehearsal: the talk plays inside the
-            // presenter window instead, taking no room there.
-            if (!request.rehearse) Window(
-                onCloseRequest = close,
-                title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
-                state = showState,
-                onKeyEvent = showKeys(controller, close, swapDisplays),
-            ) {
-                // WindowState sizes the frame, title bar and all, so 960x540
-                // asked for is a slide short by whatever the chrome takes. Hand
-                // that back and re-centre on what the window actually became.
-                // Insets read zero on a frame that isn't up yet, which just
-                // leaves the window at the size it was asked for.
-                if (request.preview) LaunchedEffect(Unit) {
-                    EventQueue.invokeLater {
-                        val chrome = window.insets
-                        window.setSize(
-                            window.width + chrome.left + chrome.right,
-                            window.height + chrome.top + chrome.bottom,
+            EditorScreen(
+                viewModel = viewModel,
+                // The document and index the editor has right now: play is a
+                // snapshot, later edits don't reach the running presentation.
+                //
+                // Off in layout mode: a layout is not a slide of the talk, and
+                // the index the player would start from names nothing there.
+                onPlay = if (state.isEditingLayouts) null else {
+                    { document, index ->
+                        val displays: List<Rectangle> = playScreens()
+                        screens = displays
+                        playing = PlayRequest(
+                            document = document,
+                            slideIndex = index,
+                            // The talk goes to the projector and the lectern
+                            // keeps the laptop: the show opens on the first
+                            // display that isn't the primary one.
+                            showScreen = if (displays.size > 1) 1 else 0,
                         )
-                        window.setLocationRelativeTo(null)
                     }
-                }
-
-                PresentationPlayer(
-                    document = request.document,
-                    startIndex = request.slideIndex,
-                    modifier = Modifier.fillMaxSize(),
-                    onExit = close,
-                    controller = controller,
-                    onOpenUrl = ::openInBrowser,
-                )
-            }
-
-            // The lectern's half of the show, following the same controller.
-            // Never for a preview: a preview is one slide looked at from the
-            // editor, there is nobody at a lectern. Always for a rehearsal,
-            // which is this window and nothing else.
-            if (request.rehearse || (!request.preview && showPresenter)) Window(
-                // Closing this alone leaves the show up: it is a second screen,
-                // not the show. The View menu brings it back. A rehearsal has
-                // no show behind it, so closing it ends the whole thing.
-                onCloseRequest = if (request.rehearse) close else {
-                    { showPresenter = false }
                 },
-                title = "Cupboard Presenter",
-                state = presenterState,
-                onKeyEvent = showKeys(controller, close, swapDisplays),
-            ) {
-                // The show itself, playing at a pixel: the display follows a
-                // controller, and a controller has nothing to say until a
-                // player is composed against it. Behind the display and out of
-                // the way, so the current and next previews are the rehearsal.
-                if (request.rehearse) PresentationPlayer(
-                    document = request.document,
-                    startIndex = request.slideIndex,
-                    modifier = Modifier.size(1.dp),
-                    onExit = close,
-                    controller = controller,
-                    onOpenUrl = ::openInBrowser,
-                )
+                onPlayPreview = previewSlide,
+                onShowContextMenu = nativeMenu?.let { menu ->
+                    { elementId, positionInWindow ->
+                        showNativeMenu(
+                            popup = menu,
+                            parent = window.contentPane,
+                            density = density,
+                            positionInWindow = positionInWindow,
+                            sections = canvasContextSections(state, viewModel, elementId),
+                        )
+                    }
+                },
+                // The same popup: two menus can't be open at once anyway, and
+                // the row's verbs carry its id, so nothing here has to guess
+                // what the click did to the selection.
+                onShowSlideContextMenu = nativeMenu?.let { menu ->
+                    { slideId, positionInWindow, onRename ->
+                        showNativeMenu(
+                            popup = menu,
+                            parent = window.contentPane,
+                            density = density,
+                            positionInWindow = positionInWindow,
+                            // In layout mode the row is a layout, so the verbs
+                            // are the layout ones. Rename's dialog belongs to
+                            // the editor view, which hands its opener in.
+                            sections = if (state.isEditingLayouts) {
+                                layoutSections(viewModel, slideId, onRename)
+                            } else {
+                                slideSections(
+                                    state = state,
+                                    viewModel = viewModel,
+                                    slideId = slideId,
+                                    includePaste = true,
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+    }
 
-                PresenterView(
-                    // The live document rather than the show's snapshot: notes
-                    // typed here go through the editor's loop, and the snapshot
-                    // would never show them coming back. The play order is the
-                    // same either way, nothing edits the deck while a show is up.
-                    document = state.document,
-                    controller = controller,
-                    onNotesChange = { slideId, notes ->
-                        state.document.slides.firstOrNull { it.id == slideId }
-                            ?.let { slide -> viewModel.onUpdateSlide(slide.copy(notes = notes)) }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    clock = { LocalTime.now().format(ClockFormat) },
-                )
+    playing?.let { request ->
+        val controller = rememberPlayerController()
+        val close = { playing = null }
+
+        // A preview sits in a window on top of the editor: you are still
+        // working on the slide, so the deck should not take the screen
+        // away to show it to you. Escape closes it either way.
+        val showState: WindowState = if (request.preview) {
+            rememberWindowState(
+                size = DpSize(PreviewWindowWidth, PreviewWindowHeight),
+                position = WindowPosition(Alignment.Center),
+            )
+        } else {
+            rememberWindowState(placement = WindowPlacement.Maximized)
+        }
+
+        // The presenter display's window state lives out here so it keeps
+        // its display across a trip through the View menu: put away and
+        // brought back, it comes up where the swap left it. A rehearsal
+        // takes the screen instead: it is the only window of the show.
+        val presenterState: WindowState = if (request.rehearse) {
+            rememberWindowState(placement = WindowPlacement.Maximized)
+        } else {
+            rememberWindowState(
+                size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
+                position = WindowPosition(Alignment.Center),
+            )
+        }
+
+        // The primary display, explicitly: rehearsing with a projector
+        // still plugged in belongs on the screen in front of you.
+        if (request.rehearse) LaunchedEffect(Unit) {
+            screens.firstOrNull()?.let { presenterState.moveOnto(it, WindowPlacement.Maximized) }
+        }
+
+        // Two displays or more: the show fills one of them and the
+        // presenter display fills the other, and both move when the index
+        // does. A single display keeps what it always did, the show
+        // maximized with the presenter display windowed on top.
+        if (!request.preview && !request.rehearse && screens.size > 1) LaunchedEffect(request.showScreen) {
+            showState.moveOnto(screens[request.showScreen], WindowPlacement.Fullscreen)
+            presenterState.moveOnto(
+                bounds = screens[if (request.showScreen == 0) 1 else 0],
+                placement = WindowPlacement.Maximized,
+            )
+        }
+
+        // No show window for a rehearsal: the talk plays inside the
+        // presenter window instead, taking no room there.
+        if (!request.rehearse) Window(
+            onCloseRequest = close,
+            title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
+            state = showState,
+            onKeyEvent = showKeys(controller, close, swapDisplays),
+        ) {
+            // WindowState sizes the frame, title bar and all, so 960x540
+            // asked for is a slide short by whatever the chrome takes. Hand
+            // that back and re-centre on what the window actually became.
+            // Insets read zero on a frame that isn't up yet, which just
+            // leaves the window at the size it was asked for.
+            if (request.preview) LaunchedEffect(Unit) {
+                EventQueue.invokeLater {
+                    val chrome = window.insets
+                    window.setSize(
+                        window.width + chrome.left + chrome.right,
+                        window.height + chrome.top + chrome.bottom,
+                    )
+                    window.setLocationRelativeTo(null)
+                }
             }
+
+            PresentationPlayer(
+                document = request.document,
+                startIndex = request.slideIndex,
+                modifier = Modifier.fillMaxSize(),
+                onExit = close,
+                controller = controller,
+                onOpenUrl = ::openInBrowser,
+            )
+        }
+
+        // The lectern's half of the show, following the same controller.
+        // Never for a preview: a preview is one slide looked at from the
+        // editor, there is nobody at a lectern. Always for a rehearsal,
+        // which is this window and nothing else.
+        if (request.rehearse || (!request.preview && showPresenter)) Window(
+            // Closing this alone leaves the show up: it is a second screen,
+            // not the show. The View menu brings it back. A rehearsal has
+            // no show behind it, so closing it ends the whole thing.
+            onCloseRequest = if (request.rehearse) close else {
+                { showPresenter = false }
+            },
+            title = "Cupboard Presenter",
+            state = presenterState,
+            onKeyEvent = showKeys(controller, close, swapDisplays),
+        ) {
+            // The show itself, playing at a pixel: the display follows a
+            // controller, and a controller has nothing to say until a
+            // player is composed against it. Behind the display and out of
+            // the way, so the current and next previews are the rehearsal.
+            if (request.rehearse) PresentationPlayer(
+                document = request.document,
+                startIndex = request.slideIndex,
+                modifier = Modifier.size(1.dp),
+                onExit = close,
+                controller = controller,
+                onOpenUrl = ::openInBrowser,
+            )
+
+            PresenterView(
+                // The live document rather than the show's snapshot: notes
+                // typed here go through the editor's loop, and the snapshot
+                // would never show them coming back. The play order is the
+                // same either way, nothing edits the deck while a show is up.
+                document = state.document,
+                controller = controller,
+                onNotesChange = { slideId, notes ->
+                    state.document.slides.firstOrNull { it.id == slideId }
+                        ?.let { slide -> viewModel.onUpdateSlide(slide.copy(notes = notes)) }
+                },
+                modifier = Modifier.fillMaxSize(),
+                clock = { LocalTime.now().format(ClockFormat) },
+            )
         }
     }
 }

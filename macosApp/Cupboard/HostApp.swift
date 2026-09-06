@@ -13,63 +13,54 @@ import CupboardCanvas
 
 // MARK: - App
 
-/// Activates the app once it finishes launching. Launched by exec'ing the
-/// binary, which is what run.sh does to keep logs on the terminal,
-/// LaunchServices never activates the process, and SwiftUI holds the
-/// WindowGroup's window back until the first activation (instrumented: zero
-/// windows ever exist before it), so the window only appeared after a dock
-/// click sent activate + reopen. A Finder or `open` launch never needed this;
-/// it makes the dev loop behave like one.
+/// Activates the app once it finishes launching, and takes the decks Finder
+/// hands over.
+///
+/// Activation: launched by exec'ing the binary, which is what run.sh does to
+/// keep logs on the terminal, LaunchServices never activates the process, and
+/// SwiftUI holds the WindowGroup's window back until the first activation
+/// (instrumented: zero windows ever exist before it), so the window only
+/// appeared after a dock click sent activate + reopen. A Finder or `open` launch
+/// never needed this; it makes the dev loop behave like one.
+///
+/// Opening: a double-clicked `.cupboard` arrives here because the bundle claims
+/// the type. The window that shows it is SwiftUI's to open, and `openWindow` is
+/// an environment value a delegate cannot read, so the paths go to
+/// [OpenRequests] and the first window drains them.
 final class ActivationDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        NSApp.activate()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        OpenRequests.shared.request(urls.map(\.path))
     }
 }
 
 @main
 struct CupboardHostApp: App {
     @NSApplicationDelegateAdaptor(ActivationDelegate.self) private var activation
-    @State private var model = EditorModel()
-    @State private var show: Show?
-    /// The show's windows, and whether the View menu wants a presenter display.
-    /// Remembered across launches: a lectern setup is not something to re-pick
-    /// every show.
-    @State private var displays = ShowDisplays()
+    /// The window the menu bar is about, falling back to the default deck's
+    /// model when nothing has focus (the app is up but every window is closed).
+    @FocusedValue(\.editor) private var focusedEditor: EditorModel?
+    @Environment(\.openWindow) var openWindow
+    /// Whether the View menu wants a presenter display. Remembered across
+    /// launches: a lectern setup is not something to re-pick every show.
     @AppStorage("showPresenterDisplay") private var showPresenter = true
+
+    var model: EditorModel { focusedEditor ?? DocumentStore.shared.model(for: nil) }
 
     private var host: EditorHost { model.host }
 
     var body: some Scene {
-        WindowGroup("Cupboard") {
-            Group {
-                // A show with a screen of its own leaves this window alone: the
-                // editor stays up behind it, the way it does under a full-screen
-                // Keynote. Only the one-display path takes the window over, and
-                // a rehearsal is not one: it has no deck to put anywhere.
-                if let show, !show.external, !show.rehearsal {
-                    PlayCanvas(session: show.session)
-                        .background(Color.black)
-                } else {
-                    EditorView(model: model, show: $show)
-                }
-            }
-            .ignoresSafeArea()
-            .background(WindowConfigurator(lights: model.lights).frame(width: 0, height: 0))
-            .background(
-                ShowBridge(
-                    show: show,
-                    presenterEnabled: showPresenter,
-                    displays: displays
-                )
-                .frame(width: 0, height: 0)
-            )
+        // One window per open deck. A window with no ref is the default one,
+        // which opens the deck this machine already had.
+        WindowGroup("Cupboard", for: DocumentRef.self) { $ref in
+            DocumentWindow(ref: $ref)
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            fileCommands
             // The File menu's one item of ours. No key equivalent: exporting is
             // a deliberate act, not something to hit on the way to Cmd+S.
             CommandGroup(replacing: .importExport) {
@@ -144,8 +135,8 @@ struct CupboardHostApp: App {
                 // The X key does this too, from either play window. No key
                 // equivalent here: a bare letter in the bar would shadow typing
                 // in the editor, and the shows are where it is wanted.
-                Button("Swap Displays") { displays.swapDisplays() }
-                    .disabled(show?.external != true)
+                Button("Swap Displays") { model.displays.swapDisplays() }
+                    .disabled(model.show?.external != true)
 
                 Divider()
 
@@ -219,12 +210,16 @@ struct CupboardHostApp: App {
 
             // No key equivalent: Play owns the presentation gesture, and a
             // preview is the deliberate one you go to the menu for.
-            Button("Preview Slide") { show = .preview(host.startPreview(onExit: { show = nil })) }
+            Button("Preview Slide") {
+                let window = model
+                window.show = .preview(host.startPreview(onExit: { window.show = nil }))
+            }
 
             // The show, presenter display only, from the selected slide. No key
             // equivalent either, for the same reason the preview has none.
             Button("Rehearse Slideshow") {
-                show = .rehearse(host.startRehearsal(onExit: { show = nil }))
+                let window = model
+                window.show = .rehearse(host.startRehearsal(onExit: { window.show = nil }))
             }
         }
     }
@@ -237,6 +232,99 @@ struct CupboardHostApp: App {
             // Reading generation is what keeps these enabled states fresh.
             let _ = model.generation
             MenuEntries(entries: arrangeEntries(ArrangeFacts(Chrome(host)), host))
+        }
+    }
+}
+
+// MARK: - Window
+
+/// One open deck, and everything a window rather than the app owns: which editor
+/// it is on, what it is playing, and the Rename alert the menu bar raises here.
+///
+/// The editor comes from [DocumentStore] rather than being made here: SwiftUI
+/// re-inits a window's root view freely, and an editor per init would put several
+/// autosaving view models on one bundle.
+struct DocumentWindow: View {
+    @Binding var ref: DocumentRef?
+    @State private var model: EditorModel
+    /// Rename's field. View state, not the model's: the name only becomes the
+    /// deck's when the alert is confirmed.
+    @State private var renameText = ""
+    @AppStorage("showPresenterDisplay") private var showPresenter = true
+    @Environment(\.openWindow) private var openWindow
+
+    init(ref: Binding<DocumentRef?>) {
+        _ref = ref
+        _model = State(initialValue: DocumentStore.shared.model(for: ref.wrappedValue))
+    }
+
+    var body: some View {
+        @Bindable var window = model
+        return Group {
+            // A show with a screen of its own leaves this window alone: the
+            // editor stays up behind it, the way it does under a full-screen
+            // Keynote. Only the one-display path takes the window over, and
+            // a rehearsal is not one: it has no deck to put anywhere.
+            if let show = model.show, !show.external, !show.rehearsal {
+                PlayCanvas(session: show.session)
+                    .background(Color.black)
+            } else {
+                EditorView(model: model, show: $window.show)
+            }
+        }
+        .ignoresSafeArea()
+        .navigationTitle(titleOf(model))
+        .background(WindowConfigurator(lights: model.lights).frame(width: 0, height: 0))
+        .background(
+            ShowBridge(
+                show: model.show,
+                presenterEnabled: showPresenter,
+                displays: model.displays
+            )
+            .frame(width: 0, height: 0)
+        )
+        // Every menu command acts on the window with focus, and this is what
+        // says which one that is.
+        .focusedSceneValue(\.editor, model)
+        .alert("Rename Deck", isPresented: $window.renaming) {
+            TextField("Name", text: $renameText)
+            Button("Cancel", role: .cancel) {}
+            Button("Rename") { model.host.renameDocument(name: renameText) }
+        } message: {
+            Text("What this deck is called. The bundle keeps its own file name.")
+        }
+        .onChange(of: model.renaming) { _, asking in
+            if asking { renameText = model.host.title() }
+        }
+        // Decks Finder handed over. Drained rather than read, so the second
+        // window to see them does not open its own copy of the same file.
+        .onAppear { openRequested() }
+        .onChange(of: OpenRequests.shared.pending) { _, _ in openRequested() }
+        // The window is gone, so the editor behind it should stop: autosave runs
+        // off the view model's scope, and one nobody is looking at still writes.
+        .onDisappear { DocumentStore.shared.release(ref) }
+    }
+
+    /// The deck's name for the Window menu. The title bar is hidden, so this is
+    /// the only place it shows outside the toolbar.
+    private func titleOf(_ model: EditorModel) -> String {
+        let _ = model.generation
+        return model.host.title()
+    }
+
+    private func openRequested() {
+        for path in OpenRequests.shared.drain() {
+            let ref = DocumentRef(path: path)
+            if DocumentStore.shared.isOpen(ref) {
+                openWindow(value: ref)
+                continue
+            }
+            if DocumentStore.shared.raiseDefault(ref) { continue }
+            // Silent on a deck that will not read: this is a launch, and an
+            // alert from a window that is still coming up is a modal on nothing.
+            guard let host = Documents.shared.open(path: ref.path).host else { continue }
+            DocumentStore.shared.park(host, as: ref)
+            openWindow(value: ref)
         }
     }
 }

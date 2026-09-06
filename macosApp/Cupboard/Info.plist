@@ -7,5 +7,51 @@
 	     here. GENERATE_INFOPLIST_FILE merges its keys on top of this file. -->
 	<key>NSHighResolutionCapable</key>
 	<true/>
+
+	<!-- Cupboard owns the .cupboard deck: a double-clicked one opens here, and
+	     Finder shows it as one file rather than the folder it is underneath.
+	     Owner rather than Alternate because this app defines the format. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Cupboard Deck</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSTypeIsPackage</key>
+			<true/>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>io.github.xxfast.cupboard.deck</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- The type itself, declared by the app that defines it. A package, so it
+	     conforms to com.apple.package as well as to composite content: the
+	     bundle is a directory with document.json and assets/ inside it. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.xxfast.cupboard.deck</string>
+			<key>UTTypeDescription</key>
+			<string>Cupboard Deck</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.composite-content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cupboard</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

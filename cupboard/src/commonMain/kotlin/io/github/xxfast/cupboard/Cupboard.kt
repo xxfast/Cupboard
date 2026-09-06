@@ -13,10 +13,17 @@ object Cupboard
 
 /**
  * The deck inside a `.cupboard` bundle. See `CupboardBundle` for the layout
- * around it. Which bundle a shell opens is still a constant rather than a user
- * choice until open/save-as lands.
+ * around it. Which bundle a shell opens is the user's choice now: `newDocument`,
+ * `openDocument` and `saveAs` sit beside `editor` on each platform's factory.
  */
 internal const val DOCUMENT_FILE_NAME: String = "document.json"
+
+/**
+ * The decks this machine opened last, beside the theme library and for the same
+ * reason: a recents list belongs to the person, not to any one deck, and least
+ * of all to a bundle that gets mailed around.
+ */
+internal const val RECENTS_FILE_NAME: String = "recents.json"
 
 /**
  * The user's saved themes, beside the bundle rather than inside it: a theme is a

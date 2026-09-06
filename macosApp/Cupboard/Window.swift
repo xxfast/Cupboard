@@ -222,13 +222,50 @@ struct PlayCanvas: NSViewRepresentable {
 /// canvas-side edits show up in the sidebar, not just the other way around.
 @Observable
 final class EditorModel {
-    let host = EditorHost()
+    /// The editor this window is on. A var because Save As opens a new one on
+    /// the new bundle: swapping it here means every view and every menu already
+    /// pointing at this model follows, without the window being rebuilt.
+    private(set) var host: EditorHost
     private(set) var generation: Int = 0
+    /// File > Rename's alert. The command is in the menu bar and the alert is in
+    /// the window, so the flag has to live where both can see it.
+    var renaming = false
+    /// What this window is playing, or nil for the editor. Here rather than in
+    /// the view for the same reason: Play is a toolbar button and Preview Slide
+    /// is a menu item, and one of them is not in the window.
+    var show: Show?
     /// Shared so the window setup and the editor view drive the same buttons.
     @ObservationIgnored let lights = TrafficLights()
+    /// The show's windows. One arrangement per window, settled when its show
+    /// starts; the View menu's Swap Displays drives this window's.
+    @ObservationIgnored let displays = ShowDisplays()
     @ObservationIgnored private var unsubscribe: (() -> Void)?
 
-    init() {
+    init(host: EditorHost = EditorHost()) {
+        self.host = host
+        listen()
+    }
+
+    /// Moves this window onto [host] and stops the one it was on. Save As is the
+    /// only caller: a view model's bundle is fixed for its life, so saving
+    /// elsewhere is a new editor rather than a moved one.
+    func adopt(_ host: EditorHost) {
+        let previous = self.host
+        unsubscribe?()
+        self.host = host
+        listen()
+        generation += 1
+        previous.close()
+    }
+
+    /// Stops the editor, autosave included, for a window that has gone.
+    func close() {
+        unsubscribe?()
+        unsubscribe = nil
+        host.close()
+    }
+
+    private func listen() {
         // Kotlin notifies synchronously on whichever thread mutated, which is
         // always the main thread here (SwiftUI calls, or Compose input).
         unsubscribe = host.onChange { [weak self] in self?.generation += 1 }
@@ -249,5 +286,18 @@ final class EditorModel {
 
     deinit {
         unsubscribe?()
+    }
+}
+
+/// Which window the menu bar is about. Every command acts on the editor with
+/// focus, so the deck being typed into is the one Cmd+Z undoes.
+struct FocusedEditorKey: FocusedValueKey {
+    typealias Value = EditorModel
+}
+
+extension FocusedValues {
+    var editor: EditorModel? {
+        get { self[FocusedEditorKey.self] }
+        set { self[FocusedEditorKey.self] = newValue }
     }
 }
