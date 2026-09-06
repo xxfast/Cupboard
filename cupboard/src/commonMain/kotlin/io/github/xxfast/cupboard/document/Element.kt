@@ -163,11 +163,20 @@ data class TextElement(
     val strikethrough: Boolean = false,
     val listStyle: ListStyle = ListStyle.None,
     /**
-     * The whole box as one hyperlink. Ranges inside the text come with the
-     * attributed-string work; until then a link is a property of the element,
-     * which is enough for the shape it takes on a slide. Nothing opens it yet.
+     * The whole box as one hyperlink, as a bare URL. Ranges inside the text come
+     * with the attributed-string work; until then a link is a property of the
+     * element, which is enough for the shape it takes on a slide.
+     *
+     * Kept alongside [linkTarget] rather than folded into it because every deck
+     * written before targets existed carries this one. [resolvedLink] reads both.
      */
     val link: String? = null,
+    /**
+     * Where the box points, for the five destinations a URL cannot name. Wins
+     * over [link] when both are set; the editor keeps the two in step, writing
+     * the string only for a [LinkTarget.Url].
+     */
+    val linkTarget: LinkTarget? = null,
     /** See [PlaceholderRole]: set, this is a placeholder on a layout or an instance on a slide. */
     val role: PlaceholderRole? = null,
 ) : Element {
@@ -278,6 +287,8 @@ data class ShapeElement(
     val label: String = "",
     val labelSize: Float = 15f,
     val labelColor: Long = 0xFFD9CFFF,
+    /** Where clicking the shape takes the show. See [LinkTarget]. */
+    val link: LinkTarget? = null,
 ) : Element {
     override fun update(
         frame: Frame,
@@ -313,6 +324,8 @@ data class ImageElement(
     val placeholder: String = "Drop frame capture here",
     /** See [PlaceholderRole]. Not [placeholder], which is the prompt the empty frame draws. */
     val role: PlaceholderRole? = null,
+    /** Where clicking the image takes the show. See [LinkTarget]. */
+    val link: LinkTarget? = null,
 ) : Element {
     override fun update(
         frame: Frame,

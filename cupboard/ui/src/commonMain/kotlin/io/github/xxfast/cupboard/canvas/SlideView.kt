@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.offset
@@ -19,6 +20,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -29,6 +31,7 @@ import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
@@ -44,6 +47,7 @@ import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isVisibleAt
 import io.github.xxfast.cupboard.document.magicMovePairs
 import io.github.xxfast.cupboard.document.pieceRevealAt
+import io.github.xxfast.cupboard.document.resolvedLink
 
 /** How far the slide number sits off the slide's right and bottom edges, in doc units. */
 private const val SlideNumberInset: Float = 64f
@@ -89,6 +93,9 @@ fun SlideView(
     slideHeight: Float = Document.SLIDE_HEIGHT,
 ) {
     val play: PlayTransition? = LocalPlayTransition.current
+    // Only ever consulted in play mode: the editor provides no handler, and a
+    // click on the canvas there is a selection rather than a jump.
+    val linkHandler: (LinkTarget) -> Unit = LocalLinkHandler.current
     val magic: PlayTransition? =
         play?.takeIf { it.transition.kind == TransitionKind.MagicMove }
 
@@ -149,6 +156,12 @@ fun SlideView(
             val entry: BuildAt? = slide.entryBuildAt(element.id)
             val exit: BuildAt? = slide.exitBuildAt(element.id)
             val reveal: PieceReveal? = slide.pieceRevealAt(element.id, step)
+            val visible: Boolean = slide.isVisibleAt(element.id, step)
+
+            // A link is only clickable while its element is on screen: an element
+            // a build hasn't brought in yet is not there to click, however much
+            // of its box the wrapper is still holding open.
+            val target: LinkTarget? = element.resolvedLink()?.takeIf { visible }
 
             // The frame rides the wrapper rather than the element, so an effect
             // that clips (a wipe) or slides does it around the element's own box
@@ -156,10 +169,16 @@ fun SlideView(
             Box(
                 modifier = Modifier
                     .offset(element.frame.x.dp, element.frame.y.dp)
-                    .size(element.frame.width.dp, element.frame.height.dp),
+                    .size(element.frame.width.dp, element.frame.height.dp)
+                    .then(
+                        if (target == null) Modifier
+                        else Modifier.pointerInput(target, linkHandler) {
+                            detectTapGestures { linkHandler(target) }
+                        },
+                    ),
             ) {
                 AnimatedVisibility(
-                    visible = slide.isVisibleAt(element.id, step),
+                    visible = visible,
                     enter = buildEnter(element, entry?.build, entry?.delayMs ?: 0),
                     exit = buildExit(element, exit?.build, exit?.delayMs ?: 0),
                 ) {

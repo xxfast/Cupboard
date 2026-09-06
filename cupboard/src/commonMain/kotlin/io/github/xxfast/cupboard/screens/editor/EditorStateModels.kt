@@ -8,7 +8,9 @@ import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ObjectStyle
+import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
@@ -622,6 +624,21 @@ sealed interface EditorEvent {
         val slideId: String,
         val transition: SlideTransition?,
     ) : EditorEvent
+    /**
+     * How the whole deck plays: its kind of show, and what loops and restarts.
+     * One history entry, and settings the deck already carries are a no-op.
+     */
+    data class SetPlayback(val settings: PlaybackSettings) : EditorEvent
+    /**
+     * Points every one of [ids] at [target], null unlinking them. One history
+     * entry for the batch, the way every element edit is.
+     *
+     * Locked elements are left out, and so are the kinds that hold no link at
+     * all. A text box's older URL string is kept in step with its target: written
+     * for a [LinkTarget.Url] and cleared for anything else, so nothing reads a
+     * stale address off a box that now jumps to a slide.
+     */
+    data class SetElementLinks(val ids: List<String>, val target: LinkTarget?) : EditorEvent
     /**
      * Appends a build to the selected slide's build order, which is where a new
      * one lands: the order is the order they play in.

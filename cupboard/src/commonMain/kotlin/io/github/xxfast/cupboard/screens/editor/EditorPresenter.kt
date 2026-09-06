@@ -11,6 +11,8 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
+import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
@@ -129,6 +131,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackgroun
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
@@ -220,6 +224,25 @@ private fun EditorState.stackedElements(ids: List<String>): List<Element> {
  */
 private fun EditorState.editable(elements: List<Element>): List<Element> =
     elements.filter { unlockedElement(it.id) != null }
+
+/**
+ * This element pointed at [target], or null for a kind that holds no link and for
+ * one already pointing exactly there: the caller drops those, so a batch that
+ * changes nothing costs no history entry.
+ *
+ * A text box's older URL string moves with its target, written for a
+ * [LinkTarget.Url] and cleared for everything else. Two fields, one answer: see
+ * `resolvedLink`.
+ */
+private fun Element.linkedTo(target: LinkTarget?): Element? {
+    val linked: Element = when (this) {
+        is TextElement -> copy(linkTarget = target, link = (target as? LinkTarget.Url)?.url)
+        is ShapeElement -> copy(link = target)
+        is ImageElement -> copy(link = target)
+        else -> return null
+    }
+    return linked.takeIf { it != this }
+}
 
 /** Folds [elements] back into the document through their slide. */
 private fun EditorState.withElements(elements: List<Element>): EditorState =
@@ -918,6 +941,26 @@ fun EditorPresenter(
                     state.copy(document = updated)
                 }
             }
+
+            // Playback is the deck's, not the slide's: one history entry, and
+            // settings it already carries change nothing.
+            is SetPlayback ->
+                if (state.document.playback == event.settings) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(playback = event.settings))
+                }
+
+            is SetElementLinks -> state.unlockedElements(event.ids)
+                .mapNotNull { it.linkedTo(event.target) }
+                .takeIf { it.isNotEmpty() }
+                ?.let { linked ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(linked)
+                }
+                ?: state
 
             // The build order is the slide's, so all four of these are ordinary
             // slide edits: one history entry each, and a build that names no

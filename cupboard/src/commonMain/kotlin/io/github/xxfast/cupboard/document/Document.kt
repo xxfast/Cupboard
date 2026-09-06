@@ -68,6 +68,12 @@ data class Document(
      * deck the way its layouts do. [applyingTheme] regenerates them.
      */
     val objectStyles: List<ObjectStyle> = defaultObjectStyles(ElementDefaults()),
+    /**
+     * How the deck plays: presenter-driven, self-playing or links-only, and what
+     * loops and restarts. See [PlaybackSettings]; the default is the ordinary
+     * presenter-driven show every deck has always been.
+     */
+    val playback: PlaybackSettings = PlaybackSettings(),
 ) {
     companion object {
         /** What a deck is on unless it says otherwise, and what a renderer
