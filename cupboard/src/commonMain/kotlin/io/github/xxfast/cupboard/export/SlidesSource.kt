@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.export
 
+import io.github.xxfast.cupboard.document.BuildKind
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramElement
@@ -57,6 +58,11 @@ internal fun slidesSource(document: Document, packageName: String): String {
             "val ${slideIdentifier(index)} by " +
                 "Slide(stepCount = ${slide.stepCount()}$specs) { step ->",
         ) {
+            // Once per slide rather than once per build: what the reader needs to
+            // know is that this slide plays something the export leaves out.
+            if (slide.builds.any { it.kind == BuildKind.Action }) {
+                out.line("// TODO(cupboard): action builds are not exported yet")
+            }
             out.block("Board {") {
                 for (element in slide.elements) out.element(slide, element, 1f, null)
             }

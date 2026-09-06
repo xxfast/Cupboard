@@ -23,6 +23,9 @@ private fun titleSlide(title: String, depth: Int = 0): Slide = Slide(
  */
 private const val CarriedLine: String = "One codebase, three shells"
 
+/** How far the pipeline's Draw stage swells while it is being talked about. */
+private const val DrawEmphasis: Float = 1.15f
+
 /**
  * "Why KMP", dressed in the Magic Move that hands [CarriedLine] to the pipeline
  * slide behind it.
@@ -319,6 +322,19 @@ fun sampleDocument(): Document {
             // on its own: an Out build on an element nothing brought in.
             Build(body.id, delivery = BuildDelivery.ByParagraph),
             Build(image.id, kind = BuildKind.Out, effect = BuildEffect.Dissolve),
+            // The stage under discussion swells on one click and settles on the
+            // next. Two clicks rather than a chain, because actions compose per
+            // step: a settle riding this build's own step would land with it and
+            // cancel it out. Scales multiply, so the way back is the reciprocal.
+            Build.action(
+                elementId = stages[2].id,
+                action = BuildAction(ActionKind.Scale, scale = DrawEmphasis),
+                durationMs = 400,
+            ),
+            Build.action(
+                elementId = stages[2].id,
+                action = BuildAction(ActionKind.Scale, scale = 1f / DrawEmphasis),
+            ),
         ),
         transition = SlideTransition(
             kind = TransitionKind.Push,

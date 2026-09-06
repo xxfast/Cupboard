@@ -30,14 +30,43 @@ enum class BuildEffect {
 }
 
 /**
- * Whether a build brings its element on or takes it away.
+ * Whether a build brings its element on, takes it away, or moves it about while
+ * it is there.
  *
  * An element with no [In] build at all is on the slide from the start, so an
  * [Out] build on its own is how something that opens with the slide leaves it.
- * Actions (a build that moves or emphasises an element in place) come next, and
- * are deliberately not one of these: they change nothing about visibility.
+ * An [Action] changes nothing about visibility: it carries a [BuildAction] and
+ * animates an element that is already on the slide.
  */
-enum class BuildKind { In, Out }
+enum class BuildKind { In, Out, Action }
+
+/**
+ * What one action does to the element it names.
+ *
+ * [Move] and [Rotate] are relative, so two of them in a row compose into one
+ * longer journey; [Scale] multiplies about the element's centre; [Opacity] is
+ * absolute, and the last one to land is the one that counts.
+ */
+enum class ActionKind { Move, Opacity, Rotate, Scale }
+
+/**
+ * The change an [BuildKind.Action] build makes, of whichever [kind] it is: only
+ * that kind's fields are read, and the rest sit at the value that changes
+ * nothing.
+ *
+ * [dx] and [dy] are document units, [rotation] is degrees clockwise, [scale] is a
+ * factor about the element's centre and [opacity] is the fraction the element
+ * draws at.
+ */
+@Serializable
+data class BuildAction(
+    val kind: ActionKind,
+    val dx: Float = 0f,
+    val dy: Float = 0f,
+    val opacity: Float = 1f,
+    val rotation: Float = 0f,
+    val scale: Float = 1f,
+)
 
 /**
  * How much of the element one build hands over: all of it, or one piece at a
@@ -95,6 +124,48 @@ data class Build(
      */
     val delayMs: Int = 0,
     @SerialName("codeStep") val elementStep: Int? = null,
+    /**
+     * What the build does when its [kind] is [BuildKind.Action], and nothing at
+     * all otherwise. An action build without one is a no-op rather than a
+     * failure: a deck opens as what it was saved as, whatever a panel left behind.
+     */
+    val action: BuildAction? = null,
+) {
+    companion object
+}
+
+/**
+ * An [BuildKind.Action] build, for the panels that add one.
+ *
+ * Here rather than at the call sites because every shell writes the same four
+ * fields, and a build that is an action everywhere but in its kind is a bug that
+ * only shows up in play mode.
+ */
+fun Build.Companion.action(
+    elementId: String,
+    action: BuildAction,
+    trigger: BuildTrigger = BuildTrigger.OnClick,
+    durationMs: Int = 600,
+): Build = Build(
+    elementId = elementId,
+    kind = BuildKind.Action,
+    durationMs = durationMs,
+    trigger = trigger,
+    action = action,
+)
+
+/**
+ * Where an element sits, and how it is drawn, once every action that has landed
+ * has had its say: [dx] and [dy] in document units off its frame, [rotation] in
+ * degrees on top of its own, [scale] about its centre, and [opacity] the one an
+ * action set, null when none did.
+ */
+data class ActionState(
+    val dx: Float = 0f,
+    val dy: Float = 0f,
+    val opacity: Float? = null,
+    val rotation: Float = 0f,
+    val scale: Float = 1f,
 )
 
 /**
@@ -130,6 +201,9 @@ data class PieceReveal(val build: Build, val shown: Int, val total: Int)
  * something, whatever it was pointed at.
  */
 fun Build.pieceCount(slide: Slide): Int {
+    // An action moves the whole element, so there is nothing to hand over in
+    // pieces however the build was dressed.
+    if (kind == BuildKind.Action) return 1
     if (delivery == BuildDelivery.All) return 1
 
     val element: Element = slide.elementById(elementId) ?: return 1
@@ -286,9 +360,13 @@ fun Slide.exitBuild(elementId: String): Build? = exitBuildAt(elementId)?.build
  * An element none of whose builds has landed yet is off the slide when something
  * later brings it in, and on it when nothing does: an element with only exits was
  * there from the start, and one with no builds at all is always there.
+ *
+ * [BuildKind.Action] builds are not read here at all: an action animates an
+ * element that is already on the slide, and says nothing about whether it is.
  */
 fun Slide.isVisibleAt(elementId: String, step: Int): Boolean {
-    val mine: List<BuildAt> = buildTimeline().filter { it.build.elementId == elementId }
+    val mine: List<BuildAt> = buildTimeline()
+        .filter { it.build.elementId == elementId && it.build.kind != BuildKind.Action }
     val landed: BuildAt = mine.lastOrNull { it.firstStep <= step }
         ?: return mine.none { it.build.kind == BuildKind.In }
     return landed.build.kind == BuildKind.In
@@ -330,6 +408,48 @@ fun Slide.pieceRevealAt(elementId: String, step: Int): PieceReveal? {
         if (at.firstStep == at.lastStep) total
         else (step - at.firstStep + 1).coerceIn(1, total)
     return PieceReveal(at.build, shown, total)
+}
+
+/**
+ * Every [BuildKind.Action] for [elementId] that has landed by [step], composed in
+ * timeline order.
+ *
+ * Moves and rotations add and scales multiply, so a run of them reads as one
+ * journey: a second move starts where the first ended. Opacity is absolute, so
+ * the last one to land wins, and stays null while none has.
+ *
+ * A build whose kind is [BuildKind.Action] but that carries no [Build.action] is
+ * skipped rather than guessed at.
+ */
+fun Slide.actionStateAt(elementId: String, step: Int): ActionState {
+    var state = ActionState()
+    for (at in buildTimeline()) {
+        if (at.build.kind != BuildKind.Action || at.build.elementId != elementId) continue
+        if (at.firstStep > step) continue
+        val action: BuildAction = at.build.action ?: continue
+        state = when (action.kind) {
+            ActionKind.Move -> state.copy(dx = state.dx + action.dx, dy = state.dy + action.dy)
+            ActionKind.Rotate -> state.copy(rotation = state.rotation + action.rotation)
+            ActionKind.Scale -> state.copy(scale = state.scale * action.scale)
+            ActionKind.Opacity -> state.copy(opacity = action.opacity)
+        }
+    }
+    return state
+}
+
+/**
+ * The action build [actionStateAt] last read, which is the one a renderer takes
+ * its duration and delay from.
+ *
+ * Null only when [elementId] has no action builds at all. Walking backwards past
+ * the first of them keeps that first build, so a state animating back to rest
+ * takes as long as it took to leave it.
+ */
+fun Slide.actionBuildAt(elementId: String, step: Int): BuildAt? {
+    val mine: List<BuildAt> = buildTimeline().filter {
+        it.build.kind == BuildKind.Action && it.build.elementId == elementId
+    }
+    return mine.lastOrNull { it.firstStep <= step } ?: mine.firstOrNull()
 }
 
 /** [pieceRevealAt]'s count alone: how many pieces of [elementId] are out at [step]. */

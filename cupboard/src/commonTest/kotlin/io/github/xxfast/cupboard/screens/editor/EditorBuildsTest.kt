@@ -1,6 +1,8 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.ActionKind
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.BuildAction
 import io.github.xxfast.cupboard.document.BuildDelivery
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.BuildKind
@@ -10,6 +12,9 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.action
+import io.github.xxfast.cupboard.document.actionStateAt
+import io.github.xxfast.cupboard.document.stepCount
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -51,6 +56,24 @@ class EditorBuildsTest {
         val state = viewModel.await { it.selectedSlide.builds.size == 2 }
         assertEquals(listOf(Build("a"), added), state.builds())
         assertTrue(state.canUndo)
+
+        viewModel.onUndo()
+        val undone = viewModel.await { it.selectedSlide.builds.size == 1 }
+        assertEquals(document(Build("a")), undone.document)
+        assertFalse(undone.canUndo)
+    }
+
+    @Test
+    fun anActionGoesInThroughTheSameEventEveryOtherBuildDoes() = runTest {
+        val viewModel = editor(document(Build("a")))
+        val nudge = Build.action("a", BuildAction(ActionKind.Move, dx = 40f, dy = -10f))
+
+        viewModel.onAddBuild(nudge)
+        val state = viewModel.await { it.selectedSlide.builds.size == 2 }
+        assertEquals(listOf(Build("a"), nudge), state.builds())
+        // It costs a step like any other click, and moves the element it names.
+        assertEquals(3, state.selectedSlide.stepCount())
+        assertEquals(40f, state.selectedSlide.actionStateAt("a", 2).dx)
 
         viewModel.onUndo()
         val undone = viewModel.await { it.selectedSlide.builds.size == 1 }

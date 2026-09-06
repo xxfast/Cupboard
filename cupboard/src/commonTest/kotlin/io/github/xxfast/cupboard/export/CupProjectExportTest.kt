@@ -42,6 +42,17 @@ class CupProjectExportTest {
     }
 
     @Test
+    fun aSlideWithActionsSaysSoOnceAndExportsTheRest() {
+        val slides = sampleDocument().toCupProject()
+            .contentsOf("src/commonMain/kotlin/presentation/Slides.kt")
+        val note = "// TODO(cupboard): action builds are not exported yet"
+
+        // The pipeline slide swells its Draw stage, and it is the only one that does.
+        assertEquals(1, slides.split("\n").count { it.trim() == note })
+        assertContains(slides, "Draw")
+    }
+
+    @Test
     fun everyFileIsWrittenTheWayKotlinIsWritten() {
         for (file in sampleDocument().toCupProject()) {
             assertTrue(file.contents.endsWith("\n"), "${file.path} has no final newline")

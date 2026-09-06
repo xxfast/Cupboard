@@ -3,6 +3,8 @@ package io.github.xxfast.cupboard.canvas
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.TweenSpec
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,6 +23,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.ActionState
 import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
@@ -28,6 +33,8 @@ import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TransitionKind
+import io.github.xxfast.cupboard.document.actionBuildAt
+import io.github.xxfast.cupboard.document.actionStateAt
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.diagramStepFor
 import io.github.xxfast.cupboard.document.effectiveBackground
@@ -120,7 +127,7 @@ fun SlideView(
                 if (arriving) travelling.firstOrNull { (_, to) -> to.id == element.id }?.first
                 else null
 
-            val transform: ElementTransform? = when {
+            val travel: ElementTransform? = when {
                 origin != null -> magicMoveTransform(origin, element, progress.value)
                 // Nothing to travel from, so it arrives the ordinary way.
                 arriving -> element.fadingTransform(progress.value)
@@ -130,9 +137,14 @@ fun SlideView(
             // The editor draws every element at rest: nothing is hidden, nothing
             // animates itself in, and no build is read at all.
             if (step == null) {
-                ElementView(element, transform = transform)
+                ElementView(element, transform = travel)
                 continue
             }
+
+            // Keyed by id rather than by position, so the animation follows its
+            // element when the slide's list is reordered under it.
+            val transform: ElementTransform? =
+                key(element.id) { actionTransform(slide, element, step, travel) }
 
             val entry: BuildAt? = slide.entryBuildAt(element.id)
             val exit: BuildAt? = slide.exitBuildAt(element.id)
@@ -170,6 +182,50 @@ fun SlideView(
         }
         if (slide.showsSlideNumber && number != null) SlideNumberView(number)
     }
+}
+
+/**
+ * [base] with every action build that has landed by [step] animated on top of it,
+ * and [base] itself for an element no action names.
+ *
+ * One tween per property, spec'd by the action build the state was last read
+ * from: a step that changes nothing about this element changes no target, so
+ * nothing animates. Walking backwards runs the same tween the other way, since
+ * the target is a function of the step rather than of the direction it was
+ * reached from.
+ *
+ * The composition happens document-side, in [actionStateAt]; all this adds is the
+ * animation and the arithmetic that folds it into a transform the element already
+ * knows how to draw.
+ */
+@Composable
+private fun actionTransform(
+    slide: Slide,
+    element: Element,
+    step: Int,
+    base: ElementTransform?,
+): ElementTransform? {
+    val at: BuildAt = slide.actionBuildAt(element.id, step) ?: return base
+    val state: ActionState = slide.actionStateAt(element.id, step)
+    val spec: TweenSpec<Float> = tween(at.build.durationMs, at.delayMs, FastOutSlowInEasing)
+
+    val dx: Float by animateFloatAsState(state.dx, spec)
+    val dy: Float by animateFloatAsState(state.dy, spec)
+    val rotation: Float by animateFloatAsState(state.rotation, spec)
+    val scale: Float by animateFloatAsState(state.scale, spec)
+    val opacity: Float by animateFloatAsState(state.opacity ?: 1f, spec)
+
+    // A transform overrides rather than multiplies the element's own opacity and
+    // rotation, so where there is no travel to build on, the element's own are
+    // what the action is measured off.
+    return ElementTransform(
+        translationX = (base?.translationX ?: 0f) + dx,
+        translationY = (base?.translationY ?: 0f) + dy,
+        scaleX = (base?.scaleX ?: 1f) * scale,
+        scaleY = (base?.scaleY ?: 1f) * scale,
+        rotation = (base?.rotation ?: element.rotation) + rotation,
+        opacity = (base?.opacity ?: element.opacity) * opacity,
+    )
 }
 
 /**
