@@ -76,6 +76,8 @@ import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor
+import io.github.xxfast.cupboard.export.ExportedFile
+import io.github.xxfast.cupboard.export.toCupProject
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
@@ -371,6 +373,19 @@ class FieldMenuFacts(
     val canPaste: Boolean,
     val canSelectAll: Boolean,
 )
+
+/**
+ * One file of an exported CuP project: where it goes under the project root, and
+ * what is in it. Forward slashes in [path], the way a Gradle layout is written.
+ *
+ * The core's `ExportedFile` flattened for ObjC, the way [OutlineRow] flattens an
+ * outline entry: a data class doesn't cross the boundary, and the shell only
+ * ever reads these on its way to disk.
+ */
+class ExportFile(val path: String, val contents: String)
+
+/** The one line of an exported settings file that names the project. */
+private val RootProjectName = Regex("""rootProject\.name = "(.*)"""")
 
 /**
  * A running presentation: a Compose view playing a snapshot of the document.
@@ -1575,6 +1590,28 @@ class EditorHost {
      */
     fun startPlay(onExit: () -> Unit): PlaySession =
         PlaySession(state.document, state.selectedSlideIndex().coerceAtLeast(0), onExit)
+
+    /**
+     * The document as a standalone CuP project, file by file. Generating is all
+     * that happens here: writing them out is the shell's, so the panel, the
+     * directories and the error dialog stay on the AppKit side and the generator
+     * stays a pure function of the document.
+     */
+    fun cupProject(): List<ExportFile> =
+        state.document.toCupProject().map { ExportFile(it.path, it.contents) }
+
+    /**
+     * What an export calls itself, and so what the folder written under the
+     * chosen directory is named. Read back out of the settings file rather than
+     * re-derived: the slug is the generator's rule, and a second copy of it out
+     * here could only ever disagree with it.
+     */
+    fun cupProjectName(): String {
+        val settings: ExportedFile? = state.document.toCupProject()
+            .firstOrNull { it.path == "settings.gradle.kts" }
+        val name: String? = settings?.let { RootProjectName.find(it.contents)?.groupValues?.get(1) }
+        return name?.takeIf { it.isNotEmpty() } ?: "presentation"
+    }
 
     /**
      * Rasterizes a slide with the shared Compose renderer for native chrome to

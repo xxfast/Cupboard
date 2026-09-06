@@ -71,7 +71,7 @@ private data class PlayRequest(val document: Document, val slideIndex: Int)
  * This shell is the Linux app but runs everywhere, so the Edit menu takes the
  * accelerator of whatever it's running on: Cmd on a mac, Ctrl elsewhere.
  */
-private val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac")
+internal val isMacOs: Boolean = System.getProperty("os.name").orEmpty().startsWith("Mac")
 
 private fun editShortcut(key: Key, shift: Boolean = false, alt: Boolean = false): KeyShortcut =
     KeyShortcut(key, shift = shift, alt = alt, meta = isMacOs, ctrl = !isMacOs)
@@ -316,6 +316,15 @@ fun main() {
                 // unlocked left to take away.
                 val clearable: Boolean = state.selectedSlide.elements.any { !it.locked }
 
+                // The deck as a CuP project someone else can run: the generator
+                // makes the files, this only asks where they go.
+                Menu("File", mnemonic = 'F') {
+                    Item(
+                        text = "Export as CuP Project...",
+                        onClick = { exportCupProject(state.document, window) },
+                    )
+                }
+
                 Menu("Edit", mnemonic = 'E') {
                     Item(
                         text = "Undo",
@@ -427,7 +436,7 @@ fun main() {
                 // Whole-box text styling. Bold, Italic and Underline take the
                 // accelerators every editor gives them; Strikethrough has no
                 // conventional one, so it goes without rather than inventing one.
-                Menu("Format", mnemonic = 'F') {
+                Menu("Format", mnemonic = 'O') {
                     MenuItems(formatSections(state, viewModel)) { item ->
                         when (item.label) {
                             "Bold" -> editShortcut(Key.B)
