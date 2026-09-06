@@ -39,6 +39,22 @@ data class Document(
      * guide is a property of the deck, not of the slide it was pulled out on.
      */
     val guides: List<Guide> = emptyList(),
+    /**
+     * The theme this deck is on, by name. A name and nothing more: the look
+     * itself is already here, in [background], [defaults] and [layouts], so a
+     * deck opens the same however the theme it was named after has moved on.
+     *
+     * See `Theme.kt`, and [applyingTheme] for what putting a deck on one does.
+     */
+    val themeName: String = "Cupboard",
+    /**
+     * What every slide paints behind its elements unless it or its layout says
+     * otherwise; null is the app's own dark gradient. The deck-wide end of
+     * [Slide.effectiveBackground]'s three-step fallback.
+     */
+    val background: SlideBackground? = null,
+    /** What a fresh element on this deck is dressed in. See [ElementDefaults]. */
+    val defaults: ElementDefaults = ElementDefaults(),
 ) {
     companion object {
         const val SLIDE_WIDTH: Float = 1920f

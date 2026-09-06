@@ -441,6 +441,7 @@ class EditorHost {
         val slide: Slide,
         val layout: Slide?,
         val number: Int?,
+        val background: SlideBackground?,
         val width: Int,
         val image: NSImage,
     )
@@ -492,6 +493,7 @@ class EditorHost {
                 EditorCanvas(
                     slide = state.selectedSlide,
                     layout = state.selectedLayout,
+                    background = state.document.background,
                     selectedElementIds = state.selectedElementIds,
                     marquee = state.marquee,
                     onSelectElement = viewModel::onSelectElement,
@@ -672,37 +674,39 @@ class EditorHost {
      */
     fun insertShape(index: Int) {
         val entry: ShapeCatalogEntry = ShapeCatalog.entries.getOrNull(index) ?: return
-        viewModel.onInsertElement(entry.element(state.insertionFrame(entry.width, entry.height)))
+        viewModel.onInsertElement(
+            entry.element(state.insertionFrame(entry.width, entry.height), state.defaults),
+        )
     }
 
     /** A text box in the middle of the slide, carrying the placeholder to type over. */
     fun insertTextBox() {
         val frame: Frame = state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight)
-        viewModel.onInsertElement(textBoxElement(frame))
+        viewModel.onInsertElement(textBoxElement(frame, state.defaults))
     }
 
     /** A code block in the middle of the slide, carrying a snippet to type over. */
     fun insertCodeBox() {
         val frame: Frame = state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight)
-        viewModel.onInsertElement(codeBoxElement(frame))
+        viewModel.onInsertElement(codeBoxElement(frame, state.defaults))
     }
 
     /** A terminal in the middle of the slide, carrying a command and its output. */
     fun insertTerminal() {
         val frame: Frame = state.insertionFrame(DefaultTerminalWidth, DefaultTerminalHeight)
-        viewModel.onInsertElement(terminalElement(frame))
+        viewModel.onInsertElement(terminalElement(frame, state.defaults))
     }
 
     /** A diagram in the middle of the slide, carrying a flowchart to rewrite. */
     fun insertDiagram() {
         val frame: Frame = state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight)
-        viewModel.onInsertElement(diagramElement(frame))
+        viewModel.onInsertElement(diagramElement(frame, state.defaults))
     }
 
     /** An equation in the middle of the slide, carrying an identity to rewrite. */
     fun insertEquation() {
         val frame: Frame = state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight)
-        viewModel.onInsertElement(equationElement(frame))
+        viewModel.onInsertElement(equationElement(frame, state.defaults))
     }
 
     /**
@@ -1599,6 +1603,73 @@ class EditorHost {
     }
 
     /**
+     * The deck's own background, under every slide that asks for none of its
+     * own. Read and written exactly the way the slide's is above, down to the
+     * value a switched kind would commit, so one section of controls drives
+     * either by being handed the other's four numbers.
+     */
+    fun deckBackgroundKind(): Int = when (state.document.background) {
+        null -> 0
+        is SlideBackground.Color -> 1
+        is SlideBackground.Gradient -> 2
+    }
+
+    fun deckBackgroundColor(): Long =
+        (state.document.background as? SlideBackground.Color)?.color ?: DEFAULT_BACKGROUND_COLOR
+
+    fun deckBackgroundGradientStart(): Long =
+        (state.document.background as? SlideBackground.Gradient)?.start ?: DEFAULT_GRADIENT_START
+
+    fun deckBackgroundGradientEnd(): Long =
+        (state.document.background as? SlideBackground.Gradient)?.end ?: DEFAULT_GRADIENT_END
+
+    /** Back to the app's own dark gradient: the deck stops carrying one at all. */
+    fun setDeckBackgroundDefault() {
+        viewModel.onSetDocumentBackground(null)
+    }
+
+    fun setDeckBackgroundColor(argb: Long) {
+        viewModel.onSetDocumentBackground(SlideBackground.Color(argb))
+    }
+
+    fun setDeckBackgroundGradient(start: Long, end: Long) {
+        viewModel.onSetDocumentBackground(SlideBackground.Gradient(start, end))
+    }
+
+    /**
+     * The looks the deck can be put on, in picker order: the five built-ins
+     * first, then whatever the user has saved. Names alone, the way the layout
+     * popup takes names: a Theme the shell could hold is a look it could edit
+     * its way around, and the name is the whole of what goes back.
+     */
+    fun themeNames(): List<String> = state.themes.map { it.name }
+
+    /** The user's own, the subset Delete Theme is offered for. */
+    fun userThemeNames(): List<String> = state.userThemes.map { it.name }
+
+    /** What the deck is wearing, which is a name the document carries. */
+    fun currentThemeName(): String = state.document.themeName
+
+    /**
+     * Puts the deck on the theme called [name]: background, element defaults and
+     * layouts at once. A name no theme answers to is a no-op in the core, so the
+     * list having come from [themeNames] is not something to re-check here.
+     */
+    fun changeTheme(name: String) {
+        viewModel.onChangeTheme(name)
+    }
+
+    /** The deck's own look saved to the library as [name], and the deck put on it. */
+    fun saveAsTheme(name: String) {
+        viewModel.onSaveAsTheme(name)
+    }
+
+    /** Drops [name] from the library. Nothing on any slide moves. */
+    fun deleteUserTheme(name: String) {
+        viewModel.onDeleteUserTheme(name)
+    }
+
+    /**
      * Registers [callback], fired whenever the editor state changes (including
      * edits made inside the Compose canvas), and returns the unsubscribe for the
      * host to call when it goes away. Swift can't observe a Kotlin StateFlow, so
@@ -1742,16 +1813,17 @@ class EditorHost {
     }
 
     private fun render(slide: Slide, layout: Slide?, number: Int?, width: Int): NSImage? {
+        val background: SlideBackground? = state.document.background
         val cached = thumbnails[slide.id]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
         val usable = cached != null && cached.width == width &&
-            ((cached.slide == slide && cached.layout == layout && cached.number == number) ||
-                state.isPreviewing)
+            ((cached.slide == slide && cached.layout == layout && cached.number == number &&
+                cached.background == background) || state.isPreviewing)
         if (usable) return cached.image
 
         val height = (width * Document.SLIDE_HEIGHT / Document.SLIDE_WIDTH).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
-            SlideView(slide, layout = layout, number = number)
+            SlideView(slide, layout = layout, number = number, background = background)
         }
         val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: return null
         val nsData = png.usePinned { pinned ->
@@ -1761,7 +1833,7 @@ class EditorHost {
             setSize(NSMakeSize(width.toDouble(), height.toDouble()))
         } ?: return null
 
-        thumbnails[slide.id] = Thumbnail(slide, layout, number, width, image)
+        thumbnails[slide.id] = Thumbnail(slide, layout, number, background, width, image)
         return image
     }
 

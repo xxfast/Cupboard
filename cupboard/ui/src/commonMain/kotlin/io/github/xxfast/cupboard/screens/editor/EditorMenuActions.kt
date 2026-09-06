@@ -254,7 +254,7 @@ fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
     fun insert(entry: ShapeCatalogEntry): EditorMenuItem =
         EditorMenuItem(entry.title, enabled = true) {
             val frame: Frame = state.insertionFrame(entry.width, entry.height)
-            viewModel.onInsertElement(entry.element(frame))
+            viewModel.onInsertElement(entry.element(frame, state.defaults))
         }
 
     return listOf(
@@ -263,27 +263,27 @@ fun insertSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                 EditorMenuItem("Text Box", enabled = true) {
                     val frame: Frame =
                         state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight)
-                    viewModel.onInsertElement(textBoxElement(frame))
+                    viewModel.onInsertElement(textBoxElement(frame, state.defaults))
                 },
                 EditorMenuItem("Code", enabled = true) {
                     val frame: Frame =
                         state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight)
-                    viewModel.onInsertElement(codeBoxElement(frame))
+                    viewModel.onInsertElement(codeBoxElement(frame, state.defaults))
                 },
                 EditorMenuItem("Terminal", enabled = true) {
                     val frame: Frame =
                         state.insertionFrame(DefaultTerminalWidth, DefaultTerminalHeight)
-                    viewModel.onInsertElement(terminalElement(frame))
+                    viewModel.onInsertElement(terminalElement(frame, state.defaults))
                 },
                 EditorMenuItem("Diagram", enabled = true) {
                     val frame: Frame =
                         state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight)
-                    viewModel.onInsertElement(diagramElement(frame))
+                    viewModel.onInsertElement(diagramElement(frame, state.defaults))
                 },
                 EditorMenuItem("Equation", enabled = true) {
                     val frame: Frame =
                         state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight)
-                    viewModel.onInsertElement(equationElement(frame))
+                    viewModel.onInsertElement(equationElement(frame, state.defaults))
                 },
                 EditorMenuItem(
                     label = "Shape",

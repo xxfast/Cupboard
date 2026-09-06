@@ -82,6 +82,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
@@ -128,6 +129,18 @@ fun EditorInspector(
     onExitSlideLayouts: () -> Unit,
     onAddPlaceholder: (PlaceholderRole) -> Unit,
     onRenameSlide: (id: String, title: String) -> Unit,
+    /** Every theme the deck can be put on: the built-ins, then the user's. */
+    themes: List<Theme>,
+    /** The ones of [themes] the user saved, and so the only ones deletable. */
+    userThemes: List<Theme>,
+    /** The theme the deck is on, by name. */
+    themeName: String,
+    /** Behind every slide that asks for none of its own; null is the app's dark gradient. */
+    documentBackground: SlideBackground?,
+    onChangeTheme: (name: String) -> Unit,
+    onSaveAsTheme: (name: String) -> Unit,
+    onDeleteUserTheme: (name: String) -> Unit,
+    onSetDocumentBackground: (SlideBackground?) -> Unit,
     selectedElements: List<Element>,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
@@ -236,6 +249,14 @@ fun EditorInspector(
                     slide = slide,
                     layouts = layouts,
                     isEditingLayouts = isEditingLayouts,
+                    themes = themes,
+                    userThemes = userThemes,
+                    themeName = themeName,
+                    documentBackground = documentBackground,
+                    onChangeTheme = onChangeTheme,
+                    onSaveAsTheme = onSaveAsTheme,
+                    onDeleteUserTheme = onDeleteUserTheme,
+                    onSetDocumentBackground = onSetDocumentBackground,
                     onUpdate = onUpdateSlide,
                     onApplyLayout = onApplyLayout,
                     onReapplyLayout = onReapplyLayout,
@@ -1350,12 +1371,24 @@ private fun AnimatePanel() {
  * [onUpdate], one settled edit per tap: there is no continuous colour picker
  * here, so one tap is one history entry. The layout verbs are events of their
  * own rather than slide edits, since what they change is more than this slide.
+ *
+ * The theme and the deck background sit at the top on a slide and nowhere at
+ * all on a layout: they are the deck's, and the panel in layout mode is about
+ * the one layout it has open.
  */
 @Composable
 private fun SlidePanel(
     slide: Slide,
     layouts: List<Slide>,
     isEditingLayouts: Boolean,
+    themes: List<Theme>,
+    userThemes: List<Theme>,
+    themeName: String,
+    documentBackground: SlideBackground?,
+    onChangeTheme: (String) -> Unit,
+    onSaveAsTheme: (String) -> Unit,
+    onDeleteUserTheme: (String) -> Unit,
+    onSetDocumentBackground: (SlideBackground?) -> Unit,
     onUpdate: (Slide) -> Unit,
     onApplyLayout: (String, String?) -> Unit,
     onReapplyLayout: (String) -> Unit,
@@ -1364,6 +1397,67 @@ private fun SlidePanel(
     onAddPlaceholder: (PlaceholderRole) -> Unit,
     onRenameSlide: (String, String) -> Unit,
 ) {
+    if (!isEditingLayouts) {
+        SectionLabel("THEME")
+        // A deck can be on a theme that is no longer in the library: it was
+        // saved, used, then deleted. The name still says what the deck is on, so
+        // it is offered as an option of its own rather than shown as blank.
+        val named: List<Pair<String, String>> = themes.map { it.name to it.name }
+        val options: List<Pair<String, String>> =
+            if (named.any { (name, _) -> name == themeName }) named
+            else named + (themeName to themeName)
+
+        DropdownField(
+            label = "Theme",
+            value = themeName,
+            options = options,
+            enabled = true,
+            onPick = onChangeTheme,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        // View-local, like the navigator's rename: the name reaches the loop on
+        // OK and never before.
+        var saving: Boolean by remember { mutableStateOf(false) }
+        val isUserTheme: Boolean = userThemes.any { it.name == themeName }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TonalButton(
+                label = "Save Theme...",
+                enabled = true,
+                onClick = { saving = true },
+                modifier = Modifier.weight(1f),
+            )
+            // Only the user's own: a built-in is always there to go back to.
+            if (isUserTheme) TonalButton(
+                label = "Delete Theme",
+                enabled = true,
+                onClick = { onDeleteUserTheme(themeName) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        // Prefilled with the current name, so saving over the theme you are on
+        // is the default and a new one is a retype.
+        if (saving) NameDialog(
+            title = "Save Theme",
+            confirmLabel = "Save",
+            name = themeName,
+            onDismiss = { saving = false },
+            onCommit = { name ->
+                saving = false
+                onSaveAsTheme(name)
+            },
+        )
+
+        PanelDivider()
+
+        SectionLabel("DECK BACKGROUND")
+        BackgroundControls(background = documentBackground, onChange = onSetDocumentBackground)
+
+        PanelDivider()
+    }
+
     SectionLabel("LAYOUT")
 
     if (isEditingLayouts) {
@@ -1439,23 +1533,48 @@ private fun SlidePanel(
     PanelDivider()
 
     SectionLabel("BACKGROUND")
-    val background: SlideBackground? = slide.background
+    BackgroundControls(
+        background = slide.background,
+        onChange = { background -> onUpdate(slide.copy(background = background)) },
+    )
+
+    // The mode switch, pinned to the bottom of the panel the way the design has
+    // it, saying whichever half of the trip is left to make.
+    TonalButton(
+        label = if (isEditingLayouts) "Done" else "Edit Slide Layouts",
+        enabled = true,
+        onClick = if (isEditingLayouts) onExitSlideLayouts else onEditSlideLayouts,
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/**
+ * Default / Color / Gradient over the palette the picked mode asks for, one
+ * settled [onChange] per tap. Null is Default: whatever sits behind this one,
+ * which for a slide is its layout's or the deck's and for the deck is the app's
+ * own dark gradient.
+ *
+ * Shared by the slide's BACKGROUND section and the deck's: the two differ only
+ * in where the background they show comes from and where the picked one goes.
+ */
+@Composable
+private fun BackgroundControls(background: SlideBackground?, onChange: (SlideBackground?) -> Unit) {
     SegmentedRow {
         Segment(
             selected = background == null,
             first = true,
-            onClick = { onUpdate(slide.copy(background = null)) },
+            onClick = { onChange(null) },
         ) {
             SegmentLabel("Default", selected = background == null, enabled = true)
         }
         Segment(
             selected = background is SlideBackground.Color,
             first = false,
-            // Switching into a mode the slide isn't in yet has to land on some
-            // colour, so it lands on the palette's deep navy.
+            // Switching into a mode there is no colour for yet has to land on
+            // some colour, so it lands on the palette's deep navy.
             onClick = {
                 if (background !is SlideBackground.Color) {
-                    onUpdate(slide.copy(background = SlideBackground.Color(DEFAULT_FILL)))
+                    onChange(SlideBackground.Color(DEFAULT_FILL))
                 }
             },
         ) {
@@ -1466,11 +1585,7 @@ private fun SlidePanel(
             first = false,
             onClick = {
                 if (background !is SlideBackground.Gradient) {
-                    onUpdate(
-                        slide.copy(
-                            background = SlideBackground.Gradient(DEFAULT_GRADIENT_START, DEFAULT_FILL),
-                        ),
-                    )
+                    onChange(SlideBackground.Gradient(DEFAULT_GRADIENT_START, DEFAULT_FILL))
                 }
             },
         ) {
@@ -1483,7 +1598,7 @@ private fun SlidePanel(
 
         is SlideBackground.Color -> SwatchGrid(
             selected = background.color,
-            onPick = { color -> onUpdate(slide.copy(background = SlideBackground.Color(color))) },
+            onPick = { color -> onChange(SlideBackground.Color(color)) },
         )
 
         is SlideBackground.Gradient -> {
@@ -1492,24 +1607,15 @@ private fun SlidePanel(
             SwatchLabel("Start")
             SwatchGrid(
                 selected = background.start,
-                onPick = { color -> onUpdate(slide.copy(background = background.copy(start = color))) },
+                onPick = { color -> onChange(background.copy(start = color)) },
             )
             SwatchLabel("End")
             SwatchGrid(
                 selected = background.end,
-                onPick = { color -> onUpdate(slide.copy(background = background.copy(end = color))) },
+                onPick = { color -> onChange(background.copy(end = color)) },
             )
         }
     }
-
-    // The mode switch, pinned to the bottom of the panel the way the design has
-    // it, saying whichever half of the trip is left to make.
-    TonalButton(
-        label = if (isEditingLayouts) "Done" else "Edit Slide Layouts",
-        enabled = true,
-        onClick = if (isEditingLayouts) onExitSlideLayouts else onEditSlideLayouts,
-        modifier = Modifier.fillMaxWidth(),
-    )
 }
 
 /**

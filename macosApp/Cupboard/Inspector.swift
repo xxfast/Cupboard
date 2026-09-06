@@ -944,6 +944,10 @@ extension EditorView {
                 Spacer(minLength: 0)
                 panelButton("Done", symbol: "checkmark") { host.exitSlideLayouts() }
             } else {
+                themeSection(ui)
+                palette.divider.frame(height: 1)
+                deckBackgroundSection(ui)
+                palette.divider.frame(height: 1)
                 slideLayoutCard(ui)
                 reapplyLayoutButton(ui)
                 appearanceSection(ui)
@@ -1142,39 +1146,134 @@ extension EditorView {
     /// or a two-stop gradient. Switching to a kind the slide is not wearing
     /// commits it there and then, so the swatches below always have something to
     /// mark, and every pick is one edit and one undo entry.
-    @ViewBuilder func backgroundSection(_ ui: Chrome) -> some View {
+    func backgroundSection(_ ui: Chrome) -> some View {
         let slide = ui.slide
+        return backgroundControls(
+            "Background",
+            kind: slide.backgroundKind,
+            color: slide.color,
+            gradientStart: slide.gradientStart,
+            gradientEnd: slide.gradientEnd,
+            inherits: "The deck's own background.",
+            onDefault: { host.setBackgroundDefault() },
+            onColor: { host.setBackgroundColor(argb: $0) },
+            onGradient: { host.setBackgroundGradient(start: $0, end: $1) }
+        )
+    }
+
+    /// The same three kinds, one level down: what a slide falls back to when it
+    /// carries none of its own. The controls are the slide's, handed the deck's
+    /// four numbers and the deck's setters, because a background is a background
+    /// wherever it hangs.
+    func deckBackgroundSection(_ ui: Chrome) -> some View {
+        let deck = ui.deck
+        return backgroundControls(
+            "Deck Background",
+            kind: deck.backgroundKind,
+            color: deck.color,
+            gradientStart: deck.gradientStart,
+            gradientEnd: deck.gradientEnd,
+            inherits: "The app's own dark gradient.",
+            onDefault: { host.setDeckBackgroundDefault() },
+            onColor: { host.setDeckBackgroundColor(argb: $0) },
+            onGradient: { host.setDeckBackgroundGradient(start: $0, end: $1) }
+        )
+    }
+
+    /// [inherits] is what the Default segment means here: the thing behind is a
+    /// different thing for a slide than for the deck, and it is the only word
+    /// that changes between the two.
+    @ViewBuilder func backgroundControls(
+        _ title: String,
+        kind: Int,
+        color: Int64,
+        gradientStart: Int64,
+        gradientEnd: Int64,
+        inherits: String,
+        onDefault: @escaping () -> Void,
+        onColor: @escaping (Int64) -> Void,
+        onGradient: @escaping (Int64, Int64) -> Void
+    ) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Background")
+            sectionLabel(title)
 
             HStack(spacing: 2) {
-                segment("Default", on: slide.backgroundKind == 0) { host.setBackgroundDefault() }
-                segment("Color", on: slide.backgroundKind == 1) {
-                    host.setBackgroundColor(argb: slide.color)
-                }
-                segment("Gradient", on: slide.backgroundKind == 2) {
-                    host.setBackgroundGradient(start: slide.gradientStart, end: slide.gradientEnd)
-                }
+                segment("Default", on: kind == 0, action: onDefault)
+                segment("Color", on: kind == 1) { onColor(color) }
+                segment("Gradient", on: kind == 2) { onGradient(gradientStart, gradientEnd) }
             }
             .padding(2)
             .frame(height: 26)
             .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
 
-            switch slide.backgroundKind {
+            switch kind {
             case 1:
-                swatchGrid(selected: slide.color) { host.setBackgroundColor(argb: $0) }
+                swatchGrid(selected: color, onPick: onColor)
             case 2:
-                stopRow("Start", selected: slide.gradientStart) {
-                    host.setBackgroundGradient(start: $0, end: slide.gradientEnd)
-                }
-                stopRow("End", selected: slide.gradientEnd) {
-                    host.setBackgroundGradient(start: slide.gradientStart, end: $0)
-                }
+                stopRow("Start", selected: gradientStart) { onGradient($0, gradientEnd) }
+                stopRow("End", selected: gradientEnd) { onGradient(gradientStart, $0) }
             default:
-                Text("The deck's own background.")
+                Text(inherits)
                     .font(.system(size: 12))
                     .foregroundStyle(palette.faint)
             }
+        }
+    }
+
+    /// The look the whole deck is on: the pick that swaps it, and the two verbs
+    /// that make one of the user's own out of what the deck is already wearing.
+    ///
+    /// Delete is only offered for a theme the user saved: a built-in is not the
+    /// library's to drop, and the popup would come back one short next launch.
+    @ViewBuilder func themeSection(_ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Theme")
+
+            Menu {
+                ForEach(ui.themeNames, id: \.self) { name in
+                    Button(name) { host.changeTheme(name: name) }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(ui.themeName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.text)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Text("\u{2304}")
+                        .font(.system(size: 10))
+                        .foregroundStyle(palette.subtle)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+
+            panelButton("Save Theme...", symbol: "square.and.arrow.down") {
+                saveThemeText = ui.themeName
+                savingTheme = true
+            }
+
+            if ui.userThemeNames.contains(ui.themeName) {
+                panelButton("Delete Theme", symbol: "trash") {
+                    host.deleteUserTheme(name: ui.themeName)
+                }
+            }
+        }
+        // Saving is the one verb here with something to ask, so it takes a
+        // sheet, the way renaming a layout does in the navigator. Prefilled with
+        // the current name: saving over your own theme is the common case.
+        .alert("Save Theme", isPresented: $savingTheme) {
+            TextField("Name", text: $saveThemeText)
+            Button("Save") {
+                let typed = saveThemeText.trimmingCharacters(in: .whitespaces)
+                guard !typed.isEmpty else { return }
+                host.saveAsTheme(name: typed)
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 

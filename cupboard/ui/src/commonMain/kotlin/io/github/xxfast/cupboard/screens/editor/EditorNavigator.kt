@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -200,6 +201,7 @@ fun EditorNavigator(
                     // Null on a layout, and for free: a layout is on no layout, so
                     // its thumbnail draws itself and nothing behind it.
                     layout = document.layoutOf(slide),
+                    background = document.background,
                     // A deck of layouts is a deck of near-identical thumbnails, so
                     // there the name is the row. Ordinary rows keep the number alone.
                     title = entry.title.takeIf { isEditingLayouts },
@@ -308,6 +310,8 @@ private fun draggedRun(entries: List<OutlineEntry>, slideId: String?): Set<Strin
 private fun NavigatorRow(
     slide: Slide,
     layout: Slide?,
+    /** The deck's background, which is what a slide on this layout will sit on. */
+    background: SlideBackground?,
     /** The name under the thumbnail, null for a row that shows none. */
     title: String?,
     entry: OutlineEntry,
@@ -478,6 +482,7 @@ private fun NavigatorRow(
                 SlideThumbnail(
                     slide = slide,
                     layout = layout,
+                    background = background,
                     width = (136 - 12 * minOf(entry.depth, 3)).dp,
                     cornerRadius = thumbnailRadius,
                     modifier = if (selected) {

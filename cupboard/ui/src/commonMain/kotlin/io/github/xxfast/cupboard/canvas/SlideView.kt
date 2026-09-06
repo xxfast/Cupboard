@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.diagramStepFor
 import io.github.xxfast.cupboard.document.effectiveBackground
@@ -41,6 +42,11 @@ private const val SlideNumberColor: Long = 0x99FFFFFF
  * and its background stands in where the slide has none, which is the whole of
  * what a slide inherits: the placeholders are already the slide's own elements.
  * Builds and steps never reach them, because nothing on a layout is a step.
+ *
+ * [background] is the deck's own, `Document.background`, and stands in where
+ * neither the slide nor its layout has one: the last step of the fallback, and
+ * what a theme paints behind a deck. A [Document] is not passed instead because
+ * this renders one slide and has no business reaching past it.
  */
 @Composable
 fun SlideView(
@@ -49,8 +55,9 @@ fun SlideView(
     layout: Slide? = null,
     step: Int? = null,
     number: Int? = null,
+    background: SlideBackground? = null,
 ) {
-    SlideSurface(modifier, slideBackground = slide.effectiveBackground(layout)) {
+    SlideSurface(modifier, slideBackground = slide.effectiveBackground(layout, background)) {
         for (element in slide.inheritedElements(layout)) ElementView(element)
 
         for (element in slide.elements) {

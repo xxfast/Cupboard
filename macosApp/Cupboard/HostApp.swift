@@ -222,6 +222,10 @@ struct EditorView: View {
     /// The row being dragged, and where each row sits for the gap maths.
     @State var slideDrag: SlideDrag?
     @State var rowFrames: [String: CGRect] = [:]
+    /// Save Theme's sheet, and the name being typed into it. Presentation only:
+    /// the library itself is Kotlin's, and the name goes there on Save.
+    @State var savingTheme = false
+    @State var saveThemeText = ""
 
     var host: EditorHost { model.host }
     var palette: Palette { Palette.of(colorScheme) }

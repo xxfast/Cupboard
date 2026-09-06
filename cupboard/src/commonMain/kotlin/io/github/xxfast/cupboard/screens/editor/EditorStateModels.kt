@@ -1,12 +1,16 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
@@ -187,7 +191,27 @@ data class EditorState(
      * where you left the editor, the same argument [focusedPane] makes.
      */
     val slideBeforeLayouts: String? = null,
+    /**
+     * The themes the user has saved, on top of the five built-ins. Kept in its
+     * own file rather than in the deck ([themes] is what a picker offers), so a
+     * theme saved out of one document is there in the next.
+     *
+     * Transient: the library is a property of the machine, not of the document,
+     * and a state restored from disk gets it back from the presenter's load
+     * rather than from whatever was serialized alongside a deck.
+     */
+    @Transient val userThemes: List<Theme> = emptyList(),
 ) {
+    /** Every theme this editor can put the deck on: the built-ins, then the user's. */
+    val themes: List<Theme> get() = BuiltInThemes.all + userThemes
+
+    /**
+     * What a fresh element is dressed in, which is the deck's and so the theme's.
+     * The one thing an insert call site needs off the theme, hoisted here so a
+     * shell reaches for `state.defaults` rather than for `state.document.defaults`.
+     */
+    val defaults: ElementDefaults get() = document.defaults
+
     /**
      * The selected slide, which in layout mode is a layout: both lists answer to
      * one id, so every reduction from the element edits down works on a layout
@@ -724,6 +748,36 @@ sealed interface EditorEvent {
      * what applying a layout makes, never something a slide adds for itself.
      */
     data class AddPlaceholder(val role: PlaceholderRole) : EditorEvent
+    /**
+     * Puts the deck on the theme called [name], looked up in [EditorState.themes]:
+     * background, element defaults and layouts all at once.
+     *
+     * What each slide keeps and what it takes is `Document.applyingTheme`'s
+     * business: content survives, and a slide on a layout the new theme has no
+     * name for comes off layouts rather than losing anything. One history entry,
+     * and a name no theme answers to is a no-op.
+     */
+    data class ChangeTheme(val name: String) : EditorEvent
+    /**
+     * Saves the deck's own look as a theme called [name] and puts the deck on it:
+     * Save Theme. Replaces the user theme of that name if there is one, so saving
+     * twice updates rather than piles up.
+     *
+     * The library is not the document, so adding to it is no history entry. The
+     * deck's theme name is, and it is one edit: undo takes the name back and
+     * leaves the saved theme where it is, which is what a save means.
+     */
+    data class SaveAsTheme(val name: String) : EditorEvent
+    /** Drops the user theme called [name]. The library only, so no history entry
+     * and nothing on any slide moves. A name no user theme answers to is a no-op. */
+    data class DeleteUserTheme(val name: String) : EditorEvent
+    /**
+     * What sits behind every slide that asks for none of its own, null being the
+     * app's dark gradient: the deck-wide end of the background fallback, under
+     * the layout's and the slide's. One history entry, and a deck already like
+     * this is a no-op.
+     */
+    data class SetDocumentBackground(val background: SlideBackground?) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent
     data object ToggleSidebar : EditorEvent

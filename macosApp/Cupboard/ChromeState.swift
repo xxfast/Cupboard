@@ -60,6 +60,16 @@ struct Chrome {
     /// What each placeholder button is called, in the order Kotlin lists the
     /// roles. The position is what goes back to `addPlaceholder`.
     let placeholderRoles: [String]
+    /// The looks the deck can be put on, in picker order: the built-ins, then
+    /// the user's. Names alone, the way a layout travels as an id and a name.
+    let themeNames: [String]
+    /// The subset of the above the user saved, and so the only ones deletable.
+    let userThemeNames: [String]
+    /// What the deck is wearing. Not always one of `themeNames`: a deck edited
+    /// away from a theme keeps the name it was saved under.
+    let themeName: String
+    /// The deck's own background, what the Document panel's deck controls edit.
+    let deck: DeckProps
 
     init(_ host: EditorHost) {
         sidebarOpen = host.sidebarOpen()
@@ -88,6 +98,10 @@ struct Chrome {
         canReapplyLayout = host.canReapplyLayout()
         slideTitle = host.selectedSlideTitle()
         placeholderRoles = host.placeholderRoles()
+        themeNames = host.themeNames()
+        userThemeNames = host.userThemeNames()
+        themeName = host.currentThemeName()
+        deck = DeckProps(host)
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
@@ -106,6 +120,25 @@ struct LayoutChoice: Identifiable, Equatable {
         let ids = host.layoutIds()
         let names = host.layoutNames()
         return zip(ids, names).map { LayoutChoice(id: $0, name: $1) }
+    }
+}
+
+/// The deck's own properties as a Swift value. Only the background so far, and
+/// shaped exactly like the slide's below so one set of controls drives either.
+struct DeckProps: Equatable {
+    /// 0 the app's own dark gradient, 1 a flat colour, 2 a gradient.
+    let backgroundKind: Int
+    /// Packed ARGB. When the deck wears another kind these are what switching to
+    /// this one would commit, the same trick the slide background plays.
+    let color: Int64
+    let gradientStart: Int64
+    let gradientEnd: Int64
+
+    init(_ host: EditorHost) {
+        backgroundKind = Int(host.deckBackgroundKind())
+        color = host.deckBackgroundColor()
+        gradientStart = host.deckBackgroundGradientStart()
+        gradientEnd = host.deckBackgroundGradientEnd()
     }
 }
 

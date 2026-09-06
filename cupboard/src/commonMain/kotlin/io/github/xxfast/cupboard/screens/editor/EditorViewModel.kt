@@ -8,6 +8,8 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
@@ -19,6 +21,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitGuide
@@ -33,6 +36,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteUserTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
@@ -60,11 +64,13 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
@@ -108,14 +114,17 @@ import kotlinx.coroutines.launch
 class EditorViewModel(
     private val initialState: EditorState,
     private val documentStore: KStore<Document>,
+    /** The user's saved themes; null for a host with nowhere to keep them. */
+    private val themeStore: KStore<List<Theme>>? = null,
     dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
 ) {
     /** Opens [initialDocument] on its first slide with content. */
     constructor(
         initialDocument: Document,
         documentStore: KStore<Document>,
+        themeStore: KStore<List<Theme>>? = null,
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
-    ) : this(EditorState.opening(initialDocument), documentStore, dispatcher)
+    ) : this(EditorState.opening(initialDocument), documentStore, themeStore, dispatcher)
 
     // Private: this class is exported to ObjC (and later to .NET), and a
     // CoroutineScope on the public surface is a Kotlin type those hosts have no
@@ -135,7 +144,7 @@ class EditorViewModel(
     private val events: MutableSharedFlow<EditorEvent> = MutableSharedFlow(extraBufferCapacity = 64)
 
     val states: StateFlow<EditorState> =
-        moleculeFlow(Immediate) { EditorPresenter(initialState, events, documentStore) }
+        moleculeFlow(Immediate) { EditorPresenter(initialState, events, documentStore, themeStore) }
             .stateIn(scope, SharingStarted.Lazily, initialState)
 
     fun onSelectSlide(id: String) { scope.launch { events.emit(SelectSlide(id)) } }
@@ -191,6 +200,10 @@ class EditorViewModel(
     fun onAddLayout() { scope.launch { events.emit(AddLayout) } }
     fun onRenameSlide(id: String, title: String) { scope.launch { events.emit(RenameSlide(id, title)) } }
     fun onAddPlaceholder(role: PlaceholderRole) { scope.launch { events.emit(AddPlaceholder(role)) } }
+    fun onChangeTheme(name: String) { scope.launch { events.emit(ChangeTheme(name)) } }
+    fun onSaveAsTheme(name: String) { scope.launch { events.emit(SaveAsTheme(name)) } }
+    fun onDeleteUserTheme(name: String) { scope.launch { events.emit(DeleteUserTheme(name)) } }
+    fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.emit(SetDocumentBackground(background)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
     fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }

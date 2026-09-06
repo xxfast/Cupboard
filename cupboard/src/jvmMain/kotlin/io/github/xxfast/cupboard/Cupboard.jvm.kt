@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard
 
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
@@ -34,7 +35,11 @@ fun Cupboard.editor(
         file = Path(directory, DOCUMENT_FILE_NAME),
         default = sampleDocument(),
     )
+    val themes: KStore<List<Theme>> = storeOf(
+        file = Path(directory, THEME_LIBRARY_FILE_NAME),
+        default = emptyList(),
+    )
     // Blocking is right here: there is no editor to show until the document loads.
     val initial: Document = runBlocking { store.get() } ?: sampleDocument()
-    return EditorViewModel(initial, store, dispatcher)
+    return EditorViewModel(initial, store, themes, dispatcher)
 }

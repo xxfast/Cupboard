@@ -11,11 +11,14 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.addElements
 import io.github.xxfast.cupboard.document.addLayout
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingLayout
 import io.github.xxfast.cupboard.document.applyingStyle
+import io.github.xxfast.cupboard.document.applyingTheme
+import io.github.xxfast.cupboard.document.asTheme
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
@@ -55,6 +58,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitGuide
@@ -69,6 +73,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteUserTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DistributeElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Duplicate
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
@@ -96,11 +101,13 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
@@ -390,12 +397,18 @@ private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
  *
  * Persistence rides along: it's a function of the document, not a separate
  * subscriber that has to be started and stopped in step with the editor.
+ *
+ * [themeStore] is the user's theme library, which is a property of the machine
+ * rather than of the deck and so has a file of its own. Null for a host with
+ * nowhere to keep one (the preview shells, most tests): the library then lives
+ * as long as the editor does.
  */
 @Composable
 fun EditorPresenter(
     initialState: EditorState,
     events: Flow<EditorEvent>,
     documentStore: KStore<Document>,
+    themeStore: KStore<List<Theme>>? = null,
 ): EditorState {
     var state: EditorState by remember { mutableStateOf(initialState) }
 
@@ -1114,7 +1127,7 @@ fun EditorPresenter(
             // it made. Layout mode only: on a slide, an element with a role
             // is an instance a layout put there.
             is AddPlaceholder -> if (!state.isEditingLayouts) state else {
-                val placeholder: Element = placeholderElement(event.role)
+                val placeholder: Element = placeholderElement(event.role, state.defaults)
                 undone.push(state.document)
                 redone.clear()
                 state.copy(
@@ -1124,6 +1137,49 @@ fun EditorPresenter(
                     selectedElementIds = listOf(placeholder.id),
                 )
             }
+
+            // The theme events. Changing one rewrites the layouts and every
+            // slide that was on one, so it is the largest single edit the
+            // editor makes, and still exactly one history entry.
+            //
+            // A name nothing answers to is a no-op rather than an error: the
+            // library is a file on the side, so a deck can name a theme this
+            // machine has never had.
+            is ChangeTheme -> state.themes.firstOrNull { it.name == event.name }
+                ?.let { theme ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.applyingTheme(theme))
+                }
+                ?: state
+
+            // Two halves, and only one of them is the document: the library
+            // entry is not an edit and never rides history, the deck's theme
+            // name is and does. Undo therefore takes the name back and leaves
+            // the saved theme where it is, which is what saving one means.
+            is SaveAsTheme -> {
+                val saved: Theme = state.document.asTheme(event.name)
+                undone.push(state.document)
+                redone.clear()
+                state.copy(
+                    document = state.document.copy(themeName = event.name),
+                    userThemes = state.userThemes.filterNot { it.name == event.name } + saved,
+                )
+            }
+
+            // The library only: nothing on any slide moves, and a deck already
+            // on this theme keeps every layout and colour it took from it.
+            is DeleteUserTheme ->
+                if (state.userThemes.none { it.name == event.name }) state
+                else state.copy(userThemes = state.userThemes.filterNot { it.name == event.name })
+
+            is SetDocumentBackground ->
+                if (state.document.background == event.background) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(background = event.background))
+                }
 
             // Focus on its own. The post-step below moves it for every event
             // that implies a pane; this is the one that says so outright.
@@ -1180,6 +1236,29 @@ fun EditorPresenter(
         if (state.document === opened && untouched) return@LaunchedEffect
         delay(AutosaveDebounce)
         documentStore.set(state.document)
+    }
+
+    // The library as the file last held it, null until it has been read back.
+    // The write below sits out every pass before that, so an editor that hasn't
+    // loaded yet can never blank a file full of themes.
+    var storedThemes: List<Theme>? by remember { mutableStateOf(null) }
+
+    LaunchedEffect(themeStore) {
+        val store: KStore<List<Theme>> = themeStore ?: return@LaunchedEffect
+        val loaded: List<Theme> = store.get() ?: emptyList()
+        if (loaded.isNotEmpty()) state = state.copy(userThemes = loaded)
+        storedThemes = loaded
+    }
+
+    // The document autosave's shape at library granularity, debounce included:
+    // saving a theme is one write however many passes the state takes to settle.
+    LaunchedEffect(state.userThemes, storedThemes) {
+        val store: KStore<List<Theme>> = themeStore ?: return@LaunchedEffect
+        val stored: List<Theme> = storedThemes ?: return@LaunchedEffect
+        if (state.userThemes == stored) return@LaunchedEffect
+        delay(AutosaveDebounce)
+        store.set(state.userThemes)
+        storedThemes = state.userThemes
     }
 
     return state

@@ -25,16 +25,28 @@ const val DefaultTextBoxWidth: Float = 400f
 const val DefaultTextBoxHeight: Float = 60f
 
 /**
- * A fresh [kind] filling [frame], dressed in the design's shape colours.
+ * A fresh [kind] filling [frame], dressed in [defaults]' shape colours.
  *
  * Rectangles come rounded, which is the shape the mock uses everywhere; the
  * catalog's plain "Rectangle" entry is the one that squares the corners back off.
+ *
+ * [defaults] is the deck's, `EditorState.defaults`, and defaulted here so a
+ * caller with no document in hand still gets the app's own look. Every insert
+ * factory below takes it the same way: what a fresh element is dressed in is the
+ * theme's business, not the shell's.
  */
-fun shapeElement(kind: ShapeKind, frame: Frame): ShapeElement = ShapeElement(
+fun shapeElement(
+    kind: ShapeKind,
+    frame: Frame,
+    defaults: ElementDefaults = ElementDefaults(),
+): ShapeElement = ShapeElement(
     frame = frame,
     kind = kind,
     cornerRadius = RoundedCornerRadius,
+    fill = defaults.shapeFill,
+    strokeColor = defaults.shapeStroke,
     strokeWidth = if (kind == ShapeKind.Line) LineStrokeWidth else ShapeStrokeWidth,
+    labelColor = defaults.shapeLabelColor,
 )
 
 /** The box a fresh code block inserts into. */
@@ -42,8 +54,14 @@ const val DefaultCodeBoxWidth: Float = 420f
 const val DefaultCodeBoxHeight: Float = 160f
 
 /** A fresh text box filling [frame], with the placeholder a shell drops the caret into. */
-fun textBoxElement(frame: Frame): TextElement =
-    TextElement(frame = frame, text = "Text", fontSize = 32f)
+fun textBoxElement(frame: Frame, defaults: ElementDefaults = ElementDefaults()): TextElement =
+    TextElement(
+        frame = frame,
+        text = "Text",
+        fontSize = 32f,
+        color = defaults.textColor,
+        fontFamily = defaults.textFont,
+    )
 
 /**
  * The languages a picker offers, in menu order.
@@ -73,22 +91,34 @@ val CodeLanguages: List<String> = listOf(
 )
 
 /** A fresh code block filling [frame], with a snippet to type over. */
-fun codeBoxElement(frame: Frame): CodeElement = CodeElement(
-    frame = frame,
-    code = """
-        fun main() {
-            println("Hello, Cupboard")
-        }
-    """.trimIndent(),
-    language = "Kotlin",
-)
+fun codeBoxElement(frame: Frame, defaults: ElementDefaults = ElementDefaults()): CodeElement =
+    CodeElement(
+        frame = frame,
+        code = """
+            fun main() {
+                println("Hello, Cupboard")
+            }
+        """.trimIndent(),
+        language = "Kotlin",
+        theme = defaults.codeTheme,
+    )
 
 /** The box a fresh terminal inserts into. */
 const val DefaultTerminalWidth: Float = 520f
 const val DefaultTerminalHeight: Float = 200f
 
-/** A fresh terminal filling [frame], with a command and its output to type over. */
-fun terminalElement(frame: Frame): TerminalElement = TerminalElement(
+/**
+ * A fresh terminal filling [frame], with a command and its output to type over.
+ *
+ * [defaults] is taken and not read: a terminal draws its own chrome, prompt green
+ * and output dim, and a themed one would stop looking like a terminal. The
+ * parameter is here so every insert factory has one signature.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun terminalElement(
+    frame: Frame,
+    defaults: ElementDefaults = ElementDefaults(),
+): TerminalElement = TerminalElement(
     frame = frame,
     text = "$ ./gradlew :cupboard:jvmTest\nBUILD SUCCESSFUL in 4s",
 )
@@ -103,13 +133,22 @@ const val DefaultDiagramHeight: Float = 320f
  * The starter source uses four of the five node shapes, so what the syntax buys
  * is on screen the moment the element lands rather than in a help page.
  */
-fun diagramElement(frame: Frame): DiagramElement = DiagramElement(
+fun diagramElement(
+    frame: Frame,
+    defaults: ElementDefaults = ElementDefaults(),
+): DiagramElement = DiagramElement(
     frame = frame,
     source = "graph LR\n" +
         "  A[Edit] --> B[Render]\n" +
         "  B --> C{Ship?}\n" +
         "  C -->|yes| D((Play))\n" +
         "  C -->|no| A",
+    // A node is a shape and an edge is body copy, which is the whole of why
+    // [ElementDefaults] has no diagram colours of its own.
+    nodeFill = defaults.shapeFill,
+    nodeStroke = defaults.shapeStroke,
+    nodeText = defaults.shapeLabelColor,
+    edgeColor = defaults.bodyColor,
 )
 
 /** The box a fresh equation inserts into. */
@@ -123,9 +162,13 @@ const val DefaultEquationHeight: Float = 140f
  * relation and an operator, so what the syntax buys is on screen the moment the
  * element lands rather than in a help page.
  */
-fun equationElement(frame: Frame): EquationElement = EquationElement(
+fun equationElement(
+    frame: Frame,
+    defaults: ElementDefaults = ElementDefaults(),
+): EquationElement = EquationElement(
     frame = frame,
     latex = "e^{i\\pi} + 1 = 0",
+    color = defaults.textColor,
 )
 
 /**
@@ -146,9 +189,11 @@ data class ShapeCatalogEntry(
     val height: Float = DefaultShapeHeight,
 )
 
-/** A fresh element for this entry, filling [frame]. */
-fun ShapeCatalogEntry.element(frame: Frame): ShapeElement =
-    shapeElement(kind, frame).copy(cornerRadius = cornerRadius)
+/** A fresh element for this entry, filling [frame] and dressed in [defaults]. */
+fun ShapeCatalogEntry.element(
+    frame: Frame,
+    defaults: ElementDefaults = ElementDefaults(),
+): ShapeElement = shapeElement(kind, frame, defaults).copy(cornerRadius = cornerRadius)
 
 /**
  * The shapes a shell offers, in menu order.

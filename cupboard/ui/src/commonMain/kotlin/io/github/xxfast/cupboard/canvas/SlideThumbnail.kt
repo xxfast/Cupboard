@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 
 /**
  * Miniature of a slide via the same renderers, per the navigator design.
@@ -26,11 +27,14 @@ fun SlideThumbnail(
     number: Int? = null,
     /** The layout the slide is built on, whose static objects it draws behind its own. */
     layout: Slide? = null,
+    /** The deck's background, behind a slide that has none of its own. */
+    background: SlideBackground? = null,
 ) {
     SlideView(
         slide = slide,
         layout = layout,
         number = number,
+        background = background,
         modifier = modifier
             .width(width)
             .aspectRatio(Document.SLIDE_WIDTH / Document.SLIDE_HEIGHT)

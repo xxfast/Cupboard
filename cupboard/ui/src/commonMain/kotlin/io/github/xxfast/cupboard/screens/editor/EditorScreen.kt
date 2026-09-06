@@ -61,6 +61,7 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
@@ -167,6 +168,10 @@ fun EditorScreen(
         onReapplyLayout = viewModel::onReapplyLayout,
         onAddPlaceholder = viewModel::onAddPlaceholder,
         onRenameSlide = viewModel::onRenameSlide,
+        onChangeTheme = viewModel::onChangeTheme,
+        onSaveAsTheme = viewModel::onSaveAsTheme,
+        onDeleteUserTheme = viewModel::onDeleteUserTheme,
+        onSetDocumentBackground = viewModel::onSetDocumentBackground,
         onPreviewGuide = viewModel::onPreviewGuide,
         onCommitGuide = viewModel::onCommitGuide,
         onRemoveGuide = viewModel::onRemoveGuide,
@@ -212,6 +217,13 @@ fun EditorView(
     onAddPlaceholder: (PlaceholderRole) -> Unit = {},
     /** Renames a slide, or a layout: the navigator's Rename and the Name field. */
     onRenameSlide: (id: String, title: String) -> Unit = { _, _ -> },
+    /** The deck's look, all of it the inspector's Slide tab: the theme it is on,
+     * the theme it is saved out as, the one it drops, and what sits behind every
+     * slide that asks for none of its own. */
+    onChangeTheme: (name: String) -> Unit = {},
+    onSaveAsTheme: (name: String) -> Unit = {},
+    onDeleteUserTheme: (name: String) -> Unit = {},
+    onSetDocumentBackground: (SlideBackground?) -> Unit = {},
     /** A guide drag on the canvas: its samples, its drop, the guide it throws
      * away off the slide, and its cancel. What the drag draws is
      * [EditorState.guideDrag], which these four feed. */
@@ -274,11 +286,13 @@ fun EditorView(
                         { onPlay(state.document, state.selectedSlideIndex().coerceAtLeast(0)) }
                     },
                     // The toolbar picks what to insert; where it lands and how
-                    // big it starts is the state's and the catalog's business.
+                    // big it starts is the state's and the catalog's business,
+                    // and what it is dressed in is the deck's theme's.
                     onInsertText = {
                         onInsertElement(
                             textBoxElement(
                                 state.insertionFrame(DefaultTextBoxWidth, DefaultTextBoxHeight),
+                                state.defaults,
                             ),
                         )
                     },
@@ -286,6 +300,7 @@ fun EditorView(
                         onInsertElement(
                             codeBoxElement(
                                 state.insertionFrame(DefaultCodeBoxWidth, DefaultCodeBoxHeight),
+                                state.defaults,
                             ),
                         )
                     },
@@ -293,6 +308,7 @@ fun EditorView(
                         onInsertElement(
                             terminalElement(
                                 state.insertionFrame(DefaultTerminalWidth, DefaultTerminalHeight),
+                                state.defaults,
                             ),
                         )
                     },
@@ -300,6 +316,7 @@ fun EditorView(
                         onInsertElement(
                             diagramElement(
                                 state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight),
+                                state.defaults,
                             ),
                         )
                     },
@@ -307,12 +324,16 @@ fun EditorView(
                         onInsertElement(
                             equationElement(
                                 state.insertionFrame(DefaultEquationWidth, DefaultEquationHeight),
+                                state.defaults,
                             ),
                         )
                     },
                     onInsertShape = { entry ->
                         onInsertElement(
-                            entry.element(state.insertionFrame(entry.width, entry.height)),
+                            entry.element(
+                                state.insertionFrame(entry.width, entry.height),
+                                state.defaults,
+                            ),
                         )
                     },
                 )
@@ -391,6 +412,7 @@ fun EditorView(
                                 slide = selectedSlide,
                                 layout = state.selectedLayout,
                                 isEditingLayouts = state.isEditingLayouts,
+                                background = state.document.background,
                                 selectedElementIds = state.selectedElementIds,
                                 marquee = state.marquee,
                                 onSelectElement = onSelectElement,
@@ -470,6 +492,14 @@ fun EditorView(
                         onExitSlideLayouts = onExitSlideLayouts,
                         onAddPlaceholder = onAddPlaceholder,
                         onRenameSlide = onRenameSlide,
+                        themes = state.themes,
+                        userThemes = state.userThemes,
+                        themeName = state.document.themeName,
+                        documentBackground = state.document.background,
+                        onChangeTheme = onChangeTheme,
+                        onSaveAsTheme = onSaveAsTheme,
+                        onDeleteUserTheme = onDeleteUserTheme,
+                        onSetDocumentBackground = onSetDocumentBackground,
                         selectedElements = state.selectedElements,
                         onUpdateElements = onUpdateElements,
                         onPreviewElements = onPreviewElements,
@@ -487,10 +517,12 @@ fun EditorView(
             // before it is answered. Keyed on the id, so it holds the name of the
             // row it opened on whatever the selection does meanwhile.
             renamingId?.let { id ->
-                RenameDialog(
+                NameDialog(
+                    title = "Rename",
+                    confirmLabel = "Rename",
                     name = state.document.slideById(id)?.title.orEmpty(),
                     onDismiss = { renamingId = null },
-                    onRename = { name ->
+                    onCommit = { name ->
                         renamingId = null
                         onRenameSlide(id, name)
                     },
@@ -501,17 +533,26 @@ fun EditorView(
 }
 
 /**
- * The navigator's Rename: one field over the name it starts with, committed by
- * the button or by Enter. A blank name is no name, so it commits nothing.
+ * A name prompt: one field over the name it starts with, committed by the button
+ * or by Enter. A blank name is no name, so it commits nothing.
+ *
+ * The navigator's Rename and the inspector's Save Theme are the same dialog with
+ * different words on it, which is all [title] and [confirmLabel] are for.
  */
 @Composable
-private fun RenameDialog(name: String, onDismiss: () -> Unit, onRename: (String) -> Unit) {
+internal fun NameDialog(
+    title: String,
+    confirmLabel: String,
+    name: String,
+    onDismiss: () -> Unit,
+    onCommit: (String) -> Unit,
+) {
     var text: String by remember(name) { mutableStateOf(name) }
     val focus: FocusRequester = remember { FocusRequester() }
 
     fun commit() {
         val entered: String = text.trim()
-        if (entered.isEmpty()) onDismiss() else onRename(entered)
+        if (entered.isEmpty()) onDismiss() else onCommit(entered)
     }
 
     // The name is what the dialog is for, so it is typed into straight away
@@ -520,7 +561,7 @@ private fun RenameDialog(name: String, onDismiss: () -> Unit, onRename: (String)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename", fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
+        title = { Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) },
         text = {
             OutlinedTextField(
                 value = text,
@@ -537,7 +578,7 @@ private fun RenameDialog(name: String, onDismiss: () -> Unit, onRename: (String)
                     },
             )
         },
-        confirmButton = { TextButton(onClick = ::commit) { Text("Rename") } },
+        confirmButton = { TextButton(onClick = ::commit) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

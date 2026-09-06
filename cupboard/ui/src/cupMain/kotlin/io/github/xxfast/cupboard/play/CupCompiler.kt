@@ -32,6 +32,7 @@ internal fun Document.toCupSlides(): List<CupSlide> {
                 modifier = Modifier.fillMaxSize(),
                 step = step,
                 number = number,
+                background = background,
             )
         }
     }

@@ -15,7 +15,14 @@ package io.github.xxfast.cupboard.document
  * inside one document) and buys a [Document] that compares equal to another built
  * the same way.
  */
-fun defaultLayouts(): List<Slide> = listOf(
+fun defaultLayouts(): List<Slide> = defaultLayouts(ElementDefaults())
+
+/**
+ * The same four dressed in [defaults], which is how every built-in theme's
+ * layouts are made: a theme decides the ink, the layouts decide the geometry, and
+ * neither has to repeat the other. See `Theme.kt`.
+ */
+fun defaultLayouts(defaults: ElementDefaults): List<Slide> = listOf(
     Slide(
         id = "layout-title",
         title = "Title",
@@ -26,8 +33,9 @@ fun defaultLayouts(): List<Slide> = listOf(
                 text = TitleText,
                 fontSize = 94f,
                 fontWeight = 700,
-                color = 0xFFFFFFFF,
+                color = defaults.textColor,
                 align = TextAlign.Center,
+                fontFamily = defaults.textFont,
                 role = PlaceholderRole.Title,
             ),
             TextElement(
@@ -35,8 +43,9 @@ fun defaultLayouts(): List<Slide> = listOf(
                 frame = Frame(146f, 600f, 1627f, 80f),
                 text = "Subtitle",
                 fontSize = 39f,
-                color = 0xFFA9A0D8,
+                color = defaults.bodyColor,
                 align = TextAlign.Center,
+                fontFamily = defaults.textFont,
                 role = PlaceholderRole.Body,
             ),
         ),
@@ -45,16 +54,16 @@ fun defaultLayouts(): List<Slide> = listOf(
         id = "layout-title-body",
         title = "Title & Body",
         elements = listOf(
-            titlePlaceholder("layout-title-body-title"),
-            bodyPlaceholder("layout-title-body-body"),
+            titlePlaceholder("layout-title-body-title", defaults),
+            bodyPlaceholder("layout-title-body-body", defaults),
         ),
     ),
     Slide(
         id = "layout-code",
         title = "Code",
         elements = listOf(
-            titlePlaceholder("layout-code-title"),
-            codePlaceholder("layout-code-code"),
+            titlePlaceholder("layout-code-title", defaults),
+            codePlaceholder("layout-code-code", defaults),
         ),
     ),
     Slide(id = "layout-blank", title = "Blank"),
@@ -65,32 +74,44 @@ private const val TitleText: String = "Title"
 private const val BodyText: String = "Body text"
 
 /** Where a title sits on every layout that has one but the title card's own. */
-private fun titlePlaceholder(id: String = newId()): TextElement = TextElement(
+private fun titlePlaceholder(
+    id: String = newId(),
+    defaults: ElementDefaults = ElementDefaults(),
+): TextElement = TextElement(
     id = id,
     frame = Frame(146f, 130f, 1627f, 142f),
     text = TitleText,
     fontSize = 94f,
     fontWeight = 700,
-    color = 0xFFFFFFFF,
+    color = defaults.textColor,
+    fontFamily = defaults.textFont,
     role = PlaceholderRole.Title,
 )
 
-private fun bodyPlaceholder(id: String = newId()): TextElement = TextElement(
+private fun bodyPlaceholder(
+    id: String = newId(),
+    defaults: ElementDefaults = ElementDefaults(),
+): TextElement = TextElement(
     id = id,
     frame = Frame(146f, 300f, 1627f, 650f),
     text = BodyText,
     fontSize = 39f,
     lineHeight = 1.5f,
-    color = 0xFFB8B3D6,
+    color = defaults.bodyColor,
+    fontFamily = defaults.textFont,
     listStyle = ListStyle.Bullet,
     role = PlaceholderRole.Body,
 )
 
-private fun codePlaceholder(id: String = newId()): CodeElement = CodeElement(
+private fun codePlaceholder(
+    id: String = newId(),
+    defaults: ElementDefaults = ElementDefaults(),
+): CodeElement = CodeElement(
     id = id,
     frame = Frame(146f, 300f, 1627f, 650f),
     code = "// code",
     fontSize = 28f,
+    theme = defaults.codeTheme,
     showLineNumbers = true,
     role = PlaceholderRole.Code,
 )
@@ -102,10 +123,13 @@ private fun codePlaceholder(id: String = newId()): CodeElement = CodeElement(
  * The title is the one from "Title & Body" rather than the title card's centred
  * one, because that is the shape a title takes on every layout but that one.
  */
-fun placeholderElement(role: PlaceholderRole): Element = when (role) {
-    PlaceholderRole.Title -> titlePlaceholder()
-    PlaceholderRole.Body -> bodyPlaceholder()
-    PlaceholderRole.Code -> codePlaceholder()
+fun placeholderElement(
+    role: PlaceholderRole,
+    defaults: ElementDefaults = ElementDefaults(),
+): Element = when (role) {
+    PlaceholderRole.Title -> titlePlaceholder(defaults = defaults)
+    PlaceholderRole.Body -> bodyPlaceholder(defaults = defaults)
+    PlaceholderRole.Code -> codePlaceholder(defaults = defaults)
     PlaceholderRole.Media -> ImageElement(frame = Frame(146f, 300f, 1627f, 650f), role = role)
 }
 
@@ -199,8 +223,17 @@ fun Slide.placeholders(): Map<PlaceholderRole, Element> = buildMap {
 fun Slide.inheritedElements(layout: Slide?): List<Element> =
     layout?.elements?.filter { it.placeholderRole == null } ?: emptyList()
 
-/** The slide's own background, or the layout's where it has none of its own. */
-fun Slide.effectiveBackground(layout: Slide?): SlideBackground? = background ?: layout?.background
+/**
+ * The slide's own background, then its layout's, then [deck]'s: the whole of
+ * where what sits behind a slide comes from, nearest first. Null all the way down
+ * is the app's own dark gradient, which is what a renderer paints for null.
+ *
+ * [deck] is `Document.background`, passed in rather than looked up: the renderers
+ * take a slide and its layout, not a document, and a theme's background has to
+ * reach them without dragging one along.
+ */
+fun Slide.effectiveBackground(layout: Slide?, deck: SlideBackground? = null): SlideBackground? =
+    background ?: layout?.background ?: deck
 
 /**
  * This slide moved onto [layout], or off every layout when that is null.

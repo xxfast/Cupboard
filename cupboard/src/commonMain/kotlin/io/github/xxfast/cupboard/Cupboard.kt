@@ -17,3 +17,9 @@ object Cupboard
  * user choice.
  */
 internal const val DOCUMENT_FILE_NAME: String = "document.json"
+
+/**
+ * The user's saved themes, beside the document rather than in it: a theme is a
+ * look you carry between decks, so it outlives whichever one it was saved from.
+ */
+internal const val THEME_LIBRARY_FILE_NAME: String = "themes.json"

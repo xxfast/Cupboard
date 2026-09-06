@@ -100,6 +100,7 @@ import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.effectiveBackground
@@ -221,6 +222,8 @@ fun EditorCanvas(
      * is simply an element the slide owns.
      */
     isEditingLayouts: Boolean = false,
+    /** The deck's background, behind a slide that has none of its own or its layout's. */
+    background: SlideBackground? = null,
     selectedElementIds: List<String>,
     marquee: Frame?,
     onSelectElement: (String?) -> Unit,
@@ -336,7 +339,7 @@ fun EditorCanvas(
 
         SlideSurface(
             modifier = Modifier.fillMaxSize().padding(start = rulerInset, top = rulerInset),
-            slideBackground = slide.effectiveBackground(layout),
+            slideBackground = slide.effectiveBackground(layout, background),
             zoom = zoom,
         ) {
             // Behind everything the slide owns, and out of every hit test below:
