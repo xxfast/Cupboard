@@ -34,10 +34,11 @@ final class ActivationDelegate: NSObject, NSApplicationDelegate {
 struct CupboardHostApp: App {
     @NSApplicationDelegateAdaptor(ActivationDelegate.self) private var activation
     @State private var model = EditorModel()
-    @State private var playSession: PlaySession?
-    /// The presenter window, and whether the View menu wants one. Remembered
-    /// across launches: a lectern setup is not something to re-pick every show.
-    @State private var presenter = PresenterWindow()
+    @State private var show: Show?
+    /// The show's windows, and whether the View menu wants a presenter display.
+    /// Remembered across launches: a lectern setup is not something to re-pick
+    /// every show.
+    @State private var displays = ShowDisplays()
     @AppStorage("showPresenterDisplay") private var showPresenter = true
 
     private var host: EditorHost { model.host }
@@ -45,20 +46,23 @@ struct CupboardHostApp: App {
     var body: some Scene {
         WindowGroup("Cupboard") {
             Group {
-                if let session = playSession {
-                    PlayCanvas(session: session)
+                // A show with a screen of its own leaves this window alone: the
+                // editor stays up behind it, the way it does under a full-screen
+                // Keynote. Only the one-display path takes the window over.
+                if let show, !show.external {
+                    PlayCanvas(session: show.session)
                         .background(Color.black)
                 } else {
-                    EditorView(model: model, playSession: $playSession)
+                    EditorView(model: model, show: $show)
                 }
             }
             .ignoresSafeArea()
             .background(WindowConfigurator(lights: model.lights).frame(width: 0, height: 0))
             .background(
-                PresenterBridge(
-                    session: playSession,
-                    enabled: showPresenter,
-                    presenter: presenter
+                ShowBridge(
+                    show: show,
+                    presenterEnabled: showPresenter,
+                    displays: displays
                 )
                 .frame(width: 0, height: 0)
             )
@@ -136,6 +140,11 @@ struct CupboardHostApp: App {
                 // Ours rather than the document's: which screen the presenter
                 // display is on is a lectern preference, not a fact about the deck.
                 Toggle("Show Presenter Display", isOn: $showPresenter)
+                // The X key does this too, from either play window. No key
+                // equivalent here: a bare letter in the bar would shadow typing
+                // in the editor, and the shows are where it is wanted.
+                Button("Swap Displays") { displays.swapDisplays() }
+                    .disabled(show?.external != true)
 
                 Divider()
 
@@ -209,7 +218,7 @@ struct CupboardHostApp: App {
 
             // No key equivalent: Play owns the presentation gesture, and a
             // preview is the deliberate one you go to the menu for.
-            Button("Preview Slide") { playSession = host.startPreview(onExit: { playSession = nil }) }
+            Button("Preview Slide") { show = .preview(host.startPreview(onExit: { show = nil })) }
         }
     }
 
@@ -232,7 +241,7 @@ struct CupboardHostApp: App {
 
 struct EditorView: View {
     let model: EditorModel
-    @Binding var playSession: PlaySession?
+    @Binding var show: Show?
 
     @Environment(\.colorScheme) var colorScheme
     /// Zoom is view-local in the Kotlin host, outside `states`, so the label
@@ -359,14 +368,16 @@ struct EditorView: View {
         .overlay(alignment: .top) { palette.divider.frame(height: 1) }
     }
 
+    /// The show, on its own screen when there is a second one and in this window
+    /// when there is not.
     func startPlay() {
         // Kotlin calls onExit on the main thread, so touching @State is safe.
-        playSession = host.startPlay(onExit: { playSession = nil })
+        show = .play(host.startPlay(onExit: { show = nil }))
     }
 
     /// Plays the selected slide on its own, in the same full-screen player Play
     /// uses. Escape comes back to the editor, exactly as it does from a show.
     func startPreview() {
-        playSession = host.startPreview(onExit: { playSession = nil })
+        show = .preview(host.startPreview(onExit: { show = nil }))
     }
 }

@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.LocalSystemTheme
@@ -33,6 +34,7 @@ import androidx.compose.ui.window.MenuScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
@@ -63,8 +65,10 @@ import java.awt.BasicStroke
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.EventQueue
+import java.awt.GraphicsEnvironment
 import java.awt.Point
 import java.awt.PopupMenu
+import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.geom.Path2D
@@ -87,7 +91,43 @@ private data class PlayRequest(
     val document: Document,
     val slideIndex: Int,
     val preview: Boolean = false,
+    /**
+     * Which display the show fills, as an index into [playScreens]. The
+     * presenter display takes the other one, so swapping the two is this
+     * index flipping. Ignored with a single display, and by previews.
+     */
+    val showScreen: Int = 0,
 )
+
+/**
+ * The displays a show can use, the primary one first.
+ *
+ * Read when a show starts rather than at launch: a projector is usually
+ * plugged in once the deck is already open.
+ */
+private fun playScreens(): List<Rectangle> {
+    val environment = GraphicsEnvironment.getLocalGraphicsEnvironment()
+    val primary = environment.defaultScreenDevice
+    return (listOf(primary) + environment.screenDevices.filter { it != primary })
+        .map { it.defaultConfiguration.bounds }
+}
+
+/**
+ * Puts the window on [bounds]' display and settles it into [placement].
+ *
+ * Two passes, because AWT ignores a move on a window that is already
+ * full-screen or maximized: the window goes floating and takes the display's
+ * bounds first, and the placement goes back on once that has landed. Two
+ * frames rather than one, since the window's own update pass reads the
+ * placement when it applies the position.
+ */
+private suspend fun WindowState.moveOnto(bounds: Rectangle, placement: WindowPlacement) {
+    this.placement = WindowPlacement.Floating
+    position = WindowPosition.Absolute(bounds.x.dp, bounds.y.dp)
+    size = DpSize(bounds.width.dp, bounds.height.dp)
+    repeat(2) { withFrameNanos { } }
+    this.placement = placement
+}
 
 /** Half of 1080p: big enough to read a slide, small enough to leave the editor behind it. */
 private val PreviewWindowWidth = 960.dp
@@ -109,13 +149,22 @@ private val ClockFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm"
  * Window-level fallback for when focus wanders off the player's own key handler;
  * consumed events never reach here, so no double-advance, and typing into the
  * presenter's notes field doesn't advance the deck either. Escape on either
- * window ends the whole show, both windows with it.
+ * window ends the whole show, both windows with it, and X swaps which display
+ * each of them is on where there are two to swap.
  */
-private fun showKeys(controller: PlayerController, onExit: () -> Unit): (KeyEvent) -> Boolean =
+private fun showKeys(
+    controller: PlayerController,
+    onExit: () -> Unit,
+    onSwapDisplays: (() -> Unit)? = null,
+): (KeyEvent) -> Boolean =
     { event ->
         if (event.type != KeyEventType.KeyDown) false
         else when (event.key) {
             Key.Escape -> { onExit(); true }
+            Key.X -> {
+                onSwapDisplays?.invoke()
+                onSwapDisplays != null
+            }
             Key.DirectionRight, Key.DirectionDown, Key.Spacebar, Key.Enter -> {
                 if (event.isShiftPressed) controller.nextSlide() else controller.next()
                 true
@@ -348,7 +397,21 @@ fun main() {
         // presenter window sets it back, which is why one flag covers both.
         var showPresenter by remember { mutableStateOf(true) }
 
+        // The displays as the running show found them. Empty until one starts,
+        // which is fine: nothing reads it before then.
+        var screens: List<Rectangle> by remember { mutableStateOf(emptyList()) }
+
         val state: EditorState by viewModel.states.collectAsState()
+
+        // Swapping the displays is the show's index flipping: both windows are
+        // placed off it, so the show takes the other screen and the presenter
+        // display takes the one it left. Null with a single display, or over a
+        // preview, which is what greys the menu item and drops the X key.
+        val swapDisplays: (() -> Unit)? = playing
+            ?.takeIf { !it.preview && screens.size > 1 }
+            ?.let { request ->
+                { playing = request.copy(showScreen = if (request.showScreen == 0) 1 else 0) }
+            }
 
         // Preview is Play on the slide alone: the deck's furniture, one slide of
         // it, opened at its first step so the builds run from the top. Off in
@@ -588,6 +651,15 @@ fun main() {
                         checked = showPresenter,
                         onCheckedChange = { showPresenter = it },
                     )
+                    // A verb rather than a switch: neither display is the
+                    // right one, they are just the two the show is using. X
+                    // does the same from either show window, which is where
+                    // the hands are once the talk is up.
+                    Item(
+                        text = "Swap Displays",
+                        enabled = swapDisplays != null,
+                        onClick = { swapDisplays?.invoke() },
+                    )
 
                     Separator()
 
@@ -658,7 +730,18 @@ fun main() {
                     // Off in layout mode: a layout is not a slide of the talk, and
                     // the index the player would start from names nothing there.
                     onPlay = if (state.isEditingLayouts) null else {
-                        { document, index -> playing = PlayRequest(document, index) }
+                        { document, index ->
+                            val displays: List<Rectangle> = playScreens()
+                            screens = displays
+                            playing = PlayRequest(
+                                document = document,
+                                slideIndex = index,
+                                // The talk goes to the projector and the lectern
+                                // keeps the laptop: the show opens on the first
+                                // display that isn't the primary one.
+                                showScreen = if (displays.size > 1) 1 else 0,
+                            )
+                        }
                     },
                     onPlayPreview = previewSlide,
                     onShowContextMenu = nativeMenu?.let { menu ->
@@ -705,21 +788,44 @@ fun main() {
         playing?.let { request ->
             val controller = rememberPlayerController()
             val close = { playing = null }
+
+            // A preview sits in a window on top of the editor: you are still
+            // working on the slide, so the deck should not take the screen
+            // away to show it to you. Escape closes it either way.
+            val showState: WindowState = if (request.preview) {
+                rememberWindowState(
+                    size = DpSize(PreviewWindowWidth, PreviewWindowHeight),
+                    position = WindowPosition(Alignment.Center),
+                )
+            } else {
+                rememberWindowState(placement = WindowPlacement.Maximized)
+            }
+
+            // The presenter display's window state lives out here so it keeps
+            // its display across a trip through the View menu: put away and
+            // brought back, it comes up where the swap left it.
+            val presenterState: WindowState = rememberWindowState(
+                size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
+                position = WindowPosition(Alignment.Center),
+            )
+
+            // Two displays or more: the show fills one of them and the
+            // presenter display fills the other, and both move when the index
+            // does. A single display keeps what it always did, the show
+            // maximized with the presenter display windowed on top.
+            if (!request.preview && screens.size > 1) LaunchedEffect(request.showScreen) {
+                showState.moveOnto(screens[request.showScreen], WindowPlacement.Fullscreen)
+                presenterState.moveOnto(
+                    bounds = screens[if (request.showScreen == 0) 1 else 0],
+                    placement = WindowPlacement.Maximized,
+                )
+            }
+
             Window(
                 onCloseRequest = close,
                 title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
-                // A preview sits in a window on top of the editor: you are still
-                // working on the slide, so the deck should not take the screen
-                // away to show it to you. Escape closes it either way.
-                state = if (request.preview) {
-                    rememberWindowState(
-                        size = DpSize(PreviewWindowWidth, PreviewWindowHeight),
-                        position = WindowPosition(Alignment.Center),
-                    )
-                } else {
-                    rememberWindowState(placement = WindowPlacement.Maximized)
-                },
-                onKeyEvent = showKeys(controller, close),
+                state = showState,
+                onKeyEvent = showKeys(controller, close, swapDisplays),
             ) {
                 // WindowState sizes the frame, title bar and all, so 960x540
                 // asked for is a slide short by whatever the chrome takes. Hand
@@ -754,11 +860,8 @@ fun main() {
                 // not the show. The View menu brings it back.
                 onCloseRequest = { showPresenter = false },
                 title = "Cupboard Presenter",
-                state = rememberWindowState(
-                    size = DpSize(PresenterWindowWidth, PresenterWindowHeight),
-                    position = WindowPosition(Alignment.Center),
-                ),
-                onKeyEvent = showKeys(controller, close),
+                state = presenterState,
+                onKeyEvent = showKeys(controller, close, swapDisplays),
             ) {
                 PresenterView(
                     // The live document rather than the show's snapshot: notes

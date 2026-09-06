@@ -41,10 +41,14 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
     /// The show whose presenter the user shut with the red button. Reopening it
     /// is the menu toggle's job, not the next stray view update's.
     private var dismissed: PlaySession?
+    /// Where the X key goes. Set by [ShowDisplays], which is what knows whether
+    /// there is a second screen to swap with.
+    var onSwap: (() -> Void)?
 
     /// [session] is the show that is playing, or nil for none; [enabled] is what
-    /// the View menu says.
-    func sync(session: PlaySession?, enabled: Bool) {
+    /// the View menu says, and [screen] the display to fill, nil for a window
+    /// that opens at a size and sits where the user puts it.
+    func sync(session: PlaySession?, enabled: Bool, screen: NSScreen?) {
         guard enabled, let session, session.hasPresenter else {
             close()
             dismissed = nil
@@ -53,6 +57,14 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
         if session !== self.session { close() }
         guard dismissed !== session else { return }
         open(session)
+        place(on: screen)
+    }
+
+    /// Fills [screen], or leaves the window where it is with none: on one display
+    /// the presenter is a window like any other, opened centred and moved by hand.
+    func place(on screen: NSScreen?) {
+        guard let window, let screen else { return }
+        window.setFrame(screen.visibleFrame, display: true)
     }
 
     private func open(_ session: PlaySession) {
@@ -71,8 +83,12 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = session.presenterView
-        window.onKey = { [weak session] event in
+        window.onKey = { [weak self, weak session] event in
             guard let session else { return false }
+            if event.keyCode == ShowKey.swap {
+                self?.onSwap?()
+                return true
+            }
             if PresenterKey.forward.contains(event.keyCode) {
                 session.next()
                 return true
@@ -119,25 +135,5 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
         dismissed = session
         // Not from inside the close notification: the window is mid-teardown.
         DispatchQueue.main.async { [weak self] in self?.close() }
-    }
-}
-
-/// Pushes the show and the menu toggle at [PresenterWindow] whenever the view
-/// updates, the way `TrafficLightTarget` pushes the sidebar state at the window
-/// buttons. A window is not something a SwiftUI body can return, so this is the
-/// seam between the two.
-struct PresenterBridge: NSViewRepresentable {
-    let session: PlaySession?
-    let enabled: Bool
-    let presenter: PresenterWindow
-
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
-        DispatchQueue.main.async { presenter.sync(session: session, enabled: enabled) }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        presenter.sync(session: session, enabled: enabled)
     }
 }
