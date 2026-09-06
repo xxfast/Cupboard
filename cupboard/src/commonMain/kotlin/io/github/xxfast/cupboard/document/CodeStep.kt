@@ -24,7 +24,7 @@ data class LineRange(val first: Int, val last: Int) {
  * a range and drops the rest back, or leaves the whole block at full strength.
  *
  * Steps are held by the element ([CodeElement.steps]) and advanced through by
- * builds ([Build.codeStep]): the element says what its states are, the slide's
+ * builds ([Build.elementStep]): the element says what its states are, the slide's
  * build order says when they arrive.
  */
 @Serializable

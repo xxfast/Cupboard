@@ -93,6 +93,25 @@ fun terminalElement(frame: Frame): TerminalElement = TerminalElement(
     text = "$ ./gradlew :cupboard:jvmTest\nBUILD SUCCESSFUL in 4s",
 )
 
+/** The box a fresh diagram inserts into. */
+const val DefaultDiagramWidth: Float = 560f
+const val DefaultDiagramHeight: Float = 320f
+
+/**
+ * A fresh diagram filling [frame], with a flowchart to rewrite.
+ *
+ * The starter source uses four of the five node shapes, so what the syntax buys
+ * is on screen the moment the element lands rather than in a help page.
+ */
+fun diagramElement(frame: Frame): DiagramElement = DiagramElement(
+    frame = frame,
+    source = "graph LR\n" +
+        "  A[Edit] --> B[Render]\n" +
+        "  B --> C{Ship?}\n" +
+        "  C -->|yes| D((Play))\n" +
+        "  C -->|no| A",
+)
+
 /**
  * One entry of the shape menu: what to insert, what to call it, and how round.
  *

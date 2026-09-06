@@ -158,6 +158,7 @@ fun Element.withNewIds(renamed: MutableMap<String, String> = mutableMapOf()): El
         is ImageElement -> copy(id = fresh)
         is CodeElement -> copy(id = fresh)
         is TerminalElement -> copy(id = fresh)
+        is DiagramElement -> copy(id = fresh)
     }
 }
 

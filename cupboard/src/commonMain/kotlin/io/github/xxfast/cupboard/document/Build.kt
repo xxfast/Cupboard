@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.document
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 enum class BuildEffect {
@@ -28,11 +29,15 @@ enum class BuildTrigger {
 /**
  * One entry in a slide's Animate build order.
  *
- * [codeStep] is the index into the target [CodeElement.steps] this build moves
- * the block to, and is null for every build that only brings an element in. It
- * rides the existing triggers rather than inventing its own: advancing a code
- * block is a step like any other, so a `WithPrevious` code build lands on the
- * same click as the build before it.
+ * [elementStep] is the index into the target element's own steps, and is null for
+ * every build that only brings an element in. Which steps those are is the
+ * element's business: a code block's [CodeElement.steps], a diagram's
+ * [DiagramElement.steps]. It rides the existing triggers rather than inventing
+ * its own, so a `WithPrevious` step build lands on the same click as the build
+ * before it.
+ *
+ * The tag stays "codeStep": decks were written before the field grew past code,
+ * and a rename on disk would be a rename of every one of them.
  */
 @Serializable
 data class Build(
@@ -40,7 +45,7 @@ data class Build(
     val effect: BuildEffect = BuildEffect.FadeUp,
     val durationMs: Int = 400,
     val trigger: BuildTrigger = BuildTrigger.OnClick,
-    val codeStep: Int? = null,
+    @SerialName("codeStep") val elementStep: Int? = null,
 )
 
 /**
@@ -82,22 +87,23 @@ fun Slide.isVisibleAt(elementId: String, step: Int): Boolean {
 }
 
 /**
- * Which of [elementId]'s code steps is showing at [step]: the [Build.codeStep] of
- * the last build for that element that carries one and lands at or before [step].
+ * Which of [elementId]'s own steps is showing at [step]: the [Build.elementStep]
+ * of the last build for that element that carries one and lands at or before
+ * [step].
  *
- * Null when no such build has played yet, which is both "the element has no code
+ * Null when no such build has played yet, which is both "the element has no step
  * builds at all" and "its first one is still ahead". A caller with a stepped
- * block reads that as step 0, since a block shows its first state from the
- * moment it is visible; a block with no steps isn't stepped at all.
+ * element reads that as step 0, since a stepped element shows its first state
+ * from the moment it is visible; an element with no steps isn't stepped at all.
  */
-fun Slide.codeStepAt(elementId: String, step: Int): Int? {
+fun Slide.elementStepAt(elementId: String, step: Int): Int? {
     var buildStep = 0
     var current: Int? = null
     for (build in builds) {
         if (build.trigger == BuildTrigger.OnClick) buildStep++
         // Build steps only ever climb, so nothing past here can land in range.
         if (buildStep > step) break
-        if (build.elementId == elementId && build.codeStep != null) current = build.codeStep
+        if (build.elementId == elementId && build.elementStep != null) current = build.elementStep
     }
     return current
 }
@@ -109,6 +115,17 @@ fun Slide.codeStepAt(elementId: String, step: Int): Int? {
  */
 fun Slide.codeStepFor(element: CodeElement, step: Int): CodeStep? {
     if (element.steps.isEmpty()) return null
-    val index: Int = (codeStepAt(element.id, step) ?: 0).coerceIn(element.steps.indices)
+    val index: Int = (elementStepAt(element.id, step) ?: 0).coerceIn(element.steps.indices)
+    return element.steps[index]
+}
+
+/**
+ * The state [element] draws in at [step], or null when it has no steps and
+ * renders whole. Clamps like [codeStepFor], and for the same reason: a build can
+ * outlive the step it pointed at.
+ */
+fun Slide.diagramStepFor(element: DiagramElement, step: Int): DiagramStep? {
+    if (element.steps.isEmpty()) return null
+    val index: Int = (elementStepAt(element.id, step) ?: 0).coerceIn(element.steps.indices)
     return element.steps[index]
 }

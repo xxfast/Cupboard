@@ -89,6 +89,7 @@ import io.github.xxfast.cupboard.canvas.highlightCode
 import io.github.xxfast.cupboard.canvas.textStyle
 import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -113,6 +114,28 @@ import kotlin.math.min
 
 private val Accent = Color(0xFF7F52FF)
 private val GuideYellow = Color(0xFFF5C518)
+
+/**
+ * The sheet a diagram's source is typed on, and what is typed on it.
+ *
+ * Sheer rather than opaque on purpose: the chart carries on drawing underneath,
+ * so the source and the picture it makes are read in the one place. Everything
+ * here is the editor's own rather than the renderer's, since none of it survives
+ * the edit: what a diagram looks like is the renderer's business alone.
+ */
+private val DiagramSourceSheet = Color(0xE616171D)
+private val DiagramSourceBorder = Color(0xFF2C2E36)
+private val DiagramSourceText = Color(0xFFF1F1F1)
+private val DiagramSourceCorner = RoundedCornerShape(8.dp)
+private val DiagramSourcePadding = 12.dp
+
+/**
+ * The source is set at this much of the chart's own size, and never smaller than
+ * [DiagramSourceMinSize]: a description runs to more lines than the picture it
+ * describes, and it has to fit inside the same box.
+ */
+private const val DiagramSourceScale: Float = 0.6f
+private const val DiagramSourceMinSize: Float = 12f
 
 /**
  * What one nesting level of a list indents by inside the text field. A field
@@ -774,6 +797,14 @@ fun EditorCanvas(
                     modifier = fieldContextClick,
                 )
 
+                is DiagramElement -> DiagramEditor(
+                    element = editing,
+                    onPreviewElements = onPreviewElements,
+                    onEndTextEdit = onEndTextEdit,
+                    fieldMenuBridge = fieldMenuBridge,
+                    modifier = fieldContextClick,
+                )
+
                 else -> {}
             }
         }
@@ -1324,6 +1355,106 @@ private fun TerminalEditor(
                 )
             }
         }
+    }
+}
+
+/**
+ * [element] as its editable source, on a sheer sheet over the chart it draws.
+ *
+ * [TerminalEditor]'s pattern, with the one difference the kind forces: what is
+ * typed here is not what is drawn. A diagram's source is a description of the
+ * picture rather than the picture, so a field styled like the element would be
+ * unreadable and a field beside it would put the two out of sight of each other.
+ * The sheet is laid over the element's own frame instead, dark enough to read
+ * the source on and sheer enough to watch the chart redraw through it as the
+ * source is typed, which is the whole point of a diagram you write.
+ *
+ * The chart under the sheet is drawn here rather than by the canvas' element
+ * loop, which skips whatever is being edited. Each keystroke goes back through
+ * the loop as an ordinary element preview, so the drawing behind the field is
+ * the parse of what has been typed so far, badly-formed lines and all.
+ *
+ * Text is set well under the chart's own size so a source longer than the chart
+ * is tall still fits. Tab is left to the field as plain focus traversal: the
+ * indentation a diagram's source carries is typed, not inserted for you.
+ */
+@Composable
+private fun DiagramEditor(
+    element: DiagramElement,
+    onPreviewElements: (List<Element>) -> Unit,
+    onEndTextEdit: () -> Unit,
+    fieldMenuBridge: FieldMenuBridge? = null,
+    modifier: Modifier = Modifier,
+) {
+    // Re-seeded when the caret moves to another diagram, everything selected
+    // the way [TextEditor] seeds a text box.
+    var value: TextFieldValue by remember(element.id) {
+        mutableStateOf(TextFieldValue(element.source, TextRange(0, element.source.length)))
+    }
+    val focusRequester: FocusRequester = remember { FocusRequester() }
+    LaunchedEffect(element.id) { focusRequester.requestFocus() }
+
+    val style: TextStyle = TextStyle(
+        color = DiagramSourceText,
+        fontSize = (element.fontSize * DiagramSourceScale).coerceAtLeast(DiagramSourceMinSize).sp,
+        fontFamily = FontFamily.Monospace,
+    )
+
+    val clipboard: FieldClipboard = rememberFieldClipboard()
+
+    // Every way the value can change goes through here, as the terminal's does.
+    val update: (TextFieldValue) -> Unit = { edited ->
+        val typed: Boolean = edited.text != value.text
+        value = edited
+        if (typed) onPreviewElements(listOf(element.copy(source = edited.text)))
+    }
+
+    // As the text box: the menu's verbs are the chords' verbs.
+    RegisterFieldMenu(fieldMenuBridge, element.id, { value }, clipboard, update)
+
+    // The chart, still drawing, since the sheet over it lets it through.
+    ElementView(element)
+
+    Box(
+        Modifier
+            .offset(element.frame.x.dp, element.frame.y.dp)
+            .size(element.frame.width.dp, element.frame.height.dp)
+            .graphicsLayer {
+                alpha = element.opacity
+                rotationZ = element.rotation
+                scaleX = if (element.flippedHorizontally) -1f else 1f
+                scaleY = if (element.flippedVertically) -1f else 1f
+                transformOrigin = TransformOrigin.Center
+            }
+            .then(modifier)
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = update,
+            textStyle = style,
+            cursorBrush = SolidColor(DiagramSourceText),
+            modifier = Modifier
+                .fillMaxSize()
+                .background(DiagramSourceSheet, DiagramSourceCorner)
+                .border(1.dp, DiagramSourceBorder, DiagramSourceCorner)
+                .clip(DiagramSourceCorner)
+                .padding(DiagramSourcePadding)
+                .focusRequester(focusRequester)
+                // Escape leaves the source where it is and the caret behind.
+                // Enter is the field's, it starts the next line of the chart.
+                .onPreviewKeyEvent { key ->
+                    if (key.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+
+                    // As the text box: mid-edit the chord is the source's.
+                    if (handleClipboardKey(key, value, clipboard, update)) {
+                        return@onPreviewKeyEvent true
+                    }
+
+                    if (key.key != Key.Escape) return@onPreviewKeyEvent false
+                    onEndTextEdit()
+                    true
+                },
+        )
     }
 }
 

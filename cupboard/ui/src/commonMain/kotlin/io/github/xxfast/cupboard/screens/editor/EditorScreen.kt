@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
+import io.github.xxfast.cupboard.document.DefaultDiagramHeight
+import io.github.xxfast.cupboard.document.DefaultDiagramWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
 import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
@@ -48,6 +50,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
+import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
@@ -239,6 +242,13 @@ fun EditorView(
                         onInsertElement(
                             terminalElement(
                                 state.insertionFrame(DefaultTerminalWidth, DefaultTerminalHeight),
+                            ),
+                        )
+                    },
+                    onInsertDiagram = {
+                        onInsertElement(
+                            diagramElement(
+                                state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight),
                             ),
                         )
                     },

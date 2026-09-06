@@ -24,10 +24,13 @@ import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
+import io.github.xxfast.cupboard.document.DefaultDiagramHeight
+import io.github.xxfast.cupboard.document.DefaultDiagramWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
 import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
+import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -49,6 +52,7 @@ import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
+import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
@@ -290,6 +294,23 @@ class TerminalProps(
     val prompt: String,
     val fontSize: Float,
     val showTitleBar: Boolean,
+)
+
+/**
+ * The primary selected element's diagram style, flattened for the native
+ * inspector, and null unless that element is a [DiagramElement]. Same contract
+ * as [CodeProps]: what the panel shows, never a handle onto the document.
+ *
+ * The source is not here. A diagram's text is content, edited on the canvas the
+ * way a code block's is, so the panel only ever dresses what the layout draws:
+ * the type size and the four colours.
+ */
+class DiagramProps(
+    val fontSize: Float,
+    val nodeFill: Long,
+    val nodeStroke: Long,
+    val nodeText: Long,
+    val edgeColor: Long,
 )
 
 /**
@@ -616,6 +637,12 @@ class EditorHost {
         viewModel.onInsertElement(terminalElement(frame))
     }
 
+    /** A diagram in the middle of the slide, carrying a flowchart to rewrite. */
+    fun insertDiagram() {
+        val frame: Frame = state.insertionFrame(DefaultDiagramWidth, DefaultDiagramHeight)
+        viewModel.onInsertElement(diagramElement(frame))
+    }
+
     /**
      * What the Format inspector shows, or null when nothing is selected: the
      * primary element, with the rest of the selection behind it.
@@ -641,6 +668,7 @@ class EditorHost {
                 is ImageElement -> "Image"
                 is CodeElement -> "Code"
                 is TerminalElement -> "Terminal"
+                is DiagramElement -> "Diagram"
                 is GroupElement -> "Group"
             },
         )
@@ -965,6 +993,64 @@ class EditorHost {
         val edits: List<Element> = state.selectedElements.mapNotNull { element ->
             if (element !is TerminalElement || element.locked) return@mapNotNull null
             val formatted: TerminalElement = transform(element)
+            return@mapNotNull if (formatted == element) null else formatted
+        }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The diagram style the Format inspector shows, null when the primary
+     * element is not a diagram. Read off the primary, written to every unlocked
+     * diagram in the selection, the way the terminal one works.
+     */
+    fun selectedDiagram(): DiagramProps? =
+        (state.primaryElement as? DiagramElement)?.let { diagram ->
+            DiagramProps(
+                fontSize = diagram.fontSize,
+                nodeFill = diagram.nodeFill,
+                nodeStroke = diagram.nodeStroke,
+                nodeText = diagram.nodeText,
+                edgeColor = diagram.edgeColor,
+            )
+        }
+
+    /** One unlocked diagram in the selection is enough for the diagram controls. */
+    fun canFormatDiagrams(): Boolean =
+        state.selectedElements.any { it is DiagramElement && !it.locked }
+
+    /** Floors at a point, like the terminal's: type with no size can't be read. */
+    fun setDiagramFontSize(size: Float) {
+        formatDiagrams { it.copy(fontSize = size.coerceIn(1f, 400f)) }
+    }
+
+    /** What a node's box is painted with. Packed ARGB, like every colour here. */
+    fun setDiagramNodeFill(argb: Long) {
+        formatDiagrams { it.copy(nodeFill = argb) }
+    }
+
+    /** The line around a node's box. */
+    fun setDiagramNodeStroke(argb: Long) {
+        formatDiagrams { it.copy(nodeStroke = argb) }
+    }
+
+    /** The label inside a node. */
+    fun setDiagramNodeText(argb: Long) {
+        formatDiagrams { it.copy(nodeText = argb) }
+    }
+
+    /** The arrows between nodes, heads included. */
+    fun setDiagramEdgeColor(argb: Long) {
+        formatDiagrams { it.copy(edgeColor = argb) }
+    }
+
+    // The diagram setters' [formatSelection], the same shape [formatTerminals]
+    // takes: the unlocked diagrams of the selection, minus the ones the change
+    // left alone, committed as one history entry.
+    private fun formatDiagrams(transform: (DiagramElement) -> DiagramElement) {
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is DiagramElement || element.locked) return@mapNotNull null
+            val formatted: DiagramElement = transform(element)
             return@mapNotNull if (formatted == element) null else formatted
         }
         if (edits.isEmpty()) return

@@ -429,7 +429,8 @@ data class TerminalElement(
 
 /** Whether a double click puts a caret in it: the kinds edited in place on the canvas. */
 val Element.takesCaret: Boolean
-    get() = this is TextElement || this is CodeElement || this is TerminalElement
+    get() = this is TextElement || this is CodeElement || this is TerminalElement ||
+        this is DiagramElement
 
 @Serializable
 @SerialName("code")
@@ -460,11 +461,66 @@ data class CodeElement(
      * of its code.
      *
      * A stepped block draws `steps[0]` from the moment it is visible, and builds
-     * carrying a [Build.codeStep] move it along from there. Only play mode steps:
+     * carrying a [Build.elementStep] move it along from there. Only play mode steps:
      * the editor canvas shows the whole block, because what is being edited is
      * the code rather than the walk through it.
      */
     val steps: List<CodeStep> = emptyList(),
+) : Element {
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
+}
+
+/**
+ * A diagram written as text: a mermaid-flowchart subset in [source], parsed and
+ * laid out by the renderer rather than stored as boxes and arrows.
+ *
+ * Text rather than a node list because that is the point of the kind: a diagram
+ * you edit by typing is one you can rewrite mid-talk, and one that diffs. The
+ * layout is a pure function of the source (`parseDiagram` then `layoutDiagram`),
+ * so it is the same on every target and nothing about a position is stored.
+ *
+ * A source that doesn't parse is not an error: unrecognised lines are dropped
+ * one at a time, so a typo costs an edge rather than the slide.
+ *
+ * The four colours are the whole of the look, deliberately: a diagram reads as
+ * one object, and per-node styling is a different feature to this one.
+ */
+@Serializable
+@SerialName("diagram")
+data class DiagramElement(
+    override val id: String = newId(),
+    override val frame: Frame,
+    override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
+    val source: String = "",
+    val fontSize: Float = 16f,
+    val nodeFill: Long = 0x387F52FF,
+    val nodeStroke: Long = 0xB3A98FFF,
+    val nodeText: Long = 0xFFD9CFFF,
+    val edgeColor: Long = 0xFFA9A0D8,
+    /**
+     * The states the diagram is walked through in play mode, if any. Empty is a
+     * diagram that always shows all of itself, which is every document written
+     * before this field.
+     */
+    val steps: List<DiagramStep> = emptyList(),
 ) : Element {
     override fun update(
         frame: Frame,

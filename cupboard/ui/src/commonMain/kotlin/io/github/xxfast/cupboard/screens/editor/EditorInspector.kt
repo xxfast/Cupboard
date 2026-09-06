@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeTheme
+import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
@@ -185,6 +186,12 @@ fun EditorInspector(
                     )
 
                     if (primary is TerminalElement) TerminalSection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                    )
+
+                    if (primary is DiagramElement) DiagramSection(
                         primary = primary,
                         elements = selectedElements,
                         onUpdate = onUpdateElements,
@@ -926,6 +933,90 @@ private fun TerminalSection(
         label = "Show Title Bar",
         checked = primary.showTitleBar,
         onToggle = if (!enabled) null else ({ on -> format { it.copy(showTitleBar = on) } }),
+    )
+
+    PanelDivider()
+}
+
+/**
+ * [transform] applied to every unlocked diagram in the selection, as the ones
+ * that actually changed.
+ *
+ * Here rather than in the document module for [formatTerminals]' reason: the
+ * inspector is the only caller, since no menu verb formats a diagram.
+ */
+private fun List<Element>.formatDiagrams(
+    transform: (DiagramElement) -> DiagramElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is DiagramElement || element.locked) return@mapNotNull null
+    val formatted: DiagramElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+/**
+ * The live DIAGRAM section, shown when the primary element is a diagram.
+ *
+ * Reads [primary] and writes the whole selection through [formatDiagrams], like
+ * the terminal section: a mixed selection dresses its diagrams and leaves the
+ * rest alone. Nothing here previews, since every control is one settled edit.
+ *
+ * The source itself isn't edited here. It is typed on the canvas over the chart
+ * it draws, the way a code block's code is. What is left is the palette, which
+ * is four colours because that is every part a chart is made of: the inside of a
+ * node, its outline, its label, and the arrows between them. They are typed as
+ * hex rather than picked off the text swatches, which are a text palette and
+ * would say nothing useful about a node fill that is deliberately translucent.
+ */
+@Composable
+private fun DiagramSection(
+    primary: DiagramElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+
+    // False when the transform changed nothing anywhere: no event, and no field
+    // left holding a value the document never took.
+    fun format(transform: (DiagramElement) -> DiagramElement): Boolean {
+        val formatted: List<Element> = elements.formatDiagrams(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    SectionLabel("DIAGRAM")
+    NumberField(
+        label = "Size",
+        value = primary.fontSize,
+        enabled = enabled,
+        onCommit = { size -> format { it.copy(fontSize = size) } },
+        modifier = Modifier.width(96.dp),
+        minimum = 1f,
+    )
+    HexField(
+        label = "Node Fill",
+        color = primary.nodeFill,
+        enabled = enabled,
+        onCommit = { color -> format { it.copy(nodeFill = color) } },
+    )
+    HexField(
+        label = "Node Stroke",
+        color = primary.nodeStroke,
+        enabled = enabled,
+        onCommit = { color -> format { it.copy(nodeStroke = color) } },
+    )
+    HexField(
+        label = "Node Text",
+        color = primary.nodeText,
+        enabled = enabled,
+        onCommit = { color -> format { it.copy(nodeText = color) } },
+    )
+    HexField(
+        label = "Edge",
+        color = primary.edgeColor,
+        enabled = enabled,
+        onCommit = { color -> format { it.copy(edgeColor = color) } },
     )
 
     PanelDivider()

@@ -51,10 +51,10 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * The stacked layout's 60dp M3 toolbar, per the design's Linux variant: filled
  * Play pill, tonal Add slide, circular insert icon buttons, outlined zoom pill.
  *
- * Text inserts a box, Code a code block, Terminal a shell window, Shape drops
- * the catalog down; Add slide, image and media stay placeholders until the
- * document gains those operations. [onPlay] null (android/web shells) hides Play
- * entirely.
+ * Text inserts a box, Code a code block, Terminal a shell window, Diagram a
+ * chart, Shape drops the catalog down; Add slide, image and media stay
+ * placeholders until the document gains those operations. [onPlay] null
+ * (android/web shells) hides Play entirely.
  */
 @Composable
 fun EditorToolbar(
@@ -64,6 +64,7 @@ fun EditorToolbar(
     onInsertText: () -> Unit,
     onInsertCode: () -> Unit,
     onInsertTerminal: () -> Unit,
+    onInsertDiagram: () -> Unit,
     onInsertShape: (ShapeCatalogEntry) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -131,6 +132,7 @@ fun EditorToolbar(
                 InsertButton(onClick = onInsertText) { TextGlyph(color = tokens.icon) }
                 InsertButton(onClick = onInsertCode) { CodeGlyph(color = tokens.icon) }
                 InsertButton(onClick = onInsertTerminal) { TerminalGlyph(color = tokens.icon) }
+                InsertButton(onClick = onInsertDiagram) { DiagramGlyph(color = tokens.icon) }
                 ShapeInsertButton(onPick = onInsertShape)
                 InsertButton { ImageGlyph(color = tokens.icon) }
                 InsertButton { MediaGlyph(color = tokens.icon) }
@@ -334,6 +336,38 @@ private fun TerminalGlyph(color: Color) {
             lineTo(12.4f * s, 10.8f * s)
         }
         drawPath(glyph, color, style = glyphStroke())
+    }
+}
+
+/** Two nodes and the arrow between them, which is what every chart is made of. */
+@Composable
+private fun DiagramGlyph(color: Color) {
+    Canvas(Modifier.size(15.dp)) {
+        val s: Float = size.width / 14f
+        val stroke: Stroke = glyphStroke()
+        val corner: CornerRadius = CornerRadius(1.2f * s)
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(0.8f * s, 4.2f * s),
+            size = Size(4.4f * s, 5.6f * s),
+            cornerRadius = corner,
+            style = stroke,
+        )
+        drawRoundRect(
+            color = color,
+            topLeft = Offset(8.8f * s, 4.2f * s),
+            size = Size(4.4f * s, 5.6f * s),
+            cornerRadius = corner,
+            style = stroke,
+        )
+        val arrow: Path = Path().apply {
+            moveTo(5.2f * s, 7f * s)
+            lineTo(8.8f * s, 7f * s)
+            moveTo(7.7f * s, 5.9f * s)
+            lineTo(8.8f * s, 7f * s)
+            lineTo(7.7f * s, 8.1f * s)
+        }
+        drawPath(arrow, color, style = stroke)
     }
 }
 

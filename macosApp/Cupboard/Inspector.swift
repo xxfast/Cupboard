@@ -92,6 +92,11 @@ extension EditorView {
                         terminalSection(terminal)
                         palette.divider.frame(height: 1)
                     }
+                    // And the diagram's.
+                    if let diagram = ui.diagram {
+                        diagramSection(diagram)
+                        palette.divider.frame(height: 1)
+                    }
                     positionSection(element)
                     palette.divider.frame(height: 1)
                     rotateSection(element)
@@ -561,6 +566,46 @@ extension EditorView {
 
             checkRow("Show Title Bar", on: terminal.showTitleBar) {
                 host.setTerminalTitleBar(enabled: !terminal.showTitleBar)
+            }
+        }
+    }
+
+    // MARK: Diagram
+
+    /// The diagram's own style: the type size the labels are set in, and the
+    /// four colours the layout paints with. Same contract as the Terminal
+    /// section. Nothing here touches the source, which is content and is typed
+    /// on the canvas.
+    func diagramSection(_ diagram: DiagramFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Diagram")
+
+            HStack(spacing: 8) {
+                ValueField(label: "", value: diagram.size, palette: palette, unit: "pt") {
+                    host.setDiagramFontSize(size: Float($0))
+                }
+                .frame(width: 78)
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                colorWell("Node Fill", argb: diagram.nodeFill) {
+                    host.setDiagramNodeFill(argb: $0)
+                }
+                Spacer(minLength: 0)
+                colorWell("Node Stroke", argb: diagram.nodeStroke) {
+                    host.setDiagramNodeStroke(argb: $0)
+                }
+            }
+
+            HStack(spacing: 8) {
+                colorWell("Node Text", argb: diagram.nodeText) {
+                    host.setDiagramNodeText(argb: $0)
+                }
+                Spacer(minLength: 0)
+                colorWell("Edge", argb: diagram.edgeColor) {
+                    host.setDiagramEdgeColor(argb: $0)
+                }
             }
         }
     }

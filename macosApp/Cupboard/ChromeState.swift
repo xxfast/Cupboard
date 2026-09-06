@@ -30,6 +30,8 @@ struct Chrome {
     let code: CodeFormat?
     /// The primary's terminal style, nil unless the primary is a terminal.
     let terminal: TerminalFormat?
+    /// The primary's diagram style, nil unless the primary is a diagram.
+    let diagram: DiagramFormat?
     let selectionCount: Int
     let canGroup: Bool
     let canUngroup: Bool
@@ -55,6 +57,7 @@ struct Chrome {
         shape = host.selectedShape().map(ShapeFormat.init)
         code = host.selectedCode().map(CodeFormat.init)
         terminal = host.selectedTerminal().map(TerminalFormat.init)
+        diagram = host.selectedDiagram().map(DiagramFormat.init)
         selectionCount = Int(host.selectionCount())
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
@@ -224,6 +227,26 @@ struct TerminalFormat {
         prompt = props.prompt
         size = Double(props.fontSize)
         showTitleBar = props.showTitleBar
+    }
+}
+
+/// The primary selected element's diagram style as a Swift value: what the
+/// Diagram section of the Format panel shows. Read off the primary like
+/// `TerminalFormat`, and written back the same way. The source is not here: a
+/// diagram's text is content, and content is edited on the canvas.
+struct DiagramFormat {
+    let size: Double
+    let nodeFill: Int64
+    let nodeStroke: Int64
+    let nodeText: Int64
+    let edgeColor: Int64
+
+    init(_ props: DiagramProps) {
+        size = Double(props.fontSize)
+        nodeFill = props.nodeFill
+        nodeStroke = props.nodeStroke
+        nodeText = props.nodeText
+        edgeColor = props.edgeColor
     }
 }
 

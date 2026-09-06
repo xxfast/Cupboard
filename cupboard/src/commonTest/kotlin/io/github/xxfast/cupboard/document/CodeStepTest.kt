@@ -45,7 +45,7 @@ class CodeStepTest {
 
         val slide = decodeDocument(json).slides.single()
         assertEquals(emptyList(), (slide.elements.single() as CodeElement).steps)
-        assertNull(slide.builds.single().codeStep)
+        assertNull(slide.builds.single().elementStep)
         // And an unstepped block is not stepped by anything the slide does.
         assertNull(slide.codeStepFor(slide.elements.single() as CodeElement, step = 1))
     }
@@ -60,7 +60,7 @@ class CodeStepTest {
             slides = listOf(
                 Slide(
                     elements = listOf(code),
-                    builds = listOf(Build(code.id), Build(code.id, codeStep = 1)),
+                    builds = listOf(Build(code.id), Build(code.id, elementStep = 1)),
                 ),
             ),
         )
@@ -72,13 +72,13 @@ class CodeStepTest {
     fun noCodeBuildHasPlayedYetIsNull() {
         val slide = Slide(
             elements = listOf(steppedBlock(CodeStep(), CodeStep())),
-            builds = listOf(Build("code"), Build("code", codeStep = 1)),
+            builds = listOf(Build("code"), Build("code", elementStep = 1)),
         )
 
         // Step 0 is before every build; step 1 is the reveal, which carries none.
-        assertNull(slide.codeStepAt("code", step = 0))
-        assertNull(slide.codeStepAt("code", step = 1))
-        assertEquals(1, slide.codeStepAt("code", step = 2))
+        assertNull(slide.elementStepAt("code", step = 0))
+        assertNull(slide.elementStepAt("code", step = 1))
+        assertEquals(1, slide.elementStepAt("code", step = 2))
     }
 
     @Test
@@ -86,21 +86,21 @@ class CodeStepTest {
         val slide = Slide(
             elements = listOf(steppedBlock(CodeStep(), CodeStep(), CodeStep())),
             builds = listOf(
-                Build("code", codeStep = 0),
+                Build("code", elementStep = 0),
                 Build("other"),
-                Build("code", codeStep = 1),
-                Build("code", codeStep = 2),
+                Build("code", elementStep = 1),
+                Build("code", elementStep = 2),
             ),
         )
 
-        assertEquals(0, slide.codeStepAt("code", step = 1))
+        assertEquals(0, slide.elementStepAt("code", step = 1))
         // Step 2 is the unrelated element's: the block holds what it had.
-        assertEquals(0, slide.codeStepAt("code", step = 2))
-        assertEquals(1, slide.codeStepAt("code", step = 3))
-        assertEquals(2, slide.codeStepAt("code", step = 4))
+        assertEquals(0, slide.elementStepAt("code", step = 2))
+        assertEquals(1, slide.elementStepAt("code", step = 3))
+        assertEquals(2, slide.elementStepAt("code", step = 4))
         // Past the last build it stays where the last one left it.
-        assertEquals(2, slide.codeStepAt("code", step = 99))
-        assertNull(slide.codeStepAt("missing", step = 99))
+        assertEquals(2, slide.elementStepAt("code", step = 99))
+        assertNull(slide.elementStepAt("missing", step = 99))
     }
 
     @Test
@@ -109,14 +109,14 @@ class CodeStepTest {
             elements = listOf(steppedBlock(CodeStep(), CodeStep())),
             builds = listOf(
                 Build("other"),
-                Build("code", codeStep = 1, trigger = BuildTrigger.WithPrevious),
+                Build("code", elementStep = 1, trigger = BuildTrigger.WithPrevious),
             ),
         )
 
         // One click, both builds: the block is already advanced at step 1.
         assertEquals(2, slide.stepCount())
-        assertEquals(1, slide.codeStepAt("code", step = 1))
-        assertNull(slide.codeStepAt("code", step = 0))
+        assertEquals(1, slide.elementStepAt("code", step = 1))
+        assertNull(slide.elementStepAt("code", step = 0))
     }
 
     @Test
@@ -125,8 +125,8 @@ class CodeStepTest {
             elements = listOf(steppedBlock(CodeStep(), CodeStep(), CodeStep())),
             builds = listOf(
                 Build("code"),
-                Build("code", codeStep = 1),
-                Build("code", codeStep = 2),
+                Build("code", elementStep = 1),
+                Build("code", elementStep = 2),
             ),
         )
 
@@ -143,7 +143,7 @@ class CodeStepTest {
         val code = steppedBlock(CodeStep(reveal = listOf(LineRange(1, 1))), CodeStep())
         val slide = Slide(
             elements = listOf(code),
-            builds = listOf(Build("code"), Build("code", codeStep = 7)),
+            builds = listOf(Build("code"), Build("code", elementStep = 7)),
         )
 
         // Visible with no code build behind it yet: the block's first state.

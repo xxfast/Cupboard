@@ -11,8 +11,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.codeStepFor
+import io.github.xxfast.cupboard.document.diagramStepFor
 import io.github.xxfast.cupboard.document.entryBuild
 import io.github.xxfast.cupboard.document.isVisibleAt
 
@@ -25,8 +27,8 @@ private const val SlideNumberColor: Long = 0x99FFFFFF
 
 /**
  * Renders a slide's elements. [step] limits visibility per the build order, and
- * puts every stepped code block in the state its builds have reached; null (the
- * editor default) shows everything, whole.
+ * puts every stepped code block and diagram in the state its builds have reached;
+ * null (the editor default) shows everything, whole.
  *
  * [number] is this slide's place in the presentation, which only a slide that
  * asks for it draws. Passed in rather than worked out here: what counts as a
@@ -46,6 +48,9 @@ fun SlideView(
                 element = element,
                 codeStep = if (step != null && element is CodeElement) {
                     slide.codeStepFor(element, step)
+                } else null,
+                diagramStep = if (step != null && element is DiagramElement) {
+                    slide.diagramStepFor(element, step)
                 } else null,
                 // Play only: the editor draws every element at rest, so nothing
                 // there animates itself in.

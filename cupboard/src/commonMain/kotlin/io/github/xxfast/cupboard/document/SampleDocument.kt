@@ -74,9 +74,9 @@ private fun codeSlide(): Slide {
             // The first build brings the block in at its first state; the rest
             // only advance it, and it stays on screen through all of them.
             Build(code.id),
-            Build(code.id, codeStep = 1),
-            Build(code.id, codeStep = 2),
-            Build(code.id, codeStep = 3),
+            Build(code.id, elementStep = 1),
+            Build(code.id, elementStep = 2),
+            Build(code.id, elementStep = 3),
         ),
         notes = "The canvas never compiles a slide. It reads one. That is what keeps the " +
             "editor, the thumbnails, and play mode pixel-identical.",
@@ -122,6 +122,64 @@ private fun terminalSlide(): Slide {
         builds = listOf(Build(terminal.id, effect = BuildEffect.Typewriter, durationMs = 2400)),
         notes = "The same Kotlin core the canvas runs on ships to Windows as a NuGet " +
             "package. Let the commands type themselves out.",
+    )
+}
+
+/**
+ * Shows off the diagram element and its steps: the frame's walk through the
+ * scene graph, drawn from five lines of text.
+ *
+ * Four states over four clicks. The chart arrives holding the first two nodes,
+ * grows the third, brings the rest up, and finally spotlights the two that
+ * matter.
+ */
+private fun diagramSlide(): Slide {
+    val title = TextElement(
+        frame = Frame(146f, 130f, 1627f, 142f),
+        text = "Scene Graph",
+        fontSize = 94f,
+        fontWeight = 700,
+        letterSpacing = -1f,
+        color = 0xFFFFFFFF,
+    )
+    val subtitle = TextElement(
+        frame = Frame(146f, 281f, 1627f, 61f),
+        text = "What a frame walks through",
+        fontSize = 39f,
+        color = 0xFFA9A0D8,
+    )
+    val diagram = DiagramElement(
+        frame = Frame(146f, 390f, 1627f, 560f),
+        fontSize = 30f,
+        source = """
+            graph LR
+              C[Compose] --> L[Layout]
+              L --> D[Draw]
+              D --> P((Present))
+              D -.->|cache| S[Skia]
+        """.trimIndent(),
+        steps = listOf(
+            DiagramStep(reveal = listOf("C", "L")),
+            DiagramStep(reveal = listOf("C", "L", "D")),
+            DiagramStep(),
+            DiagramStep(highlight = listOf("D", "P")),
+        ),
+    )
+
+    return Slide(
+        title = "Scene Graph",
+        depth = 1,
+        elements = listOf(title, subtitle, diagram),
+        builds = listOf(
+            // Same shape as the code slide's: the first build brings the chart in
+            // at its first state, the rest only advance it.
+            Build(diagram.id),
+            Build(diagram.id, elementStep = 1),
+            Build(diagram.id, elementStep = 2),
+            Build(diagram.id, elementStep = 3),
+        ),
+        notes = "The diagram is five lines of text. Edit it live if someone asks what " +
+            "happens after Draw.",
     )
 }
 
@@ -197,7 +255,7 @@ fun sampleDocument(): Document {
             titleSlide("Agenda"),
             titleSlide("Why KMP"),
             pipeline,
-            titleSlide("Scene Graph", depth = 1),
+            diagramSlide(),
             codeSlide(),
             terminalSlide(),
             titleSlide("Benchmarks"),

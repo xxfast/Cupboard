@@ -13,7 +13,8 @@ package io.github.xxfast.cupboard.document
  * What is deliberately left out is the content ([TextElement.text],
  * [TextElement.link], [ShapeElement.label], [CodeElement.code],
  * [CodeElement.language], [TerminalElement.text], [TerminalElement.title],
- * [ShapeElement.kind]), the geometry (frame, rotation, flips) and the lock.
+ * [DiagramElement.source], [DiagramElement.steps], [ShapeElement.kind]), the
+ * geometry (frame, rotation, flips) and the lock.
  * Copying a style is not copying an element, and pasting one onto a laid-out
  * slide must not move anything. A link is where the box points, which is what it
  * says rather than how it looks, however much of its look follows from it.
@@ -65,6 +66,15 @@ fun Element.applyingStyle(source: Element): Element = when {
         prompt = source.prompt,
         fontSize = source.fontSize,
         showTitleBar = source.showTitleBar,
+    )
+
+    this is DiagramElement && source is DiagramElement -> copy(
+        opacity = source.opacity,
+        fontSize = source.fontSize,
+        nodeFill = source.nodeFill,
+        nodeStroke = source.nodeStroke,
+        nodeText = source.nodeText,
+        edgeColor = source.edgeColor,
     )
 
     // Images and groups have no style of their own, and so does any pair of

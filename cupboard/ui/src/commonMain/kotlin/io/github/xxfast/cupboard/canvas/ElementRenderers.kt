@@ -48,6 +48,8 @@ import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
@@ -77,10 +79,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * children. Children are stored in absolute slide coordinates, so laying them out
  * inside their group's box would otherwise apply the group's offset twice.
  *
- * [codeStep] is the state a [CodeElement] draws in, resolved by the caller from
- * the slide's build order. Null, the editor's case, is the whole block. Only a
- * top-level element gets one: a code block inside a group draws whole, since a
- * build names an element the slide holds.
+ * [codeStep] and [diagramStep] are the states a [CodeElement] and a
+ * [DiagramElement] draw in, resolved by the caller from the slide's build order.
+ * Null, the editor's case, is the whole of either. Only a top-level element gets
+ * one: a stepped element inside a group draws whole, since a build names an
+ * element the slide holds.
  *
  * [entry] is the build that brings the element in, for the kinds that animate
  * themselves rather than being faded in from outside. Only [TerminalElement]
@@ -94,6 +97,7 @@ fun ElementView(
     originX: Float = 0f,
     originY: Float = 0f,
     codeStep: CodeStep? = null,
+    diagramStep: DiagramStep? = null,
     entry: Build? = null,
 ) {
     Box(
@@ -114,6 +118,7 @@ fun ElementView(
             is ImageElement -> ImageElementView(element)
             is CodeElement -> CodeElementView(element, codeStep)
             is TerminalElement -> TerminalElementView(element, entry)
+            is DiagramElement -> DiagramElementView(element, diagramStep)
             // The group draws nothing of its own: it is the box its transforms
             // hang off, and its children draw inside it. A nested group recurses
             // through here and re-bases its own children the same way.
@@ -295,8 +300,14 @@ private fun LineElementView(element: ShapeElement) {
     }
 }
 
-/** A filled triangle pointing at [tip], away from [from]. */
-private fun DrawScope.drawArrowHead(color: Color, tip: Offset, from: Offset, weight: Float) {
+/**
+ * A filled triangle pointing at [tip], away from [from].
+ *
+ * Internal rather than private: a diagram's edges cap themselves with the same
+ * head a line does, and two arrowheads that differ by a few degrees on one slide
+ * would be a bug nobody could name.
+ */
+internal fun DrawScope.drawArrowHead(color: Color, tip: Offset, from: Offset, weight: Float) {
     val length: Float = hypot(tip.x - from.x, tip.y - from.y)
     if (length == 0f) return
 

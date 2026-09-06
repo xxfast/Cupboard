@@ -96,9 +96,18 @@ extension EditorView {
         .help(help)
     }
 
-    /// The one insert cluster: raised capsule, 30x24 items. Text, Code, Terminal
-    /// and Shape are live; Table, Chart and Media wait on element types the document model
-    /// does not hold yet.
+    /// The graph glyph, when the running system has it. SF Symbol names resolve
+    /// at runtime, so an absent one draws nothing at all rather than failing to
+    /// build; the connected-rectangle one is the older stand-in.
+    static let diagramSymbol: String =
+        NSImage(
+            systemSymbolName: "point.3.connected.trianglepath.dotted",
+            accessibilityDescription: nil
+        ) == nil ? "rectangle.connected.to.line.below" : "point.3.connected.trianglepath.dotted"
+
+    /// The one insert cluster: raised capsule, 30x24 items. Text, Code, Terminal,
+    /// Diagram and Shape are live; Table, Chart and Media wait on element types the
+    /// document model does not hold yet.
     var insertCapsule: some View {
         HStack(spacing: 2) {
             insertPlaceholder("tablecells", help: "Table")
@@ -121,6 +130,12 @@ extension EditorView {
             }
             .buttonStyle(.plain)
             .help("Terminal")
+
+            Button { host.insertDiagram() } label: {
+                insertIcon(Self.diagramSymbol)
+            }
+            .buttonStyle(.plain)
+            .help("Diagram")
 
             // A popup rather than a button: what a shape is comes off the
             // catalog, so picking one is picking a row of it.
