@@ -364,17 +364,18 @@ internal val CodePadding = 12.dp
 /**
  * A code block: its theme's chrome, its numbers, and its highlighted text.
  *
- * The gutter is a second [Text] of the same face and size rather than a prefix
- * on each line, so selecting or exporting the code never picks the numbers up.
- * It takes its width from its own widest number, which is the digit count of the
- * line count. Numbers line up with lines, not with rows: with [CodeElement.wrap]
- * on, a line that reflows pushes its neighbours down and the column drifts. Only
- * a per-line layout fixes that, which is more than a wrapped block is worth.
+ * [step] is the state to draw, or null for the whole block, which is the editor's
+ * case. A step that hides lines reflows the ones that are left, and the gutter
+ * keeps drawing each one's original number, so a reveal reads as a block filling
+ * in rather than as a block being renumbered.
  *
- * [step] is the state to draw, or null for the whole block. A step that hides
- * lines reflows the ones that are left, and the gutter keeps drawing each one's
- * original number, so a reveal reads as a block filling in rather than as a
- * block being renumbered.
+ * The whole block is two [Text]s, the gutter and the code: one line per line, so
+ * they line up, and the numbers stay out of anything the code is selected or
+ * exported into. It costs the gutter drifting from its lines when
+ * [CodeElement.wrap] is on and a line reflows, which is a fair trade for a block
+ * nobody is stepping through. A step draws through [AnimatedCodeLines] instead,
+ * which lays each line out as its own row: that is what it takes to move a line
+ * from one row to another, and it keeps the column honest under wrap for free.
  */
 @Composable
 private fun CodeElementView(element: CodeElement, step: CodeStep? = null) {
@@ -387,35 +388,39 @@ private fun CodeElementView(element: CodeElement, step: CodeStep? = null) {
             .clip(CodeCorner)
             .padding(CodePadding),
     ) {
-        val stepped: SteppedCode = remember(element.code, element.language, element.theme, step) {
-            steppedCode(element.code, element.language, element.theme, step)
-        }
+        if (step != null) {
+            AnimatedCodeLines(element, step)
+        } else {
+            val stepped: SteppedCode = remember(element.code, element.language, element.theme) {
+                steppedCode(element.code, element.language, element.theme, step = null)
+            }
 
-        Row {
-            if (element.showLineNumbers) {
+            Row {
+                if (element.showLineNumbers) {
+                    Text(
+                        text = stepped.numbers,
+                        color = chrome.gutter,
+                        fontSize = element.fontSize.sp,
+                        fontFamily = FontFamily.Monospace,
+                        lineHeight = (element.fontSize * CodeLineHeight).sp,
+                        softWrap = false,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                        modifier = Modifier.padding(end = CodeGutterGap),
+                    )
+                }
+
                 Text(
-                    text = stepped.numbers,
-                    color = chrome.gutter,
+                    text = stepped.text,
+                    color = chrome.text,
                     fontSize = element.fontSize.sp,
                     fontFamily = FontFamily.Monospace,
                     lineHeight = (element.fontSize * CodeLineHeight).sp,
-                    softWrap = false,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                    modifier = Modifier.padding(end = CodeGutterGap),
+                    // Off, a long line runs to the edge of the block and is cut there
+                    // by the clip above rather than reflowing under itself.
+                    softWrap = element.wrap,
+                    overflow = TextOverflow.Clip,
                 )
             }
-
-            Text(
-                text = stepped.text,
-                color = chrome.text,
-                fontSize = element.fontSize.sp,
-                fontFamily = FontFamily.Monospace,
-                lineHeight = (element.fontSize * CodeLineHeight).sp,
-                // Off, a long line runs to the edge of the block and is cut there
-                // by the clip above rather than reflowing under itself.
-                softWrap = element.wrap,
-                overflow = TextOverflow.Clip,
-            )
         }
     }
 }

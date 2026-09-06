@@ -126,5 +126,47 @@ class CodeStepsTest {
         assertEquals("1", empty.numbers.text)
     }
 
+    @Test
+    fun linesCarryTheirOwnNumberAndWhetherTheStepDropsThemBack() {
+        val step = CodeStep(highlight = listOf(LineRange(3, 3)))
+        val lines: List<SteppedLine> = steppedLines(code, "kotlin", CodeTheme.Atom, step)
+        assertEquals(listOf(1, 2, 3, 4, 5), lines.map { it.number })
+        assertEquals(listOf(true, true, false, true, true), lines.map { it.dimmed })
+
+        // The dim is a flag, not ink: a dropped line's own text is still the one
+        // the whole block draws, so a row can be faded between two steps' dims.
+        val dropped: SteppedLine = lines.first()
+        assertEquals("// a comment", dropped.text.text)
+        val coloured = dropped.text.spanStyles.filter { it.item.color.isSpecified }
+        assertTrue(coloured.isNotEmpty())
+        assertTrue(coloured.all { it.item.color.alpha nearly 1f })
+    }
+
+    @Test
+    fun hiddenLinesAreLinesThatAreNotThere() {
+        val lines: List<SteppedLine> = steppedLines(
+            code,
+            "kotlin",
+            CodeTheme.Atom,
+            CodeStep(reveal = listOf(LineRange(2, 2), LineRange(5, 5))),
+        )
+        assertEquals(listOf(2, 5), lines.map { it.number })
+        assertEquals(listOf("fun main() {", "}"), lines.map { it.text.text })
+    }
+
+    @Test
+    fun theBlockIsTheLinesJoinedBack() {
+        for (step in listOf(
+            null,
+            CodeStep(),
+            CodeStep(highlight = listOf(LineRange(3, 3))),
+            CodeStep(reveal = listOf(LineRange(2, 4)), highlight = listOf(LineRange(4, 4))),
+        )) {
+            val lines: List<SteppedLine> = steppedLines(code, "kotlin", CodeTheme.Atom, step)
+            assertEquals(lines.joinToString("\n") { it.text.text }, stepped(step).text.text)
+            assertEquals(lines.joinToString("\n") { "${it.number}" }, stepped(step).numbers.text)
+        }
+    }
+
     private infix fun Float.nearly(other: Float): Boolean = abs(this - other) < 0.001f
 }
