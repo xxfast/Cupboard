@@ -30,7 +30,14 @@ fun ImageMask.contains(u: Float, v: Float): Boolean {
  * A frame rather than four numbers because that is what the renderer hands the
  * canvas as its source rectangle, and what a mask gesture edits.
  */
-fun ImageElement.sourceRect(): Frame {
+fun ImageElement.sourceRect(): Frame = imageSourceRect(mask, naturalWidth, naturalHeight)
+
+/**
+ * [ImageElement.sourceRect] over the three facts it reads, for a picture that is
+ * not an element of its own: a gallery's images carry their own natural size and
+ * take the gallery's mask.
+ */
+fun imageSourceRect(mask: ImageMask?, naturalWidth: Int, naturalHeight: Int): Frame {
     val width: Float = naturalWidth.toFloat()
     val height: Float = naturalHeight.toFloat()
     val window: ImageMask = mask ?: return Frame(0f, 0f, width, height)

@@ -94,6 +94,15 @@ fun Element.applyingStyle(source: Element): Element = when {
         adjust = source.adjust,
     )
 
+    // A gallery's look is the correction its pictures are drawn through and
+    // whether their captions show: the pictures themselves and what each of them
+    // says are content, and mean nothing on a different carousel.
+    this is GalleryElement && source is GalleryElement -> copy(
+        opacity = source.opacity,
+        adjust = source.adjust,
+        showCaptions = source.showCaptions,
+    )
+
     // A group has no style of its own, and neither does any pair of types that
     // don't match: opacity is all there is to carry across.
     else -> update(opacity = source.opacity)

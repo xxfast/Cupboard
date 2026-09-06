@@ -404,6 +404,75 @@ data class ImageElement(
 }
 
 /**
+ * One picture in a gallery: an id the asset store resolves to bytes, the size
+ * those bytes decoded to, and what the slide says about them.
+ *
+ * The same three facts an [ImageElement] carries, minus everything that is the
+ * element's rather than the picture's: where it sits, how it is corrected and
+ * what it is masked to are the gallery's, and are the same for every image in it.
+ */
+@Serializable
+data class GalleryImage(
+    val assetId: String,
+    /** The decoded size of [assetId]'s bytes, in pixels. Zero until an image lands. */
+    val naturalWidth: Int = 0,
+    val naturalHeight: Int = 0,
+    /** Drawn under this picture while the gallery is showing it. Empty draws nothing. */
+    val caption: String = "",
+)
+
+/**
+ * Several pictures in one box, shown one at a time.
+ *
+ * A gallery's own steps are its images: `Slide.galleryImageAt` reads the
+ * [Build.elementStep] the build order has reached and that is the picture on
+ * screen, so a carousel is cycled by the mechanism a code block and a diagram are
+ * already walked by rather than by one of its own. `Slide.gallerySteps` is what
+ * writes those builds.
+ *
+ * [current] is the editor's alone: it is the image being authored, and play mode
+ * never reads it. Kept on the element rather than in the editor's state so
+ * picking an image to caption survives a save, a reopen and an undo, the way
+ * every other authoring choice does.
+ *
+ * The adjustment is the whole gallery's, not the picture's: a carousel of frame
+ * captures reads as one object, and correcting them one at a time is a different
+ * feature to this one.
+ */
+@Serializable
+@SerialName("gallery")
+data class GalleryElement(
+    override val id: String = newId(),
+    override val frame: Frame,
+    override val opacity: Float = 1f,
+    override val rotation: Float = 0f,
+    override val flippedHorizontally: Boolean = false,
+    override val flippedVertically: Boolean = false,
+    override val locked: Boolean = false,
+    val images: List<GalleryImage> = emptyList(),
+    /** The image the editor canvas shows. Out of range draws the nearest one there is. */
+    val current: Int = 0,
+    val showCaptions: Boolean = true,
+    val adjust: ImageAdjust = ImageAdjust(),
+) : Element {
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+    ): Element = copy(
+        frame = frame,
+        opacity = opacity,
+        rotation = rotation,
+        flippedHorizontally = flippedHorizontally,
+        flippedVertically = flippedVertically,
+        locked = locked,
+    )
+}
+
+/**
  * Elements moved, resized and transformed as one.
  *
  * [children] are stored in absolute slide coordinates, not relative to the

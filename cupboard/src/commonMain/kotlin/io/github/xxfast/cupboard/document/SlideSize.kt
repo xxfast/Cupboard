@@ -108,6 +108,7 @@ private fun Element.scaled(scaleX: Float, scaleY: Float, scaleType: Float): Elem
         is DiagramElement -> copy(frame = scaledFrame, fontSize = fontSize * scaleType)
         is EquationElement -> copy(frame = scaledFrame, fontSize = fontSize * scaleType)
         is ImageElement -> copy(frame = scaledFrame)
+        is GalleryElement -> copy(frame = scaledFrame)
         is GroupElement -> update(frame = scaledFrame)
     }
 }

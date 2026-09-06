@@ -54,6 +54,27 @@ internal fun chooseImage(owner: Frame): PickedImage? {
 }
 
 /**
+ * The same panel with several files allowed, and every image picked in it.
+ *
+ * A gallery is several pictures in one box, so the verb that inserts one asks
+ * for several in one visit rather than making the user come back per file. What
+ * comes back is in the panel's own order, which is the order they will be
+ * stepped through.
+ *
+ * Empty is a cancel, and empty is also a pick that turned out to hold nothing we
+ * read: both are nothing inserted, which is the same answer.
+ */
+internal fun chooseImages(owner: Frame): List<PickedImage> {
+    val dialog = FileDialog(owner, "Insert Image Gallery", FileDialog.LOAD)
+    dialog.isMultipleMode = true
+    dialog.setFilenameFilter { _, name -> File(name).isImage() }
+    dialog.file = ImageExtensions.joinToString(";") { "*.$it" }
+    dialog.isVisible = true
+
+    return dialog.files.orEmpty().mapNotNull(::readImage)
+}
+
+/**
  * The images among [uris], which is what a drop hands over: file URIs, in the
  * order they were dragged, and anything that isn't an image we take drops out.
  *

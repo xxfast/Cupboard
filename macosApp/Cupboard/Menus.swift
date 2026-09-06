@@ -222,6 +222,9 @@ func insertEntries(_ host: EditorHost) -> [MenuEntry] {
         // The one row that opens a panel: an image is bytes, and there is
         // nothing to insert until the user has said which.
         MenuEntry(title: "Image...", action: { Media.insert(into: host) }),
+        // Its plural: several pictures in one box, shown one at a time. Same
+        // panel with multiple selection on.
+        MenuEntry(title: "Image Gallery...", action: { Media.insertGallery(into: host) }),
     ]
 }
 

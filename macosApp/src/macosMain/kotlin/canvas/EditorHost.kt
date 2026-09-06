@@ -55,6 +55,8 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GalleryElement
+import io.github.xxfast.cupboard.document.GalleryImage
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
@@ -93,6 +95,7 @@ import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.fitted
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.galleryElement
 import io.github.xxfast.cupboard.document.imageElement
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
@@ -136,6 +139,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -143,6 +147,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.skia.EncodedImageFormat
+import org.jetbrains.skia.Rect as SkiaRect
+import org.jetbrains.skia.Surface as SkiaSurface
 import org.jetbrains.skia.Image as SkiaImage
 import platform.AppKit.NSCursor
 import platform.AppKit.NSCursorFrameResizeDirectionsAll
@@ -185,6 +191,13 @@ private const val IMAGE_INSERT_SHARE: Float = 0.6f
 
 /** The smallest a mask window may be, in the image's own normalised units. */
 private const val MIN_MASK_EXTENT: Float = 0.02f
+
+/**
+ * How many gallery strip thumbnails are kept decoded. A strip is a dozen at the
+ * most and a deck holds a handful of galleries, so this outlives switching
+ * between them without holding a whole deck's pictures at once.
+ */
+private const val GALLERY_THUMBNAILS: Int = 48
 
 private const val DEFAULT_BACKGROUND_COLOR: Long = 0xFF101223
 private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
@@ -350,6 +363,7 @@ private fun Element.kindName(): String = when (this) {
     is TextElement -> "Text"
     is ShapeElement -> "Shape"
     is ImageElement -> "Image"
+    is GalleryElement -> "Gallery"
     is CodeElement -> "Code"
     is TerminalElement -> "Terminal"
     is DiagramElement -> "Diagram"
@@ -368,6 +382,7 @@ private fun Element.rowTitle(): String {
         is TextElement -> text
         is ShapeElement -> label.ifBlank { kind.name }
         is ImageElement -> placeholder
+        is GalleryElement -> "${images.size} images"
         is CodeElement -> language
         is TerminalElement -> title
         is DiagramElement -> source
@@ -705,6 +720,30 @@ class ImageProps(
     val saturation: Float,
     val contrast: Float,
     val caption: String,
+)
+
+/**
+ * The primary selected gallery, flattened for the Gallery section of the Format
+ * panel: how many pictures it holds, which one is being authored, and what the
+ * slide says about it. [ImageProps]'s neighbour, a snapshot rather than a handle.
+ *
+ * [caption] is the current picture's alone, because that is the one the field
+ * edits: a caption belongs to a picture, and one field across the lot would give
+ * every image in the box the same words. The correction below it is the whole
+ * gallery's, which is what the model says: a carousel reads as one object.
+ *
+ * The pictures themselves are not here. Bytes never cross the boundary as a
+ * value; the strip asks [EditorHost.galleryThumbnail] for one at a time.
+ */
+class GalleryProps(
+    val count: Int,
+    /** Always in range, and 0 for an empty gallery, which is the index nothing draws. */
+    val current: Int,
+    val caption: String,
+    val showCaptions: Boolean,
+    val exposure: Float,
+    val saturation: Float,
+    val contrast: Float,
 )
 
 /**
@@ -1056,6 +1095,24 @@ class EditorHost(
 
     private val thumbnails = mutableMapOf<String, Thumbnail>()
 
+    /**
+     * Gallery strip thumbnails, by asset id and the width they were drawn at,
+     * least recently added dropped first. The strip re-asks for every picture on
+     * every pass, and decoding a photo per pass would starve the main thread the
+     * way rendering a slide row per pass once did.
+     */
+    private val galleryThumbnails = mutableMapOf<String, NSImage>()
+
+    /** The keys a decode is already on its way for, so a miss asks once. */
+    private val galleryThumbnailsPending = mutableSetOf<String>()
+
+    /**
+     * Bumped whenever a gallery thumbnail lands. A decode finishes after the
+     * state that asked for it, so its arrival is a change of its own: without
+     * this the strip would stay empty until the next edit. See [onChange].
+     */
+    private val galleryTick = MutableStateFlow(0)
+
     private val scope = CoroutineScope(Dispatchers.Main)
 
     /** View-local, not document state: null is Fit, otherwise a scale factor. */
@@ -1358,6 +1415,38 @@ class EditorHost(
     }
 
     /**
+     * [files] on the slide as one gallery: several pictures in one box, shown one
+     * at a time. [extensions] runs alongside [files], one per file, and a short
+     * list reads as "png" for whatever it doesn't reach.
+     *
+     * [insertImage]'s plural, and asynchronous for the same reasons: the writes
+     * and the decodes happen off the main thread and the element lands back on
+     * it. The first picture's aspect is what the box is fitted to, which is
+     * `galleryElement`'s rule, inside the same share of the slide a single image
+     * inserts into.
+     *
+     * Files nothing can decode are dropped rather than kept as empty frames, and
+     * a set where none of them decode inserts nothing at all.
+     */
+    fun insertGallery(files: List<NSData>, extensions: List<String>) {
+        if (files.isEmpty()) return
+        scope.launch {
+            val images: List<GalleryImage> = writeGalleryImages(files, extensions)
+            if (images.isEmpty()) return@launch
+            viewModel.onInsertElement(
+                galleryElement(
+                    frame = state.insertionFrame(
+                        width = state.document.slideWidth * IMAGE_INSERT_SHARE,
+                        height = state.document.slideHeight * IMAGE_INSERT_SHARE,
+                    ),
+                    images = images,
+                    defaults = state.defaults,
+                ),
+            )
+        }
+    }
+
+    /**
      * New bytes behind the primary image, its frame left where it is: what
      * Replace Image does.
      *
@@ -1528,6 +1617,240 @@ class EditorHost(
         val edits: List<Element> = imageEdits(transform)
         if (edits.isEmpty()) return
         viewModel.onUpdateElements(edits)
+    }
+
+    /**
+     * The gallery the Format inspector shows, null when the primary element is
+     * not one. Read off the primary, like every other Format section.
+     */
+    fun selectedGallery(): GalleryProps? =
+        (state.primaryElement as? GalleryElement)?.let { gallery ->
+            val current: Int = gallery.currentIndex()
+            GalleryProps(
+                count = gallery.images.size,
+                current = current,
+                caption = gallery.images.getOrNull(current)?.caption ?: "",
+                showCaptions = gallery.showCaptions,
+                exposure = gallery.adjust.exposure,
+                saturation = gallery.adjust.saturation,
+                contrast = gallery.adjust.contrast,
+            )
+        }
+
+    /**
+     * The [index]th picture of the primary gallery, drawn [width] points wide,
+     * or null while it is being decoded and for an index the gallery hasn't got.
+     *
+     * Null now and an image later: the strip asks on every pass, a miss starts
+     * one decode, and the one that lands wakes the shell through [onChange]. The
+     * alternative is blocking a SwiftUI body on reading a photo off disk.
+     */
+    fun galleryThumbnail(index: Int, width: Int): NSImage? {
+        if (width <= 0) return null
+        val gallery: GalleryElement = state.primaryElement as? GalleryElement ?: return null
+        val assetId: String = gallery.images.getOrNull(index)?.assetId ?: return null
+        val key = "$assetId@$width"
+        galleryThumbnails[key]?.let { return it }
+        if (!galleryThumbnailsPending.add(key)) return null
+        scope.launch {
+            val drawn: DrawnThumbnail? = decodeGalleryThumbnail(assetId, width)
+            galleryThumbnailsPending.remove(key)
+            if (drawn == null) return@launch
+            val png: ByteArray = drawn.png
+            val data: NSData = png.usePinned { pinned ->
+                NSData.dataWithBytes(pinned.addressOf(0), png.size.toULong())
+            }
+            val image = NSImage(data = data)
+            image.setSize(NSMakeSize(width.toDouble(), drawn.height.toDouble()))
+            galleryThumbnails[key] = image
+            while (galleryThumbnails.size > GALLERY_THUMBNAILS) {
+                galleryThumbnails.remove(galleryThumbnails.keys.first())
+            }
+            galleryTick.value += 1
+        }
+        return null
+    }
+
+    /**
+     * [assetId]'s bytes redrawn at [width] points, at 2x for retina, as PNG.
+     * Downscaled rather than handed over whole: a strip of 48pt squares has no
+     * use for twenty megapixels, and the cache above holds what comes out.
+     *
+     * Bytes rather than an [NSImage], so the decode and the resample both stay
+     * off the main thread and only the wrapping happens back on it.
+     */
+    private suspend fun decodeGalleryThumbnail(assetId: String, width: Int): DrawnThumbnail? =
+        withContext(Dispatchers.Default) {
+            val bytes: ByteArray = viewModel.assets.read(assetId) ?: return@withContext null
+            val decoded: SkiaImage =
+                runCatching { SkiaImage.makeFromEncoded(bytes) }.getOrNull() ?: return@withContext null
+            if (decoded.width <= 0 || decoded.height <= 0) return@withContext null
+            val height: Int = (width.toFloat() * decoded.height / decoded.width)
+                .roundToInt()
+                .coerceAtLeast(1)
+            val surface: SkiaSurface = SkiaSurface.makeRasterN32Premul(width * 2, height * 2)
+            surface.canvas.drawImageRect(
+                decoded,
+                SkiaRect.makeWH(decoded.width.toFloat(), decoded.height.toFloat()),
+                SkiaRect.makeWH(width * 2f, height * 2f),
+            )
+            val png: ByteArray = surface.makeImageSnapshot()
+                .encodeToData(EncodedImageFormat.PNG)?.bytes ?: return@withContext null
+            DrawnThumbnail(png, height)
+        }
+
+    /** A resampled picture on its way back to the main thread: the PNG, and how tall it is in points. */
+    private class DrawnThumbnail(val png: ByteArray, val height: Int)
+
+    /** Which picture is being authored, always in range. Empty is 0, which draws nothing. */
+    private fun GalleryElement.currentIndex(): Int =
+        if (images.isEmpty()) 0 else current.coerceIn(images.indices)
+
+    /**
+     * Which picture the editor canvas shows. The primary alone: a gallery's
+     * current image is that gallery's, and there is nothing to spread across a
+     * selection.
+     */
+    fun setGalleryCurrent(index: Int) {
+        editGallery { gallery ->
+            if (gallery.images.isEmpty()) gallery
+            else gallery.copy(current = index.coerceIn(gallery.images.indices))
+        }
+    }
+
+    /**
+     * [files] appended to the primary gallery, in the order they were picked.
+     * [insertGallery]'s other half, and asynchronous for the same reason.
+     */
+    fun addGalleryImages(files: List<NSData>, extensions: List<String>) {
+        val target: GalleryElement = liveGallery() ?: return
+        if (files.isEmpty()) return
+        scope.launch {
+            val added: List<GalleryImage> = writeGalleryImages(files, extensions)
+            if (added.isEmpty()) return@launch
+            // Re-read: the writes took a moment, and the selection may have moved
+            // under them. Editing by id is what keeps this off the wrong element.
+            val live: GalleryElement = liveGallery(target.id) ?: return@launch
+            viewModel.onUpdateElements(listOf(live.copy(images = live.images + added)))
+        }
+    }
+
+    /**
+     * The [index]th picture out of the primary gallery, the ones after it moving
+     * up. The bytes stay in the bundle: undo has to be able to put the picture
+     * back, and an asset nothing points at costs a file rather than a slide.
+     */
+    fun removeGalleryImage(index: Int) {
+        editGallery { gallery ->
+            if (index !in gallery.images.indices) return@editGallery gallery
+            val images: List<GalleryImage> = gallery.images.filterIndexed { at, _ -> at != index }
+            gallery.copy(
+                images = images,
+                current = gallery.current.coerceIn(0, (images.size - 1).coerceAtLeast(0)),
+            )
+        }
+    }
+
+    /**
+     * The [from]th picture moved to [to], which is what reordering the strip
+     * does. The picture being authored follows itself rather than its old place,
+     * so shuffling the order never changes which one is on the canvas.
+     */
+    fun moveGalleryImage(from: Int, to: Int) {
+        editGallery { gallery ->
+            if (from !in gallery.images.indices) return@editGallery gallery
+            if (to !in gallery.images.indices) return@editGallery gallery
+            val shown: GalleryImage? = gallery.images.getOrNull(gallery.currentIndex())
+            val images: MutableList<GalleryImage> = gallery.images.toMutableList()
+            images.add(to, images.removeAt(from))
+            gallery.copy(
+                images = images,
+                current = images.indexOf(shown).coerceAtLeast(0),
+            )
+        }
+    }
+
+    /**
+     * What is written under the [index]th picture. One picture's, not the whole
+     * gallery's: a caption names what is on screen, the way an image element's
+     * does, and it goes to the primary alone for the same reason.
+     */
+    fun setGalleryCaption(index: Int, text: String) {
+        editGallery { gallery ->
+            val image: GalleryImage = gallery.images.getOrNull(index) ?: return@editGallery gallery
+            gallery.copy(
+                images = gallery.images.toMutableList().also { it[index] = image.copy(caption = text) },
+            )
+        }
+    }
+
+    fun setGalleryShowCaptions(on: Boolean) {
+        editGallery { it.copy(showCaptions = on) }
+    }
+
+    /**
+     * The three corrections, as one write, the way [setImageAdjust] takes them:
+     * they compose into one colour matrix. [commit] false is a slider still
+     * under the thumb. The whole gallery wears them, which is what the model
+     * says: a carousel reads as one object.
+     */
+    fun setGalleryAdjust(exposure: Float, saturation: Float, contrast: Float, commit: Boolean) {
+        val gallery: GalleryElement = liveGallery() ?: return
+        val adjust = ImageAdjust(
+            exposure = exposure.coerceIn(-1f, 1f),
+            saturation = saturation.coerceIn(0f, 2f),
+            contrast = contrast.coerceIn(0f, 2f),
+        )
+        if (gallery.adjust == adjust) return
+        val edits: List<Element> = listOf(gallery.copy(adjust = adjust))
+        if (commit) viewModel.onUpdateElements(edits) else viewModel.onPreviewElements(edits)
+    }
+
+    /**
+     * The build order that walks the primary gallery through its pictures, one
+     * click each after the first. Pressing it twice leaves one set, which is the
+     * core's rule rather than this host's; see `Slide.gallerySteps`.
+     */
+    fun addGallerySteps() {
+        val gallery: GalleryElement = liveGallery() ?: return
+        viewModel.onAddGallerySteps(gallery.id)
+    }
+
+    /** The primary element when it is an unlocked gallery, which every setter needs. */
+    private fun liveGallery(): GalleryElement? =
+        (state.primaryElement as? GalleryElement)?.takeIf { !it.locked }
+
+    /** The gallery with [id] as the slide holds it now, if it is still there and unlocked. */
+    private fun liveGallery(id: String): GalleryElement? =
+        (state.selectedSlide.elementById(id) as? GalleryElement)?.takeIf { !it.locked }
+
+    /**
+     * The image setters' [formatImages], for the one element that answers to
+     * these controls: a gallery is a box, not a style, so there is no selection
+     * to spread an edit across. A transform that changes nothing spends no
+     * history entry, the same rule the rest of the panel follows.
+     */
+    private fun editGallery(transform: (GalleryElement) -> GalleryElement) {
+        val gallery: GalleryElement = liveGallery() ?: return
+        val edited: GalleryElement = transform(gallery)
+        if (edited == gallery) return
+        viewModel.onUpdateElements(listOf(edited))
+    }
+
+    /**
+     * [files] written to the deck's assets, in order, as the pictures a gallery
+     * is made of. [extensions] runs alongside, and only names what the file ends
+     * up called in the bundle. Anything that won't decode is left out.
+     */
+    private suspend fun writeGalleryImages(
+        files: List<NSData>,
+        extensions: List<String>,
+    ): List<GalleryImage> = files.mapIndexedNotNull { index, file ->
+        val data: ByteArray = file.toByteArray()
+        if (data.isEmpty()) return@mapIndexedNotNull null
+        val size: NaturalSize =
+            writeAsset(data, extensions.getOrElse(index) { "" }) ?: return@mapIndexedNotNull null
+        GalleryImage(assetId = size.assetId, naturalWidth = size.width, naturalHeight = size.height)
     }
 
     /**
@@ -2936,7 +3259,14 @@ class EditorHost(
      */
     fun onChange(callback: () -> Unit): () -> Unit {
         val job = scope.launch { viewModel.states.collect { callback() } }
-        return { job.cancel() }
+        // A gallery thumbnail lands after the pass that asked for it, and no
+        // state changed to say so. Dropping the first skips the value the flow
+        // is already holding, so subscribing is not itself a change.
+        val thumbs = scope.launch { galleryTick.drop(1).collect { callback() } }
+        return {
+            job.cancel()
+            thumbs.cancel()
+        }
     }
 
     /**

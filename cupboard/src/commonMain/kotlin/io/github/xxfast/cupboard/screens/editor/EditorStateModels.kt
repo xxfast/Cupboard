@@ -669,6 +669,19 @@ sealed interface EditorEvent {
      */
     data class AddBuild(val build: Build) : EditorEvent
     /**
+     * Writes the build order that walks a gallery through its pictures: one
+     * click each after the first, per `Slide.gallerySteps`.
+     *
+     * The gallery's existing step builds go first, so pressing it twice leaves
+     * the slide with one set rather than two, and adding a picture and pressing
+     * it again re-times the carousel instead of appending to it. Every other
+     * build for the element is left exactly where it is.
+     *
+     * One history entry. An id the slide has no gallery under is a no-op, and so
+     * is a set of steps the slide already carries.
+     */
+    data class AddGallerySteps(val elementId: String) : EditorEvent
+    /**
      * Replaces the build at [index] with [build]: what every control in the build
      * order writes, from its effect to its trigger. One history entry, and an
      * index the slide has no build at, an element it doesn't hold, or a build

@@ -60,6 +60,7 @@ import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.LinkTarget
@@ -132,6 +133,15 @@ fun EditorScreen(
     /** The same picker, pointing an image that is already on the slide at other
      * bytes: the inspector's Replace Image. */
     onReplaceImage: ((ImageElement) -> Unit)? = null,
+    /**
+     * Pick several image files and put them on the slide as one gallery: Insert >
+     * Image Gallery. The shell's picker again, in its multi-select mode, and what
+     * it does with the bytes is `EditorViewModel.insertGallery`.
+     */
+    onInsertGallery: (() -> Unit)? = null,
+    /** The same multi-select picker, appending to a gallery already on the slide:
+     * the inspector's Add Images. */
+    onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -220,6 +230,9 @@ fun EditorScreen(
             onPlayPreview = onPlayPreview,
             onInsertImage = onInsertImage,
             onReplaceImage = onReplaceImage,
+            onInsertGallery = onInsertGallery,
+            onAddGalleryImages = onAddGalleryImages,
+            onAddGallerySteps = viewModel::onAddGallerySteps,
         )
     }
 }
@@ -330,6 +343,14 @@ fun EditorView(
     onInsertImage: (() -> Unit)? = null,
     /** The same picker over an image already on the slide: Replace Image. */
     onReplaceImage: ((ImageElement) -> Unit)? = null,
+    /** Pick several image files and put them on the slide as one gallery. Null
+     * greys Insert > Image Gallery, on the shells with no file dialog. */
+    onInsertGallery: (() -> Unit)? = null,
+    /** The same multi-select picker over a gallery already on the slide: the
+     * inspector's Add Images. */
+    onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
+    /** Write a gallery's step builds onto the slide, one per image. */
+    onAddGallerySteps: (String) -> Unit = {},
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -622,6 +643,8 @@ fun EditorView(
                         onGroupElements = onGroupElements,
                         onUngroupElements = onUngroupElements,
                         onReplaceImage = onReplaceImage,
+                        onAddGalleryImages = onAddGalleryImages,
+                        onAddGallerySteps = onAddGallerySteps,
                     )
                 }
             }

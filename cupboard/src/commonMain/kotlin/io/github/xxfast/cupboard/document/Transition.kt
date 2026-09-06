@@ -70,6 +70,10 @@ fun Element.matchKey(): String = when (this) {
     // The bytes are the content; the placeholder is the content of an image that
     // has none yet, so two empty frames still travel across the cut together.
     is ImageElement -> "image:${assetId ?: placeholder}"
+    // The picture the carousel opens on is what the audience recognises across
+    // the cut: which one it is showing at the moment of the cut is not part of
+    // what makes it the same object.
+    is GalleryElement -> "gallery:${images.firstOrNull()?.assetId.orEmpty()}"
     is GroupElement -> "group:${children.joinToString("|") { it.matchKey() }}"
 }
 

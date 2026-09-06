@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard.screens.editor
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +56,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,6 +67,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalFocusManager
@@ -79,6 +83,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import io.github.xxfast.cupboard.canvas.BuildEffectNames
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
+import io.github.xxfast.cupboard.canvas.rememberAssetImage
 import io.github.xxfast.cupboard.canvas.removeBackground
 import io.github.xxfast.cupboard.canvas.gradientStop
 import io.github.xxfast.cupboard.canvas.title
@@ -96,6 +101,8 @@ import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GalleryElement
+import io.github.xxfast.cupboard.document.GalleryImage
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
@@ -234,6 +241,11 @@ fun EditorInspector(
     /** Point the selected image at other bytes: the image section's Replace
      * Image. Null on a shell with no file picker, which greys the button. */
     onReplaceImage: ((ImageElement) -> Unit)? = null,
+    /** Pick more image files and append them to the selected gallery: the gallery
+     * section's Add Images. Null on a shell with no file picker, which greys it. */
+    onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
+    /** Write the selected gallery's step builds onto the slide, one per image. */
+    onAddGallerySteps: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -328,6 +340,15 @@ fun EditorInspector(
                         onUpdate = onUpdateElements,
                         onPreview = onPreviewElements,
                         onReplaceImage = onReplaceImage,
+                    )
+
+                    if (primary is GalleryElement) GallerySection(
+                        primary = primary,
+                        elements = selectedElements,
+                        onUpdate = onUpdateElements,
+                        onPreview = onPreviewElements,
+                        onAddImages = onAddGalleryImages,
+                        onAddSteps = onAddGallerySteps,
                     )
 
                     ElementFormatPanel(
@@ -1698,6 +1719,275 @@ private fun ImageSection(
     PanelDivider()
 }
 
+/**
+ * [transform] over the selection's galleries, the way [formatImages] does its
+ * images: locked elements, everything that isn't a [GalleryElement], and any
+ * gallery the transform left alone all drop out.
+ */
+private fun List<Element>.formatGalleries(
+    transform: (GalleryElement) -> GalleryElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is GalleryElement || element.locked) return@mapNotNull null
+    val formatted: GalleryElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+/** The side of one thumbnail in the gallery strip. */
+private val GalleryThumbSize: Dp = 48.dp
+
+/**
+ * The live GALLERY section, shown when the primary element is a gallery: the
+ * pictures it holds, the one being authored, and what walks it in play.
+ *
+ * The strip is the section. A gallery is a list of pictures shown one at a time,
+ * so the list is what has to be on screen: clicking a thumbnail says which one is
+ * being authored, and the caption field, Remove and the two reorder arrows all
+ * act on that one. Everything below the strip is the whole gallery's, so it goes
+ * through [formatGalleries] and dresses every gallery in the selection.
+ *
+ * Which picture is current lives on the element rather than here, so picking one
+ * to caption survives a save, a reopen and an undo. That makes it an edit like
+ * any other, which is why a click on a thumbnail commits through [onUpdate].
+ *
+ * Add Slide Steps writes the builds that walk the gallery: without them a gallery
+ * on a slide is its first picture and nothing else, so the button says what it
+ * buys underneath itself rather than leaving it to be discovered.
+ */
+@Composable
+private fun GallerySection(
+    primary: GalleryElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+    onPreview: (List<Element>) -> Unit,
+    /** Pick more image files and append them. Null on a shell with no picker. */
+    onAddImages: ((GalleryElement) -> Unit)?,
+    /** Write this gallery's step builds onto the slide: one click per image. */
+    onAddSteps: (String) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val enabled: Boolean = !primary.locked
+    val images: List<GalleryImage> = primary.images
+    val adjust: ImageAdjust = primary.adjust
+    // The document's index is free to be out of range (an undo that took the
+    // last picture back), and the strip has to point at a real thumbnail.
+    val current: Int = primary.current.coerceIn(0, maxOf(0, images.size - 1))
+
+    fun format(transform: (GalleryElement) -> GalleryElement): Boolean {
+        val formatted: List<Element> = elements.formatGalleries(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    fun preview(transform: (GalleryElement) -> GalleryElement) {
+        val formatted: List<Element> = elements.formatGalleries(transform)
+        if (formatted.isNotEmpty()) onPreview(formatted)
+    }
+
+    // The picture-by-picture verbs write the primary alone: which image is
+    // current and what it says are facts about this gallery, not a look to
+    // spread over every gallery that happens to be selected.
+    fun edit(transform: (GalleryElement) -> GalleryElement): Boolean {
+        if (!enabled) return false
+        val edited: GalleryElement = transform(primary)
+        if (edited == primary) return false
+
+        onUpdate(listOf(edited))
+        return true
+    }
+
+    // Swapping with the neighbour rather than lifting and reinserting: the
+    // current picture travels with the click, so holding an arrow down walks it
+    // along the strip.
+    fun move(step: Int): Boolean = edit { gallery ->
+        val target: Int = current + step
+        if (target !in gallery.images.indices) return@edit gallery
+
+        val moved: MutableList<GalleryImage> = gallery.images.toMutableList()
+        moved[current] = moved[target].also { moved[target] = moved[current] }
+        gallery.copy(images = moved, current = target)
+    }
+
+    SectionLabel("GALLERY")
+
+    if (images.isEmpty()) {
+        Text(
+            text = "No images yet.",
+            color = tokens.dim,
+            fontSize = 12.sp,
+        )
+    } else {
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for ((index, image) in images.withIndex()) GalleryThumbnail(
+                image = image,
+                selected = index == current,
+                enabled = enabled,
+                onClick = { edit { it.copy(current = index) } },
+            )
+        }
+        Text(
+            text = "Image ${current + 1} of ${images.size}",
+            color = tokens.subtle,
+            fontSize = 11.5.sp,
+        )
+    }
+
+    TonalButton(
+        label = "Add Images...",
+        enabled = enabled && onAddImages != null,
+        onClick = { onAddImages?.invoke(primary) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    // Removing the current one leaves the strip pointing at what slid into its
+    // place, and at the new last picture where it was the last one.
+    TonalButton(
+        label = "Remove",
+        enabled = enabled && images.isNotEmpty(),
+        onClick = {
+            edit { gallery ->
+                if (current !in gallery.images.indices) return@edit gallery
+                val kept: List<GalleryImage> =
+                    gallery.images.filterIndexed { index, _ -> index != current }
+                gallery.copy(images = kept, current = current.coerceAtMost(kept.size - 1))
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TonalButton(
+            label = "◀",
+            enabled = enabled && current > 0,
+            onClick = { move(-1) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▶",
+            enabled = enabled && current < images.size - 1,
+            onClick = { move(1) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    // Empty is no caption: a picture nobody typed under draws nothing.
+    EntryField(
+        label = "Caption",
+        display = images.getOrNull(current)?.caption.orEmpty(),
+        enabled = enabled && images.isNotEmpty(),
+        monospace = false,
+    ) { text ->
+        edit { gallery ->
+            val image: GalleryImage = gallery.images.getOrNull(current) ?: return@edit gallery
+            if (text == image.caption) return@edit gallery
+
+            gallery.copy(
+                images = gallery.images.toMutableList().also {
+                    it[current] = image.copy(caption = text)
+                },
+            )
+        }
+    }
+
+    AppearanceRow(
+        label = "Show Captions",
+        checked = primary.showCaptions,
+        onToggle = if (!enabled) null else ({ on -> format { it.copy(showCaptions = on) } }),
+    )
+
+    // The corrections are the gallery's, not the picture's, so these are the
+    // image section's three sliders over the whole carousel at once.
+    SwatchLabel("Exposure")
+    SliderRow(
+        // The slider runs 0..1 over a correction that runs -1..1.
+        fraction = (adjust.exposure + 1f) / 2f,
+        valueLabel = adjust.exposure.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> preview { it.copy(adjust = it.adjust.copy(exposure = value * 2f - 1f)) } },
+        onRelease = { value -> format { it.copy(adjust = it.adjust.copy(exposure = value * 2f - 1f)) } },
+    )
+    SwatchLabel("Saturation")
+    SliderRow(
+        fraction = adjust.saturation / 2f,
+        valueLabel = adjust.saturation.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> preview { it.copy(adjust = it.adjust.copy(saturation = value * 2f)) } },
+        onRelease = { value -> format { it.copy(adjust = it.adjust.copy(saturation = value * 2f)) } },
+    )
+    SwatchLabel("Contrast")
+    SliderRow(
+        fraction = adjust.contrast / 2f,
+        valueLabel = adjust.contrast.asMultiplier(),
+        enabled = enabled,
+        onDrag = { value -> preview { it.copy(adjust = it.adjust.copy(contrast = value * 2f)) } },
+        onRelease = { value -> format { it.copy(adjust = it.adjust.copy(contrast = value * 2f)) } },
+    )
+    TonalButton(
+        label = "Reset Adjustments",
+        enabled = enabled && adjust != ImageAdjust(),
+        onClick = { format { it.copy(adjust = ImageAdjust()) } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    // Live on a locked gallery: the builds belong to the slide's build order
+    // rather than to the element, so writing them is not editing it.
+    TonalButton(
+        label = "Add Slide Steps",
+        enabled = images.size > 1,
+        onClick = { onAddSteps(primary.id) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        text = "One click per image in play.",
+        color = tokens.subtle,
+        fontSize = 11.5.sp,
+    )
+
+    PanelDivider()
+}
+
+/**
+ * One picture in the strip, cropped square, ringed where it is the current one.
+ *
+ * The hairline is what keeps a picture with a pale edge off the panel, and the
+ * accent ring replaces it on the current one, the way every other swatch in this
+ * inspector reads. Undecoded bytes draw as the empty well rather than as a gap,
+ * so the strip never changes width under the pointer.
+ */
+@Composable
+private fun GalleryThumbnail(
+    image: GalleryImage,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val bitmap: ImageBitmap? = rememberAssetImage(image.assetId)
+
+    Box(
+        modifier = Modifier
+            .size(GalleryThumbSize)
+            .clip(RoundedCornerShape(6.dp))
+            .background(tokens.track)
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) tokens.accent else tokens.outline,
+                shape = RoundedCornerShape(6.dp),
+            )
+            .clickable(enabled = enabled, onClick = onClick),
+    ) {
+        if (bitmap != null) Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(GalleryThumbSize).clip(RoundedCornerShape(6.dp)),
+        )
+    }
+}
+
 /** [language] appended under its own name where the catalog doesn't carry it. */
 private fun List<String>.withLanguage(language: String): List<Pair<String, String>> =
     (if (contains(language)) this else this + language).map { it to it }
@@ -2664,6 +2954,7 @@ private fun Element.buildTitle(): String = when (this) {
     is CodeElement -> "Code"
     is DiagramElement -> "Diagram"
     is ImageElement -> "Image"
+    is GalleryElement -> titled("Gallery", images.firstOrNull()?.caption.orEmpty())
     is GroupElement -> "Group"
 }
 

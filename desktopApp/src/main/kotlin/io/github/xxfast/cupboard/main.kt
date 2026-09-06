@@ -53,6 +53,7 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
@@ -74,6 +75,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
 import io.github.xxfast.cupboard.screens.editor.formatSections
+import io.github.xxfast.cupboard.screens.editor.addGalleryImages
+import io.github.xxfast.cupboard.screens.editor.insertGallery
 import io.github.xxfast.cupboard.screens.editor.insertImage
 import io.github.xxfast.cupboard.screens.editor.insertSections
 import io.github.xxfast.cupboard.screens.editor.replaceImage
@@ -482,6 +485,28 @@ private fun EditorWindow(
         }
     }
 
+    // Several pictures arriving at once as one gallery. What the multi-select
+    // picker feeds, and what a drop of more than one file feeds: a run of
+    // screenshots dragged in together is one thing to step through rather than a
+    // pile of images to be tidied up by hand.
+    fun insertGallery(images: List<PickedImage>) {
+        if (images.isEmpty()) return
+
+        scope.launch {
+            viewModel.insertGallery(images.map { it.bytes to it.extension }) { width, height ->
+                viewModel.states.value.insertionFrame(width, height)
+            }
+        }
+    }
+
+    // Where every way pictures arrive is sorted: one is an image, several are a
+    // gallery. The single-file paths (a paste, Insert > Image) go straight to
+    // [insertImages] rather than through here, since one of those is never a
+    // gallery however the user got there.
+    fun insertPictures(images: List<PickedImage>) {
+        if (images.size > 1) insertGallery(images) else insertImages(images)
+    }
+
     // Swapping the displays is the show's index flipping: both windows are
     // placed off it, so the show takes the other screen and the presenter
     // display takes the one it left. Null with a single display, or over a
@@ -571,6 +596,13 @@ private fun EditorWindow(
         // is modal and belongs to the frame it was asked from. Both hand what
         // comes back to the shared insert.
         val insertImage: () -> Unit = { chooseImage(window)?.let { insertImages(listOf(it)) } }
+        val insertGalleryFiles: () -> Unit = { insertGallery(chooseImages(window)) }
+        val addGalleryImages: (GalleryElement) -> Unit = { element ->
+            val picked: List<PickedImage> = chooseImages(window)
+            if (picked.isNotEmpty()) scope.launch {
+                viewModel.addGalleryImages(element, picked.map { it.bytes to it.extension })
+            }
+        }
         val replaceImage: (ImageElement) -> Unit = { element ->
             chooseImage(window)?.let { picked ->
                 scope.launch { viewModel.replaceImage(element, picked.bytes, picked.extension) }
@@ -768,7 +800,7 @@ private fun EditorWindow(
             // verb the user reaches for mid-gesture, and the toolbar's
             // Text and Shape buttons render the same catalog.
             Menu("Insert", mnemonic = 'I') {
-                MenuItems(insertSections(state, viewModel, insertImage))
+                MenuItems(insertSections(state, viewModel, insertImage, insertGalleryFiles))
             }
 
             // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
@@ -953,7 +985,7 @@ private fun EditorWindow(
                         val images: List<PickedImage> = droppedImages(files)
                         if (images.isEmpty()) return false
 
-                        insertImages(images)
+                        insertPictures(images)
                         return true
                     }
                 }
@@ -1028,6 +1060,8 @@ private fun EditorWindow(
                     },
                     onInsertImage = insertImage,
                     onReplaceImage = replaceImage,
+                    onInsertGallery = insertGalleryFiles,
+                    onAddGalleryImages = addGalleryImages,
                 )
             }
         }

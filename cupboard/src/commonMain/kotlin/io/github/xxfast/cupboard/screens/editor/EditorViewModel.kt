@@ -22,6 +22,7 @@ import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddGallerySteps
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -238,6 +239,7 @@ class EditorViewModel(
     fun onSetPlayback(settings: PlaybackSettings) { scope.launch { events.emit(SetPlayback(settings)) } }
     fun onSetElementLinks(ids: List<String>, target: LinkTarget?) { scope.launch { events.emit(SetElementLinks(ids, target)) } }
     fun onAddBuild(build: Build) { scope.launch { events.emit(AddBuild(build)) } }
+    fun onAddGallerySteps(elementId: String) { scope.launch { events.emit(AddGallerySteps(elementId)) } }
     fun onUpdateBuild(index: Int, build: Build) { scope.launch { events.emit(UpdateBuild(index, build)) } }
     fun onRemoveBuild(index: Int) { scope.launch { events.emit(RemoveBuild(index)) } }
     fun onMoveBuild(from: Int, to: Int) { scope.launch { events.emit(MoveBuild(from, to)) } }

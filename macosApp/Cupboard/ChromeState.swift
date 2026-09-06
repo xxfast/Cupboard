@@ -44,6 +44,8 @@ struct Chrome {
     let equation: EquationFormat?
     /// The primary's picture, nil unless the primary is an image.
     let image: ImageFormat?
+    /// The primary's gallery, nil unless the primary is one.
+    let gallery: GalleryFormat?
     /// The outlines an image may be cut to, in Kotlin's order. A position is
     /// what goes back, the way a transition kind's is; -1 is no mask at all.
     let maskKinds: [String]
@@ -134,6 +136,7 @@ struct Chrome {
         diagram = host.selectedDiagram().map(DiagramFormat.init)
         equation = host.selectedEquation().map(EquationFormat.init)
         image = host.selectedImage().map(ImageFormat.init)
+        gallery = host.selectedGallery().map(GalleryFormat.init)
         maskKinds = host.maskKindTitles()
         link = host.selectedLink().map(LinkFormat.init)
         linkKinds = host.linkKindTitles()
@@ -660,6 +663,42 @@ struct ImageFormat {
 
     /// Whether the three corrections are all still where they were decoded.
     /// What greys the Reset button out: nothing to put back.
+    var adjusted: Bool { exposure != 0 || saturation != 1 || contrast != 1 }
+}
+
+/// The primary selected gallery as a Swift value: what the Gallery section of
+/// the Format panel shows. `ImageFormat`'s neighbour, read off the primary and
+/// written back to it alone, since a gallery is a box rather than a style.
+///
+/// The caption is the current picture's, because that is the one the field
+/// edits. The three corrections are the whole gallery's, which is what the
+/// document model says: a carousel reads as one object.
+///
+/// The pictures are not here. Bytes never travel as a value; the strip asks
+/// `galleryThumbnail` for one at a time and gets it when it is decoded.
+struct GalleryFormat: Equatable {
+    let count: Int
+    /// Always in range, and 0 for an empty gallery.
+    let current: Int
+    /// "" is no caption: the field has no null to spell, like the image's.
+    let caption: String
+    let showCaptions: Bool
+    let exposure: Double
+    let saturation: Double
+    let contrast: Double
+
+    init(_ props: GalleryProps) {
+        count = Int(props.count)
+        current = Int(props.current)
+        caption = props.caption
+        showCaptions = props.showCaptions
+        exposure = Double(props.exposure)
+        saturation = Double(props.saturation)
+        contrast = Double(props.contrast)
+    }
+
+    /// Whether the three corrections are all still where they were decoded.
+    /// What greys the Reset button out, the way the image section's does.
     var adjusted: Bool { exposure != 0 || saturation != 1 || contrast != 1 }
 }
 

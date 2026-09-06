@@ -258,7 +258,8 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
  * The Insert verbs: a text box, a code block, a terminal, a diagram, an
  * equation, then the shape catalog as one submenu.
  *
- * Nothing is ever greyed but Image, which needs somewhere to pick a file from:
+ * Nothing is ever greyed but the two picture verbs, which need somewhere to pick
+ * a file from:
  * an insertion asks nothing of the selection, and a locked element on the slide
  * is no reason not to add another one next to it.
  *
@@ -266,14 +267,17 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
  * big it starts is the catalog's, so a shell renders this without knowing
  * either the slide's size or that a line wants a different box to a rectangle.
  *
- * [onInsertImage] is the one verb here the shell has to own: the bytes come from
- * a file dialog, which is platform hosting rather than anything the document
- * knows about. Null is a shell with no picker, and greys the entry.
+ * [onInsertImage] and [onInsertGallery] are the two verbs here the shell has to
+ * own: the bytes come from a file dialog, which is platform hosting rather than
+ * anything the document knows about. Null is a shell with no picker, and greys
+ * the entry. The gallery's is the same dialog in its multi-select mode, so a
+ * shell that has one has both.
  */
 fun insertSections(
     state: EditorState,
     viewModel: EditorViewModel,
     onInsertImage: (() -> Unit)? = null,
+    onInsertGallery: (() -> Unit)? = null,
 ): List<EditorMenuSection> {
     fun insert(entry: ShapeCatalogEntry): EditorMenuItem =
         EditorMenuItem(entry.title, enabled = true) {
@@ -311,6 +315,9 @@ fun insertSections(
                 },
                 EditorMenuItem("Image...", enabled = onInsertImage != null) {
                     onInsertImage?.invoke()
+                },
+                EditorMenuItem("Image Gallery...", enabled = onInsertGallery != null) {
+                    onInsertGallery?.invoke()
                 },
                 EditorMenuItem(
                     label = "Shape",

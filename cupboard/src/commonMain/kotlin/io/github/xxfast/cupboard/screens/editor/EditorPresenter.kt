@@ -10,6 +10,7 @@ import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.ImageElement
@@ -35,6 +36,7 @@ import io.github.xxfast.cupboard.document.duplicated
 import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.fromShape
 import io.github.xxfast.cupboard.document.fromText
+import io.github.xxfast.cupboard.document.gallerySteps
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.insertionIndexAfter
 import io.github.xxfast.cupboard.document.instantiating
@@ -67,6 +69,7 @@ import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddGallerySteps
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -983,6 +986,25 @@ fun EditorPresenter(
                     redone.clear()
                     state.withBuilds(state.selectedSlide.builds + event.build)
                 }
+
+            // The one build event that writes a run of them: what the steps are
+            // is the document's business (`gallerySteps`), and all the loop does
+            // is swap the element's old ones for them.
+            is AddGallerySteps -> {
+                val slide: Slide = state.selectedSlide
+                val steps: List<Build> = slide.gallerySteps(event.elementId)
+                val kept: List<Build> = slide.builds.filterNot {
+                    it.elementId == event.elementId && it.elementStep != null
+                }
+                val gallery: Boolean = slide.elementById(event.elementId) is GalleryElement
+
+                if (!gallery || kept + steps == slide.builds) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withBuilds(kept + steps)
+                }
+            }
 
             is UpdateBuild -> {
                 val builds: List<Build> = state.selectedSlide.builds

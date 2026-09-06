@@ -140,6 +140,12 @@ extension EditorView {
                         imageSection(image, ui)
                         palette.divider.frame(height: 1)
                     }
+                    // And the gallery's, which is a box of pictures rather than
+                    // a picture, so it gets its own section rather than sharing.
+                    if let gallery = ui.gallery {
+                        gallerySection(gallery)
+                        palette.divider.frame(height: 1)
+                    }
                     // Text, shape and image are the kinds that hold a link, so
                     // the section is here for those three and nowhere else.
                     if let link = ui.link {
@@ -876,12 +882,18 @@ extension EditorView {
 
                 adjustRow("Exposure", image.exposure, in: -1...1) {
                     setAdjust(image, exposure: $0)
+                } commit: {
+                    commitImageAdjust()
                 }
                 adjustRow("Saturation", image.saturation, in: 0...2) {
                     setAdjust(image, saturation: $0)
+                } commit: {
+                    commitImageAdjust()
                 }
                 adjustRow("Contrast", image.contrast, in: 0...2) {
                     setAdjust(image, contrast: $0)
+                } commit: {
+                    commitImageAdjust()
                 }
 
                 HStack(spacing: 8) {
@@ -974,13 +986,16 @@ extension EditorView {
 
     /// A correction slider. The drag streams previews through the loop and the
     /// release commits what they left, so the whole drag is one undo entry, the
-    /// way the opacity slider works. The committed values are read back off the
-    /// host rather than trusted from this pass's snapshot.
+    /// way the opacity slider works. [commit] reads the settled values back off
+    /// the host rather than trusting this pass's snapshot, which is why it is a
+    /// closure and not a value: an image and a gallery both wear these three,
+    /// and each knows how to read its own.
     func adjustRow(
         _ label: String,
         _ value: Double,
         in range: ClosedRange<Double>,
-        preview: @escaping (Double) -> Void
+        preview: @escaping (Double) -> Void,
+        commit: @escaping () -> Void
     ) -> some View {
         HStack(spacing: 10) {
             Text(label)
@@ -991,15 +1006,7 @@ extension EditorView {
             Slider(
                 value: Binding(get: { value }, set: preview),
                 in: range,
-                onEditingChanged: { editing in
-                    guard !editing, let live = host.selectedImage() else { return }
-                    host.setImageAdjust(
-                        exposure: live.exposure,
-                        saturation: live.saturation,
-                        contrast: live.contrast,
-                        commit: true
-                    )
-                }
+                onEditingChanged: { editing in if !editing { commit() } }
             )
             .controlSize(.small)
             .tint(palette.accent)
@@ -1010,6 +1017,215 @@ extension EditorView {
                 .frame(width: 40, alignment: .trailing)
         }
     }
+
+    /// The image's three corrections as the loop now holds them, committed.
+    func commitImageAdjust() {
+        guard let live = host.selectedImage() else { return }
+        host.setImageAdjust(
+            exposure: live.exposure,
+            saturation: live.saturation,
+            contrast: live.contrast,
+            commit: true
+        )
+    }
+
+    // MARK: Gallery
+
+    /// The gallery's own controls: the pictures it holds, which of them is being
+    /// authored, what is written under that one, how the whole box is corrected,
+    /// and the build order that walks an audience through it.
+    ///
+    /// A gallery is a box rather than a style, so every control here writes to
+    /// the primary alone: there is no selection to spread a picture across.
+    @ViewBuilder func gallerySection(_ gallery: GalleryFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Gallery")
+
+            galleryStrip(gallery)
+
+            HStack(spacing: 6) {
+                panelButton("Add Images...", symbol: "photo.on.rectangle") {
+                    Media.addToGallery(in: host)
+                }
+                galleryStep("minus", help: "Remove") {
+                    host.removeGalleryImage(index: Int32(gallery.current))
+                }
+                .disabled(gallery.count == 0)
+                galleryStep("chevron.left", help: "Move Earlier") {
+                    host.moveGalleryImage(
+                        from: Int32(gallery.current),
+                        to: Int32(gallery.current - 1)
+                    )
+                }
+                .disabled(gallery.current <= 0)
+                galleryStep("chevron.right", help: "Move Later") {
+                    host.moveGalleryImage(
+                        from: Int32(gallery.current),
+                        to: Int32(gallery.current + 1)
+                    )
+                }
+                .disabled(gallery.current >= gallery.count - 1)
+            }
+
+            // The current picture's, not the box's: a caption names what is on
+            // screen. Nothing to caption in an empty gallery.
+            StringField(placeholder: "Caption", value: gallery.caption, palette: palette) {
+                host.setGalleryCaption(index: Int32(gallery.current), text: $0)
+            }
+            .disabled(gallery.count == 0)
+
+            checkRow("Show Captions", on: gallery.showCaptions) {
+                host.setGalleryShowCaptions(on: !gallery.showCaptions)
+            }
+
+            palette.divider.frame(height: 1)
+
+            adjustRow("Exposure", gallery.exposure, in: -1...1) {
+                previewGalleryAdjust(gallery, exposure: $0)
+            } commit: {
+                commitGalleryAdjust()
+            }
+            adjustRow("Saturation", gallery.saturation, in: 0...2) {
+                previewGalleryAdjust(gallery, saturation: $0)
+            } commit: {
+                commitGalleryAdjust()
+            }
+            adjustRow("Contrast", gallery.contrast, in: 0...2) {
+                previewGalleryAdjust(gallery, contrast: $0)
+            } commit: {
+                commitGalleryAdjust()
+            }
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                Button("Reset") {
+                    host.setGalleryAdjust(
+                        exposure: 0,
+                        saturation: 1,
+                        contrast: 1,
+                        commit: true
+                    )
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11.5))
+                .foregroundStyle(gallery.adjusted ? palette.accent : palette.faint)
+                .disabled(!gallery.adjusted)
+            }
+
+            palette.divider.frame(height: 1)
+
+            // The walk through the pictures, written into the slide's build
+            // order: one click each after the first. The core drops the ones it
+            // already wrote, so pressing this twice leaves one set.
+            panelButton("Add Slide Steps", symbol: "list.number") { host.addGallerySteps() }
+                .disabled(gallery.count < 2)
+        }
+    }
+
+    /// The pictures, in order, the one being authored ringed. Thumbnails are
+    /// decoded off the main thread, so a picture that has not landed yet draws
+    /// as an empty well and fills itself in when it arrives.
+    @ViewBuilder func galleryStrip(_ gallery: GalleryFormat) -> some View {
+        if gallery.count == 0 {
+            Text("No pictures yet")
+                .font(.system(size: 11.5))
+                .foregroundStyle(palette.faint)
+                .frame(height: Self.galleryThumb)
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(0..<gallery.count), id: \.self) { index in
+                        galleryThumbnail(index, current: index == gallery.current)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(height: Self.galleryThumb + 6)
+        }
+    }
+
+    /// One picture in the strip. Clicking it is what picks the image the canvas
+    /// shows and the caption field edits.
+    @ViewBuilder func galleryThumbnail(_ index: Int, current: Bool) -> some View {
+        let side = Self.galleryThumb
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        Button { host.setGalleryCurrent(index: Int32(index)) } label: {
+            Group {
+                if let image = host.galleryThumbnail(index: Int32(index), width: Int32(side)) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    palette.ctrl
+                }
+            }
+            .frame(width: side, height: side)
+            .clipShape(shape)
+            .overlay {
+                shape
+                    .inset(by: current ? 1 : 0.5)
+                    .stroke(
+                        current ? palette.accent : palette.hairline,
+                        lineWidth: current ? 2 : 1
+                    )
+            }
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help("Image \(index + 1)")
+    }
+
+    /// A square icon button beside the strip: remove, and the two that reorder.
+    /// The panel's raised look at the panel button's height, so a row of these
+    /// lines up with the labelled one beside them.
+    func galleryStep(
+        _ symbol: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11))
+                .foregroundStyle(palette.ctrlText)
+                .frame(width: 26, height: 26)
+                .background(palette.buttonFill, in: shape)
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    /// One correction, previewed. The other two go back as they were: the three
+    /// compose into one colour matrix, so they travel as one write, the way the
+    /// image's do.
+    func previewGalleryAdjust(
+        _ gallery: GalleryFormat,
+        exposure: Double? = nil,
+        saturation: Double? = nil,
+        contrast: Double? = nil
+    ) {
+        host.setGalleryAdjust(
+            exposure: Float(exposure ?? gallery.exposure),
+            saturation: Float(saturation ?? gallery.saturation),
+            contrast: Float(contrast ?? gallery.contrast),
+            commit: false
+        )
+    }
+
+    /// The gallery's three corrections as the loop now holds them, committed.
+    func commitGalleryAdjust() {
+        guard let live = host.selectedGallery() else { return }
+        host.setGalleryAdjust(
+            exposure: live.exposure,
+            saturation: live.saturation,
+            contrast: live.contrast,
+            commit: true
+        )
+    }
+
+    /// How big a picture in the strip is drawn, in points.
+    static let galleryThumb: CGFloat = 48
 
     func positionSection(_ element: Selection) -> some View {
         VStack(alignment: .leading, spacing: 9) {

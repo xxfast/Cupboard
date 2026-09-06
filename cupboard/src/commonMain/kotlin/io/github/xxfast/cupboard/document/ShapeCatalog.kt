@@ -194,6 +194,33 @@ fun imageElement(
 )
 
 /**
+ * A fresh gallery of [images], fitted inside [frame] like a single image is.
+ *
+ * The first picture's aspect is the gallery's: the box has to be one shape, and
+ * the one the audience sees first is the one it is worth fitting. An empty list
+ * takes [frame] as it is, which is the box an insert leaves behind when its files
+ * all go missing.
+ *
+ * [defaults] is taken and not read, the way [imageElement] takes it: pictures
+ * have no colours to inherit, and one signature across the insert factories is
+ * worth more than the parameter costs.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun galleryElement(
+    frame: Frame,
+    images: List<GalleryImage>,
+    defaults: ElementDefaults = ElementDefaults(),
+): GalleryElement {
+    val first: GalleryImage? = images.firstOrNull()
+    return GalleryElement(
+        frame =
+            if (first == null) frame
+            else fitInside(frame, first.naturalWidth.toFloat(), first.naturalHeight.toFloat()),
+        images = images,
+    )
+}
+
+/**
  * This image shrunk to fit inside [maxWidth] x [maxHeight], about its own centre.
  *
  * Already small enough, it comes back as it is: fitting never enlarges, so

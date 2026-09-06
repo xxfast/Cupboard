@@ -31,6 +31,7 @@ import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.Slide
@@ -43,6 +44,7 @@ import io.github.xxfast.cupboard.document.diagramStepFor
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.entryBuildAt
 import io.github.xxfast.cupboard.document.exitBuildAt
+import io.github.xxfast.cupboard.document.galleryImageAt
 import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isVisibleAt
 import io.github.xxfast.cupboard.document.magicMovePairs
@@ -191,6 +193,9 @@ fun SlideView(
                         } else null,
                         diagramStep = if (element is DiagramElement) {
                             slide.diagramStepFor(element, step)
+                        } else null,
+                        galleryIndex = if (element is GalleryElement) {
+                            slide.galleryImageAt(element, step)
                         } else null,
                         entry = entry?.build,
                         pieces = reveal,

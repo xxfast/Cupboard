@@ -18,7 +18,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -64,8 +67,13 @@ import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GalleryElement
+import io.github.xxfast.cupboard.document.GalleryImage
+import io.github.xxfast.cupboard.document.GalleryStepDuration
 import io.github.xxfast.cupboard.document.GroupElement
+import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.ShapeElement
@@ -77,6 +85,7 @@ import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.colorMatrix
+import io.github.xxfast.cupboard.document.imageSourceRect
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
@@ -115,6 +124,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * are showing. Null is the whole element, which is the editor and every build
  * that delivers [io.github.xxfast.cupboard.document.BuildDelivery.All].
  *
+ * [galleryIndex] is the picture a [GalleryElement] draws, resolved by the caller
+ * from the build order (`Slide.galleryImageAt`). Null is the editor, which shows
+ * the image being authored ([GalleryElement.current]) and none of the dots the
+ * audience gets.
+ *
  * [transform] overrides the element's own opacity and rotation and rides a
  * translation and a scale on top of its frame, for an element in flight: a Magic
  * Move between two slides is the one thing that draws one. Null is the element at
@@ -128,6 +142,7 @@ fun ElementView(
     originY: Float = 0f,
     codeStep: CodeStep? = null,
     diagramStep: DiagramStep? = null,
+    galleryIndex: Int? = null,
     entry: Build? = null,
     pieces: PieceReveal? = null,
     transform: ElementTransform? = null,
@@ -150,6 +165,14 @@ fun ElementView(
             is TextElement -> TextElementView(element, pieces)
             is ShapeElement -> ShapeElementView(element)
             is ImageElement -> ImageElementView(element)
+            is GalleryElement -> GalleryElementView(
+                element = element,
+                imageIndex = galleryIndex ?: element.current,
+                // The dots are for an audience being walked through the pictures,
+                // not for the one canvas that shows whichever is being edited.
+                indicators = galleryIndex != null,
+            )
+
             is CodeElement -> CodeElementView(element, codeStep)
             is TerminalElement -> TerminalElementView(element, entry, pieces?.linesShown())
             is DiagramElement -> DiagramElementView(element, diagramStep)
@@ -438,43 +461,67 @@ private fun ImageElementView(element: ImageElement) {
 
     Box(modifier = Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
         if (image == null) ImagePlaceholder(element.placeholder, element.frame.width, height)
-        else ImageContent(element, image, element.frame.width, height)
+        else AssetImageContent(
+            image = image,
+            adjust = element.adjust,
+            mask = element.mask,
+            naturalWidth = element.naturalWidth,
+            naturalHeight = element.naturalHeight,
+            width = element.frame.width,
+            height = height,
+        )
 
         if (element.caption.isNotEmpty()) {
-            Text(
-                text = element.caption,
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = CaptionSize.sp,
-                fontFamily = FontFamily.SansSerif,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+            Caption(element.caption, Modifier.align(Alignment.BottomCenter))
         }
     }
 }
 
+/** An image's caption, wherever it is drawn: under a single picture or under a gallery's. */
 @Composable
-private fun ImageContent(
-    element: ImageElement,
+private fun Caption(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        color = Color.White.copy(alpha = 0.7f),
+        fontSize = CaptionSize.sp,
+        fontFamily = FontFamily.SansSerif,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier,
+    )
+}
+
+/**
+ * Decoded bytes drawn into a [width] x [height] box: the masked window of them,
+ * stretched to fill it, corrected on the way and clipped to the mask's outline.
+ *
+ * The whole of what drawing a picture is, kept apart from the element that owns
+ * it: an image and a gallery draw the same pixels the same way, and only differ
+ * in where the bytes and the mask come from.
+ */
+@Composable
+private fun AssetImageContent(
     image: ImageBitmap,
+    adjust: ImageAdjust,
+    mask: ImageMask?,
+    naturalWidth: Int,
+    naturalHeight: Int,
     width: Float,
     height: Float,
 ) {
-    val kind: ShapeKind = element.mask?.kind ?: ShapeKind.Rectangle
+    val kind: ShapeKind = mask?.kind ?: ShapeKind.Rectangle
 
-    val filter: ColorFilter = remember(element.adjust) {
-        ColorFilter.colorMatrix(ColorMatrix(element.adjust.colorMatrix()))
+    val filter: ColorFilter = remember(adjust) {
+        ColorFilter.colorMatrix(ColorMatrix(adjust.colorMatrix()))
     }
 
     // The window in the bitmap's own pixels. Measured against the bitmap rather
     // than the document when the document has no natural size to offer: an
     // element written before its bytes were decoded still draws all of them.
-    val source: Frame = remember(element.mask, element.naturalWidth, element.naturalHeight, image) {
-        val sized: ImageElement =
-            if (element.naturalWidth > 0 && element.naturalHeight > 0) element
-            else element.copy(naturalWidth = image.width, naturalHeight = image.height)
-        sized.sourceRect()
+    val source: Frame = remember(mask, naturalWidth, naturalHeight, image) {
+        if (naturalWidth > 0 && naturalHeight > 0) {
+            imageSourceRect(mask, naturalWidth, naturalHeight)
+        } else imageSourceRect(mask, image.width, image.height)
     }
 
     Canvas(
@@ -521,6 +568,124 @@ private fun ImagePlaceholder(text: String, width: Float, height: Float) {
             color = Color.White.copy(alpha = 0.45f),
             fontSize = 13.sp,
         )
+    }
+}
+
+/** The dots' size and spacing, and how far off the bottom edge the row sits. */
+private const val GalleryDotSize: Float = 7f
+private const val GalleryDotGap: Float = 7f
+private const val GalleryDotInset: Float = 10f
+
+/**
+ * A gallery: the picture at [imageIndex], its caption under it, and the dots that
+ * say where in the carousel the audience is.
+ *
+ * A step change crossfades: the picture being left and the one arriving are both
+ * composed for the length of it, one fading out under the other, and only the one
+ * that has arrived is left composed once it settles. Both layers are laid out in
+ * the same box, so a taller picture doesn't move the caption under it.
+ *
+ * [indicators] is off in the editor, where there is no walk to be part way
+ * through, and a gallery of one picture draws none either way: a single dot says
+ * nothing a picture doesn't.
+ */
+@Composable
+private fun GalleryElementView(element: GalleryElement, imageIndex: Int, indicators: Boolean) {
+    val index: Int =
+        if (element.images.isEmpty()) 0 else imageIndex.coerceIn(element.images.indices)
+
+    var from: Int by remember { mutableStateOf(index) }
+    var to: Int by remember { mutableStateOf(index) }
+    val progress: Animatable<Float, AnimationVector1D> = remember { Animatable(1f) }
+
+    // The first composition has nothing to come from, so it draws its picture at
+    // rest. Both ends are held here rather than read from the parameter, so the
+    // frame between a step landing and this effect still draws what was there.
+    LaunchedEffect(index) {
+        if (index == to) return@LaunchedEffect
+        from = to
+        to = index
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(GalleryStepDuration))
+        from = to
+    }
+
+    // Reserved for every picture or for none, so the box doesn't jump when a
+    // picture with a caption dissolves into one without.
+    val captioned: Boolean = element.showCaptions && element.images.any { it.caption.isNotEmpty() }
+    val height: Float =
+        (element.frame.height - if (captioned) CaptionHeight else 0f).coerceAtLeast(0f)
+
+    Box(modifier = Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
+        if (from != to) {
+            GalleryImageLayer(element, from, element.frame.width, height, 1f - progress.value)
+        }
+        GalleryImageLayer(element, to, element.frame.width, height, progress.value)
+
+        if (indicators && element.images.size > 1) {
+            GalleryDots(
+                count = element.images.size,
+                current = to,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = GalleryDotInset.dp),
+            )
+        }
+    }
+}
+
+/** One picture of a gallery and its caption, drawn at [alpha]: half of a crossfade. */
+@Composable
+private fun GalleryImageLayer(
+    element: GalleryElement,
+    index: Int,
+    width: Float,
+    height: Float,
+    alpha: Float,
+) {
+    val image: GalleryImage? = element.images.getOrNull(index)
+    val bitmap: ImageBitmap? = rememberAssetImage(image?.assetId)
+
+    Box(
+        modifier = Modifier
+            .size(width.dp, element.frame.height.dp)
+            .graphicsLayer { this.alpha = alpha },
+    ) {
+        if (image == null || bitmap == null) ImagePlaceholder(GalleryPlaceholder, width, height)
+        else AssetImageContent(
+            image = bitmap,
+            adjust = element.adjust,
+            mask = null,
+            naturalWidth = image.naturalWidth,
+            naturalHeight = image.naturalHeight,
+            width = width,
+            height = height,
+        )
+
+        if (element.showCaptions && image != null && image.caption.isNotEmpty()) {
+            Caption(image.caption, Modifier.align(Alignment.BottomCenter))
+        }
+    }
+}
+
+/** What an empty gallery, and a gallery whose bytes have gone missing, prompts with. */
+private const val GalleryPlaceholder: String = "Drop images here"
+
+/** One dot per picture, the one showing filled and the rest of them dimmed. */
+@Composable
+private fun GalleryDots(count: Int, current: Int, modifier: Modifier = Modifier) {
+    val width: Float = count * GalleryDotSize + (count - 1) * GalleryDotGap
+
+    Canvas(modifier = modifier.size(width.dp, GalleryDotSize.dp)) {
+        val radius: Float = GalleryDotSize.dp.toPx() / 2
+        val stride: Float = (GalleryDotSize + GalleryDotGap).dp.toPx()
+        for (dot in 0 until count) {
+            drawCircle(
+                color = Color.White.copy(alpha = if (dot == current) 0.9f else 0.35f),
+                radius = radius,
+                center = Offset(radius + dot * stride, radius),
+            )
+        }
     }
 }
 

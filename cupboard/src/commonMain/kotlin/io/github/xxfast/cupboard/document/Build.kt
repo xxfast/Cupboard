@@ -476,3 +476,50 @@ fun Slide.diagramStepFor(element: DiagramElement, step: Int): DiagramStep? {
     val index: Int = (elementStepAt(element.id, step) ?: 0).coerceIn(element.steps.indices)
     return element.steps[index]
 }
+
+/**
+ * Which of [element]'s images is showing at [step]: a gallery's steps are its
+ * pictures, so the [Build.elementStep] the build order has reached is the index
+ * into [GalleryElement.images].
+ *
+ * Clamps like [codeStepFor], and for the same reason: a build can outlive the
+ * image it pointed at. A gallery with no images at all is 0, which is the index
+ * nothing draws.
+ */
+fun Slide.galleryImageAt(element: GalleryElement, step: Int): Int {
+    if (element.images.isEmpty()) return 0
+    return (elementStepAt(element.id, step) ?: 0).coerceIn(element.images.indices)
+}
+
+/**
+ * The builds that walk [galleryId] through its pictures: one click per image
+ * after the first, each dissolving into the next.
+ *
+ * The first image needs no build of its own. A gallery with no step build showing
+ * is already on image 0 ([galleryImageAt] reads a missing step as the first one),
+ * so a build for it would cost a click and change nothing.
+ *
+ * [BuildKind.Action] rather than [BuildKind.In] because a gallery that is on the
+ * slide has to stay on it: an `In` build would hide the whole element until its
+ * first click, and the picture it opens on would never be seen. These carry no
+ * [Build.action], which is a no-op by design, so all they do is move the step.
+ *
+ * Empty for anything that is not a gallery, and for a gallery of fewer than two
+ * pictures: there is nothing to advance through.
+ */
+fun Slide.gallerySteps(galleryId: String): List<Build> {
+    val gallery: GalleryElement = elementById(galleryId) as? GalleryElement ?: return emptyList()
+    return (1 until gallery.images.size).map { index ->
+        Build(
+            elementId = galleryId,
+            kind = BuildKind.Action,
+            effect = BuildEffect.Dissolve,
+            durationMs = GalleryStepDuration,
+            trigger = BuildTrigger.OnClick,
+            elementStep = index,
+        )
+    }
+}
+
+/** How long one picture takes to dissolve into the next, in both the build and the canvas. */
+const val GalleryStepDuration: Int = 400
