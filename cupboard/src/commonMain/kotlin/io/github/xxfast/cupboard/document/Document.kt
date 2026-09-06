@@ -184,6 +184,22 @@ fun Document.allSlides(): List<Slide> = slides
 fun Document.slideById(id: String): Slide? =
     slides.firstOrNull { it.id == id } ?: layouts.firstOrNull { it.id == id }
 
+/**
+ * This deck as a one-slide deck holding [slideId]: what a Preview plays.
+ *
+ * The layouts, the background and the slide size travel with it, since a slide
+ * previewed on anything but its own deck's furniture is not the slide the
+ * presenter is looking at. The slide comes through unskipped: previewing one is
+ * asking to see it, whatever the deck does with it in a run.
+ *
+ * An id this document holds in neither list returns the document unchanged, so a
+ * stale selection previews the deck rather than nothing at all.
+ */
+fun Document.previewOf(slideId: String): Document {
+    val slide: Slide = slideById(slideId) ?: return this
+    return copy(slides = listOf(slide.copy(skipped = false)))
+}
+
 /** Whether [id] names a layout rather than a slide, i.e. whether the editor is in layout mode. */
 fun Document.isLayout(id: String): Boolean = layouts.any { it.id == id }
 

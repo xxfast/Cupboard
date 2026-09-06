@@ -16,7 +16,12 @@ internal fun supportSource(
 package $packageName
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -166,12 +171,38 @@ fun BoxScope.At(
     )
 }
 
-/** A build: what the element does when its step arrives. */
+/** The way a build brings its element on, one entry per effect the editor offers. */
+enum class BuildEffect { Appear, FadeUp, Pop, Dissolve, MoveIn, Scale, Wipe, Typewriter }
+
+/**
+ * A build: what the element does when its step arrives, in the effect and over
+ * the timing the deck was written with.
+ *
+ * Typewriter types its element out in the editor and reveals it whole here, which
+ * is why it sits with Appear on the branch that plays nothing at all.
+ */
 @Composable
-fun Appear(visible: Boolean, content: @Composable () -> Unit) {
+fun Appear(
+    visible: Boolean,
+    effect: BuildEffect = BuildEffect.FadeUp,
+    durationMs: Int = 400,
+    delayMs: Int = 0,
+    content: @Composable () -> Unit,
+) {
     AnimatedVisibility(
         visible = visible,
-        enter = fadeIn() + slideInVertically { it / 8 },
+        enter = when (effect) {
+            BuildEffect.FadeUp ->
+                fadeIn(tween(durationMs, delayMs)) +
+                    slideInVertically(tween(durationMs, delayMs)) { it / 8 }
+            BuildEffect.Pop ->
+                scaleIn(tween(durationMs, delayMs)) + fadeIn(tween(durationMs, delayMs))
+            BuildEffect.Dissolve -> fadeIn(tween(durationMs, delayMs))
+            BuildEffect.MoveIn -> slideInHorizontally(tween(durationMs, delayMs)) { -it }
+            BuildEffect.Scale -> scaleIn(tween(durationMs, delayMs))
+            BuildEffect.Wipe -> expandVertically(tween(durationMs, delayMs))
+            BuildEffect.Appear, BuildEffect.Typewriter -> EnterTransition.None
+        },
     ) {
         content()
     }

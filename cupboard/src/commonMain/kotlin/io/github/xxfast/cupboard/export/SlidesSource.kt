@@ -1,5 +1,8 @@
 package io.github.xxfast.cupboard.export
 
+import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.BuildAt
+import io.github.xxfast.cupboard.document.BuildDelivery
 import io.github.xxfast.cupboard.document.BuildKind
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
@@ -21,7 +24,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
-import io.github.xxfast.cupboard.document.buildSteps
+import io.github.xxfast.cupboard.document.buildTimeline
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.highlightedLines
 import io.github.xxfast.cupboard.document.listBody
@@ -54,6 +57,7 @@ internal fun slidesSource(document: Document, packageName: String): String {
             if (note.isNotBlank()) out.line("// Notes: ${note.trim()}")
         }
         val specs: String = slide.transition.specsArgument(out)
+        val timeline: List<BuildAt> = slide.buildTimeline()
         out.block(
             "val ${slideIdentifier(index)} by " +
                 "Slide(stepCount = ${slide.stepCount()}$specs) { step ->",
@@ -63,8 +67,11 @@ internal fun slidesSource(document: Document, packageName: String): String {
             if (slide.builds.any { it.kind == BuildKind.Action }) {
                 out.line("// TODO(cupboard): action builds are not exported yet")
             }
+            if (slide.builds.any { it.delivery != BuildDelivery.All }) {
+                out.line("// TODO(cupboard): builds arrive whole, not piece by piece, yet")
+            }
             out.block("Board {") {
-                for (element in slide.elements) out.element(slide, element, 1f, null)
+                for (element in slide.elements) out.element(slide, timeline, element, 1f, null)
             }
         }
     }
@@ -100,18 +107,27 @@ private fun SlideTransition?.specsArgument(out: SourceWriter): String {
 }
 
 /**
- * One element, positioned and, when a build brings it in, wrapped in that build.
+ * One element, positioned and, when the build order has anything to say about it,
+ * wrapped in the `Appear` that says it.
  *
  * [opacity] is what the element's ancestors multiply into it, and [reveal] the
- * step a group's build has it wait for: a group's children are drawn as its
- * siblings, so both have to travel down rather than nest.
+ * wrapper a group's build has its children wait on: a group's children are drawn
+ * as its siblings, so both have to travel down rather than nest.
  */
-private fun SourceWriter.element(slide: Slide, element: Element, opacity: Float, reveal: Int?) {
-    val step: Int? = slide.buildSteps()[element.id] ?: reveal
+private fun SourceWriter.element(
+    slide: Slide,
+    timeline: List<BuildAt>,
+    element: Element,
+    opacity: Float,
+    reveal: String?,
+) {
+    val appear: String? = timeline.revealOf(element.id) ?: reveal
 
     if (element is GroupElement) {
         if (element.rotation != 0f) line("// TODO(cupboard): group rotation is not exported yet")
-        for (child in element.children) element(slide, child, opacity * element.opacity, step)
+        for (child in element.children) {
+            element(slide, timeline, child, opacity * element.opacity, appear)
+        }
         return
     }
 
@@ -120,10 +136,36 @@ private fun SourceWriter.element(slide: Slide, element: Element, opacity: Float,
         "opacity = ${(opacity * element.opacity).literal()}) {"
 
     block(at) {
-        // Step 0 is the slide as it opens, so a build landing there needs no wrapper.
-        if (step != null && step > 0) block("Appear(step >= $step) {") { body(slide, element) }
+        if (appear != null) block("Appear($appear) {") { body(slide, element) }
         else body(slide, element)
     }
+}
+
+/**
+ * The arguments the `Appear` around [elementId] takes, null for an element that
+ * opens with the slide and never leaves: step 0 is the slide as it opens, so a
+ * build landing there needs no wrapper at all.
+ *
+ * The element's first `In` build says when it arrives and what it plays in on,
+ * and its first `Out` build when it goes, so an element with both is visible over
+ * the range between them. An `AfterPrevious` build's wait is already in
+ * [BuildAt.delayMs], so a chain runs itself out here as it does in play.
+ */
+private fun List<BuildAt>.revealOf(elementId: String): String? {
+    val mine: List<BuildAt> = filter { it.build.elementId == elementId }
+    val entry: BuildAt? = mine.firstOrNull { it.build.kind == BuildKind.In }
+    val exit: BuildAt? = mine.firstOrNull { it.build.kind == BuildKind.Out }
+    val first: Int = entry?.firstStep ?: 0
+    if (exit == null && first == 0) return null
+
+    val visible: String =
+        if (exit == null) "step >= $first" else "step in $first until ${exit.firstStep}"
+    // An element only an Out build touches was there from the start, so there is
+    // no entry effect to play it in on.
+    val build: Build = entry?.build ?: return visible
+    val delay: String = if (entry.delayMs == 0) "" else ", delayMs = ${entry.delayMs}"
+    return "$visible, effect = BuildEffect.${build.effect.name}, " +
+        "durationMs = ${build.durationMs}$delay"
 }
 
 private fun Frame.literal(): String =

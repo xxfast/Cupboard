@@ -5,12 +5,14 @@ package io.github.xxfast.cupboard
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.LocalSystemTheme
 import androidx.compose.ui.Modifier
@@ -23,14 +25,18 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.MenuScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
@@ -66,7 +72,21 @@ import kotlinx.coroutines.delay
 import org.jetbrains.skiko.currentSystemTheme
 import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
 
-private data class PlayRequest(val document: Document, val slideIndex: Int)
+/**
+ * A show to open: the deck, the slide it starts on, and whether it is a Preview
+ * rather than the talk. Preview is the same player over a one-slide deck, so all
+ * the flag decides is how the window wears it: windowed and named a preview,
+ * where the talk takes the whole screen.
+ */
+private data class PlayRequest(
+    val document: Document,
+    val slideIndex: Int,
+    val preview: Boolean = false,
+)
+
+/** Half of 1080p: big enough to read a slide, small enough to leave the editor behind it. */
+private val PreviewWindowWidth = 960.dp
+private val PreviewWindowHeight = 540.dp
 
 /**
  * This shell is the Linux app but runs everywhere, so the Edit menu takes the
@@ -284,6 +304,20 @@ fun main() {
 
         val state: EditorState by viewModel.states.collectAsState()
 
+        // Preview is Play on the slide alone: the deck's furniture, one slide of
+        // it, opened at its first step so the builds run from the top. Off in
+        // layout mode for the same reason Play is, there is no slide of the talk
+        // selected there, and null is what greys the button and the menu item.
+        val previewSlide: (() -> Unit)? = if (state.isEditingLayouts) null else {
+            {
+                playing = PlayRequest(
+                    document = state.document.previewOf(state.selectedSlide.id),
+                    slideIndex = 0,
+                    preview = true,
+                )
+            }
+        }
+
         Window(
             onCloseRequest = { viewModel.close(); exitApplication() },
             title = "Cupboard",
@@ -443,6 +477,15 @@ fun main() {
                         enabled = !state.isEditingLayouts && state.selectedLayout != null,
                         onClick = { viewModel.onReapplyLayout(state.selectedSlide.id) },
                     )
+
+                    // No accelerator: Play has the one people reach for, and a
+                    // preview is a look at one slide rather than a mode you live
+                    // in. The Animate tab's button is the other way to it.
+                    Item(
+                        text = "Preview Slide",
+                        enabled = previewSlide != null,
+                        onClick = { previewSlide?.invoke() },
+                    )
                 }
 
                 // Whole-box text styling. Bold, Italic and Underline take the
@@ -563,6 +606,7 @@ fun main() {
                     onPlay = if (state.isEditingLayouts) null else {
                         { document, index -> playing = PlayRequest(document, index) }
                     },
+                    onPlayPreview = previewSlide,
                     onShowContextMenu = nativeMenu?.let { menu ->
                         { elementId, positionInWindow ->
                             showNativeMenu(
@@ -611,8 +655,18 @@ fun main() {
             // key handler; consumed events never reach here, so no double-advance.
             Window(
                 onCloseRequest = close,
-                title = "Cupboard Play",
-                state = rememberWindowState(placement = WindowPlacement.Maximized),
+                title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
+                // A preview sits in a window on top of the editor: you are still
+                // working on the slide, so the deck should not take the screen
+                // away to show it to you. Escape closes it either way.
+                state = if (request.preview) {
+                    rememberWindowState(
+                        size = DpSize(PreviewWindowWidth, PreviewWindowHeight),
+                        position = WindowPosition(Alignment.Center),
+                    )
+                } else {
+                    rememberWindowState(placement = WindowPlacement.Maximized)
+                },
                 onKeyEvent = { event ->
                     if (event.type != KeyEventType.KeyDown) false
                     else when (event.key) {
@@ -629,6 +683,22 @@ fun main() {
                     }
                 },
             ) {
+                // WindowState sizes the frame, title bar and all, so 960x540
+                // asked for is a slide short by whatever the chrome takes. Hand
+                // that back and re-centre on what the window actually became.
+                // Insets read zero on a frame that isn't up yet, which just
+                // leaves the window at the size it was asked for.
+                if (request.preview) LaunchedEffect(Unit) {
+                    EventQueue.invokeLater {
+                        val chrome = window.insets
+                        window.setSize(
+                            window.width + chrome.left + chrome.right,
+                            window.height + chrome.top + chrome.bottom,
+                        )
+                        window.setLocationRelativeTo(null)
+                    }
+                }
+
                 PresentationPlayer(
                     document = request.document,
                     startIndex = request.slideIndex,

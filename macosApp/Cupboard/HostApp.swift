@@ -191,6 +191,10 @@ struct CupboardHostApp: App {
             // offering it would be pointing at one slide and moving another.
             Button("Reapply Layout") { host.reapplyLayout() }
                 .disabled(!host.canReapplyLayout())
+
+            // No key equivalent: Play owns the presentation gesture, and a
+            // preview is the deliberate one you go to the menu for.
+            Button("Preview Slide") { playSession = host.startPreview(onExit: { playSession = nil }) }
         }
     }
 
@@ -343,5 +347,11 @@ struct EditorView: View {
     func startPlay() {
         // Kotlin calls onExit on the main thread, so touching @State is safe.
         playSession = host.startPlay(onExit: { playSession = nil })
+    }
+
+    /// Plays the selected slide on its own, in the same full-screen player Play
+    /// uses. Escape comes back to the editor, exactly as it does from a show.
+    func startPreview() {
+        playSession = host.startPreview(onExit: { playSession = nil })
     }
 }

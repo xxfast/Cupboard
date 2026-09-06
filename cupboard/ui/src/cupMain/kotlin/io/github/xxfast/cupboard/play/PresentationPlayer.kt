@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -55,6 +56,25 @@ import net.kodein.cup.withPresentationState
 public class PlayerController internal constructor() {
     internal var state: PresentationState? by mutableStateOf(null)
 
+    /**
+     * Where the show is: the index into the slides being *played*, so a deck with
+     * skips in it counts them out the way the audience sees it.
+     *
+     * Two plain [Int] states rather than CuP's own position, so a host reads the
+     * show without linking against CuP. Both sit at 0 until the player is
+     * composed.
+     */
+    public var slideIndex: Int by mutableStateOf(0)
+        internal set
+
+    /** The step within [slideIndex]'s slide, 0 being the slide as it opens. */
+    public var step: Int by mutableStateOf(0)
+        internal set
+
+    /** How many slides are playing: the deck minus whatever it skips. */
+    public var slideCount: Int by mutableStateOf(0)
+        internal set
+
     public fun next() { state?.goToNextStep() }
     public fun previous() { state?.goToPreviousStep() }
     public fun nextSlide() { state?.goToNextSlide() }
@@ -65,16 +85,21 @@ public class PlayerController internal constructor() {
 public fun rememberPlayerController(): PlayerController = remember { PlayerController() }
 
 /**
- * Plays [document] with CuP, starting at [startIndex]. Handles arrows, space,
- * enter, and backspace itself when focused (requested on entry); Escape invokes
- * [onExit]. Hosts can also drive it through [controller], e.g. from a window
- * level key handler when focus has wandered.
+ * Plays [document] with CuP, starting at [startIndex] and [startStep] within it.
+ * Handles arrows, space, enter, and backspace itself when focused (requested on
+ * entry); Escape invokes [onExit]. Hosts can also drive it through [controller],
+ * e.g. from a window level key handler when focus has wandered, and read where
+ * the show has got to off the same controller.
+ *
+ * [startStep] is clamped to the steps the starting slide has, so a host that
+ * hands over the step the editor was on cannot open the show past the end of it.
  */
 @OptIn(PluginCupAPI::class)
 @Composable
 public fun PresentationPlayer(
     document: Document,
     startIndex: Int = 0,
+    startStep: Int = 0,
     modifier: Modifier = Modifier,
     onExit: (() -> Unit)? = null,
     controller: PlayerController = rememberPlayerController(),
@@ -99,12 +124,26 @@ public fun PresentationPlayer(
             .onPreviewKeyEvent { event -> handleKey(event, controller, onExit) },
     ) {
         withPresentationState(
-            initial = { list -> startIndex.coerceIn(0, list.lastIndex) to 0 },
+            initial = { list ->
+                val index: Int = startIndex.coerceIn(0, maxOf(0, list.lastIndex))
+                index to startStep.coerceIn(0, list.getOrNull(index)?.lastStep ?: 0)
+            },
         ) {
             val state = LocalPresentationState.current
-            DisposableEffect(state) {
+            DisposableEffect(state, playing.size) {
                 controller.state = state
+                controller.slideCount = playing.size
                 onDispose { if (controller.state === state) controller.state = null }
+            }
+
+            // The show's own position, mirrored out as plain ints: what a host
+            // reads to say where the deck is, and what Phase 6's presenter
+            // display will follow.
+            LaunchedEffect(state, controller) {
+                snapshotFlow { state.currentPosition }.collect { at ->
+                    controller.slideIndex = at.slideIndex
+                    controller.step = at.step
+                }
             }
             val transitions = remember { TransitionSet.moveHorizontal(layoutDirection) }
             val position: PresentationPosition = state.currentPosition

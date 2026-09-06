@@ -159,6 +159,11 @@ fun EditorInspector(
     onUpdateBuild: (index: Int, build: Build) -> Unit,
     onRemoveBuild: (index: Int) -> Unit,
     onMoveBuild: (from: Int, to: Int) -> Unit,
+    /**
+     * Play this slide alone, from its first step: what the Animate tab's Preview
+     * asks for. Null on a shell with nowhere to play it, which greys the button.
+     */
+    onPlayPreview: (() -> Unit)? = null,
     /** A build row picked: the element it animates takes the canvas selection. */
     onSelectElement: (String?) -> Unit,
     /** The deck's layouts: what the Slide tab's picker offers. */
@@ -319,6 +324,7 @@ fun EditorInspector(
                     onUpdateBuild = onUpdateBuild,
                     onRemoveBuild = onRemoveBuild,
                     onMoveBuild = onMoveBuild,
+                    onPlayPreview = onPlayPreview,
                 )
                 InspectorTab.Document -> SlidePanel(
                     slide = slide,
@@ -1651,6 +1657,7 @@ private fun AnimatePanel(
     onUpdateBuild: (index: Int, build: Build) -> Unit,
     onRemoveBuild: (index: Int) -> Unit,
     onMoveBuild: (from: Int, to: Int) -> Unit,
+    onPlayPreview: (() -> Unit)?,
 ) {
     if (isEditingLayouts) {
         Text(
@@ -1670,6 +1677,7 @@ private fun AnimatePanel(
         onUpdate = onUpdateBuild,
         onRemove = onRemoveBuild,
         onMove = onMoveBuild,
+        onPlayPreview = onPlayPreview,
     )
 
     PanelDivider()
@@ -1834,12 +1842,24 @@ private fun BuildSection(
     onUpdate: (index: Int, build: Build) -> Unit,
     onRemove: (index: Int) -> Unit,
     onMove: (from: Int, to: Int) -> Unit,
+    onPlayPreview: (() -> Unit)?,
 ) {
     val primary: Element? = selectedElements.firstOrNull()
     val selectedIds: Set<String> = selectedElements.mapTo(mutableSetOf()) { it.id }
     var picked: Int? by remember(slide.id) { mutableStateOf(null) }
 
     SectionLabel("BUILD ORDER")
+
+    // Above the order rather than below them: the builds are read top down, and
+    // watching them run is the question the list raises, not an afterthought to
+    // it. Live on a slide with no builds too, where it plays the slide's own
+    // transition in, which is still what the tab is about.
+    TonalButton(
+        label = "Preview",
+        enabled = onPlayPreview != null,
+        onClick = { onPlayPreview?.invoke() },
+        modifier = Modifier.fillMaxWidth(),
+    )
 
     if (slide.builds.isEmpty()) Text(
         text = "Nothing builds on this slide yet.",

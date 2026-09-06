@@ -47,6 +47,35 @@ class RenderSnapshotTest {
             println("snapshot: ${out.absolutePath}")
         }
     }
+
+    /**
+     * The built slide at every step it has, which is the build order as the
+     * audience walks it: the stages arriving one click at a time, the body handed
+     * over a paragraph at a time, and the image leaving on the Out build. Not an
+     * assertion either: `PlayFidelityTest` says the steps differ, and these say
+     * how.
+     */
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Test
+    fun renderEveryStepOfTheBuiltSlideToPng() {
+        val directory = File(System.getProperty("snapshots.out") ?: "build/snapshots")
+        directory.mkdirs()
+
+        val slides: List<Slide> = sampleDocument().allSlides()
+        val index: Int = slides.indexOfFirst { it.title == "Rendering Pipeline" }
+        val slide: Slide = slides[index]
+
+        for (step in 0 until slide.stepCount()) {
+            val image = renderComposeScene(1920, 1080) {
+                SlideView(slide, step = step, number = index + 1)
+            }
+            val png = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
+            val name = "${index.toString().padStart(2, '0')}-${slide.slug()}-step$step.png"
+            val out = File(directory, name)
+            out.writeBytes(png)
+            println("snapshot: ${out.absolutePath}")
+        }
+    }
 }
 
 /** The slide's title as a file name: lowercase, and words joined by dashes. */

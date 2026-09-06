@@ -89,11 +89,16 @@ import io.github.xxfast.cupboard.theme.toColorScheme
  *
  * [onPlay] non-null shows the toolbar Play pill, which receives the current
  * document and selected slide index; null hides play (android/web shells).
+ *
+ * [onPlayPreview] is the same offer for one slide: the Animate tab's Preview
+ * asks for it, and the shell plays the selected slide on its own. Null greys
+ * that button, on the same shells that have nowhere to play.
  */
 @Composable
 fun EditorScreen(
     viewModel: EditorViewModel,
     onPlay: ((Document, Int) -> Unit)? = null,
+    onPlayPreview: (() -> Unit)? = null,
     /**
      * A shell that draws the context menu natively (the desktop app's AWT popup
      * on macOS and Windows). Called with the click's hit and its position in
@@ -192,6 +197,7 @@ fun EditorScreen(
         onRemoveGuide = viewModel::onRemoveGuide,
         onEndGuideDrag = viewModel::onEndGuideDrag,
         onPlay = onPlay,
+        onPlayPreview = onPlayPreview,
     )
 }
 
@@ -291,6 +297,7 @@ fun EditorView(
     onMoveSlide: (slideId: String, afterId: String?, nest: Boolean) -> Unit = { _, _, _ -> },
     onEndSlideDrag: () -> Unit = {},
     onPlay: ((Document, Int) -> Unit)? = null,
+    onPlayPreview: (() -> Unit)? = null,
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -540,6 +547,7 @@ fun EditorView(
                         onUpdateBuild = onUpdateBuild,
                         onRemoveBuild = onRemoveBuild,
                         onMoveBuild = onMoveBuild,
+                        onPlayPreview = onPlayPreview,
                         onSelectElement = onSelectElement,
                         layouts = state.document.layouts,
                         isEditingLayouts = state.isEditingLayouts,

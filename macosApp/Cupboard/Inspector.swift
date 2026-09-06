@@ -1136,6 +1136,10 @@ extension EditorView {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Build Order")
 
+            // Above the list rather than under it: what the builds do is the
+            // question the panel opens with, and playing the slide answers it.
+            panelButton("Preview", symbol: "play.rectangle") { startPreview() }
+
             if ui.builds.isEmpty {
                 Text("Nothing builds on this slide.")
                     .font(.system(size: 11.5))

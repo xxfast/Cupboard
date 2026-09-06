@@ -78,6 +78,7 @@ import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
@@ -2338,6 +2339,14 @@ class EditorHost {
      */
     fun startPlay(onExit: () -> Unit): PlaySession =
         PlaySession(state.document, state.selectedSlideIndex().coerceAtLeast(0), onExit)
+
+    /**
+     * Plays the selected slide alone, from its first step: the deck cut down to
+     * that one slide, so the builds run the way they will in the show and
+     * nothing follows it. [onExit] behaves as [startPlay]'s does.
+     */
+    fun startPreview(onExit: () -> Unit): PlaySession =
+        PlaySession(state.document.previewOf(state.selectedSlide.id), 0, onExit)
 
     /**
      * The document as a standalone CuP project, file by file. Generating is all
