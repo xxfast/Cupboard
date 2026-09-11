@@ -412,7 +412,9 @@ struct EditorView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
-        .frame(minWidth: 1100, minHeight: 640)
+        // Wide enough that the toolbar, at its fixed ~1094pt, still leaves the
+        // deck name a hundred points to truncate into.
+        .frame(minWidth: 1200, minHeight: 640)
         // The whole window takes a picture, panels included: a drop is aimed at
         // the deck rather than at a point on the slide, and it lands centred
         // wherever it was let go.

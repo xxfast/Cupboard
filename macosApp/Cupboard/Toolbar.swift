@@ -22,9 +22,11 @@ extension EditorView {
     func toolbar(_ ui: Chrome) -> some View {
         HStack(spacing: Layout.edge) {
             documentName
-            Spacer(minLength: 8)
+            // The gaps rank below the name: at the minimum width they close
+            // to nothing before the name is asked to truncate.
+            Spacer(minLength: 0).layoutPriority(-1)
             toolbarCluster(ui)
-            Spacer(minLength: 8)
+            Spacer(minLength: 0).layoutPriority(-1)
             zoomPill
             if ui.inspectorOpen {
                 // Fixed 254pt region over the inspector, laid out space-between:
@@ -52,11 +54,15 @@ extension EditorView {
     /// not shift up and down as the autosave lands.
     var documentName: some View {
         let ui = chrome
+        // The name is the one thing in the bar that can give: it truncates
+        // rather than fix its width, so the toolbar never outgrows the window.
         return HStack(spacing: 5) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(ui.documentTitle)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.title)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("Edited")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.faint)
@@ -66,7 +72,6 @@ extension EditorView {
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(palette.faint)
         }
-        .fixedSize()
     }
 
     func toolbarCluster(_ ui: Chrome) -> some View {

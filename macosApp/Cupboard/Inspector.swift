@@ -101,85 +101,92 @@ extension EditorView {
     /// land in the same place.
     @ViewBuilder func formatPanel(_ ui: Chrome) -> some View {
         if let element = ui.element {
-            VStack(alignment: .leading, spacing: Layout.panelPadding) {
-                VStack(alignment: .leading, spacing: Layout.panelPadding) {
-                    // Only a text box has these, so the section is here or it is
-                    // not; everything below it belongs to every element.
-                    if let text = ui.text {
-                        textSection(text)
-                        palette.divider.frame(height: 1)
-                    }
-                    // Same rule for the shape's own: a shape has these and
-                    // nothing else does.
-                    if let shape = ui.shape {
-                        shapeSection(shape, styles: ui.objectStyles)
-                        palette.divider.frame(height: 1)
-                    }
-                    // And the code block's, by the same rule.
-                    if let code = ui.code {
-                        codeSection(code)
-                        palette.divider.frame(height: 1)
-                    }
-                    // And the terminal's.
-                    if let terminal = ui.terminal {
-                        terminalSection(terminal)
-                        palette.divider.frame(height: 1)
-                    }
-                    // And the diagram's.
-                    if let diagram = ui.diagram {
-                        diagramSection(diagram)
-                        palette.divider.frame(height: 1)
-                    }
-                    // And the equation's.
-                    if let equation = ui.equation {
-                        equationSection(equation)
-                        palette.divider.frame(height: 1)
-                    }
-                    // And the image's.
-                    if let image = ui.image {
-                        imageSection(image, ui)
-                        palette.divider.frame(height: 1)
-                    }
-                    // And the gallery's, which is a box of pictures rather than
-                    // a picture, so it gets its own section rather than sharing.
-                    if let gallery = ui.gallery {
-                        gallerySection(gallery)
-                        palette.divider.frame(height: 1)
-                    }
-                    // Text, shape and image are the kinds that hold a link, so
-                    // the section is here for those three and nowhere else.
-                    if let link = ui.link {
-                        linkSection(link, ui)
-                        palette.divider.frame(height: 1)
-                    }
-                    positionSection(element)
-                    palette.divider.frame(height: 1)
-                    rotateSection(element)
-                    palette.divider.frame(height: 1)
-                    opacitySection(element)
-                    palette.divider.frame(height: 1)
-                    arrangeSection
-                }
-                // A locked element ignores every edit but the button below, so
-                // the panel says so rather than swallowing them silently.
-                .disabled(element.locked)
-                .opacity(element.locked ? 0.45 : 1)
+            // Scrolls so a tall element (an image with mask, colour and link
+            // sections all open) can't grow the window past its own edge.
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                        VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                            // Only a text box has these, so the section is here or it is
+                            // not; everything below it belongs to every element.
+                            if let text = ui.text {
+                                textSection(text)
+                                palette.divider.frame(height: 1)
+                            }
+                            // Same rule for the shape's own: a shape has these and
+                            // nothing else does.
+                            if let shape = ui.shape {
+                                shapeSection(shape, styles: ui.objectStyles)
+                                palette.divider.frame(height: 1)
+                            }
+                            // And the code block's, by the same rule.
+                            if let code = ui.code {
+                                codeSection(code)
+                                palette.divider.frame(height: 1)
+                            }
+                            // And the terminal's.
+                            if let terminal = ui.terminal {
+                                terminalSection(terminal)
+                                palette.divider.frame(height: 1)
+                            }
+                            // And the diagram's.
+                            if let diagram = ui.diagram {
+                                diagramSection(diagram)
+                                palette.divider.frame(height: 1)
+                            }
+                            // And the equation's.
+                            if let equation = ui.equation {
+                                equationSection(equation)
+                                palette.divider.frame(height: 1)
+                            }
+                            // And the image's.
+                            if let image = ui.image {
+                                imageSection(image, ui)
+                                palette.divider.frame(height: 1)
+                            }
+                            // And the gallery's, which is a box of pictures rather than
+                            // a picture, so it gets its own section rather than sharing.
+                            if let gallery = ui.gallery {
+                                gallerySection(gallery)
+                                palette.divider.frame(height: 1)
+                            }
+                            // Text, shape and image are the kinds that hold a link, so
+                            // the section is here for those three and nowhere else.
+                            if let link = ui.link {
+                                linkSection(link, ui)
+                                palette.divider.frame(height: 1)
+                            }
+                            positionSection(element)
+                            palette.divider.frame(height: 1)
+                            rotateSection(element)
+                            palette.divider.frame(height: 1)
+                            opacitySection(element)
+                            palette.divider.frame(height: 1)
+                            arrangeSection
+                        }
+                        // A locked element ignores every edit but the button below, so
+                        // the panel says so rather than swallowing them silently.
+                        .disabled(element.locked)
+                        .opacity(element.locked ? 0.45 : 1)
 
-                Spacer(minLength: 0)
+                        Spacer(minLength: 0)
 
-                // Two unlocked elements make a group; a lone group comes apart
-                // again. Neither button is here when it has nothing to do.
-                if ui.canGroup {
-                    panelButton("Group", symbol: "square.on.square") { host.groupSelection() }
-                }
-                if ui.canUngroup {
-                    panelButton("Ungroup", symbol: "square.split.2x2") { host.ungroupSelection() }
-                }
+                        // Two unlocked elements make a group; a lone group comes apart
+                        // again. Neither button is here when it has nothing to do.
+                        if ui.canGroup {
+                            panelButton("Group", symbol: "square.on.square") { host.groupSelection() }
+                        }
+                        if ui.canUngroup {
+                            panelButton("Ungroup", symbol: "square.split.2x2") { host.ungroupSelection() }
+                        }
 
-                lockButton(element)
+                        lockButton(element)
+                    }
+                    .padding(Layout.panelPadding)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
+                }
+                .scrollContentBackground(.hidden)
             }
-            .padding(Layout.panelPadding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else {
             Text("Select an element to edit it")
                 .font(.system(size: 12))
@@ -2100,35 +2107,42 @@ extension EditorView {
     /// shows what a layout has (a name, its placeholders) and drops what only a
     /// slide has (the layout card, the appearance switches).
     @ViewBuilder func documentPanel(_ ui: Chrome) -> some View {
-        VStack(alignment: .leading, spacing: Layout.panelPadding) {
-            if ui.editingLayouts {
-                layoutNameSection(ui)
-                palette.divider.frame(height: 1)
-                placeholdersSection(ui)
-                palette.divider.frame(height: 1)
-                backgroundSection(ui)
-                Spacer(minLength: 0)
-                panelButton("Done", symbol: "checkmark") { host.exitSlideLayouts() }
-            } else {
-                themeSection(ui)
-                palette.divider.frame(height: 1)
-                slideSizeSection(ui)
-                palette.divider.frame(height: 1)
-                playbackSection(ui)
-                palette.divider.frame(height: 1)
-                deckBackgroundSection(ui)
-                palette.divider.frame(height: 1)
-                slideLayoutCard(ui)
-                reapplyLayoutButton(ui)
-                appearanceSection(ui)
-                palette.divider.frame(height: 1)
-                backgroundSection(ui)
-                Spacer(minLength: 0)
-                editLayoutButton
+        // Scrolls so a tall Document panel (every section open, or a deck with
+        // several layouts) can't grow the window past its own edge.
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: Layout.panelPadding) {
+                    if ui.editingLayouts {
+                        layoutNameSection(ui)
+                        palette.divider.frame(height: 1)
+                        placeholdersSection(ui)
+                        palette.divider.frame(height: 1)
+                        backgroundSection(ui)
+                        Spacer(minLength: 0)
+                        panelButton("Done", symbol: "checkmark") { host.exitSlideLayouts() }
+                    } else {
+                        themeSection(ui)
+                        palette.divider.frame(height: 1)
+                        slideSizeSection(ui)
+                        palette.divider.frame(height: 1)
+                        playbackSection(ui)
+                        palette.divider.frame(height: 1)
+                        deckBackgroundSection(ui)
+                        palette.divider.frame(height: 1)
+                        slideLayoutCard(ui)
+                        reapplyLayoutButton(ui)
+                        appearanceSection(ui)
+                        palette.divider.frame(height: 1)
+                        backgroundSection(ui)
+                        Spacer(minLength: 0)
+                        editLayoutButton
+                    }
+                }
+                .padding(Layout.panelPadding)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
             }
+            .scrollContentBackground(.hidden)
         }
-        .padding(Layout.panelPadding)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     /// The layout the slide is on, and the pick that moves it to another. "None"
