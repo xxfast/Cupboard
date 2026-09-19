@@ -67,9 +67,9 @@ struct Palette {
         track: Color(rgb: 0x4A4A50),
         panel: Color(rgb: 0x28282C),
         divider: Color(rgb: 0x3A3A3E),
-        accent: Color(rgb: 0x7F52FF),
+        accent: .systemAccent,
         accentText: .white,
-        accentSoft: Color(rgb: 0xB9A3FF),
+        accentSoft: Color.systemAccent.opacity(0.55),
         hover: Color.white.opacity(0.07),
         hover2: Color.white.opacity(0.14),
         // rgba(44,44,50,0.56) to rgba(32,32,38,0.48)
@@ -113,9 +113,9 @@ struct Palette {
         track: Color(rgb: 0xCFCECC),
         panel: Color(rgb: 0xF1F0EE),
         divider: Color(rgb: 0xD8D7D5),
-        accent: Color(rgb: 0x7F52FF),
+        accent: .systemAccent,
         accentText: .white,
-        accentSoft: Color(rgb: 0x6F42E0),
+        accentSoft: Color.systemAccent.opacity(0.7),
         hover: Color.black.opacity(0.06),
         hover2: Color.black.opacity(0.1),
         // rgba(252,251,249,0.64) to rgba(244,243,241,0.54)
@@ -178,6 +178,15 @@ enum Layout {
 }
 
 extension Color {
+    /// What the mac is set to highlight with, which is what Keynote paints its
+    /// selected segments, sliders and checkboxes in.
+    ///
+    /// `controlAccentColor` rather than a number: it is dynamic, so it follows
+    /// System Settings > Appearance while the app is running and comes back
+    /// right in both light and dark. White reads on every one of the eight,
+    /// which is why `accentText` is white either way.
+    static let systemAccent = Color(nsColor: .controlAccentColor)
+
     /// Packed ARGB, the document model's colour format: what the background
     /// swatches carry, alpha included.
     init(argb: Int64) {

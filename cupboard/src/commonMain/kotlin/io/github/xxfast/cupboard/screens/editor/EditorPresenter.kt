@@ -128,8 +128,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
@@ -145,6 +147,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspectorSection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
@@ -434,6 +437,7 @@ private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview,
     ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
     is SelectInspectorTab, CloseInspector, ToggleInspector,
+    is SelectFormatSegment, is SelectAnimateSegment, is ToggleInspectorSection,
         -> true
 
     // Focus arriving on the pane the caret is already in says nothing new;
@@ -1195,6 +1199,21 @@ fun EditorPresenter(
             CloseInspector -> state.copy(inspectorOpen = false)
 
             ToggleInspector -> state.copy(inspectorOpen = !state.inspectorOpen)
+
+            // A segment this selection doesn't offer is no choice at all, so it
+            // leaves the preference alone rather than storing something the
+            // panel would immediately fall back from.
+            is SelectFormatSegment ->
+                if (event.segment in state.formatSegments) state.copy(formatSegment = event.segment)
+                else state
+
+            is SelectAnimateSegment -> state.copy(animateSegment = event.segment)
+
+            is ToggleInspectorSection -> state.copy(
+                expandedSections =
+                    if (event.section in state.expandedSections) state.expandedSections - event.section
+                    else state.expandedSections + event.section,
+            )
 
             // The Edit-menu verbs, focus resolved: the same reductions again
             // with the target the focused pane names. Re-entered rather than

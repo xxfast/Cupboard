@@ -79,6 +79,8 @@ import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
+import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.theme.ChromeTheme
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -204,7 +206,12 @@ fun EditorScreen(
             onFlipElements = viewModel::onFlipElements,
             onGroupElements = viewModel::onGroupElements,
             onUngroupElements = viewModel::onUngroupElements,
+            onAlignElements = viewModel::onAlignElements,
+            onDistributeElements = viewModel::onDistributeElements,
             onSelectInspectorTab = viewModel::onSelectInspectorTab,
+            onSelectFormatSegment = viewModel::onSelectFormatSegment,
+            onToggleInspectorSection = viewModel::onToggleInspectorSection,
+            onSelectAnimateSegment = viewModel::onSelectAnimateSegment,
             onEditSlideLayouts = viewModel::onEditSlideLayouts,
             onExitSlideLayouts = viewModel::onExitSlideLayouts,
             onApplyLayout = viewModel::onApplyLayout,
@@ -276,7 +283,17 @@ fun EditorView(
     onFlipElements: (List<String>, FlipAxis) -> Unit,
     onGroupElements: (List<String>) -> Unit,
     onUngroupElements: (String) -> Unit,
+    /** The Arrange segment's two menus. The same events the Arrange menu sends,
+     * so a greyed item there and a live button here can't disagree. */
+    onAlignElements: (AlignEdge) -> Unit = {},
+    onDistributeElements: (Axis) -> Unit = {},
     onSelectInspectorTab: (InspectorTab) -> Unit,
+    /** The inspector's own chrome, all three of them rides through the loop:
+     * which Format segment the user picked, which of the collapsible sections
+     * are open, and which Animate segment is showing. */
+    onSelectFormatSegment: (FormatSegment) -> Unit = {},
+    onToggleInspectorSection: (InspectorSection) -> Unit = {},
+    onSelectAnimateSegment: (AnimateSegment) -> Unit = {},
     /** In and out of layout mode: the navigator swaps slides for layouts, and the
      * canvas edits one of them. */
     onEditSlideLayouts: () -> Unit = {},
@@ -642,6 +659,17 @@ fun EditorView(
                         onFlipElements = onFlipElements,
                         onGroupElements = onGroupElements,
                         onUngroupElements = onUngroupElements,
+                        onAlignElements = onAlignElements,
+                        onDistributeElements = onDistributeElements,
+                        formatSegments = state.formatSegments,
+                        activeFormatSegment = state.activeFormatSegment,
+                        onSelectFormatSegment = onSelectFormatSegment,
+                        expandedSections = state.expandedSections,
+                        onToggleInspectorSection = onToggleInspectorSection,
+                        animateSegment = state.animateSegment,
+                        onSelectAnimateSegment = onSelectAnimateSegment,
+                        canBringForward = state.canBringForward,
+                        canSendBackward = state.canSendBackward,
                         onReplaceImage = onReplaceImage,
                         onAddGalleryImages = onAddGalleryImages,
                         onAddGallerySteps = onAddGallerySteps,

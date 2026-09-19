@@ -81,8 +81,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
@@ -98,6 +100,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspectorSection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
@@ -291,6 +294,9 @@ class EditorViewModel(
     fun onSelectInspectorTab(tab: InspectorTab) { scope.launch { events.emit(SelectInspectorTab(tab)) } }
     fun onCloseInspector() { scope.launch { events.emit(CloseInspector) } }
     fun onToggleInspector() { scope.launch { events.emit(ToggleInspector) } }
+    fun onSelectFormatSegment(segment: FormatSegment) { scope.launch { events.emit(SelectFormatSegment(segment)) } }
+    fun onSelectAnimateSegment(segment: AnimateSegment) { scope.launch { events.emit(SelectAnimateSegment(segment)) } }
+    fun onToggleInspectorSection(section: InspectorSection) { scope.launch { events.emit(ToggleInspectorSection(section)) } }
 
     fun close() {
         scope.cancel()

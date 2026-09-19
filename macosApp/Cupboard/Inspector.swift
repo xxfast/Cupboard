@@ -20,6 +20,34 @@ enum BuildSpace {
     static let name = "buildOrder"
 }
 
+/// The inspector's measurements, in points, read off the Keynote captures in
+/// `docs/keynote` (2x, so every pixel there is half a point here). Stated once
+/// so the controls cannot drift apart: the panel is a column of things that all
+/// have to line up with each other.
+enum Inspect {
+    /// The column's side padding, and so the width every full-width control runs to.
+    static let side: CGFloat = 16
+    /// Popups, fields, joined segment groups and the small buttons.
+    static let control: CGFloat = 24
+    /// The full-width grey buttons: Lock, Build Order, Edit Slide Layout.
+    static let button: CGFloat = 28
+    /// The panel's own segmented control, which is taller than the inner ones.
+    static let track: CGFloat = 28
+    /// A numeric field, and the stepper that sits outside its right edge.
+    static let field: CGFloat = 60
+    static let stepper: CGFloat = 20
+    /// The well a disclosure header shows its summary in.
+    static let wellWidth: CGFloat = 65
+    static let wellHeight: CGFloat = 22
+    static let radius: CGFloat = 6
+    /// Body type, which is nearly everything: labels, popups, buttons, fields.
+    static let text: CGFloat = 13
+    /// The caption under a field, and under the Arrange icon pairs.
+    static let caption: CGFloat = 11
+    /// The gap between one section and the next, hairline included.
+    static let section: CGFloat = 14
+}
+
 /// Where each build row sits in [BuildSpace], by its place in the order. Keyed
 /// by index rather than by element: a build is not its element, and one element
 /// may hold several of them.
@@ -29,6 +57,54 @@ struct BuildRowFrames: PreferenceKey {
     static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
         value.merge(nextValue()) { _, latest in latest }
     }
+}
+
+/// The inspector's own material, which is not the app's general chrome: the
+/// panel is a near-white grey and its controls a clearly darker grey, sampled
+/// off the Keynote captures in `docs/keynote` rather than guessed. The dark
+/// values are the same relationship inverted, since Keynote has no dark panel
+/// to sample.
+///
+/// An extension rather than new palette fields: the palette is the app's, and
+/// only the inspector wants these.
+extension Palette {
+    /// Which of the two palettes this is, asked of the one field that cannot
+    /// coincide between them.
+    var isDark: Bool { panel == Palette.dark.panel }
+
+    /// #F2F4F6, flat: Keynote's inspector is a panel, not a glass.
+    var inspectorPanel: Color { isDark ? Color(rgb: 0x2A2A2E) : Color(rgb: 0xF2F4F6) }
+
+    /// #E3E5E7: popups, buttons, the segmented track, the dial, the joined
+    /// icon groups. The one fill that makes a control look like a control.
+    var inspectorControl: Color { isDark ? Color(rgb: 0x3D3D43) : Color(rgb: 0xE3E5E7) }
+
+    /// #DADCDE: a numeric field, a shade darker than the controls around it.
+    var inspectorField: Color { isDark ? Color(rgb: 0x37373C) : Color(rgb: 0xDADCDE) }
+
+    /// #EAEBED: the fill of a button with nothing to do, which fades towards
+    /// the panel rather than going flat.
+    var inspectorControlOff: Color { isDark ? Color(rgb: 0x333338) : Color(rgb: 0xEAEBED) }
+
+    /// #3A3A3C: section titles and disclosure titles, which are dark and
+    /// semibold in Keynote rather than the pale grey our chrome labels use.
+    var inspectorTitle: Color { isDark ? Color(rgb: 0xE2E2E6) : Color(rgb: 0x3A3A3C) }
+
+    /// #4C4C4C: the captions under fields, dark and semibold too.
+    var inspectorCaption: Color { isDark ? Color(rgb: 0xC6C6CC) : Color(rgb: 0x4C4C4C) }
+}
+
+/// One cell of a joined icon group: a glyph or a short word, whether it is on,
+/// and what clicking it does. A value, so a group is stated as a list.
+struct IconCell {
+    var symbol: String? = nil
+    var title: String? = nil
+    var on: Bool = false
+    /// A cell with nowhere to go greys on its own, the way Keynote greys Front
+    /// and Forward on the frontmost object while Back and Backwards stay live.
+    var enabled: Bool = true
+    var help: String = ""
+    let action: () -> Void
 }
 
 /// A build row on the move, and the gap it is over. SwiftUI state, like the
@@ -50,29 +126,15 @@ struct BuildDrag: Equatable {
 
 extension EditorView {
     /// Header is bare: Share and the tabs moved to the toolbar, which floats
-    /// over this glass, so the panel only owns the title under them.
+    /// over this glass, so the panel only owns what sits under them, which is a
+    /// segmented control when the selection offers segments and a title when it
+    /// does not.
     func inspector(_ ui: Chrome) -> some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: Layout.header)
 
-            VStack(spacing: 1) {
-                Text(inspectorTitle(ui))
-                    .font(.system(size: 13))
-                    .foregroundStyle(palette.subtle)
-                // The title names the primary element, so with more than one
-                // selected it has to say what else the controls are editing.
-                if ui.tab == InspectorTab.format && ui.selectionCount > 1 {
-                    Text("\(ui.selectionCount) selected")
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.faint)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
-            .padding(.horizontal, Layout.panelPadding)
-            .padding(.bottom, 12)
-
             if ui.tab == InspectorTab.document {
+                panelTitle(ui.editingLayouts ? "Layout" : "Document")
                 documentPanel(ui)
             } else if ui.tab == InspectorTab.format {
                 formatPanel(ui)
@@ -82,117 +144,116 @@ extension EditorView {
         }
         .frame(width: Layout.inspector)
         .frame(maxHeight: .infinity)
-        .glass(.sidebar, edge: .leading, palette: palette)
+        // Flat and opaque, the way Keynote's panel is: the glass this used to
+        // wear took its colour off whatever the canvas was showing, which is
+        // what made every control fill disappear into it.
+        .background(palette.inspectorPanel)
+        .overlay(alignment: .leading) { palette.divider.frame(width: 1) }
     }
 
-    /// Format names what it is formatting, so the title follows the selection.
-    func inspectorTitle(_ ui: Chrome) -> String {
-        if ui.tab == InspectorTab.animate { return "Build" }
-        // In layout mode the Document panel is about the layout being edited,
-        // and the title is the first thing that has to say so.
-        if ui.tab == InspectorTab.document { return ui.editingLayouts ? "Layout" : "Slide" }
-        return ui.element?.kind ?? "Text"
+    /// The panel's title line, for the states that have a word rather than a
+    /// segmented control: slide formatting, the transitions, the Document tab.
+    func panelTitle(_ title: String) -> some View {
+        VStack(spacing: 10) {
+            Text(title)
+                .font(.system(size: Inspect.text))
+                .foregroundStyle(palette.subtle)
+                .frame(maxWidth: .infinity)
+            palette.divider.frame(height: 1)
+        }
+        .padding(.top, 8)
+        .padding(.horizontal, Inspect.side)
+        .padding(.bottom, 12)
+    }
+
+    /// The full-width segmented control both tabs wear under the toolbar: the
+    /// Format segments this selection offers, or the three Animate ones. It does
+    /// not scroll; only the body under it does.
+    func panelSegments(
+        _ titles: [String],
+        selected: String,
+        onPick: @escaping (String) -> Void
+    ) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
+                // Keynote hairlines only the seam between two unselected
+                // segments: the accent capsule is its own edge.
+                if index > 0 {
+                    let touches = titles[index - 1] == selected || title == selected
+                    (touches ? Color.clear : palette.tabDivider)
+                        .frame(width: 1, height: 16)
+                }
+                segment(Self.segmentLabel(title), on: title == selected) { onPick(title) }
+            }
+        }
+        .padding(2)
+        .frame(height: Inspect.track)
+        .background(palette.inspectorControl, in: Capsule())
+        .padding(.top, 6)
+        .padding(.horizontal, 8)
+        .padding(.bottom, 12)
+    }
+
+    /// Kotlin's enum names are the labels, so the only thing to do to one is put
+    /// the space back into the two that are two words.
+    static func segmentLabel(_ name: String) -> String {
+        switch name {
+        case "BuildIn": return "Build In"
+        case "BuildOut": return "Build Out"
+        default: return name
+        }
     }
 
     // MARK: Format panel
 
-    /// The selected element's shared properties. Everything shown here comes
-    /// back through `states`, so a typed value, a canvas drag and an undo all
-    /// land in the same place.
+    /// The segmented control, then whichever segment is on. Everything shown
+    /// here comes back through `states`, so a typed value, a canvas drag and an
+    /// undo all land in the same place.
+    ///
+    /// Nothing selected is not an empty state: Format falls back to formatting
+    /// the slide, the way Keynote's does.
     @ViewBuilder func formatPanel(_ ui: Chrome) -> some View {
-        if let element = ui.element {
-            // Scrolls so a tall element (an image with mask, colour and link
-            // sections all open) can't grow the window past its own edge.
-            GeometryReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Layout.panelPadding) {
-                        VStack(alignment: .leading, spacing: Layout.panelPadding) {
-                            // Only a text box has these, so the section is here or it is
-                            // not; everything below it belongs to every element.
-                            if let text = ui.text {
-                                textSection(text)
-                                palette.divider.frame(height: 1)
-                            }
-                            // Same rule for the shape's own: a shape has these and
-                            // nothing else does.
-                            if let shape = ui.shape {
-                                shapeSection(shape, styles: ui.objectStyles)
-                                palette.divider.frame(height: 1)
-                            }
-                            // And the code block's, by the same rule.
-                            if let code = ui.code {
-                                codeSection(code)
-                                palette.divider.frame(height: 1)
-                            }
-                            // And the terminal's.
-                            if let terminal = ui.terminal {
-                                terminalSection(terminal)
-                                palette.divider.frame(height: 1)
-                            }
-                            // And the diagram's.
-                            if let diagram = ui.diagram {
-                                diagramSection(diagram)
-                                palette.divider.frame(height: 1)
-                            }
-                            // And the equation's.
-                            if let equation = ui.equation {
-                                equationSection(equation)
-                                palette.divider.frame(height: 1)
-                            }
-                            // And the image's.
-                            if let image = ui.image {
-                                imageSection(image, ui)
-                                palette.divider.frame(height: 1)
-                            }
-                            // And the gallery's, which is a box of pictures rather than
-                            // a picture, so it gets its own section rather than sharing.
-                            if let gallery = ui.gallery {
-                                gallerySection(gallery)
-                                palette.divider.frame(height: 1)
-                            }
-                            // Text, shape and image are the kinds that hold a link, so
-                            // the section is here for those three and nowhere else.
-                            if let link = ui.link {
-                                linkSection(link, ui)
-                                palette.divider.frame(height: 1)
-                            }
-                            positionSection(element)
-                            palette.divider.frame(height: 1)
-                            rotateSection(element)
-                            palette.divider.frame(height: 1)
-                            opacitySection(element)
-                            palette.divider.frame(height: 1)
-                            arrangeSection
-                        }
-                        // A locked element ignores every edit but the button below, so
-                        // the panel says so rather than swallowing them silently.
+        if let element = ui.element, !ui.formatSegments.isEmpty {
+            VStack(spacing: 0) {
+                panelSegments(ui.formatSegments, selected: ui.activeFormatSegment) {
+                    host.selectFormatSegment(name: $0)
+                }
+
+                // The controls speak for the primary, so with more than one
+                // selected the panel has to say what else they are editing.
+                if ui.selectionCount > 1 {
+                    Text("\(ui.selectionCount) selected")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.faint)
+                        .frame(maxWidth: .infinity)
+                        .padding(.bottom, 8)
+                }
+
+                // Pinned above the scroll area, the way Keynote pins its style
+                // grid: only the sections below it scroll.
+                if ui.activeFormatSegment == "Style", let shape = ui.shape, !shape.isLine {
+                    styleStrip(ui.objectStyles)
+                        .padding(.horizontal, Layout.panelPadding)
+                        .padding(.bottom, Layout.panelPadding)
                         .disabled(element.locked)
                         .opacity(element.locked ? 0.45 : 1)
-
-                        Spacer(minLength: 0)
-
-                        // Two unlocked elements make a group; a lone group comes apart
-                        // again. Neither button is here when it has nothing to do.
-                        if ui.canGroup {
-                            panelButton("Group", symbol: "square.on.square") { host.groupSelection() }
-                        }
-                        if ui.canUngroup {
-                            panelButton("Ungroup", symbol: "square.split.2x2") { host.ungroupSelection() }
-                        }
-
-                        lockButton(element)
-                    }
-                    .padding(Layout.panelPadding)
-                    .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
+                    palette.divider.frame(height: 1)
                 }
-                .scrollContentBackground(.hidden)
+
+                // Scrolls so a tall segment (Arrange, or a Style with every
+                // section open) can't grow the window past its own edge.
+                GeometryReader { proxy in
+                    ScrollView {
+                        formatSegmentBody(ui, element)
+                            .padding(Layout.panelPadding)
+                            .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
+                    }
+                    .scrollContentBackground(.hidden)
+                }
             }
         } else {
-            Text("Select an element to edit it")
-                .font(.system(size: 12))
-                .foregroundStyle(palette.faint)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(Layout.panelPadding)
+            panelTitle(ui.editingLayouts ? "Layout" : "Slide")
+            slideFormatPanel(ui)
         }
     }
 
@@ -205,9 +266,27 @@ extension EditorView {
     /// Whole-box, all of it: a list, a weight and a colour are properties of the
     /// element, not of a range, which is what the document model says and what
     /// keeps the caret's text one plain string.
-    func textSection(_ text: TextFormat) -> some View {
+    func textSection(_ text: TextFormat, _ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Text")
+            textStyleRows(text)
+
+            palette.divider.frame(height: 1)
+
+            // Collapsible from here down, the way Keynote's Spacing and
+            // Bullets & Lists are: the header alone says what they are set to.
+            spacingSection(text, ui)
+
+            palette.divider.frame(height: 1)
+
+            listsSection(text, ui)
+        }
+    }
+
+    /// The rows that are always out: what the text is set in, how it is dressed,
+    /// what colour it is and which edge it lines up on.
+    func textStyleRows(_ text: TextFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Font")
 
             stylePopup(Self.fontTitles, selected: Self.fontIndex(text.font)) { index in
                 host.setSelectedTextFont(font: Self.fonts[index])
@@ -218,114 +297,104 @@ extension EditorView {
                     host.setSelectedTextWeight(weight: Int32(Self.weights[index]))
                 }
 
-                ValueField(label: "", value: text.size, palette: palette, unit: "pt") {
-                    host.setSelectedTextSize(size: Float($0))
-                }
-                .frame(width: 78)
-            }
-
-            HStack(spacing: 6) {
-                styleToggle("bold", on: text.isBold, help: "Bold") {
-                    host.toggleSelectedTextBold()
-                }
-                styleToggle("italic", on: text.italic, help: "Italic") {
-                    host.toggleSelectedTextItalic()
-                }
-                styleToggle("underline", on: text.underline, help: "Underline") {
-                    host.toggleSelectedTextUnderline()
-                }
-                styleToggle("strikethrough", on: text.strikethrough, help: "Strikethrough") {
-                    host.toggleSelectedTextStrikethrough()
-                }
-
-                // The system colour panel is live: it commits on every sample it
-                // sends, so a slow drag through it spends an undo entry per
-                // sample. Same-colour writes cost nothing (the core drops an edit
-                // that changes nothing), which takes the worst of it off.
-                ColorPicker(
-                    "",
-                    selection: Binding(
-                        get: { Color(argb: text.color) },
-                        set: { host.setSelectedTextColor(argb: packedArgb($0)) }
-                    ),
-                    supportsOpacity: true
-                )
-                .labelsHidden()
-                .controlSize(.small)
-                .frame(width: 40)
-                .help("Text Colour")
-            }
-
-            HStack(spacing: 8) {
-                HStack(spacing: 2) {
-                    alignSegment("text.alignleft", on: text.align, is: TextAlign.start)
-                    alignSegment("text.aligncenter", on: text.align, is: TextAlign.center)
-                    alignSegment("text.alignright", on: text.align, is: TextAlign.end)
-                }
-                .padding(2)
-                .frame(height: 26)
-                .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-
                 ValueField(
-                    label: "\u{2195}",
+                    label: "",
+                    value: text.size,
+                    palette: palette,
+                    unit: "pt",
+                    minimum: 1
+                ) { host.setSelectedTextSize(size: Float($0)) }
+                .frame(width: Inspect.field + Inspect.stepper + 5)
+            }
+
+            // One joined group, the way Keynote draws them, rather than four
+            // squares with air between.
+            joinedIcons([
+                IconCell(symbol: "bold", on: text.isBold, help: "Bold") {
+                    host.toggleSelectedTextBold()
+                },
+                IconCell(symbol: "italic", on: text.italic, help: "Italic") {
+                    host.toggleSelectedTextItalic()
+                },
+                IconCell(symbol: "underline", on: text.underline, help: "Underline") {
+                    host.toggleSelectedTextUnderline()
+                },
+                IconCell(symbol: "strikethrough", on: text.strikethrough, help: "Strikethrough") {
+                    host.toggleSelectedTextStrikethrough()
+                },
+            ])
+
+            // The system colour panel is live: it commits on every sample it
+            // sends, so a slow drag through it spends an undo entry per sample.
+            // Same-colour writes cost nothing (the core drops an edit that
+            // changes nothing), which takes the worst of it off.
+            colorWell("Text Colour", argb: text.color) {
+                host.setSelectedTextColor(argb: $0)
+            }
+
+            joinedIcons([
+                IconCell(
+                    symbol: "text.alignleft",
+                    on: text.align == TextAlign.start,
+                    help: "Align Left"
+                ) { host.setSelectedTextAlign(align: TextAlign.start) },
+                IconCell(
+                    symbol: "text.aligncenter",
+                    on: text.align == TextAlign.center,
+                    help: "Align Centre"
+                ) { host.setSelectedTextAlign(align: TextAlign.center) },
+                IconCell(
+                    symbol: "text.alignright",
+                    on: text.align == TextAlign.end,
+                    help: "Align Right"
+                ) { host.setSelectedTextAlign(align: TextAlign.end) },
+            ])
+        }
+    }
+
+    /// How far apart the lines sit, as a multiple of the type size. Collapsed,
+    /// the header says the multiple, which is the whole of what is in here.
+    func spacingSection(_ text: TextFormat, _ ui: Chrome) -> some View {
+        disclosure("Spacing", ui) {
+            Text(String(format: "%.2f", text.lineHeight))
+                .font(.system(size: Inspect.text))
+                .foregroundStyle(palette.inspectorCaption)
+        } body: {
+            HStack(spacing: 8) {
+                rowLabel("Lines")
+                Spacer(minLength: 0)
+                ValueField(
+                    label: "",
                     value: text.lineHeight,
                     palette: palette,
-                    decimals: 2
+                    decimals: 2,
+                    step: 0.1,
+                    minimum: 0.5
                 ) { host.setSelectedTextLineHeight(lineHeight: Float($0)) }
-                .help("Line Spacing")
+                .frame(width: 92)
             }
+        }
+    }
 
+    /// What marks each paragraph. Collapsed, the header names the kind.
+    func listsSection(_ text: TextFormat, _ ui: Chrome) -> some View {
+        disclosure("Lists", ui) {
+            Text(Self.listTitles[Self.listIndex(text.list)])
+                .font(.system(size: Inspect.text))
+                .foregroundStyle(palette.inspectorCaption)
+        } body: {
             stylePopup(Self.listTitles, selected: Self.listIndex(text.list)) { index in
                 host.setSelectedTextList(style: Self.lists[index])
             }
-
-            StringField(placeholder: "Link", value: text.link, palette: palette) {
-                host.setSelectedTextLink(link: $0.isEmpty ? nil : $0)
-            }
         }
     }
 
-    /// One alignment icon. The row it sits in is the same raised well the
-    /// background segments use, so the two read as the same control.
-    func alignSegment(_ symbol: String, on: TextAlign, is value: TextAlign) -> some View {
-        let selected = on == value
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-        return Button { host.setSelectedTextAlign(align: value) } label: {
-            Image(systemName: symbol)
-                .font(.system(size: 11))
-                .foregroundStyle(selected ? palette.accentText : palette.subtle)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    selected ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
-                    in: shape
-                )
-                .contentShape(shape)
+    /// Where a text box takes the show when it is clicked, which is the text
+    /// box's own link rather than the element link the other kinds carry.
+    func textLinkRow(_ text: TextFormat) -> some View {
+        StringField(placeholder: "Link", value: text.link, palette: palette) {
+            host.setSelectedTextLink(link: $0.isEmpty ? nil : $0)
         }
-        .buttonStyle(.plain)
-    }
-
-    /// B/I/U/S: a raised square that fills with the accent while it is on.
-    func styleToggle(
-        _ symbol: String,
-        on: Bool,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-        return Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11.5))
-                .foregroundStyle(on ? palette.accentText : palette.ctrlText)
-                .frame(maxWidth: .infinity)
-                .frame(height: 22)
-                .background(
-                    on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(palette.ctrl),
-                    in: shape
-                )
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-        .help(help)
     }
 
     /// An AppKit popup button over a fixed list. Indices rather than the Kotlin
@@ -336,15 +405,42 @@ extension EditorView {
         selected: Int,
         onPick: @escaping (Int) -> Void
     ) -> some View {
-        Picker("", selection: Binding(get: { selected }, set: onPick)) {
-            ForEach(Array(titles.enumerated()), id: \.offset) { index, title in
-                Text(title).tag(index)
-            }
+        let entries = titles.enumerated().map { index, title in
+            MenuEntry(title: title) { onPick(index) }
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
-        .controlSize(.small)
-        .tint(palette.accent)
+        return PopUpButton(entries: entries) {
+            popupFace(titles.indices.contains(selected) ? titles[selected] : "")
+        }
+    }
+
+    /// A popup's face: the pick at the left, the up/down chevron pair at the
+    /// right, in a grey filled rounded rect at control height.
+    func popupFace(_ title: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Inspect.radius, style: .continuous)
+        return HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: Inspect.text))
+                .foregroundStyle(palette.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 2)
+            chevronPair
+        }
+        .padding(.horizontal, 9)
+        .frame(maxWidth: .infinity)
+        .frame(height: Inspect.control)
+        .background(palette.inspectorControl, in: shape)
+        .contentShape(shape)
+    }
+
+    /// The stacked pair every popup and stepper wears at its right.
+    var chevronPair: some View {
+        VStack(spacing: 1) {
+            Image(systemName: "chevron.up")
+            Image(systemName: "chevron.down")
+        }
+        .font(.system(size: 8, weight: .heavy))
+        .foregroundStyle(palette.inspectorTitle)
     }
 
     /// Generic families only, the document model's: nothing bundles font files
@@ -444,132 +540,191 @@ extension EditorView {
     /// sample it sends, so a slow drag through it spends an undo entry per
     /// sample. The text colour takes the same deal, with the same mitigation:
     /// the core drops a write that changes nothing.
-    @ViewBuilder func shapeSection(
-        _ shape: ShapeFormat,
-        styles: [ObjectStyleChoice]
-    ) -> some View {
+    @ViewBuilder func shapeSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            styleStrip(styles)
+            // A line is all stroke: there is no inside of it to paint.
+            if !shape.isLine {
+                fillSection(shape, ui)
+                palette.divider.frame(height: 1)
+            }
+
+            borderSection(shape, ui)
 
             palette.divider.frame(height: 1)
 
-            sectionLabel("Shape")
-
-            // Switching to a kind the shape is not wearing commits it there and
-            // then, off the values it came back with, so the wells below always
-            // have something to show and never have to invent a colour.
-            HStack(spacing: 2) {
-                segment("Color", on: !shape.hasGradient) { host.clearSelectedShapeGradient() }
-                segment("Gradient", on: shape.hasGradient) {
-                    setGradient(shape)
-                }
-            }
-            .padding(2)
-            .frame(height: 26)
-            .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-            if shape.hasGradient {
-                HStack(spacing: 8) {
-                    colorWell("Start", argb: shape.gradientStart) { setGradient(shape, start: $0) }
-                    colorWell("End", argb: shape.gradientEnd) { setGradient(shape, end: $0) }
-                    Spacer(minLength: 0)
-                    ValueField(label: "\u{00B0}", value: shape.gradientAngle, palette: palette) {
-                        setGradient(shape, angle: $0)
-                    }
-                    .frame(width: 74)
-                    .help("Gradient Angle")
-                }
-            } else {
-                colorWell("Fill", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
-            }
-
-            HStack(spacing: 8) {
-                colorWell("Border", argb: shape.strokeColor) {
-                    host.setSelectedShapeStroke(color: $0, width: Float(shape.strokeWidth))
-                }
-                Spacer(minLength: 0)
-                ValueField(
-                    label: "",
-                    value: shape.strokeWidth,
-                    palette: palette,
-                    unit: "pt",
-                    decimals: 1
-                ) { host.setSelectedShapeStroke(color: shape.strokeColor, width: Float($0)) }
-                .frame(width: 74)
-                .help("Border Width")
-            }
-
-            checkRow("Shadow", on: shape.hasShadow) {
-                host.setSelectedShapeShadow(
-                    enabled: !shape.hasShadow,
-                    color: shape.shadowColor,
-                    blur: Float(shape.shadowBlur)
-                )
-            }
-
-            if shape.hasShadow {
-                HStack(spacing: 8) {
-                    colorWell("Colour", argb: shape.shadowColor) {
-                        host.setSelectedShapeShadow(
-                            enabled: true,
-                            color: $0,
-                            blur: Float(shape.shadowBlur)
-                        )
-                    }
-                    Spacer(minLength: 0)
-                    ValueField(label: "", value: shape.shadowBlur, palette: palette, unit: "pt") {
-                        host.setSelectedShapeShadow(
-                            enabled: true,
-                            color: shape.shadowColor,
-                            blur: Float($0)
-                        )
-                    }
-                    .frame(width: 74)
-                    .help("Blur")
-                }
-            }
+            shadowSection(shape, ui)
 
             // A corner radius means nothing to any other kind, so the field is
             // not there to be typed into rather than there and inert.
             if shape.isRectangle {
+                palette.divider.frame(height: 1)
+
                 HStack(spacing: 8) {
-                    Text("Corner")
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.subtle)
+                    rowLabel("Corner")
                     Spacer(minLength: 0)
-                    ValueField(label: "", value: shape.cornerRadius, palette: palette, unit: "pt") {
-                        host.setSelectedShapeCornerRadius(radius: Float($0))
-                    }
-                    .frame(width: 74)
+                    ValueField(
+                        label: "",
+                        value: shape.cornerRadius,
+                        palette: palette,
+                        unit: "pt",
+                        minimum: 0
+                    ) { host.setSelectedShapeCornerRadius(radius: Float($0)) }
+                    .frame(width: 92)
                 }
             }
+        }
+    }
 
-            // Only a line has ends to cap, and a line has no label: it is all
-            // stroke, with nothing to write on.
-            if shape.isLine {
-                HStack(spacing: 8) {
-                    checkRow("Start", on: shape.startArrow) {
-                        host.setSelectedShapeArrows(start: !shape.startArrow, end: shape.endArrow)
-                    }
-                    checkRow("End", on: shape.endArrow) {
-                        host.setSelectedShapeArrows(start: shape.startArrow, end: !shape.endArrow)
-                    }
+    /// What paints the shape: one colour, or a two-stop gradient. Switching to a
+    /// kind the shape is not wearing commits it there and then, off the values it
+    /// came back with, so the wells below always have something to show and never
+    /// have to invent a colour.
+    func fillSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
+        disclosure("Fill", ui) {
+            fillPreview(shape)
+        } body: {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 2) {
+                    segment("Color", on: !shape.hasGradient) { host.clearSelectedShapeGradient() }
+                    segment("Gradient", on: shape.hasGradient) { setGradient(shape) }
                 }
-            } else {
-                StringField(placeholder: "Label", value: shape.label, palette: palette) {
-                    host.setSelectedShapeLabel(label: $0)
-                }
+                .padding(2)
+                .frame(height: Inspect.control + 4)
+                .background(palette.inspectorControl, in: Capsule())
 
+                if shape.hasGradient {
+                    HStack(spacing: 8) {
+                        colorWell("Start", argb: shape.gradientStart) {
+                            setGradient(shape, start: $0)
+                        }
+                        Spacer(minLength: 0)
+                        colorWell("End", argb: shape.gradientEnd) { setGradient(shape, end: $0) }
+                    }
+                    HStack(spacing: 8) {
+                        rowLabel("Angle")
+                        Spacer(minLength: 0)
+                        ValueField(label: "", value: shape.gradientAngle, palette: palette, unit: "\u{00B0}") {
+                            setGradient(shape, angle: $0)
+                        }
+                        .frame(width: 92)
+                    }
+                } else {
+                    colorWell("Colour", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
+                }
+            }
+        }
+    }
+
+    /// What outlines the shape, which for a line is the line itself, so its two
+    /// arrowheads sit in here rather than in a section of their own.
+    func borderSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
+        disclosure("Border", ui, title: shape.isLine ? "Stroke" : "Border") {
+            borderPreview(shape)
+        } body: {
+            VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
-                    Text("Label Size")
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.subtle)
+                    colorWell("Colour", argb: shape.strokeColor) {
+                        host.setSelectedShapeStroke(color: $0, width: Float(shape.strokeWidth))
+                    }
                     Spacer(minLength: 0)
-                    ValueField(label: "", value: shape.labelSize, palette: palette, unit: "pt") {
-                        host.setSelectedShapeLabelSize(size: Float($0))
-                    }
-                    .frame(width: 74)
+                    ValueField(
+                        label: "",
+                        value: shape.strokeWidth,
+                        palette: palette,
+                        unit: "pt",
+                        decimals: 1,
+                        minimum: 0
+                    ) { host.setSelectedShapeStroke(color: shape.strokeColor, width: Float($0)) }
+                    .frame(width: 92)
+                    .help("Border Width")
                 }
+
+                if shape.isLine {
+                    HStack(spacing: 8) {
+                        checkRow("Start", on: shape.startArrow) {
+                            host.setSelectedShapeArrows(
+                                start: !shape.startArrow,
+                                end: shape.endArrow
+                            )
+                        }
+                        checkRow("End", on: shape.endArrow) {
+                            host.setSelectedShapeArrows(
+                                start: shape.startArrow,
+                                end: !shape.endArrow
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// What the shape drops behind it. The checkbox is inside rather than on the
+    /// header: the header's job is to say whether there is one, which the
+    /// preview does without anything to click.
+    func shadowSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
+        disclosure("Shadow", ui) {
+            shadowPreview(shape)
+        } body: {
+            VStack(alignment: .leading, spacing: 9) {
+                checkRow("Shadow", on: shape.hasShadow) {
+                    host.setSelectedShapeShadow(
+                        enabled: !shape.hasShadow,
+                        color: shape.shadowColor,
+                        blur: Float(shape.shadowBlur)
+                    )
+                }
+
+                if shape.hasShadow {
+                    HStack(spacing: 8) {
+                        colorWell("Colour", argb: shape.shadowColor) {
+                            host.setSelectedShapeShadow(
+                                enabled: true,
+                                color: $0,
+                                blur: Float(shape.shadowBlur)
+                            )
+                        }
+                        Spacer(minLength: 0)
+                        ValueField(
+                            label: "",
+                            value: shape.shadowBlur,
+                            palette: palette,
+                            unit: "pt",
+                            minimum: 0
+                        ) {
+                            host.setSelectedShapeShadow(
+                                enabled: true,
+                                color: shape.shadowColor,
+                                blur: Float($0)
+                            )
+                        }
+                        .frame(width: 92)
+                        .help("Blur")
+                    }
+                }
+            }
+        }
+    }
+
+    /// A shape's label and the size it is set in: what the Text segment shows
+    /// for a shape, which has a word written on it rather than a text style.
+    func shapeTextSection(_ shape: ShapeFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            StringField(placeholder: "Label", value: shape.label, palette: palette) {
+                host.setSelectedShapeLabel(label: $0)
+            }
+
+            HStack(spacing: 8) {
+                rowLabel("Label Size")
+                Spacer(minLength: 0)
+                ValueField(
+                    label: "",
+                    value: shape.labelSize,
+                    palette: palette,
+                    unit: "pt",
+                    minimum: 1
+                ) { host.setSelectedShapeLabelSize(size: Float($0)) }
+                .frame(width: 92)
             }
         }
     }
@@ -582,17 +737,21 @@ extension EditorView {
     /// out by appearance rather than by a stored id: a shape edited away from a
     /// style is wearing none, and the strip says so by ringing nothing.
     func styleStrip(_ styles: [ObjectStyleChoice]) -> some View {
-        let column = GridItem(.adaptive(minimum: 28, maximum: 28), spacing: 8, alignment: .leading)
-        return VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Styles")
+        // Six to a page, three across, the way Keynote pages its grid. Which
+        // page is showing is the pager's own business: which looks the deck
+        // holds is the document's, which six are on screen is not.
+        let column = GridItem(.flexible(), spacing: 8)
 
-            LazyVGrid(columns: [column], alignment: .leading, spacing: 8) {
-                ForEach(styles) { style in
-                    styleSwatch(style)
+        return VStack(spacing: 8) {
+            StylePager(pages: max(1, Int(ceil(Double(styles.count) / 6))), title: "Shape Styles", palette: palette) { page in
+                LazyVGrid(columns: Array(repeating: column, count: 3), spacing: 8) {
+                    ForEach(Array(styles.dropFirst(page * 6).prefix(6))) { style in
+                        styleSwatch(style)
+                    }
                 }
             }
 
-            panelButton("Save Style...", symbol: "square.and.arrow.down") {
+            panelButton("Save Style...") {
                 saveStyleText = ""
                 savingStyle = true
             }
@@ -622,17 +781,20 @@ extension EditorView {
 
     /// One saved look, painted: the fill or its gradient, the border over it, and
     /// a soft drop shadow when the style carries one. The name is the tooltip,
-    /// since a 28pt square has nowhere to write it.
+    /// since a swatch has nowhere to write it.
     ///
     /// The corner is clamped rather than scaled: a swatch has no shape's width to
     /// scale a radius against, and square against rounded is the part of it worth
     /// showing at this size.
     func styleSwatch(_ style: ObjectStyleChoice) -> some View {
-        let shape = RoundedRectangle(cornerRadius: min(style.cornerRadius, 8), style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
         return Button { host.applyObjectStyle(styleId: style.id) } label: {
             shape
                 .fill(styleFill(style))
-                .frame(width: 28, height: 28)
+                // Landscape, filling its share of the width: a style swatch is
+                // a patch of the look, not a shape. One frame, not two: a
+                // height frame over a width frame proposes it no width.
+                .frame(maxWidth: .infinity, minHeight: 47, maxHeight: 47)
                 .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
                 .overlay {
                     shape.inset(by: 0.5).stroke(
@@ -693,10 +855,13 @@ extension EditorView {
         argb: Int64,
         onPick: @escaping (Int64) -> Void
     ) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(palette.subtle)
+        HStack(spacing: 8) {
+            if !label.isEmpty {
+                Text(label)
+                    .font(.system(size: Inspect.text))
+                    .foregroundStyle(palette.text)
+            }
+            Spacer(minLength: 0)
             ColorPicker(
                 "",
                 selection: Binding(
@@ -706,7 +871,15 @@ extension EditorView {
                 supportsOpacity: true
             )
             .labelsHidden()
-            .controlSize(.small)
+            .frame(width: Inspect.wellWidth, height: Inspect.wellHeight)
+            // A white swatch on a near-white panel needs an edge to be a
+            // swatch at all, which is what Keynote's well has.
+            .overlay {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .inset(by: 0.5)
+                    .stroke(palette.hairline, lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
         }
     }
 
@@ -722,23 +895,22 @@ extension EditorView {
     /// document's to say, the way the shape catalog's rows are.
     func codeSection(_ code: CodeFormat) -> some View {
         let languages = host.codeLanguages()
-        let themes = host.codeThemes()
         return VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Code")
-
             stylePopup(languages, selected: Self.languageIndex(code.language, in: languages)) {
                 index in host.setCodeLanguage(language: languages[index])
             }
 
             HStack(spacing: 8) {
-                stylePopup(themes, selected: themes.firstIndex(of: code.theme) ?? 0) { index in
-                    host.setCodeTheme(theme: themes[index])
-                }
-
-                ValueField(label: "", value: code.size, palette: palette, unit: "pt") {
-                    host.setCodeFontSize(size: Float($0))
-                }
-                .frame(width: 78)
+                rowLabel("Size")
+                Spacer(minLength: 0)
+                ValueField(
+                    label: "",
+                    value: code.size,
+                    palette: palette,
+                    unit: "pt",
+                    minimum: 1
+                ) { host.setCodeFontSize(size: Float($0)) }
+                .frame(width: 92)
             }
 
             checkRow("Line Numbers", on: code.showLineNumbers) {
@@ -747,6 +919,20 @@ extension EditorView {
 
             checkRow("Wrap", on: code.wrap) {
                 host.setCodeWrap(enabled: !code.wrap)
+            }
+        }
+    }
+
+    /// The palette a code block is painted in, which is its look rather than its
+    /// content, so it sits in Style while the language and the gutter sit in the
+    /// Code segment.
+    func codeThemeSection(_ code: CodeFormat) -> some View {
+        let themes = host.codeThemes()
+        return VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Theme")
+
+            stylePopup(themes, selected: themes.firstIndex(of: code.theme) ?? 0) { index in
+                host.setCodeTheme(theme: themes[index])
             }
         }
     }
@@ -768,22 +954,34 @@ extension EditorView {
     /// goes to the primary alone.
     func terminalSection(_ terminal: TerminalFormat) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Terminal")
-
             StringField(placeholder: "Title", value: terminal.title, palette: palette) {
                 host.setTerminalTitle(title: $0)
             }
 
-            HStack(spacing: 8) {
-                StringField(placeholder: "Prompt", value: terminal.prompt, palette: palette) {
-                    host.setTerminalPrompt(prompt: $0)
-                }
-
-                ValueField(label: "", value: terminal.size, palette: palette, unit: "pt") {
-                    host.setTerminalFontSize(size: Float($0))
-                }
-                .frame(width: 78)
+            StringField(placeholder: "Prompt", value: terminal.prompt, palette: palette) {
+                host.setTerminalPrompt(prompt: $0)
             }
+
+            HStack(spacing: 8) {
+                rowLabel("Size")
+                Spacer(minLength: 0)
+                ValueField(
+                    label: "",
+                    value: terminal.size,
+                    palette: palette,
+                    unit: "pt",
+                    minimum: 1
+                ) { host.setTerminalFontSize(size: Float($0)) }
+                .frame(width: 92)
+            }
+        }
+    }
+
+    /// Whether the terminal wears its title bar, which is the one thing about it
+    /// that is a look rather than what it says.
+    func terminalAppearanceSection(_ terminal: TerminalFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Appearance")
 
             checkRow("Show Title Bar", on: terminal.showTitleBar) {
                 host.setTerminalTitleBar(enabled: !terminal.showTitleBar)
@@ -798,16 +996,25 @@ extension EditorView {
     /// section. Nothing here touches the source, which is content and is typed
     /// on the canvas.
     func diagramSection(_ diagram: DiagramFormat) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Diagram")
+        HStack(spacing: 8) {
+            rowLabel("Label Size")
+            Spacer(minLength: 0)
+            ValueField(
+                label: "",
+                value: diagram.size,
+                palette: palette,
+                unit: "pt",
+                minimum: 1
+            ) { host.setDiagramFontSize(size: Float($0)) }
+            .frame(width: 92)
+        }
+    }
 
-            HStack(spacing: 8) {
-                ValueField(label: "", value: diagram.size, palette: palette, unit: "pt") {
-                    host.setDiagramFontSize(size: Float($0))
-                }
-                .frame(width: 78)
-                Spacer(minLength: 0)
-            }
+    /// The four colours a diagram is drawn in: its look, so Style rather than
+    /// the Diagram segment, which holds the one thing left that is not a colour.
+    func diagramColorsSection(_ diagram: DiagramFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Colours")
 
             HStack(spacing: 8) {
                 colorWell("Node Fill", argb: diagram.nodeFill) {
@@ -837,19 +1044,27 @@ extension EditorView {
     /// colour it is drawn in. Same contract as the Diagram section. Nothing
     /// here touches the latex, which is content and is typed on the canvas.
     func equationSection(_ equation: EquationFormat) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Equation")
+        HStack(spacing: 8) {
+            rowLabel("Size")
+            Spacer(minLength: 0)
+            ValueField(
+                label: "",
+                value: equation.size,
+                palette: palette,
+                unit: "pt",
+                minimum: 1
+            ) { host.setEquationFontSize(size: Float($0)) }
+            .frame(width: 92)
+        }
+    }
 
-            HStack(spacing: 8) {
-                ValueField(label: "", value: equation.size, palette: palette, unit: "pt") {
-                    host.setEquationFontSize(size: Float($0))
-                }
-                .frame(width: 78)
-                Spacer(minLength: 0)
-                colorWell("Color", argb: equation.color) {
-                    host.setEquationColor(argb: $0)
-                }
-            }
+    /// What colour the expression is drawn in: its look, so Style, the way the
+    /// diagram's colours are.
+    func equationColorSection(_ equation: EquationFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Colour")
+
+            colorWell("Colour", argb: equation.color) { host.setEquationColor(argb: $0) }
         }
     }
 
@@ -865,8 +1080,6 @@ extension EditorView {
     /// picture to adjust and no background to rub out.
     @ViewBuilder func imageSection(_ image: ImageFormat, _ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Image")
-
             // None first, then the outlines, so the popup's position is Kotlin's
             // index plus one and picking None is index -1: no mask at all.
             stylePopup(["None"] + ui.maskKinds, selected: image.maskKind + 1) { index in
@@ -1004,24 +1217,33 @@ extension EditorView {
         preview: @escaping (Double) -> Void,
         commit: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 5) {
             Text(label)
-                .font(.system(size: 11.5))
-                .foregroundStyle(palette.subtle)
-                .frame(width: 66, alignment: .leading)
+                .font(.system(size: Inspect.text))
+                .foregroundStyle(palette.text)
 
-            Slider(
-                value: Binding(get: { value }, set: preview),
-                in: range,
-                onEditingChanged: { editing in if !editing { commit() } }
-            )
-            .controlSize(.small)
-            .tint(palette.accent)
+            HStack(spacing: 8) {
+                Slider(
+                    value: Binding(get: { value }, set: preview),
+                    in: range,
+                    onEditingChanged: { editing in if !editing { commit() } }
+                )
+                .controlSize(.small)
+                .tint(palette.accent)
 
-            Text("\(Int((value * 100).rounded()))%")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(palette.ctrlText)
-                .frame(width: 40, alignment: .trailing)
+                ValueField(
+                    label: "",
+                    value: (value * 100).rounded(),
+                    palette: palette,
+                    unit: "%",
+                    minimum: range.lowerBound * 100,
+                    maximum: range.upperBound * 100
+                ) {
+                    preview($0 / 100)
+                    commit()
+                }
+                .frame(width: Inspect.field + Inspect.stepper + 5)
+            }
         }
     }
 
@@ -1046,8 +1268,6 @@ extension EditorView {
     /// the primary alone: there is no selection to spread a picture across.
     @ViewBuilder func gallerySection(_ gallery: GalleryFormat) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Gallery")
-
             galleryStrip(gallery)
 
             HStack(spacing: 6) {
@@ -1234,30 +1454,6 @@ extension EditorView {
     /// How big a picture in the strip is drawn, in points.
     static let galleryThumb: CGFloat = 48
 
-    func positionSection(_ element: Selection) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Position & Size")
-
-            HStack(spacing: 8) {
-                ValueField(label: "X", value: element.x, palette: palette) {
-                    setFrame(element, x: $0)
-                }
-                ValueField(label: "Y", value: element.y, palette: palette) {
-                    setFrame(element, y: $0)
-                }
-            }
-
-            HStack(spacing: 8) {
-                ValueField(label: "W", value: element.width, palette: palette) {
-                    setFrame(element, width: $0)
-                }
-                ValueField(label: "H", value: element.height, palette: palette) {
-                    setFrame(element, height: $0)
-                }
-            }
-        }
-    }
-
     /// A frame commits whole, so a field that edits one number sends the other
     /// three back as they stand.
     func setFrame(
@@ -1275,31 +1471,6 @@ extension EditorView {
         )
     }
 
-    func rotateSection(_ element: Selection) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Rotate")
-
-            HStack(spacing: 8) {
-                ValueField(label: "\u{00B0}", value: element.rotation, palette: palette) {
-                    host.setSelectedElementRotation(degrees: Float($0))
-                }
-                .frame(width: 104)
-
-                Spacer(minLength: 0)
-
-                flipButton(
-                    "arrow.left.and.right.righttriangle.left.righttriangle.right",
-                    help: "Flip Horizontally"
-                ) { host.flipSelectedElement(axis: FlipAxis.horizontal) }
-
-                flipButton(
-                    "arrow.up.and.down.righttriangle.up.righttriangle.down",
-                    help: "Flip Vertically"
-                ) { host.flipSelectedElement(axis: FlipAxis.vertical) }
-            }
-        }
-    }
-
     func flipButton(
         _ symbol: String,
         help: String,
@@ -1308,10 +1479,10 @@ extension EditorView {
         let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
         return Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12))
-                .foregroundStyle(palette.ctrlText)
-                .frame(width: 32, height: 22)
-                .background(palette.ctrl, in: shape)
+                .font(.system(size: 13))
+                .foregroundStyle(palette.inspectorTitle)
+                .frame(width: 34, height: Inspect.control)
+                .background(palette.inspectorControl, in: shape)
                 .contentShape(shape)
         }
         .buttonStyle(.plain)
@@ -1322,7 +1493,7 @@ extension EditorView {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Opacity")
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Slider(
                     value: Binding(
                         get: { element.opacity },
@@ -1340,89 +1511,72 @@ extension EditorView {
                 .controlSize(.small)
                 .tint(palette.accent)
 
-                Text("\(Int((element.opacity * 100).rounded()))%")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(palette.ctrlText)
-                    .frame(width: 40, alignment: .trailing)
+                // Percent in the field, a fraction in the document: the two
+                // meet here, which is the only place anyone says "100%".
+                ValueField(
+                    label: "",
+                    value: (element.opacity * 100).rounded(),
+                    palette: palette,
+                    unit: "%",
+                    minimum: 0,
+                    maximum: 100
+                ) { host.setSelectedElementOpacity(opacity: Float($0 / 100), commit: true) }
+                .frame(width: Inspect.field + Inspect.stepper + 5)
             }
         }
     }
 
-    var arrangeSection: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Arrange")
-
-            HStack(spacing: 8) {
-                arrangeButton("Bring Forward", ZOrderMove.forward)
-                arrangeButton("Send Backward", ZOrderMove.backward)
-            }
-
-            HStack(spacing: 8) {
-                arrangeButton("Bring to Front", ZOrderMove.tofront)
-                arrangeButton("Send to Back", ZOrderMove.toback)
-            }
-        }
-    }
-
-    func arrangeButton(_ label: String, _ move: ZOrderMove) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-        return Button { host.reorderSelectedElement(move: move) } label: {
-            Text(label)
-                .font(.system(size: 11.5))
-                .foregroundStyle(palette.ctrlText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
-                .frame(height: 22)
-                .background(palette.ctrl, in: shape)
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// Full width and always live: it is the only way back into a locked element.
-    func lockButton(_ element: Selection) -> some View {
-        panelButton(
-            element.locked ? "Unlock" : "Lock",
-            symbol: element.locked ? "lock.fill" : "lock.open"
-        ) { host.toggleSelectedElementLock() }
-    }
-
-    /// The panel's raised full-width button: the lock, and the group pair above it.
+    /// The panel's raised full-width button: the Arrange pairs, and the two
+    /// verbs at the foot of slide formatting.
     func panelButton(
         _ label: String,
-        symbol: String,
+        symbol: String = "",
         action: @escaping () -> Void
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        return Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: symbol)
-                    .font(.system(size: 11))
-                Text(label)
-                    .font(.system(size: 12.5))
-            }
-            .foregroundStyle(palette.ctrlText)
-            .frame(maxWidth: .infinity)
-            .frame(height: 26)
-            .background(palette.buttonFill, in: shape)
-            .contentShape(shape)
-        }
-        .buttonStyle(.plain)
+        Button(action: action) { panelButtonFace(label) }
+            .buttonStyle(.plain)
     }
 
-    /// A small bordered value field: whole document units, mono, committed on
-    /// Enter or on losing focus. Anything that is not a number reverts to what
-    /// the document holds, so a half-typed field cannot push nonsense in.
-    private struct ValueField: View {
+    /// The face of one: a centred label in a grey filled rounded rect. No
+    /// glyph, the way Keynote draws Edit Slide Layout and Build Order, and the
+    /// same fill the popups wear so a column of them reads as one material.
+    func panelButtonFace(_ label: String) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Inspect.radius, style: .continuous)
+        return Text(label)
+            .font(.system(size: Inspect.text))
+            .foregroundStyle(palette.text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+            .frame(maxWidth: .infinity)
+            .frame(height: Inspect.button)
+            .background(palette.inspectorControl, in: shape)
+            .contentShape(shape)
+    }
+
+    /// A small bordered value field with its unit inside it and a stepper beside
+    /// it: mono, committed on Enter or on losing focus, the way Keynote's are.
+    /// Anything that is not a number reverts to what the document holds, so a
+    /// half-typed field cannot push nonsense in.
+    ///
+    /// The stepper commits through `onCommit` too, one step per click, so typing
+    /// 40 and clicking up twice are the same three edits by two routes. An arrow
+    /// at a bound is dead rather than clamping silently.
+    struct ValueField: View {
         let label: String
         let value: Double
         let palette: Palette
-        /// Drawn after the field, for a number that means something ("pt").
+        /// Drawn inside the field, after the number ("pt", "%", "\u{00B0}", "s", "\u{00D7}").
         var unit: String? = nil
         /// 0 is the document-unit default: whole numbers, the way a frame reads.
         /// Line spacing is a multiplier, so it keeps its fraction.
         var decimals: Int = 0
+        /// What one stepper click is worth. A point is 1; the fractional units
+        /// (seconds, a line-spacing multiple, a scale) step a tenth.
+        var step: Double = 1
+        /// Where the arrows stop, for the numbers with a floor or a ceiling the
+        /// core would clamp to anyway.
+        var minimum: Double? = nil
+        var maximum: Double? = nil
         let onCommit: (Double) -> Void
 
         @State private var text: String = ""
@@ -1432,38 +1586,93 @@ extension EditorView {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
         }
 
+        /// A field is as wide as it is given room for, so a caller that wants
+        /// Keynote's 60pt says so; the stepper is always beside it.
+        /// Keynote writes "5 pt" but "100%" and "270\u{00B0}": the units that
+        /// are words take a space, the ones that are signs do not.
+        static func unitGap(_ unit: String?) -> CGFloat {
+            guard let unit else { return 0 }
+            return unit == "%" || unit == "\u{00B0}" ? 0 : 3
+        }
+
+        private var canStepUp: Bool { maximum.map { value < $0 } ?? true }
+        private var canStepDown: Bool { minimum.map { value > $0 } ?? true }
+
         var body: some View {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if !label.isEmpty {
                     Text(label)
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.subtle)
-                        .frame(width: 11, alignment: .leading)
+                        .font(.system(size: Inspect.text))
+                        .foregroundStyle(palette.text)
                 }
 
-                TextField("", text: $text)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(palette.ctrlText)
-                    .multilineTextAlignment(.trailing)
-                    .focused($focused)
-                    .padding(.horizontal, 7)
-                    .frame(height: 22)
-                    .background(palette.ctrl, in: shape)
-                    .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
-                    .onSubmit { commit() }
-                    .onChange(of: focused) { _, now in if !now { commit() } }
+                // The value and its unit share the field, hard against its
+                // right edge: "5 pt", "100%", "270\u{00B0}".
+                HStack(spacing: Self.unitGap(unit)) {
+                    TextField("", text: $text)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: Inspect.text))
+                        .foregroundStyle(palette.text)
+                        .multilineTextAlignment(.trailing)
+                        .focused($focused)
+                        .onSubmit { commit() }
+                        .onChange(of: focused) { _, now in if !now { commit() } }
 
-                if let unit {
-                    Text(unit)
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.subtle)
+                    if let unit {
+                        Text(unit)
+                            .font(.system(size: Inspect.text))
+                            .foregroundStyle(palette.text)
+                    }
                 }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity)
+                .frame(height: Inspect.control)
+                .background(palette.inspectorField, in: shape)
+
+                stepper
             }
             .onAppear { text = formatted(value) }
             // A canvas drag or an undo moves the element under the field. The
             // one being typed in is left alone until it loses focus.
             .onChange(of: value) { _, latest in if !focused { text = formatted(latest) } }
+        }
+
+        /// The two arrows, in their own well outside the field's right edge.
+        private var stepper: some View {
+            VStack(spacing: 1) {
+                arrow("chevron.up", enabled: canStepUp) { stepBy(step) }
+                arrow("chevron.down", enabled: canStepDown) { stepBy(-step) }
+            }
+            .frame(width: Inspect.stepper, height: Inspect.control)
+            .background(palette.inspectorControl, in: shape)
+        }
+
+        /// Keynote's arrows are heavy and dark, not hairlines: at 10pt they are
+        /// the only thing in the row you can hit without looking.
+        private func arrow(
+            _ symbol: String,
+            enabled: Bool,
+            action: @escaping () -> Void
+        ) -> some View {
+            Button(action: action) {
+                Image(systemName: symbol)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(enabled ? palette.inspectorTitle : palette.faint)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!enabled)
+        }
+
+        /// One click, off whatever the document holds now rather than off the
+        /// field's text: a half-typed field is not what the arrow steps from.
+        private func stepBy(_ delta: Double) {
+            var stepped = value + delta
+            if let minimum { stepped = max(stepped, minimum) }
+            if let maximum { stepped = min(stepped, maximum) }
+            text = formatted(stepped)
+            onCommit(stepped)
         }
 
         private func commit() {
@@ -1484,7 +1693,7 @@ extension EditorView {
     /// A line of text the document holds as one string: the text box's link, the
     /// shape's label. Committed on Enter or on losing focus, like the value
     /// fields; empty commits empty, and what that means is the setter's to say.
-    private struct StringField: View {
+    struct StringField: View {
         let placeholder: String
         let value: String
         let palette: Palette
@@ -1529,7 +1738,7 @@ extension EditorView {
     /// The dragged value is cleared by the state coming back rather than by the
     /// release, so the thumb never flicks back to where it started for the frame
     /// between the two.
-    private struct DurationSlider: View {
+    struct DurationSlider: View {
         let value: Double
         let palette: Palette
         let onCommit: (Double) -> Void
@@ -1537,7 +1746,7 @@ extension EditorView {
         @State private var dragged: Double? = nil
 
         var body: some View {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Slider(
                     value: Binding(get: { dragged ?? value }, set: { dragged = $0 }),
                     in: 0.1...3,
@@ -1549,53 +1758,36 @@ extension EditorView {
                 .controlSize(.small)
                 .tint(palette.accent)
 
-                Text(String(format: "%.1fs", dragged ?? value))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(palette.ctrlText)
-                    .frame(width: 40, alignment: .trailing)
+                EditorView.ValueField(
+                    label: "",
+                    value: dragged ?? value,
+                    palette: palette,
+                    unit: "s",
+                    decimals: 1,
+                    step: 0.1,
+                    minimum: 0.1,
+                    maximum: 3,
+                    onCommit: onCommit
+                )
+                .frame(width: Inspect.field + Inspect.stepper + 5)
             }
             .onChange(of: value) { _, _ in dragged = nil }
         }
     }
 
-    // MARK: Animate panel
-
-    /// The slide's build order, and under it the transition, which by Keynote's
-    /// convention is the one that plays on the way *out* of the slide.
-    ///
-    /// Layout mode shows none of it: a layout is a template for what a slide
-    /// draws, and nothing on it is ever played.
-    @ViewBuilder func animatePanel(_ ui: Chrome) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Layout.panelPadding) {
-                if ui.editingLayouts {
-                    Text("Layouts have no builds or transitions.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(palette.faint)
-                } else {
-                    buildSection(ui)
-                    palette.divider.frame(height: 1)
-                    transitionSection(ui)
-                }
-            }
-            .padding(Layout.panelPadding)
-            .frame(maxWidth: .infinity, alignment: .top)
-        }
-        .scrollContentBackground(.hidden)
-    }
-
     // MARK: Build order
 
-    /// The order the slide's builds play in, the three ways to add one, and the
-    /// editor for whichever row is picked. The picked row is this view's own
-    /// state: a build is not a thing the document can be "on", so which one is
-    /// being edited is the panel's business alone.
-    @ViewBuilder func buildSection(_ ui: Chrome) -> some View {
+    /// The order the slide's builds play in, and the editor for whichever row is
+    /// picked. The picked row is this view's own state: a build is not a thing
+    /// the document can be "on", so which one is being edited is the panel's
+    /// business alone.
+    ///
+    /// The Animate tab swaps its segments for this when Build Order is pressed,
+    /// which is where the pinned button at the foot of the panel leads.
+    @ViewBuilder func buildOrderSection(_ ui: Chrome) -> some View {
         let slideIndex = host.selectedSlideIndex()
 
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Build Order")
-
             // Above the list rather than under it: what the builds do is the
             // question the panel opens with, and playing the slide answers it.
             panelButton("Preview", symbol: "play.rectangle") { startPreview() }
@@ -1608,11 +1800,9 @@ extension EditorView {
                 buildList(ui)
             }
 
-            addBuildButtons(ui)
-
             if let entry = ui.builds.first(where: { $0.index == selectedBuild }) {
                 palette.divider.frame(height: 1)
-                buildEditor(entry, ui)
+                buildControls(entry, ui)
             }
         }
         // The picked row is a place in this slide's order, so it means nothing
@@ -1692,60 +1882,33 @@ extension EditorView {
         }
     }
 
-    /// The three ways a build starts life, on the primary element. Dead with
-    /// nothing selected: a build is always about some element.
-    func addBuildButtons(_ ui: Chrome) -> some View {
-        HStack(spacing: 6) {
-            addBuildButton("Build In", next: ui.builds.count) { host.addBuildIn() }
-            addBuildButton("Build Out", next: ui.builds.count) { host.addBuildOut() }
-            addBuildButton("Action", next: ui.builds.count) { host.addAction() }
-        }
-        .disabled(ui.element == nil)
-        .opacity(ui.element == nil ? 0.45 : 1)
-    }
-
-    /// A new build lands at the end of the order, so [next] is the row the panel
-    /// opens the editor on. It shows up next pass; picking it now is what makes
-    /// adding one and editing it a single gesture.
-    func addBuildButton(
-        _ label: String,
-        next: Int,
-        action: @escaping () -> Void
+    /// How long the picked build takes, what starts it, and what it does to its
+    /// element when it is an action. What it *plays* is not in here: the heading
+    /// above it says the effect and its Change button is where it is picked.
+    ///
+    /// The build order list keeps the popups, since a row there is picked out of
+    /// the whole slide rather than out of one element's segment.
+    @ViewBuilder func buildControls(
+        _ entry: BuildEntry,
+        _ ui: Chrome,
+        withPickers: Bool = true
     ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-        return Button {
-            selectedBuild = next
-            action()
-        } label: {
-            Text(label)
-                .font(.system(size: 11.5))
-                .foregroundStyle(palette.ctrlText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
-                .frame(height: 22)
-                .background(palette.ctrl, in: shape)
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// What the picked build plays, how long it takes and what starts it. An
-    /// action shows what it does to the element instead of an effect, since it
-    /// is not bringing anything on or taking it away.
-    @ViewBuilder func buildEditor(_ entry: BuildEntry, _ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel(entry.isAction ? "Action" : "Effect")
-
             if entry.isAction {
-                stylePopup(ui.actionKinds, selected: entry.actionKindIndex ?? 0) {
-                    commitBuild(entry, actionKindIndex: $0)
+                if withPickers {
+                    sectionLabel("Action")
+                    stylePopup(ui.actionKinds, selected: entry.actionKindIndex ?? 0) {
+                        commitBuild(entry, actionKindIndex: $0)
+                    }
                 }
 
                 actionFields(entry)
             } else {
-                stylePopup(ui.buildEffects, selected: entry.effectIndex) {
-                    commitBuild(entry, effectIndex: $0)
+                if withPickers {
+                    sectionLabel("Effect")
+                    stylePopup(ui.buildEffects, selected: entry.effectIndex) {
+                        commitBuild(entry, effectIndex: $0)
+                    }
                 }
 
                 sectionLabel("Delivery")
@@ -1773,8 +1936,8 @@ extension EditorView {
                 }
             }
             .padding(2)
-            .frame(height: 26)
-            .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(height: Inspect.control + 4)
+            .background(palette.inspectorControl, in: Capsule())
 
             // Only a build that waits out the one before it has a wait to set.
             if entry.triggerIndex == 2 {
@@ -1785,7 +1948,9 @@ extension EditorView {
                     value: entry.delay,
                     palette: palette,
                     unit: "s",
-                    decimals: 1
+                    decimals: 1,
+                    step: 0.1,
+                    minimum: 0
                 ) {
                     commitBuild(entry, delay: $0)
                 }
@@ -1796,9 +1961,12 @@ extension EditorView {
             if entry.hasStepTarget {
                 sectionLabel("Step")
 
-                ValueField(label: "", value: Double(entry.elementStep ?? 0), palette: palette) {
-                    commitBuild(entry, elementStep: Int($0.rounded()))
-                }
+                ValueField(
+                    label: "",
+                    value: Double(entry.elementStep ?? 0),
+                    palette: palette,
+                    minimum: 0
+                ) { commitBuild(entry, elementStep: Int($0.rounded())) }
                 .frame(width: 104)
             }
 
@@ -1815,10 +1983,10 @@ extension EditorView {
         switch entry.actionKindIndex ?? 0 {
         case 0:
             HStack(spacing: 8) {
-                ValueField(label: "X", value: entry.dx, palette: palette) {
+                ValueField(label: "X", value: entry.dx, palette: palette, unit: "pt") {
                     commitBuild(entry, dx: $0)
                 }
-                ValueField(label: "Y", value: entry.dy, palette: palette) {
+                ValueField(label: "Y", value: entry.dy, palette: palette, unit: "pt") {
                     commitBuild(entry, dy: $0)
                 }
             }
@@ -1829,7 +1997,7 @@ extension EditorView {
             }
 
         case 2:
-            ValueField(label: "", value: entry.rotation, palette: palette, unit: "°") {
+            ValueField(label: "", value: entry.rotation, palette: palette, unit: "\u{00B0}") {
                 commitBuild(entry, rotation: $0)
             }
             .frame(width: 104)
@@ -1839,8 +2007,10 @@ extension EditorView {
                 label: "",
                 value: entry.scale,
                 palette: palette,
-                unit: "×",
-                decimals: 2
+                unit: "\u{00D7}",
+                decimals: 2,
+                step: 0.1,
+                minimum: 0.1
             ) {
                 commitBuild(entry, scale: $0)
             }
@@ -1886,7 +2056,7 @@ extension EditorView {
     /// The row under the editor wears the accent fill and border; a row whose
     /// element is merely selected on the canvas takes the accent badge alone, so
     /// the other builds on that element are visible without looking edited.
-    private struct BuildOrderRow: View {
+    struct BuildOrderRow: View {
         let entry: BuildEntry
         /// This is the row the editor below the list is about.
         let picked: Bool
@@ -1973,7 +2143,7 @@ extension EditorView {
     /// A fraction the element draws at, 0 to 1 with a percentage beside it. The
     /// drag rides on this view's own value and the release commits, so the whole
     /// drag is one edit, exactly like `DurationSlider`.
-    private struct RatioSlider: View {
+    struct RatioSlider: View {
         let value: Double
         let palette: Palette
         let onCommit: (Double) -> Void
@@ -1981,7 +2151,7 @@ extension EditorView {
         @State private var dragged: Double? = nil
 
         var body: some View {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Slider(
                     value: Binding(get: { dragged ?? value }, set: { dragged = $0 }),
                     in: 0...1,
@@ -1993,10 +2163,15 @@ extension EditorView {
                 .controlSize(.small)
                 .tint(palette.accent)
 
-                Text("\(Int(((dragged ?? value) * 100).rounded()))%")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(palette.ctrlText)
-                    .frame(width: 40, alignment: .trailing)
+                EditorView.ValueField(
+                    label: "",
+                    value: ((dragged ?? value) * 100).rounded(),
+                    palette: palette,
+                    unit: "%",
+                    minimum: 0,
+                    maximum: 100
+                ) { onCommit($0 / 100) }
+                .frame(width: Inspect.field + Inspect.stepper + 5)
             }
             .onChange(of: value) { _, _ in dragged = nil }
         }
@@ -2009,12 +2184,18 @@ extension EditorView {
         let transition = ui.transition
 
         VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Transition")
-
-            // Default is the head of the list rather than a segment of its own,
-            // so the whole choice is one popup: -1 and the kinds, off by one.
-            stylePopup(["Default"] + ui.transitionKinds, selected: transition.kindIndex + 1) {
-                commitTransition(transition, kindIndex: $0 - 1)
+            // A slide on the deck's default plays nothing of its own, which is
+            // the same empty state a segment with no build shows.
+            if transition.kindIndex < 0 {
+                effectEmptyState(
+                    "No Transition Effect",
+                    entries: transitionChoices(ui, transition)
+                )
+            } else {
+                effectHeading(
+                    transitionKindTitle(ui),
+                    entries: transitionChoices(ui, transition)
+                )
             }
 
             if Self.directionalKinds.contains(transitionKindTitle(ui)) {
@@ -2026,8 +2207,8 @@ extension EditorView {
                     }
                 }
                 .padding(2)
-                .frame(height: 26)
-                .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .frame(height: Inspect.control + 4)
+                .background(palette.inspectorControl, in: Capsule())
             }
 
             if transition.kindIndex >= 0 {
@@ -2048,8 +2229,8 @@ extension EditorView {
                     }
                 }
                 .padding(2)
-                .frame(height: 26)
-                .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .frame(height: Inspect.control + 4)
+                .background(palette.inspectorControl, in: Capsule())
 
                 if transition.automatic {
                     ValueField(
@@ -2057,13 +2238,27 @@ extension EditorView {
                         value: transition.delay,
                         palette: palette,
                         unit: "s",
-                        decimals: 1
+                        decimals: 1,
+                        step: 0.1,
+                        minimum: 0
                     ) {
                         commitTransition(transition, delay: $0)
                     }
                     .frame(width: 104)
                 }
             }
+        }
+    }
+
+    /// The transitions a slide may play, Default at the head so there is a way
+    /// back to the deck's own. Handed to whichever affordance opens the list:
+    /// Add an Effect when the slide plays none, Change when it plays one.
+    func transitionChoices(_ ui: Chrome, _ transition: TransitionFormat) -> [MenuEntry] {
+        [
+            MenuEntry(title: "Default") { commitTransition(transition, kindIndex: -1) },
+            .separator(),
+        ] + ui.transitionKinds.enumerated().map { index, name in
+            MenuEntry(title: name) { commitTransition(transition, kindIndex: index) }
         }
     }
 
@@ -2100,43 +2295,25 @@ extension EditorView {
 
     // MARK: Document panel
 
-    /// The selected slide: the layout it is on, the number switch and the
-    /// background, all riding through `states`.
+    /// The whole deck: the theme it wears, the shape its slides are cut to, how
+    /// it plays and what hangs behind every slide of it.
     ///
-    /// In layout mode the panel is about the layout being edited instead, so it
-    /// shows what a layout has (a name, its placeholders) and drops what only a
-    /// slide has (the layout card, the appearance switches).
-    @ViewBuilder func documentPanel(_ ui: Chrome) -> some View {
+    /// What one slide has of its own moved to Format, which is where Keynote
+    /// keeps it: with nothing selected, formatting the slide *is* the format.
+    func documentPanel(_ ui: Chrome) -> some View {
         // Scrolls so a tall Document panel (every section open, or a deck with
         // several layouts) can't grow the window past its own edge.
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Layout.panelPadding) {
-                    if ui.editingLayouts {
-                        layoutNameSection(ui)
-                        palette.divider.frame(height: 1)
-                        placeholdersSection(ui)
-                        palette.divider.frame(height: 1)
-                        backgroundSection(ui)
-                        Spacer(minLength: 0)
-                        panelButton("Done", symbol: "checkmark") { host.exitSlideLayouts() }
-                    } else {
-                        themeSection(ui)
-                        palette.divider.frame(height: 1)
-                        slideSizeSection(ui)
-                        palette.divider.frame(height: 1)
-                        playbackSection(ui)
-                        palette.divider.frame(height: 1)
-                        deckBackgroundSection(ui)
-                        palette.divider.frame(height: 1)
-                        slideLayoutCard(ui)
-                        reapplyLayoutButton(ui)
-                        appearanceSection(ui)
-                        palette.divider.frame(height: 1)
-                        backgroundSection(ui)
-                        Spacer(minLength: 0)
-                        editLayoutButton
-                    }
+                    themeSection(ui)
+                    palette.divider.frame(height: 1)
+                    slideSizeSection(ui)
+                    palette.divider.frame(height: 1)
+                    playbackSection(ui)
+                    palette.divider.frame(height: 1)
+                    deckBackgroundSection(ui)
+                    Spacer(minLength: 0)
                 }
                 .padding(Layout.panelPadding)
                 .frame(maxWidth: .infinity, minHeight: proxy.size.height, alignment: .top)
@@ -2149,35 +2326,38 @@ extension EditorView {
     /// is a real choice, not an empty state: a slide on no layout keeps
     /// everything it has and simply inherits nothing.
     func slideLayoutCard(_ ui: Chrome) -> some View {
-        Menu {
-            Button("None") { host.applyLayout(layoutId: nil) }
-            Divider()
-            ForEach(ui.layouts) { layout in
-                Button(layout.name) { host.applyLayout(layoutId: layout.id) }
-            }
-        } label: {
+        let entries: [MenuEntry] = [
+            MenuEntry(title: "None") { host.applyLayout(layoutId: nil) },
+            .separator(),
+        ] + ui.layouts.map { layout in
+            MenuEntry(title: layout.name) { host.applyLayout(layoutId: layout.id) }
+        }
+        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+
+        return PopUpButton(entries: entries) {
             HStack(spacing: 12) {
                 layoutPreview(ui)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Slide Layout")
-                        .font(.system(size: 11))
+                        .font(.system(size: Inspect.caption))
                         .foregroundStyle(palette.subtle)
                     Text(currentLayoutName(ui))
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: Inspect.text, weight: .bold))
                         .foregroundStyle(palette.text)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Text("\u{2304}")
-                    .font(.system(size: 10))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(palette.subtle)
             }
             .padding(10)
-            .background(palette.ctrl, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            // A white card, the way Keynote draws this one: it is the only
+            // control in the panel that is a card rather than a control.
+            .background(palette.ctrl, in: shape)
+            .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+            .contentShape(shape)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
     }
 
     func currentLayoutName(_ ui: Chrome) -> String {
@@ -2290,8 +2470,25 @@ extension EditorView {
 
     func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(palette.subtle)
+            .font(.system(size: Inspect.text, weight: .semibold))
+            .foregroundStyle(palette.inspectorTitle)
+    }
+
+    /// The name at the left of a row, beside the control it names: regular
+    /// weight and dark, not the pale small label our chrome uses elsewhere.
+    func rowLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: Inspect.text))
+            .foregroundStyle(palette.inspectorTitle)
+    }
+
+    /// The caption Keynote writes under a field rather than beside it: the X
+    /// under Position's first box, the Angle under the rotate field.
+    func fieldCaption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: Inspect.caption, weight: .semibold))
+            .foregroundStyle(palette.inspectorCaption)
+            .frame(maxWidth: .infinity)
     }
 
     /// [action] nil is a row that only reports: the ones whose fact the document
@@ -2387,8 +2584,8 @@ extension EditorView {
                 segment("Gradient", on: kind == 2) { onGradient(gradientStart, gradientEnd) }
             }
             .padding(2)
-            .frame(height: 26)
-            .background(palette.segBg, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .frame(height: Inspect.control + 4)
+            .background(palette.inspectorControl, in: Capsule())
 
             switch kind {
             case 1:
@@ -2455,8 +2652,17 @@ extension EditorView {
                 .font(.system(size: 12))
                 .foregroundStyle(palette.subtle)
             Spacer(minLength: 0)
-            ValueField(label: "", value: value, palette: palette, unit: "s", onCommit: onCommit)
-                .frame(width: 86)
+            ValueField(
+                label: "",
+                value: value,
+                palette: palette,
+                unit: "s",
+                decimals: 1,
+                step: 0.1,
+                minimum: 0,
+                onCommit: onCommit
+            )
+            .frame(width: 104)
         }
     }
 
@@ -2488,15 +2694,13 @@ extension EditorView {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Theme")
 
-            Menu {
-                ForEach(ui.themeNames, id: \.self) { name in
-                    Button(name) { host.changeTheme(name: name) }
+            PopUpButton(
+                entries: ui.themeNames.map { name in
+                    MenuEntry(title: name) { host.changeTheme(name: name) }
                 }
-            } label: {
+            ) {
                 popupLabel(ui.themeName)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
 
             panelButton("Save Theme...", symbol: "square.and.arrow.down") {
                 saveThemeText = ui.themeName
@@ -2526,21 +2730,7 @@ extension EditorView {
     /// A panel-wide popup's face: what it is set to, and the chevron. Shared by
     /// the two deck-wide pickers so they cannot drift apart.
     func popupLabel(_ title: String) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
-        return HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.text)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            Text("\u{2304}")
-                .font(.system(size: 10))
-                .foregroundStyle(palette.subtle)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 30)
-        .background(palette.ctrl, in: shape)
-        .contentShape(shape)
+        popupFace(title)
     }
 
     /// The shape every slide in the deck is cut to. Deck-wide, so it sits with
@@ -2553,21 +2743,20 @@ extension EditorView {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Slide Size")
 
-            Menu {
-                ForEach(Array(ui.slideSize.presetTitles.enumerated()), id: \.offset) { index, title in
-                    Button(title) { pendingSizePreset = index }
-                }
-                Divider()
-                Button("Custom...") {
-                    customWidthText = String(Int(ui.slideSize.width.rounded()))
-                    customHeightText = String(Int(ui.slideSize.height.rounded()))
-                    customSize = true
-                }
-            } label: {
+            PopUpButton(
+                entries: ui.slideSize.presetTitles.enumerated().map { index, title in
+                    MenuEntry(title: title) { pendingSizePreset = index }
+                } + [
+                    .separator(),
+                    MenuEntry(title: "Custom...") {
+                        customWidthText = String(Int(ui.slideSize.width.rounded()))
+                        customHeightText = String(Int(ui.slideSize.height.rounded()))
+                        customSize = true
+                    },
+                ]
+            ) {
                 popupLabel(ui.slideSize.title)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
         }
         // The picked preset is the question's subject, so it presents the alert
         // and clears when it closes: no second flag to fall out of step with.
@@ -2704,11 +2893,13 @@ extension EditorView {
         0xFF0F3B39, 0xFF10391F, 0xFF58151D, 0xFF6B4A0E, 0xFFD7D9DE, 0xFFFFFFFF,
     ]
 
+    /// One segment of a track: a capsule that fills with the accent while it is
+    /// on, its label going white and semibold with it.
     func segment(_ label: String, on: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 12, weight: on ? .semibold : .regular))
-                .foregroundStyle(on ? palette.accentText : palette.subtle)
+                .font(.system(size: Inspect.text, weight: on ? .semibold : .regular))
+                .foregroundStyle(on ? palette.accentText : palette.text)
                 // Three of them across the panel is a tight fit, so a long name
                 // shrinks rather than truncating to nothing readable.
                 .lineLimit(1)
@@ -2716,26 +2907,65 @@ extension EditorView {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(
                     on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
-                    in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    in: Capsule()
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+    }
+
+    /// The inner segmented controls: the same track as the panel's, at control
+    /// height. Colour/Gradient, the transition trigger, the build trigger.
+    func segmentTrack<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: 0) { content() }
+            .padding(2)
+            .frame(height: Inspect.control + 4)
+            .background(palette.inspectorControl, in: Capsule())
+    }
+
+    /// A row of joined icon cells in one grey group, hairlined between them:
+    /// B/I/U/S, the alignment four, and the Arrange pairs. The on cell fills
+    /// with the accent, the way a segment does.
+    func joinedIcons(_ cells: [IconCell]) -> some View {
+        HStack(spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { index, cell in
+                if index > 0 {
+                    let touches = cells[index - 1].on || cell.on
+                    (touches ? Color.clear : palette.tabDivider)
+                        .frame(width: 1, height: 14)
+                }
+                Button(action: cell.action) {
+                    Group {
+                        if let symbol = cell.symbol {
+                            Image(systemName: symbol).font(.system(size: 12))
+                        } else {
+                            Text(cell.title ?? "")
+                                .font(.system(size: Inspect.text, weight: .medium))
+                        }
+                    }
+                    .foregroundStyle(
+                        cell.on ? palette.accentText : (cell.enabled ? palette.text : palette.faint)
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(
+                        cell.on ? AnyShapeStyle(palette.accent) : AnyShapeStyle(Color.clear),
+                        in: RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!cell.enabled)
+                .help(cell.help)
+            }
+        }
+        .padding(1)
+        .frame(height: Inspect.control)
+        .background(palette.inspectorControl, in: RoundedRectangle(cornerRadius: Inspect.radius, style: .continuous))
     }
 
     /// Into layout mode, on the layout this slide is already on. No symbol, the
     /// way the design draws it: a bare label across the foot of the panel.
     var editLayoutButton: some View {
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
-        return Button { host.editSlideLayouts() } label: {
-            Text("Edit Slide Layout")
-                .font(.system(size: 12.5))
-                .foregroundStyle(palette.ctrlText)
-                .frame(maxWidth: .infinity)
-                .frame(height: 26)
-                .background(palette.buttonFill, in: shape)
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
+        panelButton("Edit Slide Layout") { host.editSlideLayouts() }
     }
 }

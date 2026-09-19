@@ -1,19 +1,29 @@
 package io.github.xxfast.cupboard.screens.editor
 
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuiltInThemes
+import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.ElementDefaults
+import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.GalleryElement
+import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.TerminalElement
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TextElement
@@ -24,6 +34,7 @@ import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.isLayout
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.visibleIndices
@@ -136,6 +147,24 @@ data class EditorState(
     val sidebarOpen: Boolean = true,
     val inspectorOpen: Boolean = true,
     val inspectorTab: InspectorTab = InspectorTab.Format,
+    /**
+     * The Format segment the user last picked, which is a preference rather than
+     * what is showing: a selection that doesn't offer it falls back for as long
+     * as it lasts, and the preference comes back when one that offers it does.
+     * [activeFormatSegment] is the one on screen.
+     *
+     * Serialized like [inspectorTab], and for the same reason: which segment you
+     * were in is part of where you left the editor.
+     */
+    val formatSegment: FormatSegment = FormatSegment.Style,
+    /** The Animate segment showing. No fallback: every element offers all three. */
+    val animateSegment: AnimateSegment = AnimateSegment.BuildIn,
+    /**
+     * Which of the inspector's collapsible sections are open. Empty by default:
+     * Keynote's start collapsed, and the expansion is remembered across
+     * selections rather than reset by every click on the canvas.
+     */
+    val expandedSections: Set<InspectorSection> = emptySet(),
     val showNotes: Boolean = true,
     /** Whether the canvas draws its rulers, and whether the user's guides show
      * at all. View toggles like [showNotes], and stored next to it for the same
@@ -290,6 +319,55 @@ data class EditorState(
     val canUseAsDefaultTextStyle: Boolean get() = primaryElement is TextElement
 
     val canUseAsDefaultShapeStyle: Boolean get() = primaryElement is ShapeElement
+
+    /**
+     * The Format segments this selection offers, in the order they sit in the
+     * segmented control. Empty when nothing is selected, which is the shells'
+     * cue to show slide formatting instead.
+     *
+     * A multi-selection that agrees keeps its segments; one that doesn't falls
+     * back to what every kind shares, the way Keynote's does.
+     */
+    val formatSegments: List<FormatSegment>
+        get() {
+            val offered: List<List<FormatSegment>> = selectedElements.map { it.formatSegments() }
+            if (offered.isEmpty()) return emptyList()
+            return offered.distinct().singleOrNull()
+                ?: listOf(FormatSegment.Style, FormatSegment.Arrange)
+        }
+
+    /**
+     * The Format segment on screen: [formatSegment] when this selection offers
+     * it, the first one it does offer otherwise, null when it offers none.
+     *
+     * The fallback never writes [formatSegment] back, which is what lets Arrange
+     * survive shape to image to line, and Text come back after a detour through
+     * an image.
+     */
+    val activeFormatSegment: FormatSegment?
+        get() = formatSegments.let { segments ->
+            if (formatSegment in segments) formatSegment else segments.firstOrNull()
+        }
+
+    /**
+     * Whether Bring Forward has anywhere to go, and [canSendBackward] the same
+     * for Send Backward: what the Arrange pane greys out at the top and the
+     * bottom of the z-order.
+     *
+     * Asked of `Slide.reorderElements` rather than worked out here, so the
+     * enablement can't drift from the move: it returns the slide it was given
+     * when the move changes nothing, locked members included.
+     */
+    val canBringForward: Boolean get() = canReorder(ZOrderMove.Forward)
+
+    val canSendBackward: Boolean get() = canReorder(ZOrderMove.Backward)
+
+    private fun canReorder(move: ZOrderMove): Boolean {
+        val slide: Slide = selectedSlide
+        val movable: List<String> = selectedElements.filter { !it.locked }.map { it.id }
+        if (movable.isEmpty()) return false
+        return slide.reorderElements(movable, move) !== slide
+    }
 
     /**
      * The element the caret is in, null when none is: an id that no longer
@@ -492,6 +570,43 @@ data class EditorState(
 /** Which pane of the inspector is showing. */
 @Serializable
 enum class InspectorTab { Format, Animate, Document }
+
+/**
+ * A segment of the Format tab's segmented control. Style and Arrange are on
+ * every selection; the middle one is the selected kind's own.
+ */
+@Serializable
+enum class FormatSegment { Style, Text, Image, Code, Terminal, Diagram, Equation, Gallery, Arrange }
+
+/** A segment of the Animate tab's segmented control, shown whenever an element
+ * is selected. Nothing selected is Transitions, which is no segment at all. */
+@Serializable
+enum class AnimateSegment { BuildIn, Action, BuildOut }
+
+/** A collapsible section of the Format tab. See [EditorState.expandedSections]. */
+@Serializable
+enum class InspectorSection { Fill, Border, Shadow, Spacing, Lists }
+
+/**
+ * The Format segments this element alone would offer. A line is a shape with no
+ * inside and no label, so it offers neither Style's fill nor Text; groups, video
+ * and audio have nothing of their own to format yet.
+ */
+private fun Element.formatSegments(): List<FormatSegment> = when (this) {
+    is ShapeElement ->
+        if (kind == ShapeKind.Line) listOf(FormatSegment.Style, FormatSegment.Arrange)
+        else listOf(FormatSegment.Style, FormatSegment.Text, FormatSegment.Arrange)
+
+    is TextElement -> listOf(FormatSegment.Style, FormatSegment.Text, FormatSegment.Arrange)
+    is ImageElement -> listOf(FormatSegment.Style, FormatSegment.Image, FormatSegment.Arrange)
+    is CodeElement -> listOf(FormatSegment.Style, FormatSegment.Code, FormatSegment.Arrange)
+    is TerminalElement -> listOf(FormatSegment.Style, FormatSegment.Terminal, FormatSegment.Arrange)
+    is DiagramElement -> listOf(FormatSegment.Style, FormatSegment.Diagram, FormatSegment.Arrange)
+    is EquationElement -> listOf(FormatSegment.Style, FormatSegment.Equation, FormatSegment.Arrange)
+    is GalleryElement -> listOf(FormatSegment.Style, FormatSegment.Gallery, FormatSegment.Arrange)
+    is GroupElement, is VideoElement, is AudioElement ->
+        listOf(FormatSegment.Style, FormatSegment.Arrange)
+}
 
 /**
  * Which pane holds the keyboard focus, and so which layer the Edit menu's
@@ -993,4 +1108,18 @@ sealed interface EditorEvent {
      * which is why this isn't a [SelectInspectorTab] the shell has to guess.
      */
     data object ToggleInspector : EditorEvent
+    /**
+     * Picks the Format segment, which is a preference rather than a view: a
+     * segment this selection doesn't offer is ignored, so a stale click can't
+     * leave the inspector pointing at a pane that isn't there.
+     *
+     * Chrome, like [SelectInspectorTab]: no document, no history entry. Unlike
+     * it, it opens nothing: a segment is only reachable with the panel already up.
+     */
+    data class SelectFormatSegment(val segment: FormatSegment) : EditorEvent
+    /** Opens or closes one collapsible section. [SelectFormatSegment]'s kind. */
+    data class ToggleInspectorSection(val section: InspectorSection) : EditorEvent
+    /** Picks the Animate segment. [SelectFormatSegment]'s kind, with nothing to
+     * refuse: every element offers all three. */
+    data class SelectAnimateSegment(val segment: AnimateSegment) : EditorEvent
 }

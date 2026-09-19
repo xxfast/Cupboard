@@ -15,6 +15,21 @@ struct Chrome {
     let sidebarOpen: Bool
     let inspectorOpen: Bool
     let tab: InspectorTab
+    /// The Format segments this selection offers, by name, in the order the
+    /// segmented control draws them. Empty is the cue to show slide formatting.
+    let formatSegments: [String]
+    /// The one on screen, "" when the selection offers none. Not always the
+    /// segment last picked: a selection that does not offer it falls back.
+    let activeFormatSegment: String
+    /// Which Animate segment is showing: 0 Build In, 1 Action, 2 Build Out.
+    let animateSegment: Int
+    /// The collapsible sections standing open, by name. Remembered across
+    /// selections, which is why it is the editor's state and not the panel's.
+    let expandedSections: Set<String>
+    /// Whether the Arrange pane's Front pair and its Back pair have anywhere to
+    /// go. Kotlin asks the move itself, so they cannot drift from it.
+    let canBringForward: Bool
+    let canSendBackward: Bool
     let showNotes: Bool
     let notes: String
     /// Whether the canvas draws its rulers, and whether the user's guides show
@@ -59,6 +74,9 @@ struct Chrome {
     /// names paired with their ids, the way the layouts are.
     let slideChoices: [SlideChoice]
     let selectionCount: Int
+    /// The primary's id, "" when nothing is selected: what the Animate panel
+    /// matches build rows against so it shows this element's builds alone.
+    let selectedElementId: String
     let canGroup: Bool
     let canUngroup: Bool
     /// Whether the Format menu has anything to act on. Not `text != nil`: the
@@ -122,6 +140,12 @@ struct Chrome {
         sidebarOpen = host.sidebarOpen()
         inspectorOpen = host.inspectorOpen()
         tab = host.inspectorTab()
+        formatSegments = host.formatSegments()
+        activeFormatSegment = host.activeFormatSegment()
+        animateSegment = Int(host.animateSegment())
+        expandedSections = Set(host.expandedSections())
+        canBringForward = host.canBringForward()
+        canSendBackward = host.canSendBackward()
         showNotes = host.showNotes()
         notes = host.slideNotes()
         showRulers = host.showRulers()
@@ -142,6 +166,7 @@ struct Chrome {
         linkKinds = host.linkKindTitles()
         slideChoices = SlideChoice.all(host)
         selectionCount = Int(host.selectionCount())
+        selectedElementId = host.selectedElementId()
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
         canFormatText = host.canFormatText()

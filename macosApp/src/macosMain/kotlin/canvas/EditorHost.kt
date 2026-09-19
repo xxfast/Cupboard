@@ -127,9 +127,12 @@ import io.github.xxfast.cupboard.play.PlayerController
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.rememberPlayerController
+import io.github.xxfast.cupboard.screens.editor.AnimateSegment
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.FlipAxis
+import io.github.xxfast.cupboard.screens.editor.FormatSegment
+import io.github.xxfast.cupboard.screens.editor.InspectorSection
 import io.github.xxfast.cupboard.screens.editor.InspectorTab
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -1333,6 +1336,60 @@ class EditorHost(
         viewModel.onSelectInspectorTab(tab)
     }
 
+    /**
+     * The Format segments this selection offers, by name, in the order the
+     * segmented control draws them. Empty is the shell's cue to show slide
+     * formatting instead.
+     *
+     * Names rather than ordinals, unlike the transition kinds: a segment is
+     * picked by identity and the list it is picked from changes with the
+     * selection, so a position means nothing across two reads of it.
+     */
+    fun formatSegments(): List<String> = state.formatSegments.map { it.name }
+
+    /** The segment on screen, "" when the selection offers none. */
+    fun activeFormatSegment(): String = state.activeFormatSegment?.name ?: ""
+
+    /** A name no segment answers to is no pick, since it crosses a boundary. */
+    fun selectFormatSegment(name: String) {
+        val segment: FormatSegment = FormatSegment.entries.firstOrNull { it.name == name } ?: return
+        viewModel.onSelectFormatSegment(segment)
+    }
+
+    /**
+     * The Animate segment showing, as its place in `AnimateSegment`: 0 Build In,
+     * 1 Action, 2 Build Out. An ordinal here rather than a name, the way the snap
+     * switches travel: all three are always offered, so a position is stable.
+     */
+    fun animateSegment(): Int = state.animateSegment.ordinal
+
+    fun selectAnimateSegment(index: Int) {
+        val segment: AnimateSegment = AnimateSegment.entries.getOrNull(index) ?: return
+        viewModel.onSelectAnimateSegment(segment)
+    }
+
+    /**
+     * Which collapsible sections are open, by name: Fill, Border, Shadow,
+     * Spacing, Lists. A list rather than a per-section question, so the shell
+     * takes the lot in one read the way it takes the snap switches.
+     */
+    fun expandedSections(): List<String> = state.expandedSections.map { it.name }
+
+    fun toggleInspectorSection(name: String) {
+        val section: InspectorSection =
+            InspectorSection.entries.firstOrNull { it.name == name } ?: return
+        viewModel.onToggleInspectorSection(section)
+    }
+
+    /**
+     * Whether the Arrange pane's Front pair has anywhere to go, and
+     * [canSendBackward] the same for its Back pair. The core's answer, asked of
+     * the move itself, so the buttons cannot grey out of step with it.
+     */
+    fun canBringForward(): Boolean = state.canBringForward
+
+    fun canSendBackward(): Boolean = state.canSendBackward
+
     fun closeInspector() {
         viewModel.onCloseInspector()
     }
@@ -1884,6 +1941,13 @@ class EditorHost(
 
     /** How many elements are selected, for the inspector's "N selected" line. */
     fun selectionCount(): Int = state.selectedElements.size
+
+    /**
+     * The primary element's id, "" when nothing is selected. What the Animate
+     * panel matches build rows against, so it can show the selected element's
+     * builds rather than the whole slide's.
+     */
+    fun selectedElementId(): String = state.primaryElement?.id ?: ""
 
     /**
      * The text style the Format inspector shows, null when the primary element
@@ -3028,6 +3092,36 @@ class EditorHost(
                 action = BuildAction(kind = ActionKind.Move, dx = DEFAULT_ACTION_DX),
             ),
         )
+    }
+
+    /**
+     * Appends one build on the primary element, playing the effect the Animate
+     * panel's list was picked from. [addBuildIn] and its two neighbours with the
+     * effect said out loud: an empty segment adds and dresses in one event, so
+     * picking an effect out of the list is one edit and one undo entry.
+     *
+     * [kindIndex] is a place in `BuildKind` (0 In, 1 Out, 2 Action). For an
+     * action [effectIndex] is read as a place in `ActionKind` instead, since an
+     * action plays no effect. An index neither enum has is no build.
+     */
+    fun addBuildWithEffect(kindIndex: Int, effectIndex: Int) {
+        val element: Element = state.primaryElement ?: return
+        val kind: BuildKind = BuildKind.entries.getOrNull(kindIndex) ?: return
+        if (kind == BuildKind.Action) {
+            val action: ActionKind = ActionKind.entries.getOrNull(effectIndex) ?: return
+            viewModel.onAddBuild(
+                Build.action(
+                    elementId = element.id,
+                    action = BuildAction(
+                        kind = action,
+                        dx = if (action == ActionKind.Move) DEFAULT_ACTION_DX else 0f,
+                    ),
+                ),
+            )
+            return
+        }
+        val effect: BuildEffect = BuildEffect.entries.getOrNull(effectIndex) ?: return
+        viewModel.onAddBuild(Build(elementId = element.id, kind = kind, effect = effect))
     }
 
     /**
