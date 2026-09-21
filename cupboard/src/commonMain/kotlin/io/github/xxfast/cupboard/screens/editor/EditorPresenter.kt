@@ -38,6 +38,7 @@ import io.github.xxfast.cupboard.document.fromShape
 import io.github.xxfast.cupboard.document.fromText
 import io.github.xxfast.cupboard.document.gallerySteps
 import io.github.xxfast.cupboard.document.groupElements
+import io.github.xxfast.cupboard.document.indentSlide
 import io.github.xxfast.cupboard.document.insertionIndexAfter
 import io.github.xxfast.cupboard.document.instantiating
 import io.github.xxfast.cupboard.document.isLayout
@@ -134,6 +135,11 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.IndentSlides
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.StepSlideSelection
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAllSlides
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSlideSelection
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExtendSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
@@ -304,6 +310,71 @@ private fun EditorState.withoutSlide(id: String): EditorState? {
 }
 
 /**
+ * What these slide ids put on the clipboard: each one's [slideGroup] in turn,
+ * a slide that is already inside an earlier one's hidden run counted once.
+ */
+private fun List<String>.slideGroups(state: EditorState): List<Slide> =
+    flatMap { id -> state.document.slideGroup(id) }.distinctBy { it.id }
+
+/**
+ * The slides a verb landing on [id] takes when [id] is one of several selected:
+ * the whole selection, in deck order. Null when the verb is about [id] alone,
+ * which includes a row outside the selection, the way a context click on an
+ * unselected row in Keynote acts on that row and not on the selection.
+ */
+private fun EditorState.bulkSlides(id: String): List<String>? =
+    selectedSlideIds.takeIf { ids -> ids.size > 1 && id in ids }
+
+/**
+ * [ids] without the slides that already travel inside another of them: a slide
+ * in the deeper run under a selected one moves, indents and copies with it, and
+ * taking it a second time would tear it out of the group it went with.
+ */
+private fun EditorState.topmostSlides(ids: List<String>): List<String> {
+    val picked: Set<String> = ids.toSet()
+    var under: Int? = null
+    return document.slides.mapNotNull { slide ->
+        val covering: Int? = under
+        if (covering != null && slide.depth > covering) return@mapNotNull null
+
+        under = if (slide.id in picked) slide.depth else null
+        return@mapNotNull slide.id.takeIf { it in picked }
+    }
+}
+
+/**
+ * The selection [delta] visible rows on from where it is. See
+ * [EditorEvent.StepSlideSelection].
+ *
+ * The moving end of a range is worked out rather than stored: whichever end is
+ * not the selected slide, and the far end when the selected slide is inside. A
+ * range is only ever grown from the selected slide, so that is the end a second
+ * shift-arrow should carry on from.
+ */
+private fun EditorState.steppingSlides(delta: Int, extend: Boolean): EditorState {
+    val rows: List<String> = outline().map { it.slideId }
+    val selected: List<Int> = rows.indices.filter { rows[it] in selectedSlideIds }
+    val anchor: Int = rows.indexOf(selectedSlideId)
+    if (anchor == -1 || selected.isEmpty()) return this
+
+    if (!extend || isEditingLayouts) {
+        val from: Int = if (delta < 0) selected.first() else selected.last()
+        val landing: String = rows[(from + delta).coerceIn(rows.indices)]
+        if (landing == selectedSlideId && alsoSelectedSlideIds.isEmpty()) return this
+        return copy(
+            selectedSlideId = landing,
+            alsoSelectedSlideIds = emptySet(),
+            selectedElementIds = emptyList(),
+        )
+    }
+
+    val moving: Int = if (selected.first() < anchor) selected.first() else selected.last()
+    val landing: Int = (moving + delta).coerceIn(rows.indices)
+    val range: IntRange = minOf(anchor, landing)..maxOf(anchor, landing)
+    return copy(alsoSelectedSlideIds = range.map { rows[it] }.toSet() - selectedSlideId)
+}
+
+/**
  * The layout with [id] taken out, or null when it wasn't there to take, which
  * includes the last layout: that one stays, the way the last slide does.
  *
@@ -414,6 +485,8 @@ private fun EditorState.targeting(
  */
 private fun EditorEvent.focusing(): EditorPane? = when (this) {
     is SelectSlide, is SelectSlideAt, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
+    is ExtendSlideSelection, is ToggleSlideSelection, is SelectAllSlides,
+    is StepSlideSelection, is IndentSlides,
     is CutSlide, is CopySlide, is DeleteSlide, is MoveSlide, is SetSlideSkipped,
     is EditSlideLayouts, is ExitSlideLayouts, is AddLayout, is RenameSlide,
         -> EditorPane.Navigator
@@ -503,12 +576,70 @@ fun EditorPresenter(
         fun reduce(event: EditorEvent): EditorState = when (event) {
             // Selecting a slide drops the element selection: the handles
             // would otherwise ring an element on a slide you can't see.
-            is SelectSlide ->
-                state.copy(selectedSlideId = event.id, selectedElementIds = emptyList())
+            is SelectSlide -> state.copy(
+                selectedSlideId = event.id,
+                alsoSelectedSlideIds = emptySet(),
+                selectedElementIds = emptyList(),
+            )
 
             is SelectSlideAt -> state.document.allSlides().getOrNull(event.index)
-                ?.let { state.copy(selectedSlideId = it.id, selectedElementIds = emptyList()) }
+                ?.let { reduce(SelectSlide(it.id)) }
                 ?: state
+
+            is ExtendSlideSelection -> {
+                val rows: List<String> = state.outline().map { it.slideId }
+                val from: Int = rows.indexOf(state.selectedSlideId)
+                val to: Int = rows.indexOf(event.id)
+                if (state.isEditingLayouts || from == -1 || to == -1) reduce(SelectSlide(event.id))
+                else state.copy(
+                    alsoSelectedSlideIds =
+                        rows.subList(minOf(from, to), maxOf(from, to) + 1).toSet() - state.selectedSlideId,
+                )
+            }
+
+            is ToggleSlideSelection -> when {
+                state.isEditingLayouts -> reduce(SelectSlide(event.id))
+
+                event.id in state.alsoSelectedSlideIds ->
+                    state.copy(alsoSelectedSlideIds = state.alsoSelectedSlideIds - event.id)
+
+                event.id != state.selectedSlideId ->
+                    state.copy(alsoSelectedSlideIds = state.alsoSelectedSlideIds + event.id)
+
+                // The selected slide itself: the canvas goes to the first slide
+                // left, and with none left the click has nothing to take out.
+                else -> state.selectedSlideIds.firstOrNull { it != event.id }
+                    ?.let { next ->
+                        state.copy(
+                            selectedSlideId = next,
+                            alsoSelectedSlideIds = state.alsoSelectedSlideIds - next,
+                            selectedElementIds = emptyList(),
+                        )
+                    }
+                    ?: state
+            }
+
+            SelectAllSlides ->
+                if (state.isEditingLayouts) state
+                else state.copy(
+                    alsoSelectedSlideIds =
+                        state.document.slides.map { it.id }.toSet() - state.selectedSlideId,
+                )
+
+            is StepSlideSelection -> state.steppingSlides(event.delta, event.extend)
+
+            // In deck order, so two siblings both go in: the second finds the
+            // first already a level down and may follow it there.
+            is IndentSlides -> {
+                val indented: Document = state.topmostSlides(state.selectedSlideIds)
+                    .fold(state.document) { document, id -> document.indentSlide(id, event.delta) }
+                if (indented === state.document || state.isEditingLayouts) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = indented)
+                }
+            }
 
             is SelectElement -> state.copy(selectedElementIds = listOfNotNull(event.id))
 
@@ -748,6 +879,81 @@ fun EditorPresenter(
                 }
                 ?: state
 
+            // The slide verbs over several selected slides, ahead of the
+            // single-slide branches they otherwise fall through to. Each is
+            // its single version folded over the selection, still one history
+            // entry: a selection is one thing to the person who made it.
+            is DeleteSlide if state.bulkSlides(event.id) != null -> {
+                val removed: EditorState = state.bulkSlides(event.id).orEmpty()
+                    .fold(state) { reduced, id -> reduced.withoutSlide(id) ?: reduced }
+                undone.push(state.document)
+                redone.clear()
+                removed
+            }
+
+            is CopySlide if state.bulkSlides(event.id) != null -> {
+                clipboard = Clipboard.Slides(state.bulkSlides(event.id).orEmpty().slideGroups(state))
+                pastes = 0
+                state
+            }
+
+            is CutSlide if state.bulkSlides(event.id) != null -> {
+                val ids: List<String> = state.bulkSlides(event.id).orEmpty()
+                clipboard = Clipboard.Slides(ids.slideGroups(state))
+                pastes = 0
+                undone.push(state.document)
+                redone.clear()
+                ids.fold(state) { reduced, id -> reduced.withoutSlide(id) ?: reduced }
+            }
+
+            // The copies land together past the last original's run, in the
+            // order the originals are in, rather than each after its own.
+            is DuplicateSlide if state.bulkSlides(event.id) != null -> {
+                val ids: List<String> = state.bulkSlides(event.id).orEmpty()
+                val copies: List<Slide> = ids.slideGroups(state).map { it.duplicated() }
+                val after: Int = state.document.insertionIndexAfter(ids.last())
+                undone.push(state.document)
+                redone.clear()
+                state.copy(
+                    document = state.document.copy(
+                        slides = state.document.slides.take(after) + copies +
+                            state.document.slides.drop(after),
+                    ),
+                    selectedSlideId = copies.first().id,
+                    alsoSelectedSlideIds = copies.drop(1).map { it.id }.toSet(),
+                    selectedElementIds = emptyList(),
+                )
+            }
+
+            is SetSlideSkipped if state.bulkSlides(event.id) != null -> {
+                val updated: Document = state.bulkSlides(event.id).orEmpty()
+                    .fold(state.document) { document, id -> document.setSlideSkipped(id, event.skipped) }
+                if (updated === state.document) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated)
+                }
+            }
+
+            // Last first, every one into the same gap: each lands ahead of the
+            // one before it, so the selection arrives in the order it left in.
+            // A drop onto one of its own rows moves nothing.
+            is MoveSlide if state.bulkSlides(event.id) != null -> {
+                val ids: List<String> = state.topmostSlides(state.bulkSlides(event.id).orEmpty())
+                val moved: Document =
+                    if (event.afterId in ids) state.document
+                    else ids.asReversed().fold(state.document) { document, id ->
+                        document.moveSlide(id, event.afterId, event.nest, event.depth)
+                    }
+                if (moved === state.document) state.copy(slideDrag = null)
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = moved, selectedElementIds = emptyList(), slideDrag = null)
+                }
+            }
+
             // A layout deletes out of its own list, and the last one stays there
             // the way the last slide stays in the deck.
             is DeleteSlide -> {
@@ -924,7 +1130,7 @@ fun EditorPresenter(
             is MoveSlide -> {
                 val moved: Document =
                     if (state.document.isLayout(event.id)) state.document.moveLayout(event.id, event.afterId)
-                    else state.document.moveSlide(event.id, event.afterId, event.nest)
+                    else state.document.moveSlide(event.id, event.afterId, event.nest, event.depth)
                 if (moved === state.document) state.copy(slideDrag = null)
                 else {
                     undone.push(state.document)
@@ -1499,7 +1705,20 @@ fun EditorPresenter(
             // navigator.
             val focused: EditorPane? = if (reduced === state) null else event.focusing()
 
+            // The selection alongside follows the selected slide: anything that
+            // moves the canvas to another slide (a click, a delete, an undo)
+            // drops it, except the events that are themselves about it. What
+            // is left is pruned to slides still in the deck.
+            val keepsSlideSelection: Boolean = reduced.selectedSlideId == state.selectedSlideId ||
+                event is ToggleSlideSelection || event is DuplicateSlide || event is Duplicate
+            val alsoSelected: Set<String> =
+                if (!keepsSlideSelection || reduced.alsoSelectedSlideIds.isEmpty()) emptySet()
+                else reduced.alsoSelectedSlideIds.filterTo(mutableSetOf()) { id ->
+                    id != reduced.selectedSlideId && reduced.document.slides.any { it.id == id }
+                }
+
             state = reduced.copy(
+                alsoSelectedSlideIds = alsoSelected,
                 canUndo = undone.isNotEmpty(),
                 canRedo = redone.isNotEmpty(),
                 canPaste = clipboard != null,

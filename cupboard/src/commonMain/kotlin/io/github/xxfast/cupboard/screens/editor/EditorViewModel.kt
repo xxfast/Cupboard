@@ -87,6 +87,11 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.IndentSlides
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.StepSlideSelection
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAllSlides
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSlideSelection
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExtendSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
@@ -209,6 +214,11 @@ class EditorViewModel(
 
     fun onSelectSlide(id: String) { scope.launch { events.emit(SelectSlide(id)) } }
     fun onSelectSlideAt(index: Int) { scope.launch { events.emit(SelectSlideAt(index)) } }
+    fun onExtendSlideSelection(id: String) { scope.launch { events.emit(ExtendSlideSelection(id)) } }
+    fun onToggleSlideSelection(id: String) { scope.launch { events.emit(ToggleSlideSelection(id)) } }
+    fun onSelectAllSlides() { scope.launch { events.emit(SelectAllSlides) } }
+    fun onStepSlideSelection(delta: Int, extend: Boolean) { scope.launch { events.emit(StepSlideSelection(delta, extend)) } }
+    fun onIndentSlides(delta: Int) { scope.launch { events.emit(IndentSlides(delta)) } }
     fun onSelectElement(id: String?) { scope.launch { events.emit(SelectElement(id)) } }
     fun onSelectElements(ids: List<String>) { scope.launch { events.emit(SelectElements(ids)) } }
     fun onToggleElementSelection(id: String) { scope.launch { events.emit(ToggleElementSelection(id)) } }
@@ -234,6 +244,7 @@ class EditorViewModel(
     fun onClearAll() { scope.launch { events.emit(ClearAll) } }
     fun onDeleteSlide(id: String) { scope.launch { events.emit(DeleteSlide(id)) } }
     fun onAddSlide(afterId: String) { scope.launch { events.emit(AddSlide(afterId)) } }
+    fun onMoveSlideTo(id: String, afterId: String?, depth: Int) { scope.launch { events.emit(MoveSlide(id, afterId, depth = depth)) } }
     fun onMoveSlide(id: String, afterId: String?, nest: Boolean = false) { scope.launch { events.emit(MoveSlide(id, afterId, nest)) } }
     fun onPreviewSlideDrag(slideId: String, afterId: String?, nest: Boolean = false, translationY: Float = 0f) { scope.launch { events.emit(PreviewSlideDrag(slideId, afterId, nest, translationY)) } }
     fun onEndSlideDrag() { scope.launch { events.emit(EndSlideDrag) } }

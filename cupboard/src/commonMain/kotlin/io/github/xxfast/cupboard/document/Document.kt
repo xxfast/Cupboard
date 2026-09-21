@@ -601,6 +601,11 @@ private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
  * run rather than splitting it. The rest of the unit keeps its distance from its
  * first slide, so a group lands as the group it was.
  *
+ * [depth] asks for a level instead, what dragging sideways in Keynote's navigator
+ * does: honoured as far as the gap allows, which is no shallower than the row
+ * below (that would cut it off from its parent) and no deeper than a child of the
+ * row above.
+ *
  * [nest] is a drop onto [afterId]'s row rather than the gap under it: the unit
  * becomes that slide's first child, and a collapsed anchor opens so the drop is
  * not swallowed out of sight. Meaningless without an anchor, so ignored for null.
@@ -609,7 +614,12 @@ private fun List<Slide>.withoutUnitAt(index: Int): List<Slide> {
  * that puts every slide back where it was all return this same instance, so a
  * caller can skip the history entry the way [reorderElements] lets it.
  */
-fun Document.moveSlide(id: String, afterId: String?, nest: Boolean = false): Document {
+fun Document.moveSlide(
+    id: String,
+    afterId: String?,
+    nest: Boolean = false,
+    depth: Int? = null,
+): Document {
     val index: Int = slides.indexOfFirst { it.id == id }
     if (index == -1) return this
 
@@ -618,11 +628,11 @@ fun Document.moveSlide(id: String, afterId: String?, nest: Boolean = false): Doc
     val remaining: List<Slide> = slides.take(index) + slides.drop(runEnd)
 
     val at: Int
-    val depth: Int
+    val landingDepth: Int
     var landing: List<Slide> = remaining
     if (afterId == null) {
         at = 0
-        depth = 0
+        landingDepth = 0
     } else {
         val anchorIndex: Int = remaining.indexOfFirst { it.id == afterId }
         // The anchor went with the unit, i.e. the row was dropped on itself.
@@ -630,23 +640,55 @@ fun Document.moveSlide(id: String, afterId: String?, nest: Boolean = false): Doc
         val anchor: Slide = remaining[anchorIndex]
         if (nest) {
             at = anchorIndex + 1
-            depth = anchor.depth + 1
+            landingDepth = anchor.depth + 1
             if (anchor.collapsed) {
                 landing = remaining.toMutableList().apply { this[anchorIndex] = anchor.copy(collapsed = false) }
             }
         } else {
             at = if (anchor.collapsed) remaining.runEndAfter(anchorIndex) else anchorIndex + 1
             val below: Slide? = remaining.getOrNull(at)
-            depth = if (below != null && below.depth > anchor.depth) below.depth else anchor.depth
+            val shallowest: Int = below?.depth ?: 0
+            val deepest: Int = if (anchor.collapsed) anchor.depth else anchor.depth + 1
+            landingDepth = when {
+                depth != null -> depth.coerceIn(minOf(shallowest, deepest), deepest)
+                below != null && below.depth > anchor.depth -> below.depth
+                else -> anchor.depth
+            }
         }
     }
 
     val base: Int = unit.first().depth
-    val rebased: List<Slide> = unit.map { it.copy(depth = depth + it.depth - base) }
+    val rebased: List<Slide> = unit.map { it.copy(depth = landingDepth + it.depth - base) }
     val moved: List<Slide> = landing.take(at) + rebased + landing.drop(at)
 
     if (moved == slides) return this
     return copy(slides = moved)
+}
+
+/**
+ * Takes the slide with [id] one level in ([delta] positive) or out, and the run
+ * of deeper slides beneath it along with it, so a group stays the group it was.
+ *
+ * In stops one level under the slide above, since a slide can only be the child
+ * of something, and the first slide has nothing to be under. Out stops at the
+ * top level. A slide already at its stop, and an id this document doesn't hold,
+ * return this same instance so the caller can skip the history entry.
+ */
+fun Document.indentSlide(id: String, delta: Int): Document {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1) return this
+
+    val slide: Slide = slides[index]
+    val deepest: Int = slides.getOrNull(index - 1)?.let { it.depth + 1 } ?: 0
+    val shift: Int = (slide.depth + delta).coerceIn(0, maxOf(deepest, 0)) - slide.depth
+    if (shift == 0) return this
+
+    val runEnd: Int = slides.runEndAfter(index)
+    return copy(
+        slides = slides.mapIndexed { at, each ->
+            if (at in index until runEnd) each.copy(depth = each.depth + shift) else each
+        },
+    )
 }
 
 /**

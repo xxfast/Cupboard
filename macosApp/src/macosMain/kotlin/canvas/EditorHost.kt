@@ -53,6 +53,7 @@ import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
@@ -127,6 +128,7 @@ import io.github.xxfast.cupboard.play.PlayerController
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.rememberPlayerController
+import io.github.xxfast.cupboard.screens.editor.EditorPane
 import io.github.xxfast.cupboard.screens.editor.AnimateSegment
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
@@ -518,6 +520,11 @@ class OutlineRow(
     val numberLabel: String,
     /** Kept in the deck, left out of the presentation. Drawn dimmed, Keynote-style. */
     val skipped: Boolean,
+    /**
+     * In the slide selection, as the one on the canvas or alongside it. Which of
+     * the two is [EditorHost.selectedSlideIndex]'s to say.
+     */
+    val selected: Boolean,
 )
 
 /**
@@ -1226,7 +1233,9 @@ class EditorHost(
         darkChrome.value = dark
     }
 
-    fun outline(): List<OutlineRow> = state.outline().map { entry ->
+    fun outline(): List<OutlineRow> = outline(state.selectedSlideIds.toSet())
+
+    private fun outline(selected: Set<String>): List<OutlineRow> = state.outline().map { entry ->
         OutlineRow(
             slideId = entry.slideId,
             title = entry.title,
@@ -1236,7 +1245,50 @@ class EditorHost(
             collapsed = entry.collapsed,
             numberLabel = entry.number?.toString() ?: "",
             skipped = entry.skipped,
+            selected = entry.slideId in selected,
         )
+    }
+
+    /**
+     * Whether the navigator holds the keyboard focus: what its selection is
+     * drawn by (accent when it does, grey when the canvas has it) and what
+     * decides whether the arrow keys are the navigator's to take.
+     */
+    fun navigatorFocused(): Boolean = state.focusedPane == EditorPane.Navigator
+
+    /** A shift-click on a row: the range from the selected slide to it. */
+    fun extendSlideSelection(id: String) {
+        viewModel.onExtendSlideSelection(id)
+    }
+
+    /** A command-click on a row: in or out of the selection. */
+    fun toggleSlideSelection(id: String) {
+        viewModel.onToggleSlideSelection(id)
+    }
+
+    fun selectAllSlides() {
+        viewModel.onSelectAllSlides()
+    }
+
+    /** An arrow key in the navigator, [extend] when shift is down. */
+    fun stepSlideSelection(delta: Int, extend: Boolean) {
+        viewModel.onStepSlideSelection(delta, extend)
+    }
+
+    /** Tab (1) and Shift+Tab (-1) in the navigator. */
+    fun indentSlides(delta: Int) {
+        viewModel.onIndentSlides(delta)
+    }
+
+    /**
+     * Left and Right in the navigator: folds or opens every selected slide that
+     * has something under it and is not already that way. Nothing to fold is
+     * nothing to do, the way Keynote's arrows leave a childless row alone.
+     */
+    fun setSelectedSlidesCollapsed(collapsed: Boolean) {
+        state.fullOutline()
+            .filter { it.slideId in state.selectedSlideIds && it.hasChildren && it.collapsed != collapsed }
+            .forEach { viewModel.onToggleCollapsed(it.slideId) }
     }
 
     fun toggleCollapsed(index: Int) {
@@ -2793,6 +2845,20 @@ class EditorHost(
      */
     fun moveSlide(id: String, afterId: String?, nest: Boolean) {
         viewModel.onMoveSlide(id, afterId, nest)
+    }
+
+    /**
+     * The same drop with the level it should land at, what dragging sideways
+     * picks. The document clamps [depth] to what the gap allows, and
+     * [landingDepth] is the same clamp ahead of the drop, for the marker.
+     */
+    fun moveSlideTo(id: String, afterId: String?, depth: Int) {
+        viewModel.onMoveSlideTo(id, afterId, depth)
+    }
+
+    fun landingDepth(id: String, afterId: String?, depth: Int): Int {
+        val moved: Document = state.document.moveSlide(id, afterId, depth = depth)
+        return moved.slides.firstOrNull { it.id == id }?.depth ?: 0
     }
 
     /** Whether the slide is out of the presentation, for a menu item's title. */

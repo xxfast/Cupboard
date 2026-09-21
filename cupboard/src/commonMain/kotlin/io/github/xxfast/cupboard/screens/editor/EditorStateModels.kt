@@ -116,6 +116,16 @@ data class GuideDrag(val id: String?, val axis: GuideAxis, val position: Float)
 data class EditorState(
     val document: Document,
     val selectedSlideId: String,
+    /**
+     * The slides selected alongside [selectedSlideId], which stays the one on
+     * the canvas: Keynote's navigator, where shift and command clicks gather
+     * rows around the slide being edited and the slide verbs take them all.
+     * Never holds [selectedSlideId] itself, and always empty in layout mode.
+     *
+     * Not part of where you left the editor, so not stored: a deck reopens on
+     * its slide, not on a half-made selection.
+     */
+    @Transient val alsoSelectedSlideIds: Set<String> = emptySet(),
     /** The element selection, in the order it was made. Empty when nothing is selected. */
     val selectedElementIds: List<String> = emptyList(),
     /** Whether Edit > Undo / Redo are live. The history itself stays in the
@@ -493,6 +503,17 @@ data class EditorState(
         return lines
     }
 
+    /**
+     * Every selected slide, in deck order: [selectedSlideId] and whatever is
+     * selected alongside it. What a slide verb takes when it lands on any of them.
+     */
+    val selectedSlideIds: List<String>
+        get() =
+            if (alsoSelectedSlideIds.isEmpty()) listOf(selectedSlideId)
+            else document.slides
+                .filter { it.id == selectedSlideId || it.id in alsoSelectedSlideIds }
+                .map { it.id }
+
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
 
@@ -622,6 +643,34 @@ sealed interface EditorEvent {
     data class SelectSlide(val id: String) : EditorEvent
     /** Selects by index in presentation order; out of range indices are ignored. */
     data class SelectSlideAt(val index: Int) : EditorEvent
+    /**
+     * A shift-click on the row [id] names: every visible row from the selected
+     * slide to this one joins the selection. The selected slide stays the one on
+     * the canvas, so a second shift-click re-cuts the range from the same end.
+     * A plain select in layout mode, where rows are picked one at a time.
+     */
+    data class ExtendSlideSelection(val id: String) : EditorEvent
+    /**
+     * A command-click on the row [id] names: in if it was out, out if it was in.
+     * Taking the selected slide itself out hands the canvas to the first slide
+     * left, and the last one standing stays, since a deck always shows a slide.
+     */
+    data class ToggleSlideSelection(val id: String) : EditorEvent
+    /** Select All with the navigator focused: every slide, the canvas's unmoved. */
+    data object SelectAllSlides : EditorEvent
+    /**
+     * An arrow key in the navigator: [delta] visible rows down, negative for up.
+     * Plain, the selection collapses to the row past its end in that direction.
+     * With [extend] (shift), the range grows or shrinks at its moving end while
+     * the selected slide anchors the other, the way a list's does.
+     */
+    data class StepSlideSelection(val delta: Int, val extend: Boolean = false) : EditorEvent
+    /**
+     * Tab and Shift+Tab in the navigator: the selected slides go one level in
+     * ([delta] 1) or out (-1), each with the run beneath it. One history entry,
+     * none when no slide had anywhere to go. See `Document.indentSlide`.
+     */
+    data class IndentSlides(val delta: Int) : EditorEvent
     /** Replaces the whole element selection with [id], or clears it when null. */
     data class SelectElement(val id: String?) : EditorEvent
     /** Replaces the whole element selection, in the order given. */
@@ -729,7 +778,13 @@ sealed interface EditorEvent {
      * cleared either way: a drop that changes nothing is still a drop, it just
      * costs no history entry.
      */
-    data class MoveSlide(val id: String, val afterId: String?, val nest: Boolean = false) : EditorEvent
+    data class MoveSlide(
+        val id: String,
+        val afterId: String?,
+        val nest: Boolean = false,
+        /** The level asked for, clamped to what the gap allows. Null lets the gap decide. */
+        val depth: Int? = null,
+    ) : EditorEvent
     /**
      * An in-flight slide drag sample: the spot for the navigator to mark and
      * how far the row has been carried. Touches no document and makes no
