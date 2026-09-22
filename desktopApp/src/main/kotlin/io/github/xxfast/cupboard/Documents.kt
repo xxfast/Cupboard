@@ -44,6 +44,15 @@ internal class Documents(first: EditorViewModel) {
     }
 
     /**
+     * The feature showcase deck, in a bundle of its own and in a window of its
+     * own. [new]'s path exactly: the factory lays the bundle down and this opens
+     * it, so there is nothing special about the window it lands in.
+     */
+    fun showcase(owner: Frame) {
+        open(Cupboard.showcase(), owner)
+    }
+
+    /**
      * The deck at [bundle] in a window: a new one, or the one already showing it.
      *
      * A failure is the core's own sentence in an alert. This shell has no

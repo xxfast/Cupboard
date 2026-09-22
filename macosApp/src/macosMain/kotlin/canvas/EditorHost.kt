@@ -27,6 +27,7 @@ import io.github.xxfast.cupboard.newDocument
 import io.github.xxfast.cupboard.openDocument
 import io.github.xxfast.cupboard.recentDocuments
 import io.github.xxfast.cupboard.saveAs
+import io.github.xxfast.cupboard.showcase
 import io.github.xxfast.cupboard.document.ActionKind
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.AudioElement
@@ -660,7 +661,6 @@ class CodeProps(
     val fontSize: Float,
     val showLineNumbers: Boolean,
     val wrap: Boolean,
-)
     /**
      * How many versions of its source the block holds, and which of them the
      * editor is showing. 0 versions unless exactly one code block is selected:
@@ -669,6 +669,7 @@ class CodeProps(
      */
     val versionCount: Int,
     val shownVersion: Int,
+)
 
 /**
  * The primary selected element's terminal style, flattened for the native
@@ -1208,10 +1209,10 @@ class EditorHost(
                     editingElementId = state.editingElementId,
                     onBeginTextEdit = viewModel::onBeginTextEdit,
                     onEndTextEdit = viewModel::onEndTextEdit,
-                    fieldMenuBridge = fieldMenu,
                     // The version the inspector picked, so the canvas shows it
                     // and the caret types into it; every other block is at rest.
                     shownCodeVersion = { element -> state.shownVersion(element) },
+                    fieldMenuBridge = fieldMenu,
                     // Nothing to tell the loop: the caret has not moved and the
                     // document has not changed. Straight out to the shell, which
                     // pops the field menu at the event it is already holding.
@@ -2301,12 +2302,11 @@ class EditorHost(
             fontSize = code.fontSize,
             showLineNumbers = code.showLineNumbers,
             wrap = code.wrap,
-        )
             versionCount = state.codeVersionCount,
             shownVersion = state.shownVersion(code),
+        )
     }
 
-    /**
     /**
      * Shows version [index] of the selected block, which is what the Versions
      * list picks. Clamped by the core, and no edit: which version you are
@@ -2339,6 +2339,7 @@ class EditorHost(
         viewModel.onMoveCodeVersion(id, from, to)
     }
 
+    /**
      * The languages a picker offers, in menu order. The document's list, not the
      * shell's: what highlights and what it is called are the core's business.
      */
@@ -3734,6 +3735,14 @@ object Documents {
      * here, so New and a double-clicked file are one path.
      */
     fun newDocument(): String = Cupboard.newDocument()
+
+    /**
+     * The same for the feature showcase deck: a bundle of its own in Cupboard's
+     * folder, holding one slide per feature the document model can express, and
+     * where it went. Help > Open Feature Showcase, opened with [open] like any
+     * other deck.
+     */
+    fun showcaseDocument(): String = Cupboard.showcase()
 
     /** The deck at [path] in a host of its own, or why it could not be opened. */
     fun open(path: String): OpenOutcome = when (val result: OpenResult = Cupboard.openDocument(path)) {

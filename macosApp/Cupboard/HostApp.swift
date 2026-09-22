@@ -168,7 +168,12 @@ struct CupboardHostApp: App {
             insertMenu
             slideMenu
             formatMenu
-            arrangeMenu
+            // Grouped because CommandsBuilder takes ten statements and these
+            // two are the eleventh: the Group is one of them again.
+            Group {
+                arrangeMenu
+                helpCommands
+            }
         }
     }
 

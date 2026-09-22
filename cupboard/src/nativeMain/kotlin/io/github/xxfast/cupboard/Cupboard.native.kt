@@ -86,6 +86,13 @@ fun Cupboard.newDocument(directory: String? = null, name: String = "Untitled"): 
  * ones still on disk. What a File > Open Recent menu renders, and what
  * [openDocument] takes straight back.
  */
+/**
+ * A fresh bundle holding the feature showcase deck, and where it went: Help >
+ * Open Feature Showcase. Opened with [openDocument] like any other deck.
+ */
+fun Cupboard.showcase(directory: String? = null): String =
+    createShowcaseBundle(directory?.let { Path(it) } ?: cupboardDirectory()).toString()
+
 fun Cupboard.recentDocuments(): List<String> =
     runBlocking { recentsIn(cupboardDirectory()).list() }
 

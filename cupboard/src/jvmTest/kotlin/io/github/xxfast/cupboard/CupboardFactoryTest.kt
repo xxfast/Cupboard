@@ -4,6 +4,7 @@ import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.cupboard.document.showcaseDocument
 import io.github.xxfast.kstore.file.storeOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -22,14 +23,18 @@ import kotlin.test.assertTrue
  *
  * Documents are compared by slide titles, never by equality: ids are fresh
  * uuids, so two [sampleDocument] calls are never equal to each other.
+ *
+ * The deck a fresh machine opens on is [showcaseDocument]; [sampleDocument] is
+ * still the fixture the other two seed their bundles with, because what they are
+ * about is reading back what was written rather than what the default is.
  */
 class CupboardFactoryTest {
     @Test
-    fun opensTheSampleDeckWhenThereIsNoBundleYet() {
+    fun opensTheShowcaseDeckWhenThereIsNoBundleYet() {
         val bundle = bundle()
         val viewModel = Cupboard.editor(bundle, Dispatchers.Unconfined)
 
-        assertEquals(sampleDocument().titles(), viewModel.states.value.document.titles())
+        assertEquals(showcaseDocument().titles(), viewModel.states.value.document.titles())
         // Neither the bundle nor the folder over it existed, so the factory made
         // them: a shell pointing at a fresh machine must not have to.
         assertTrue(SystemFileSystem.exists(bundle), "the factory did not create $bundle")

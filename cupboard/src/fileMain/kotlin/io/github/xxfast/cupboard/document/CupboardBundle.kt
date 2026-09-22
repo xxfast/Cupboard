@@ -43,12 +43,13 @@ object CupboardBundle {
     /**
      * The deck inside [bundle], creating the bundle if it is not there yet.
      *
-     * Defaults to [sampleDocument] the way the factories always have: an editor
-     * that opens on an empty canvas teaches you nothing about what it can do.
+     * Defaults to [showcaseDocument] the way the factories have always defaulted
+     * to a real deck: an editor that opens on an empty canvas teaches you nothing
+     * about what it can do, and the showcase is the deck that teaches the most.
      */
     fun documentStore(bundle: Path): KStore<Document> {
         SystemFileSystem.createDirectories(bundle)
-        return storeOf(file = documentFile(bundle), default = sampleDocument())
+        return storeOf(file = documentFile(bundle), default = showcaseDocument())
     }
 
     /** The bytes inside [bundle]. The folder appears on the first write, see [FileAssetStore]. */

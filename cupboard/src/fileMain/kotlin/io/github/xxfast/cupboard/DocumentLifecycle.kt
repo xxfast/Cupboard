@@ -8,7 +8,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.instantiating
-import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.cupboard.document.showcaseDocument
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
@@ -57,7 +57,7 @@ internal suspend fun openEditor(
         CupboardBundle.migrate(directory, bundle)
     }
     val store: KStore<Document> = CupboardBundle.documentStore(bundle)
-    return editorOver(bundle, directory, store.get() ?: sampleDocument(), store, dispatcher)
+    return editorOver(bundle, directory, store.get() ?: showcaseDocument(), store, dispatcher)
 }
 
 /**
@@ -107,6 +107,22 @@ internal suspend fun openBundle(
 internal fun createBundle(directory: Path, name: String): Path {
     val bundle: Path = uniqueBundle(directory, name)
     CupboardBundle.create(bundle, freshDocument(bundle.deckName()))
+    return bundle
+}
+
+/**
+ * [createBundle] for the feature showcase: a bundle in [directory] holding
+ * [showcaseDocument], and where it went.
+ *
+ * A bundle of its own rather than a window onto an in-memory deck, so Help >
+ * Open Feature Showcase lands on the one path into the editor that every other
+ * way in takes, and so a reader can scribble on the deck without losing it on
+ * quit. Numbered up like any other new bundle, so opening it twice is two decks
+ * rather than one overwritten.
+ */
+internal fun createShowcaseBundle(directory: Path): Path {
+    val bundle: Path = uniqueBundle(directory, SHOWCASE_NAME)
+    CupboardBundle.create(bundle, showcaseDocument().copy(name = bundle.deckName()))
     return bundle
 }
 
@@ -214,3 +230,6 @@ private fun Path.deckName(): String =
 
 /** What a deck is called before it is called anything. */
 private const val UNTITLED: String = "Untitled"
+
+/** What the showcase bundle is called on disk, and so what its deck is named. */
+private const val SHOWCASE_NAME: String = "Feature Showcase"

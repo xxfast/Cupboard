@@ -981,6 +981,15 @@ private fun EditorWindow(
                     },
                 )
             }
+
+            // One entry, and it opens a deck: the showcase is a document rather
+            // than a help page, so it goes through [Documents] like File > New.
+            Menu("Help", mnemonic = 'H') {
+                Item(
+                    text = "Open Feature Showcase",
+                    onClick = { documents.showcase(window) },
+                )
+            }
         }
 
         // Desktop Compose reads the OS theme once, lazily (LocalSystemTheme's

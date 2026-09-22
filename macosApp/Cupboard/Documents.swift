@@ -164,6 +164,20 @@ extension CupboardHostApp {
         }
     }
 
+    /// One entry, and it opens a deck: the showcase is a document rather than a
+    /// help page, so it takes New's path rather than a window of its own kind.
+    var helpCommands: some Commands {
+        CommandGroup(replacing: .help) {
+            Button("Open Feature Showcase") { openShowcase() }
+        }
+    }
+
+    /// The feature showcase in a window of its own. `showcaseDocument` lays the
+    /// bundle down and this opens it, the way `newDocument` works.
+    func openShowcase() {
+        openDocument(at: Documents.shared.showcaseDocument())
+    }
+
     @ViewBuilder
     private var recentItems: some View {
         let recents = Documents.shared.recents()
