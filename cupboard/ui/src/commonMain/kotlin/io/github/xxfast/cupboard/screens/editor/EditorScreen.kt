@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultDiagramHeight
@@ -239,11 +240,16 @@ fun EditorScreen(
             onReplaceImage = onReplaceImage,
             onInsertGallery = onInsertGallery,
             onAddGalleryImages = onAddGalleryImages,
-            onAddGallerySteps = viewModel::onAddGallerySteps,
+            onAddElementSteps = viewModel::onAddElementSteps,
             onSelectCodeVersion = viewModel::onSelectCodeVersion,
             onAddCodeVersion = viewModel::onAddCodeVersion,
             onRemoveCodeVersion = viewModel::onRemoveCodeVersion,
             onMoveCodeVersion = viewModel::onMoveCodeVersion,
+            onSelectCodeStep = viewModel::onSelectCodeStep,
+            onAddCodeStep = viewModel::onAddCodeStep,
+            onRemoveCodeStep = viewModel::onRemoveCodeStep,
+            onMoveCodeStep = viewModel::onMoveCodeStep,
+            onUpdateCodeStep = viewModel::onUpdateCodeStep,
         )
     }
 }
@@ -371,13 +377,20 @@ fun EditorView(
      * inspector's Add Images. */
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
     /** Write a gallery's step builds onto the slide, one per image. */
-    onAddGallerySteps: (String) -> Unit = {},
+    onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: pick the one the canvas draws and
      * types into, and add, remove or reorder them. */
     onSelectCodeVersion: (Int) -> Unit = {},
     onAddCodeVersion: (String) -> Unit = {},
     onRemoveCodeVersion: (elementId: String, index: Int) -> Unit = { _, _ -> },
     onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
+    /** The selected code block's steps: pick the one the inspector edits, and
+     * add, remove, reorder or rewrite them. */
+    onSelectCodeStep: (Int?) -> Unit = {},
+    onAddCodeStep: (String) -> Unit = {},
+    onRemoveCodeStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
+    onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
+    onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit = { _, _, _ -> },
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -683,12 +696,18 @@ fun EditorView(
                         canSendBackward = state.canSendBackward,
                         onReplaceImage = onReplaceImage,
                         onAddGalleryImages = onAddGalleryImages,
-                        onAddGallerySteps = onAddGallerySteps,
+                        onAddElementSteps = onAddElementSteps,
                         codeVersion = state.codeVersion,
                         onSelectCodeVersion = onSelectCodeVersion,
                         onAddCodeVersion = onAddCodeVersion,
                         onRemoveCodeVersion = onRemoveCodeVersion,
                         onMoveCodeVersion = onMoveCodeVersion,
+                        codeStep = state.codeStep,
+                        onSelectCodeStep = onSelectCodeStep,
+                        onAddCodeStep = onAddCodeStep,
+                        onRemoveCodeStep = onRemoveCodeStep,
+                        onMoveCodeStep = onMoveCodeStep,
+                        onUpdateCodeStep = onUpdateCodeStep,
                     )
                 }
             }

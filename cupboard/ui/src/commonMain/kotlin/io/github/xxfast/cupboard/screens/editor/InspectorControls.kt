@@ -496,6 +496,10 @@ internal fun String.toArgbOrNull(): Long? {
  * [unit] rides inside the field after the value, and [trailing] is where the
  * numeric fields hang their stepper: both are part of the field rather than
  * controls beside it, so a row of them still lines up.
+ *
+ * [placeholder] is what an empty field reads instead of nothing, for the fields
+ * whose emptiness means something ("All" lines, "None" highlighted) rather than
+ * a value nobody has typed yet.
  */
 @Composable
 internal fun EntryField(
@@ -505,6 +509,7 @@ internal fun EntryField(
     modifier: Modifier = Modifier,
     monospace: Boolean = true,
     unit: String = "",
+    placeholder: String = "",
     trailing: (@Composable () -> Unit)? = null,
     onCommit: (String) -> Boolean,
 ) {
@@ -537,6 +542,12 @@ internal fun EntryField(
                 modifier = Modifier.weight(1f).height(FieldLineHeight),
                 contentAlignment = Alignment.CenterStart,
             ) {
+                if (text.isEmpty() && placeholder.isNotEmpty()) Text(
+                    text = placeholder,
+                    color = tokens.faint,
+                    fontSize = 13.sp,
+                    fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+                )
                 BasicTextField(
                     value = text,
                     onValueChange = { text = it },

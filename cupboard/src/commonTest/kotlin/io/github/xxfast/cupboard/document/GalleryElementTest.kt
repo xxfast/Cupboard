@@ -127,8 +127,8 @@ class GalleryElementTest {
         val viewModel: EditorViewModel = editor(document)
 
         // An id that names no gallery changes nothing at all.
-        viewModel.onAddGallerySteps("t")
-        viewModel.onAddGallerySteps("g")
+        viewModel.onAddElementSteps("t")
+        viewModel.onAddElementSteps("g")
 
         val state: EditorState = viewModel.await { it.selectedSlide.builds.size == 3 }
         assertEquals(listOf(null, 1, 2), state.selectedSlide.builds.map { it.elementStep })

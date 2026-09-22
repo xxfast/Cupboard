@@ -4,6 +4,7 @@ import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -22,7 +23,12 @@ import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddGallerySteps
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddElementSteps
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -240,6 +246,11 @@ class EditorViewModel(
     fun onAddCodeVersion(elementId: String) { scope.launch { events.emit(AddCodeVersion(elementId)) } }
     fun onRemoveCodeVersion(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeVersion(elementId, index)) } }
     fun onMoveCodeVersion(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveCodeVersion(elementId, from, to)) } }
+    fun onSelectCodeStep(index: Int?) { scope.launch { events.emit(SelectCodeStep(index)) } }
+    fun onAddCodeStep(elementId: String) { scope.launch { events.emit(AddCodeStep(elementId)) } }
+    fun onRemoveCodeStep(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeStep(elementId, index)) } }
+    fun onMoveCodeStep(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveCodeStep(elementId, from, to)) } }
+    fun onUpdateCodeStep(elementId: String, index: Int, step: CodeStep) { scope.launch { events.emit(UpdateCodeStep(elementId, index, step)) } }
     fun onInsertElement(element: Element) { scope.launch { events.emit(InsertElement(element)) } }
     fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
     fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
@@ -261,7 +272,7 @@ class EditorViewModel(
     fun onSetPlayback(settings: PlaybackSettings) { scope.launch { events.emit(SetPlayback(settings)) } }
     fun onSetElementLinks(ids: List<String>, target: LinkTarget?) { scope.launch { events.emit(SetElementLinks(ids, target)) } }
     fun onAddBuild(build: Build) { scope.launch { events.emit(AddBuild(build)) } }
-    fun onAddGallerySteps(elementId: String) { scope.launch { events.emit(AddGallerySteps(elementId)) } }
+    fun onAddElementSteps(elementId: String) { scope.launch { events.emit(AddElementSteps(elementId)) } }
     fun onUpdateBuild(index: Int, build: Build) { scope.launch { events.emit(UpdateBuild(index, build)) } }
     fun onRemoveBuild(index: Int) { scope.launch { events.emit(RemoveBuild(index)) } }
     fun onMoveBuild(from: Int, to: Int) { scope.launch { events.emit(MoveBuild(from, to)) } }

@@ -53,6 +53,7 @@ import io.github.xxfast.cupboard.canvas.removeBackground
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Element
@@ -80,8 +81,10 @@ import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.formatCode
+import io.github.xxfast.cupboard.document.formatLineRanges
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.toggleBold
@@ -137,7 +140,7 @@ internal fun ColumnScope.FormatPanel(
     onDeleteObjectStyle: (styleId: String) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
-    onAddGallerySteps: (String) -> Unit,
+    onAddElementSteps: (String) -> Unit,
     /**
      * The code block's versions: which one the canvas is showing
      * ([EditorState.codeVersion]) and the four verbs of the Versions list.
@@ -147,6 +150,16 @@ internal fun ColumnScope.FormatPanel(
     onAddCodeVersion: (String) -> Unit,
     onRemoveCodeVersion: (elementId: String, index: Int) -> Unit,
     onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit,
+    /**
+     * The code block's steps: which one the inspector is editing
+     * ([EditorState.codeStep]) and the five verbs of the Steps list.
+     */
+    codeStep: Int?,
+    onSelectCodeStep: (Int?) -> Unit,
+    onAddCodeStep: (String) -> Unit,
+    onRemoveCodeStep: (elementId: String, index: Int) -> Unit,
+    onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit,
+    onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit,
     /** The slide fallback's own arguments: what Format shows with nothing selected. */
     slide: Slide,
     layouts: List<Slide>,
@@ -239,12 +252,18 @@ internal fun ColumnScope.FormatPanel(
                 onSetLinks = onSetElementLinks,
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
-                onAddGallerySteps = onAddGallerySteps,
+                onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,
                 onAddCodeVersion = onAddCodeVersion,
                 onRemoveCodeVersion = onRemoveCodeVersion,
                 onMoveCodeVersion = onMoveCodeVersion,
+                codeStep = codeStep,
+                onSelectCodeStep = onSelectCodeStep,
+                onAddCodeStep = onAddCodeStep,
+                onRemoveCodeStep = onRemoveCodeStep,
+                onMoveCodeStep = onMoveCodeStep,
+                onUpdateCodeStep = onUpdateCodeStep,
             )
         }
     }
@@ -631,12 +650,18 @@ private fun KindBody(
     onSetLinks: (List<String>, LinkTarget?) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
-    onAddGallerySteps: (String) -> Unit,
+    onAddElementSteps: (String) -> Unit,
     codeVersion: Int,
     onSelectCodeVersion: (Int) -> Unit,
     onAddCodeVersion: (String) -> Unit,
     onRemoveCodeVersion: (elementId: String, index: Int) -> Unit,
     onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit,
+    codeStep: Int?,
+    onSelectCodeStep: (Int?) -> Unit,
+    onAddCodeStep: (String) -> Unit,
+    onRemoveCodeStep: (elementId: String, index: Int) -> Unit,
+    onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit,
+    onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit,
 ) {
     when {
         segment == FormatSegment.Text && primary is TextElement -> TextBody(
@@ -667,6 +692,13 @@ private fun KindBody(
             onAddVersion = onAddCodeVersion,
             onRemoveVersion = onRemoveCodeVersion,
             onMoveVersion = onMoveCodeVersion,
+            step = codeStep,
+            onSelectStep = onSelectCodeStep,
+            onAddStep = onAddCodeStep,
+            onRemoveStep = onRemoveCodeStep,
+            onMoveStep = onMoveCodeStep,
+            onUpdateStep = onUpdateCodeStep,
+            onAddSteps = onAddElementSteps,
         )
 
         segment == FormatSegment.Terminal && primary is TerminalElement ->
@@ -700,7 +732,7 @@ private fun KindBody(
             onUpdate = onUpdate,
             onPreview = onPreview,
             onAddImages = onAddGalleryImages,
-            onAddSteps = onAddGallerySteps,
+            onAddSteps = onAddElementSteps,
         )
 
         else -> Unit
@@ -931,8 +963,8 @@ private fun ShapeLabelBody(
 
 /**
  * A code block's content settings: what language it is highlighted as, how big
- * it is set, the two switches about how it wraps, and the versions it morphs
- * between.
+ * it is set, the two switches about how it wraps, the versions it morphs
+ * between, and the steps it is walked through.
  *
  * The code itself isn't edited here. It is typed on the canvas, the way a text
  * box's text is; this is only how the block is read, and which of its versions
@@ -948,6 +980,13 @@ private fun CodeBody(
     onAddVersion: (String) -> Unit,
     onRemoveVersion: (elementId: String, index: Int) -> Unit,
     onMoveVersion: (elementId: String, from: Int, to: Int) -> Unit,
+    step: Int?,
+    onSelectStep: (Int?) -> Unit,
+    onAddStep: (String) -> Unit,
+    onRemoveStep: (elementId: String, index: Int) -> Unit,
+    onMoveStep: (elementId: String, from: Int, to: Int) -> Unit,
+    onUpdateStep: (elementId: String, index: Int, step: CodeStep) -> Unit,
+    onAddSteps: (String) -> Unit,
 ) {
     val enabled: Boolean = !primary.locked
     // The document's language is free-form and resolved case-insensitively
@@ -1050,7 +1089,120 @@ private fun CodeBody(
         color = tokens.subtle,
         fontSize = 11.5.sp,
     )
+
+    val steps: List<CodeStep> = primary.steps
+
+    PanelDivider()
+    SectionLabel("STEPS")
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        steps.forEachIndexed { index, item ->
+            StepRow(
+                label = "Step ${index + 1}",
+                summary = item.summary(),
+                selected = index == step,
+                enabled = enabled,
+                // A second click on the picked row unpicks it: the fields below
+                // belong to a row, so putting the row down is how they go away.
+                onClick = { onSelectStep(if (index == step) null else index) },
+            )
+        }
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TonalButton(
+            label = "+",
+            enabled = enabled,
+            onClick = { onAddStep(primary.id) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "−",
+            enabled = enabled && step != null,
+            onClick = { step?.let { onRemoveStep(primary.id, it) } },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▲",
+            enabled = enabled && step != null && step > 0,
+            onClick = { step?.let { onMoveStep(primary.id, it, it - 1) } },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▼",
+            enabled = enabled && step != null && step < steps.size - 1,
+            onClick = { step?.let { onMoveStep(primary.id, it, it + 1) } },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    // The state's step is free to be out of range for a moment, the way its
+    // version is: an undo can take the row these fields were editing away.
+    val editing: Int? = step?.takeIf { it in steps.indices }
+    if (editing != null) {
+        val picked: CodeStep = steps[editing]
+
+        fun write(transform: (CodeStep) -> CodeStep): Boolean {
+            val written: CodeStep = transform(picked)
+            if (written == picked) return false
+
+            onUpdateStep(primary.id, editing, written)
+            return true
+        }
+
+        DropdownField(
+            label = "Version",
+            value = picked.version,
+            options = sources.indices.map { it to "Version ${it + 1}" },
+            enabled = enabled,
+            onPick = { index -> write { it.copy(version = index) } },
+        )
+        // Committed on Enter and on focus loss rather than per keystroke, so one
+        // pass over a field is one history entry and one autosave write.
+        EntryField(
+            label = "Show Lines",
+            display = picked.reveal.formatLineRanges(),
+            enabled = enabled,
+            placeholder = "All",
+        ) { text -> write { it.copy(reveal = parseLineRanges(text)) } }
+        EntryField(
+            label = "Highlight",
+            display = picked.highlight.formatLineRanges(),
+            enabled = enabled,
+            placeholder = "None",
+        ) { text -> write { it.copy(highlight = parseLineRanges(text)) } }
+    }
+
+    // Live on a locked block, like the gallery's: the builds belong to the
+    // slide's build order rather than to the element, so writing them is not
+    // editing it.
+    TonalButton(
+        label = "Add Step Builds",
+        enabled = steps.size > 1,
+        onClick = { onAddSteps(primary.id) },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        text = "One click per step, in the Animate order.",
+        color = tokens.subtle,
+        fontSize = 11.5.sp,
+    )
 }
+
+/**
+ * What a step row reads under its name: the version it plays, the lines it shows
+ * and the lines it points at, in that order.
+ *
+ * The version is always there, since every step plays one. The other two are
+ * only there when they say something: an empty reveal is every line and an empty
+ * highlight is no dimming at all, and spelling those out would be three quarters
+ * of the row saying nothing.
+ */
+private fun CodeStep.summary(): String = buildList {
+    add("Version ${version + 1}")
+    if (reveal.isNotEmpty()) add("Lines ${reveal.formatLineRanges()}")
+    if (highlight.isNotEmpty()) add("Highlight ${highlight.formatLineRanges()}")
+}.joinToString(" · ")
 
 /**
  * One version in the code block's list: which one it is, and whether it is the
@@ -1085,6 +1237,44 @@ private fun VersionRow(
             fontSize = 12.5.sp,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
         )
+    }
+}
+
+/**
+ * One step in the code block's list: which one it is, what it plays, and whether
+ * it is the one the fields under the list are editing.
+ *
+ * [VersionRow] with a second line, since a step says more about itself than a
+ * version does: the name alone would make every row read the same.
+ */
+@Composable
+private fun StepRow(
+    label: String,
+    summary: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val corner: RoundedCornerShape = RoundedCornerShape(6.dp)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(corner)
+            .background(if (selected) tokens.tonal else tokens.rowBg)
+            .let { if (selected) it.border(1.dp, tokens.accent, corner) else it }
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (selected) tokens.tonalText else tokens.text,
+            fontSize = 12.5.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        )
+        Text(text = summary, color = tokens.subtle, fontSize = 11.sp)
     }
 }
 

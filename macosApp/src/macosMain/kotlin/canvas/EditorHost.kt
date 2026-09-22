@@ -39,6 +39,7 @@ import io.github.xxfast.cupboard.document.BuildKind
 import io.github.xxfast.cupboard.document.BuildTrigger
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
@@ -98,12 +99,14 @@ import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.fitted
 import io.github.xxfast.cupboard.document.formatCode
+import io.github.xxfast.cupboard.document.formatLineRanges
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.galleryElement
 import io.github.xxfast.cupboard.document.imageElement
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.newId
+import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.slideById
@@ -669,7 +672,38 @@ class CodeProps(
      */
     val versionCount: Int,
     val shownVersion: Int,
+    /**
+     * The block's play steps, and which row the Steps list has picked, -1 when
+     * none is. Same story as the versions: 0 steps unless exactly one code block
+     * is selected.
+     */
+    val stepCount: Int,
+    val selectedStep: Int,
+    /**
+     * The picked step, flattened: the version it plays, and its two line sets
+     * spelled the way the fields write them (`1-3, 7`). Empty text and version 0
+     * when no row is picked, which is what the fields then show.
+     */
+    val stepVersion: Int,
+    val stepLines: String,
+    val stepHighlight: String,
+    /** One line per step, as the rows read it: `Version 2 · Lines 1-3, 7 · Highlight 5`. */
+    val stepSummaries: List<String>,
 )
+
+/**
+ * The one line a Steps row reads under its title. The version is always there,
+ * since every step plays one; the line sets only when the step names them, so a
+ * plain step is `Version 1` and nothing else.
+ */
+private fun CodeStep.summary(): String {
+    val parts: List<String> = listOfNotNull(
+        "Version ${version + 1}",
+        reveal.formatLineRanges().takeIf { it.isNotEmpty() }?.let { "Lines $it" },
+        highlight.formatLineRanges().takeIf { it.isNotEmpty() }?.let { "Highlight $it" },
+    )
+    return parts.joinToString(" · ")
+}
 
 /**
  * The primary selected element's terminal style, flattened for the native
@@ -1934,13 +1968,14 @@ class EditorHost(
     }
 
     /**
-     * The build order that walks the primary gallery through its pictures, one
-     * click each after the first. Pressing it twice leaves one set, which is the
-     * core's rule rather than this host's; see `Slide.gallerySteps`.
+     * The build order that walks the primary element through its steps, one
+     * click each after the first: a gallery's pictures, a code block's steps.
+     * Pressing it twice leaves one set, which is the core's rule rather than
+     * this host's; see `Slide.elementSteps`.
      */
-    fun addGallerySteps() {
-        val gallery: GalleryElement = liveGallery() ?: return
-        viewModel.onAddGallerySteps(gallery.id)
+    fun addElementSteps() {
+        val element: Element = state.primaryElement?.takeIf { !it.locked } ?: return
+        viewModel.onAddElementSteps(element.id)
     }
 
     /** The primary element when it is an unlocked gallery, which every setter needs. */
@@ -2304,6 +2339,12 @@ class EditorHost(
             wrap = code.wrap,
             versionCount = state.codeVersionCount,
             shownVersion = state.shownVersion(code),
+            stepCount = code.steps.size,
+            selectedStep = state.codeStep ?: -1,
+            stepVersion = state.selectedCodeStep?.version ?: 0,
+            stepLines = state.selectedCodeStep?.reveal?.formatLineRanges().orEmpty(),
+            stepHighlight = state.selectedCodeStep?.highlight?.formatLineRanges().orEmpty(),
+            stepSummaries = code.steps.map { it.summary() },
         )
     }
 
@@ -2337,6 +2378,55 @@ class EditorHost(
     fun moveCodeVersion(from: Int, to: Int) {
         val id: String = state.selectedCodeElement?.id ?: return
         viewModel.onMoveCodeVersion(id, from, to)
+    }
+
+    /**
+     * Picks step [index] of the selected block, -1 for none. Picking one moves
+     * the canvas to the version it plays, which the core does: a step is a place
+     * to stand, so standing on it shows what it says.
+     */
+    fun selectCodeStep(index: Int) {
+        viewModel.onSelectCodeStep(if (index < 0) null else index)
+    }
+
+    /** Adds a step to the selected block, showing the version on screen. */
+    fun addCodeStep() {
+        val id: String = state.selectedCodeElement?.id ?: return
+        viewModel.onAddCodeStep(id)
+    }
+
+    /** Takes step [index] off the selected block, with the build that played it. */
+    fun removeCodeStep(index: Int) {
+        val id: String = state.selectedCodeElement?.id ?: return
+        viewModel.onRemoveCodeStep(id, index)
+    }
+
+    /** Moves step [from] to sit at [to], which is what the play order follows. */
+    fun moveCodeStep(from: Int, to: Int) {
+        val id: String = state.selectedCodeElement?.id ?: return
+        viewModel.onMoveCodeStep(id, from, to)
+    }
+
+    /** Points step [index] at version [version] of the block, which is a morph. */
+    fun setCodeStepVersion(index: Int, version: Int) {
+        updateCodeStep(index) { it.copy(version = version) }
+    }
+
+    /** The lines step [index] shows, as the field writes them. Empty is all of them. */
+    fun setCodeStepLines(index: Int, text: String) {
+        updateCodeStep(index) { it.copy(reveal = parseLineRanges(text)) }
+    }
+
+    /** The lines step [index] spotlights. Empty dims nothing rather than everything. */
+    fun setCodeStepHighlight(index: Int, text: String) {
+        updateCodeStep(index) { it.copy(highlight = parseLineRanges(text)) }
+    }
+
+    /** The three setters above, over the step the list has picked. */
+    private inline fun updateCodeStep(index: Int, edit: (CodeStep) -> CodeStep) {
+        val code: CodeElement = state.selectedCodeElement ?: return
+        val step: CodeStep = code.steps.getOrNull(index) ?: return
+        viewModel.onUpdateCodeStep(code.id, index, edit(step))
     }
 
     /**

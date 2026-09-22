@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
@@ -24,6 +25,7 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.addElements
 import io.github.xxfast.cupboard.document.addLayout
+import io.github.xxfast.cupboard.document.addingCodeStep
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingLayout
 import io.github.xxfast.cupboard.document.applyingObjectStyle
@@ -35,9 +37,9 @@ import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
 import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.document.elementSteps
 import io.github.xxfast.cupboard.document.fromShape
 import io.github.xxfast.cupboard.document.fromText
-import io.github.xxfast.cupboard.document.gallerySteps
 import io.github.xxfast.cupboard.document.groupElements
 import io.github.xxfast.cupboard.document.indentSlide
 import io.github.xxfast.cupboard.document.insertionIndexAfter
@@ -47,6 +49,7 @@ import io.github.xxfast.cupboard.document.layoutAt
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.moveLayout
 import io.github.xxfast.cupboard.document.moveSlide
+import io.github.xxfast.cupboard.document.movingCodeStep
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.placeholderElement
 import io.github.xxfast.cupboard.document.putGuide
@@ -54,6 +57,7 @@ import io.github.xxfast.cupboard.document.removeElements
 import io.github.xxfast.cupboard.document.removeGuide
 import io.github.xxfast.cupboard.document.removeLayout
 import io.github.xxfast.cupboard.document.removeSlide
+import io.github.xxfast.cupboard.document.removingCodeStep
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.resized
 import io.github.xxfast.cupboard.document.setSlideSkipped
@@ -67,17 +71,20 @@ import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.updateElements
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.cupboard.document.updatingCodeStep
 import io.github.xxfast.cupboard.document.versionsAfterMoving
 import io.github.xxfast.cupboard.document.versionsAfterRemoving
+import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.document.withVersionAdded
 import io.github.xxfast.cupboard.document.withVersionMoved
 import io.github.xxfast.cupboard.document.withVersionRemoved
-import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddGallerySteps
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddElementSteps
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -113,11 +120,15 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExitSlideLayouts
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExtendSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FlipElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.IndentSlides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -129,6 +140,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
@@ -136,30 +149,25 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAllSlides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectInspectorTab
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.IndentSlides
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.StepSlideSelection
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAllSlides
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSlideSelection
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExtendSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
-import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.StepSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
@@ -168,17 +176,19 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspectorSecti
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateBuild
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultShapeStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultTextStyle
 import io.github.xxfast.kstore.KStore
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlin.time.Duration.Companion.milliseconds
 
 /** How long the editor sits still before the document is written out. */
 private val AutosaveDebounce = 500.milliseconds
@@ -281,6 +291,28 @@ private fun EditorState.withElements(elements: List<Element>): EditorState =
  */
 private fun EditorState.withCodeVersion(element: CodeElement, version: Int): EditorState =
     if (element.id == selectedCodeElement?.id) copy(codeVersion = version) else this
+
+/**
+ * This state editing step [index] of [elementId], and showing the version that
+ * step plays, or unchanged when [elementId] is not the selected block, for
+ * [withCodeVersion]'s reason.
+ *
+ * Read off the state it is called on, so a step edit chains onto its own result
+ * and picks up the step as it now stands. A null [index] picks no row and leaves
+ * the version showing alone: there is no step to take one from.
+ */
+private fun EditorState.showingCodeStep(elementId: String, index: Int?): EditorState {
+    val element: CodeElement = selectedCodeElement?.takeIf { it.id == elementId } ?: return this
+    val step: CodeStep? = index?.let { element.steps.getOrNull(it) }
+    return copy(
+        codeStep = index,
+        codeVersion = step?.version?.coerceIn(element.sources.indices) ?: codeVersion,
+    )
+}
+
+/** [withElements] for the slide whole, which the step edits need: they move builds too. */
+private fun EditorState.withSlide(slide: Slide): EditorState =
+    copy(document = document.updateSlide(slide))
 
 /** [withElements] for the slide's build order: the whole list, in playing order. */
 private fun EditorState.withBuilds(builds: List<Build>): EditorState =
@@ -1217,17 +1249,17 @@ fun EditorPresenter(
                 }
 
             // The one build event that writes a run of them: what the steps are
-            // is the document's business (`gallerySteps`), and all the loop does
+            // is the document's business (`elementSteps`), and all the loop does
             // is swap the element's old ones for them.
-            is AddGallerySteps -> {
+            is AddElementSteps -> {
                 val slide: Slide = state.selectedSlide
-                val steps: List<Build> = slide.gallerySteps(event.elementId)
+                val steps: List<Build> = slide.elementSteps(event.elementId)
                 val kept: List<Build> = slide.builds.filterNot {
                     it.elementId == event.elementId && it.elementStep != null
                 }
-                val gallery: Boolean = slide.elementById(event.elementId) is GalleryElement
+                val known: Boolean = slide.elementById(event.elementId) != null
 
-                if (!gallery || kept + steps == slide.builds) state
+                if (!known || kept + steps == slide.builds) state
                 else {
                     undone.push(state.document)
                     redone.clear()
@@ -1381,6 +1413,102 @@ fun EditorPresenter(
                     redone.clear()
                     state.withElements(listOf(element.withVersionMoved(event.from, event.to)))
                         .withCodeVersion(element, map[state.shownVersion(element)])
+                }
+                ?: state
+
+            // Picking a step is looking, like picking a version: no history
+            // entry. A row the block does not have leaves the one that is picked
+            // picked, rather than quietly moving to a neighbour.
+            is SelectCodeStep -> state.selectedCodeElement
+                ?.let { element ->
+                    when {
+                        event.index == null -> state.copy(codeStep = null)
+                        event.index !in element.steps.indices -> state
+                        else -> state.showingCodeStep(element.id, event.index)
+                    }
+                }
+                ?: state
+
+            // The four step edits below are ordinary element edits with an
+            // ordinary history entry each, all through the slide-level helpers
+            // so the build order follows the steps it plays.
+            is AddCodeStep -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.let { element ->
+                    val picked: Int? = state.codeStep?.takeIf {
+                        element.id == state.selectedCodeElement?.id && it in element.steps.indices
+                    }
+                    val after: Int = picked ?: element.steps.lastIndex
+                    val added: CodeStep = picked?.let { element.steps[it] }
+                        ?: CodeStep(version = state.shownVersion(element))
+
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withSlide(state.selectedSlide.addingCodeStep(element.id, after, added))
+                        .showingCodeStep(element.id, after + 1)
+                }
+                ?: state
+
+            is RemoveCodeStep -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.takeIf { event.index in it.steps.indices }
+                ?.let { element ->
+                    // The row picked follows the step it pointed at: back one
+                    // when it sat behind the one that went, and onto whatever
+                    // took its place when it was the one that went.
+                    val left: Int = element.steps.size - 1
+                    val picked: Int? = state.codeStep
+                    val at: Int? = when {
+                        left == 0 || picked == null -> null
+                        picked < event.index -> picked
+                        picked > event.index -> picked - 1
+                        else -> picked.coerceAtMost(left - 1)
+                    }
+
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withSlide(state.selectedSlide.removingCodeStep(element.id, event.index))
+                        .showingCodeStep(element.id, at)
+                }
+                ?: state
+
+            is MoveCodeStep -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.takeIf {
+                    event.from != event.to &&
+                        event.from in it.steps.indices &&
+                        event.to in it.steps.indices
+                }
+                ?.let { element ->
+                    val map: List<Int> =
+                        versionsAfterMoving(element.steps.size, event.from, event.to)
+                    val at: Int? = state.codeStep?.let { map[it.coerceIn(map.indices)] }
+
+                    undone.push(state.document)
+                    redone.clear()
+                    state
+                        .withSlide(
+                            state.selectedSlide.movingCodeStep(element.id, event.from, event.to),
+                        )
+                        .showingCodeStep(element.id, at)
+                }
+                ?: state
+
+            is UpdateCodeStep -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.takeIf { event.index in it.steps.indices }
+                ?.let { element ->
+                    val step: CodeStep = event.step
+                        .copy(version = event.step.version.coerceIn(element.sources.indices))
+                    if (element.steps[event.index] == step) return@let state
+
+                    undone.push(state.document)
+                    redone.clear()
+                    val edited: EditorState = state
+                        .withSlide(
+                            state.selectedSlide.updatingCodeStep(element.id, event.index, step),
+                        )
+                    // The canvas follows the row being edited, and only that one:
+                    // rewriting a row nobody is looking at is not a reason to
+                    // move what is on show.
+                    if (state.codeStep == event.index) edited.showingCodeStep(element.id, event.index)
+                    else edited
                 }
                 ?: state
 
@@ -1786,11 +1914,12 @@ fun EditorPresenter(
                     id != reduced.selectedSlideId && reduced.document.slides.any { it.id == id }
                 }
 
-            // The version showing follows the selection: point at another block,
-            // or at another slide, and the editor is back on version 0, since a
-            // version index only means anything against the block it indexes.
-            // Here rather than in the twenty-odd reductions that move the
-            // selection, for the same reason the pruning above is.
+            // The version showing and the step being edited follow the selection:
+            // point at another block, or at another slide, and the editor is back
+            // on version 0 with no step picked, since either index only means
+            // anything against the block it indexes. Here rather than in the
+            // twenty-odd reductions that move the selection, for the same reason
+            // the pruning above is.
             val keepsCodeVersion: Boolean =
                 reduced.selectedSlideId == state.selectedSlideId &&
                     reduced.selectedElementIds == state.selectedElementIds
@@ -1798,6 +1927,7 @@ fun EditorPresenter(
             state = reduced.copy(
                 alsoSelectedSlideIds = alsoSelected,
                 codeVersion = if (keepsCodeVersion) reduced.codeVersion else 0,
+                codeStep = if (keepsCodeVersion) reduced.codeStep else null,
                 canUndo = undone.isNotEmpty(),
                 canRedo = redone.isNotEmpty(),
                 canPaste = clipboard != null,

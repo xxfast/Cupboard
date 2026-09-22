@@ -44,6 +44,40 @@ data class CodeStep(
 )
 
 /**
+ * The ranges [text] names, as an inspector field writes them: `1-3, 7, 9-12`.
+ *
+ * Forgiving on purpose, because this parses every keystroke of a field someone
+ * is still typing into: whitespace anywhere is ignored, empty and repeated
+ * commas are dropped, a token that is not a number or a pair of them is dropped,
+ * and a reversed pair (`3-1`) is read as the range it obviously means. Empty
+ * text is an empty list, which is a [CodeStep]'s "all lines" and "no highlight".
+ *
+ * ASCII hyphen only. An en dash is what a word processor would have made of it,
+ * and this field is not one.
+ */
+fun parseLineRanges(text: String): List<LineRange> = text.split(',').mapNotNull { token ->
+    val parts: List<String> = token.split('-').map { it.trim() }
+    val bounds: List<Int> = parts.mapNotNull { it.toIntOrNull() }
+    when {
+        bounds.size != parts.size -> null
+        bounds.size == 1 -> LineRange(bounds[0], bounds[0])
+        bounds.size == 2 -> LineRange(minOf(bounds[0], bounds[1]), maxOf(bounds[0], bounds[1]))
+        else -> null
+    }
+}
+
+/**
+ * [parseLineRanges] the other way: what the field shows for these ranges.
+ *
+ * A one-line range is the line on its own (`7` rather than `7-7`), which is both
+ * what someone would write and what parses back to the same thing. Empty is the
+ * empty string, so a step that reveals everything shows an empty field.
+ */
+fun List<LineRange>.formatLineRanges(): String = joinToString(", ") { range ->
+    if (range.first == range.last) "${range.first}" else "${range.first}-${range.last}"
+}
+
+/**
  * The 1-based original line numbers [step] shows, in order, out of a block of
  * [lineCount] lines. Empty [CodeStep.reveal] means every line.
  *

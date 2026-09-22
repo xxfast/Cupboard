@@ -509,17 +509,49 @@ fun Slide.galleryImageAt(element: GalleryElement, step: Int): Int {
  */
 fun Slide.gallerySteps(galleryId: String): List<Build> {
     val gallery: GalleryElement = elementById(galleryId) as? GalleryElement ?: return emptyList()
-    return (1 until gallery.images.size).map { index ->
+    return stepBuilds(galleryId, gallery.images.size, GalleryStepDuration)
+}
+
+/**
+ * The builds that walk [elementId] through whatever its states are: [gallerySteps]
+ * for a gallery, and the same shape of walk for a code block's [CodeElement.steps]
+ * or a diagram's [DiagramElement.steps].
+ *
+ * One rule for all three because they are one idea: an element that holds its own
+ * list of states is walked through it by [Build.elementStep], and what differs is
+ * only which list. Empty for every other kind, and for an element with fewer than
+ * two states, per [gallerySteps]' reasoning: the first state needs no build.
+ */
+fun Slide.elementSteps(elementId: String): List<Build> =
+    when (val element: Element? = elementById(elementId)) {
+        is GalleryElement -> gallerySteps(elementId)
+        is CodeElement -> stepBuilds(elementId, element.steps.size, CodeStepBuildDuration)
+        is DiagramElement -> stepBuilds(elementId, element.steps.size, CodeStepBuildDuration)
+        else -> emptyList()
+    }
+
+/**
+ * One click per state after the first, each dissolving into the next: what every
+ * kind of element walk is made of, and the only thing [gallerySteps] and
+ * [elementSteps] disagree about is [count] and [durationMs].
+ */
+private fun stepBuilds(elementId: String, count: Int, durationMs: Int): List<Build> =
+    (1 until count).map { index ->
         Build(
-            elementId = galleryId,
+            elementId = elementId,
             kind = BuildKind.Action,
             effect = BuildEffect.Dissolve,
-            durationMs = GalleryStepDuration,
+            durationMs = durationMs,
             trigger = BuildTrigger.OnClick,
             elementStep = index,
         )
     }
-}
 
 /** How long one picture takes to dissolve into the next, in both the build and the canvas. */
 const val GalleryStepDuration: Int = 400
+
+/**
+ * How long one code step takes to become the next. Diagrams borrow it: a stepped
+ * diagram is the same walk, and two numbers for one feel would only drift apart.
+ */
+const val CodeStepBuildDuration: Int = 400

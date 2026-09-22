@@ -1021,6 +1021,169 @@ extension EditorView {
         }
     }
 
+    /// The block's play steps, in play order: what it shows and what it points
+    /// at, one row each, over the same strip of buttons the Versions list
+    /// carries. The picked row opens the three fields under the list, which are
+    /// the whole of a step: the version it plays, the lines it shows, and the
+    /// lines it spotlights.
+    ///
+    /// Clicking the picked row again lets go of it, since a step is a place to
+    /// stand on the canvas and there has to be a way off it.
+    func codeStepsSection(_ code: CodeFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Steps")
+
+            if code.stepCount == 0 {
+                Text("No steps yet")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(palette.faint)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(Array(0..<code.stepCount), id: \.self) { index in
+                        CodeStepRow(
+                            index: index,
+                            summary: index < code.stepSummaries.count
+                                ? code.stepSummaries[index]
+                                : "",
+                            picked: index == code.selectedStep,
+                            palette: palette
+                        ) {
+                            host.selectCodeStep(
+                                index: Int32(index == code.selectedStep ? -1 : index)
+                            )
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 6) {
+                galleryStep("plus", help: "Add Step") { host.addCodeStep() }
+                // The three that work on a row need one picked, unlike the
+                // versions, which always have the one on show to work on.
+                galleryStep("minus", help: "Remove Step") {
+                    host.removeCodeStep(index: Int32(code.selectedStep))
+                }
+                .disabled(code.selectedStep < 0)
+                galleryStep("chevron.up", help: "Move Up") {
+                    host.moveCodeStep(
+                        from: Int32(code.selectedStep),
+                        to: Int32(code.selectedStep - 1)
+                    )
+                }
+                .disabled(code.selectedStep <= 0)
+                galleryStep("chevron.down", help: "Move Down") {
+                    host.moveCodeStep(
+                        from: Int32(code.selectedStep),
+                        to: Int32(code.selectedStep + 1)
+                    )
+                }
+                .disabled(code.selectedStep < 0 || code.selectedStep >= code.stepCount - 1)
+                Spacer(minLength: 0)
+            }
+
+            if code.selectedStep >= 0 { codeStepFields(code) }
+
+            // The walk through the steps, written into the slide's build order.
+            // The core drops the ones it already wrote, so pressing this twice
+            // leaves one set.
+            panelButton("Add Step Builds", symbol: "list.number") { host.addElementSteps() }
+                .disabled(code.stepCount < 2)
+        }
+    }
+
+    /// The picked step itself: which source it plays, and its two line sets,
+    /// written the way the parser reads them (`1-3, 7`). Both fields commit on
+    /// Enter or on losing focus, so a line set typed in is one edit.
+    func codeStepFields(_ code: CodeFormat) -> some View {
+        let versions = (0..<code.versionCount).map { "Version \($0 + 1)" }
+        let step = code.selectedStep
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                rowLabel("Version")
+                Spacer(minLength: 0)
+                stylePopup(versions, selected: code.stepVersion) { index in
+                    host.setCodeStepVersion(index: Int32(step), version: Int32(index))
+                }
+                .frame(width: 128)
+            }
+
+            HStack(spacing: 8) {
+                rowLabel("Show Lines")
+                Spacer(minLength: 0)
+                StringField(placeholder: "All", value: code.stepLines, palette: palette) {
+                    host.setCodeStepLines(index: Int32(step), text: $0)
+                }
+                .frame(width: 128)
+            }
+
+            HStack(spacing: 8) {
+                rowLabel("Highlight")
+                Spacer(minLength: 0)
+                StringField(placeholder: "None", value: code.stepHighlight, palette: palette) {
+                    host.setCodeStepHighlight(index: Int32(step), text: $0)
+                }
+                .frame(width: 128)
+            }
+        }
+    }
+
+    /// One row of the Steps list: the badge, what the step is called, and the
+    /// line under it saying what it plays. `CodeVersionRow` with a second line.
+    struct CodeStepRow: View {
+        let index: Int
+        /// What the step shows and points at, already worded by the host.
+        let summary: String
+        /// This is the step the canvas is standing on and the fields edit.
+        let picked: Bool
+        let palette: Palette
+        let onTap: () -> Void
+
+        @State private var hovering = false
+
+        private var shape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+        }
+
+        var body: some View {
+            HStack(spacing: 9) {
+                Text("\(index + 1)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(picked ? palette.accentText : palette.badgeOffText)
+                    .frame(width: 17, height: 17)
+                    .background(picked ? palette.accent : palette.badgeOff, in: Circle())
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Step \(index + 1)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.text)
+                        .lineLimit(1)
+
+                    Text(summary)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(palette.faint)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9))
+            .background(fill, in: shape)
+            .overlay {
+                if picked { shape.inset(by: 0.5).stroke(palette.accent, lineWidth: 1) }
+            }
+            .contentShape(shape)
+            .onTapGesture(perform: onTap)
+            .onHover { hovering = $0 }
+        }
+
+        /// `CodeVersionRow`'s fills: the accent at 22% for the picked one, the
+        /// row fill lifted on hover for the rest.
+        private var fill: Color {
+            if picked { return palette.accent.opacity(0.22) }
+            return hovering ? palette.rowHov : palette.rowBg
+        }
+    }
+
     /// The palette a code block is painted in, which is its look rather than its
     /// content, so it sits in Style while the language and the gutter sit in the
     /// Code segment.
@@ -1442,7 +1605,7 @@ extension EditorView {
             // The walk through the pictures, written into the slide's build
             // order: one click each after the first. The core drops the ones it
             // already wrote, so pressing this twice leaves one set.
-            panelButton("Add Slide Steps", symbol: "list.number") { host.addGallerySteps() }
+            panelButton("Add Slide Steps", symbol: "list.number") { host.addElementSteps() }
                 .disabled(gallery.count < 2)
         }
     }

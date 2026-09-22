@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
@@ -158,7 +159,7 @@ fun EditorInspector(
      * segment's Add Images. Null on a shell with no file picker, which greys it. */
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
     /** Write the selected gallery's step builds onto the slide, one per image. */
-    onAddGallerySteps: (String) -> Unit = {},
+    onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: which one the canvas shows, and the
      * four verbs of the Code segment's Versions list. All of it the core's. */
     codeVersion: Int = 0,
@@ -166,6 +167,14 @@ fun EditorInspector(
     onAddCodeVersion: (String) -> Unit = {},
     onRemoveCodeVersion: (elementId: String, index: Int) -> Unit = { _, _ -> },
     onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
+    /** The selected code block's steps: which one the inspector is editing, and
+     * the five verbs of the Code segment's Steps list. All of it the core's. */
+    codeStep: Int? = null,
+    onSelectCodeStep: (Int?) -> Unit = {},
+    onAddCodeStep: (String) -> Unit = {},
+    onRemoveCodeStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
+    onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
+    onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -238,12 +247,18 @@ fun EditorInspector(
                 onDeleteObjectStyle = onDeleteObjectStyle,
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
-                onAddGallerySteps = onAddGallerySteps,
+                onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,
                 onAddCodeVersion = onAddCodeVersion,
                 onRemoveCodeVersion = onRemoveCodeVersion,
                 onMoveCodeVersion = onMoveCodeVersion,
+                codeStep = codeStep,
+                onSelectCodeStep = onSelectCodeStep,
+                onAddCodeStep = onAddCodeStep,
+                onRemoveCodeStep = onRemoveCodeStep,
+                onMoveCodeStep = onMoveCodeStep,
+                onUpdateCodeStep = onUpdateCodeStep,
                 slide = slide,
                 layouts = layouts,
                 isEditingLayouts = isEditingLayouts,

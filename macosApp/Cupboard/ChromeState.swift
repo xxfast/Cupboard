@@ -592,6 +592,18 @@ struct CodeFormat {
     /// Versions list's cue to stay away.
     let versionCount: Int
     let shownVersion: Int
+    /// The block's play steps, and which row the Steps list has picked, -1 when
+    /// none is. 0 steps unless exactly one code block is selected, like the
+    /// versions above.
+    let stepCount: Int
+    let selectedStep: Int
+    /// The picked step, flattened: the version it plays, and its two line sets
+    /// as the fields write them. Version 0 and empty text when no row is picked.
+    let stepVersion: Int
+    let stepLines: String
+    let stepHighlight: String
+    /// One line per step, as the rows read it under their title.
+    let stepSummaries: [String]
 
     init(_ props: CodeProps) {
         language = props.language
@@ -601,6 +613,12 @@ struct CodeFormat {
         wrap = props.wrap
         versionCount = Int(props.versionCount)
         shownVersion = Int(props.shownVersion)
+        stepCount = Int(props.stepCount)
+        selectedStep = Int(props.selectedStep)
+        stepVersion = Int(props.stepVersion)
+        stepLines = props.stepLines
+        stepHighlight = props.stepHighlight
+        stepSummaries = props.stepSummaries
     }
 }
 

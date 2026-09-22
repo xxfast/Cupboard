@@ -4,6 +4,7 @@ import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
@@ -140,6 +141,18 @@ data class EditorState(
      * where you left the editor.
      */
     val codeVersion: Int = 0,
+    /**
+     * Which of the selected code block's steps the inspector is editing
+     * ([CodeElement.steps]), null being none of them, which is where a fresh
+     * selection starts. Follows [codeVersion] exactly: null again whenever the
+     * selection moves, since a step index only means anything against the block
+     * it indexes.
+     *
+     * Selecting a step also moves [codeVersion] to the version that step plays,
+     * so the canvas shows the source being stepped through rather than a version
+     * the row has nothing to do with.
+     */
+    val codeStep: Int? = null,
     /** Whether Edit > Undo / Redo are live. The history itself stays in the
      * presenter: shells only need to know what to grey out, and a state that
      * carried its own past would serialize every version of the document. */
@@ -342,6 +355,17 @@ data class EditorState(
 
     /** How many versions the version picker offers, 0 when no code block is selected. */
     val codeVersionCount: Int get() = selectedCodeElement?.sources?.size ?: 0
+
+    /**
+     * The step [codeStep] names, null when no row is picked and when the one
+     * that was picked is no longer there: an index outliving the step it pointed
+     * at is the same stale-pointer story [sourceAt] tells, and the inspector
+     * shows no row rather than the wrong one.
+     */
+    val selectedCodeStep: CodeStep? get() {
+        val index: Int = codeStep ?: return null
+        return selectedCodeElement?.steps?.getOrNull(index)
+    }
 
     /**
      * Which version of [element] the canvas draws, which is [codeVersion] for the
@@ -879,18 +903,19 @@ sealed interface EditorEvent {
      */
     data class AddBuild(val build: Build) : EditorEvent
     /**
-     * Writes the build order that walks a gallery through its pictures: one
-     * click each after the first, per `Slide.gallerySteps`.
+     * Writes the build order that walks an element through its own states: a
+     * gallery through its pictures, a code block or a diagram through its steps,
+     * one click each after the first, per `Slide.elementSteps`.
      *
-     * The gallery's existing step builds go first, so pressing it twice leaves
-     * the slide with one set rather than two, and adding a picture and pressing
-     * it again re-times the carousel instead of appending to it. Every other
+     * The element's existing step builds go first, so pressing it twice leaves
+     * the slide with one set rather than two, and adding a picture or a step and
+     * pressing it again re-times the walk instead of appending to it. Every other
      * build for the element is left exactly where it is.
      *
-     * One history entry. An id the slide has no gallery under is a no-op, and so
-     * is a set of steps the slide already carries.
+     * One history entry. An id the slide doesn't hold is a no-op, and so is a set
+     * of steps the slide already carries.
      */
-    data class AddGallerySteps(val elementId: String) : EditorEvent
+    data class AddElementSteps(val elementId: String) : EditorEvent
     /**
      * Replaces the build at [index] with [build]: what every control in the build
      * order writes, from its effect to its trigger. One history entry, and an
@@ -1042,6 +1067,56 @@ sealed interface EditorEvent {
      * a move that lands where it started is a no-op.
      */
     data class MoveCodeVersion(val elementId: String, val from: Int, val to: Int) : EditorEvent
+    /**
+     * Picks step [index] of the selected code block for the inspector to edit,
+     * null picking none. Nothing in the document changes, so no history entry:
+     * which row you are on is where you are, not an edit.
+     *
+     * [EditorState.codeVersion] moves to the version that step plays, so the
+     * canvas shows the source the step is written against. An index the block
+     * has no step at changes nothing: the row that was picked stays picked.
+     */
+    data class SelectCodeStep(val index: Int?) : EditorEvent
+    /**
+     * Adds a step to the code block [elementId], behind the one being edited (at
+     * the end when none is), and picks it.
+     *
+     * A copy of the picked step, so a new state starts from the one before it the
+     * way a new version starts from the text it rewrites; with no step picked it
+     * is a plain step on the version showing, which reveals everything and
+     * highlights nothing.
+     *
+     * One history entry, and the slide's builds follow their steps. A no-op when
+     * the id is not an unlocked code block on the selected slide.
+     */
+    data class AddCodeStep(val elementId: String) : EditorEvent
+    /**
+     * Takes step [index] off the code block [elementId]. Builds behind it come
+     * back one and the build that played it goes, per `Slide.removingCodeStep`.
+     *
+     * One history entry. A no-op when the id is stale or when [index] names no
+     * step the block has.
+     */
+    data class RemoveCodeStep(val elementId: String, val index: Int) : EditorEvent
+    /**
+     * Moves step [from] of the code block [elementId] to sit at [to], builds
+     * following the step they played. One history entry, and a move that lands
+     * where it started is a no-op.
+     */
+    data class MoveCodeStep(val elementId: String, val from: Int, val to: Int) : EditorEvent
+    /**
+     * Replaces step [index] of the code block [elementId] with [step]: what every
+     * control on the step row writes, from its revealed lines to its version.
+     *
+     * [CodeStep.version] is clamped into the versions the block has, so a row
+     * pointing past the end lands on the last one rather than on nothing. One
+     * history entry, and a step already exactly like this is a no-op.
+     */
+    data class UpdateCodeStep(
+        val elementId: String,
+        val index: Int,
+        val step: CodeStep,
+    ) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     /**
      * Edit Slide Layouts: the navigator swaps its slides for the deck's layouts

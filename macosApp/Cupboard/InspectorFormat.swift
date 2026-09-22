@@ -83,6 +83,8 @@ extension EditorView {
                     if code.versionCount > 0 {
                         palette.divider.frame(height: 1)
                         codeVersionsSection(code)
+                        palette.divider.frame(height: 1)
+                        codeStepsSection(code)
                     }
                 }
 
