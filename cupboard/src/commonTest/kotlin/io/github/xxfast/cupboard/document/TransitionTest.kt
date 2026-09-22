@@ -116,3 +116,46 @@ class TransitionTest {
 
 /** The words on an element, for the tests that only ever put text on a slide. */
 private fun Element.text(): String = (this as TextElement).text
+
+class TravellingElementTest {
+    private val from = TextElement(frame = Frame(0f, 0f, 200f, 100f), text = "Hi", fontSize = 96f)
+    private val to = TextElement(frame = Frame(100f, 50f, 400f, 300f), text = "Hi", fontSize = 48f)
+
+    @Test
+    fun atZeroItSitsWhereItLeftFromAtTheSizeItLeftAt() {
+        val at: TextElement = to.travellingFrom(from, 0f) as TextElement
+        assertEquals(from.frame, at.frame)
+        assertEquals(from.fontSize, at.fontSize)
+        assertEquals(to.text, at.text)
+    }
+
+    @Test
+    fun atOneItIsTheArrivingElement() {
+        assertEquals(to, to.travellingFrom(from, 1f))
+        assertEquals(to, to.travellingFrom(from, 1.5f))
+    }
+
+    @Test
+    fun halfwayItIsHalfwayInBoxAndInType() {
+        val at: TextElement = to.travellingFrom(from, 0.5f) as TextElement
+        assertEquals(Frame(50f, 25f, 300f, 200f), at.frame)
+        assertEquals(72f, at.fontSize)
+    }
+
+    @Test
+    fun aDifferentKindOnlyLendsItsBox() {
+        val shape = ShapeElement(frame = from.frame, labelSize = 30f)
+        val at: TextElement = to.travellingFrom(shape, 0f) as TextElement
+        assertEquals(from.frame, at.frame)
+        assertEquals(to.fontSize, at.fontSize)
+    }
+
+    @Test
+    fun aShapeBlendsItsLabelAndCorners() {
+        val a = ShapeElement(frame = from.frame, labelSize = 10f, cornerRadius = 0f)
+        val b = ShapeElement(frame = to.frame, labelSize = 30f, cornerRadius = 40f)
+        val at: ShapeElement = b.travellingFrom(a, 0.5f) as ShapeElement
+        assertEquals(20f, at.labelSize)
+        assertEquals(20f, at.cornerRadius)
+    }
+}

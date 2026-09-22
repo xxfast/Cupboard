@@ -45,6 +45,7 @@ import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.entryBuildAt
 import io.github.xxfast.cupboard.document.exitBuildAt
 import io.github.xxfast.cupboard.document.galleryImageAt
+import io.github.xxfast.cupboard.document.travellingFrom
 import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isVisibleAt
 import io.github.xxfast.cupboard.document.magicMovePairs
@@ -143,10 +144,16 @@ fun SlideView(
                 else -> null
             }
 
+            // What is drawn this frame: the element part-way along its journey
+            // (box and type both), or the element itself. Everything keyed or
+            // looked up by id below stays on [element]; only the drawing moves.
+            val drawn: Element =
+                if (origin != null) element.travellingFrom(origin, progress.value) else element
+
             // The editor draws every element at rest: nothing is hidden, nothing
             // animates itself in, and no build is read at all.
             if (step == null) {
-                ElementView(element, transform = travel)
+                ElementView(drawn, transform = travel)
                 continue
             }
 
@@ -170,8 +177,8 @@ fun SlideView(
             // instead of around the slide's corner.
             Box(
                 modifier = Modifier
-                    .offset(element.frame.x.dp, element.frame.y.dp)
-                    .size(element.frame.width.dp, element.frame.height.dp)
+                    .offset(drawn.frame.x.dp, drawn.frame.y.dp)
+                    .size(drawn.frame.width.dp, drawn.frame.height.dp)
                     .then(
                         if (target == null) Modifier
                         else Modifier.pointerInput(target, linkHandler) {
@@ -185,9 +192,9 @@ fun SlideView(
                     exit = buildExit(element, exit?.build, exit?.delayMs ?: 0),
                 ) {
                     ElementView(
-                        element = element,
-                        originX = element.frame.x,
-                        originY = element.frame.y,
+                        element = drawn,
+                        originX = drawn.frame.x,
+                        originY = drawn.frame.y,
                         codeStep = if (element is CodeElement) {
                             slide.codeStepFor(element, step) ?: deliveredStep(reveal)
                         } else null,

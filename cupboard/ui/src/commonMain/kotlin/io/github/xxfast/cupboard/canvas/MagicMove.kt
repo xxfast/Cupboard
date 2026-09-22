@@ -36,10 +36,12 @@ data class PlayTransition(
  * A live override of what an element's own frame would have drawn: where it sits
  * relative to that frame, how much of it is drawn, and how far through it is.
  *
- * Deltas rather than a frame on purpose. An element interpolated by frame would
- * be measured again every animation frame, so its text would reflow all the way
- * across a Magic Move; a scale and a translation ride the graphics layer the
- * element already has, and its content is laid out once, at rest.
+ * Deltas on the graphics layer, for what a layer can honestly do: an action build
+ * nudges, spins, scales and dims a box that was laid out at rest. A Magic Move
+ * does not scale through here, because what a box holds has a size of its own,
+ * and type stretched to a wider box is not type set in a wider box: its geometry
+ * rides the element instead (`Element.travellingFrom`), laid out again each
+ * frame the way Keynote reflows, and only rotation and opacity come this way.
  *
  * [translationX] and [translationY] are in document units, like every other
  * geometry the canvas carries.
@@ -56,21 +58,16 @@ data class ElementTransform(
 /**
  * Where a travelling element is at [progress] of its journey from [from] to [to].
  *
- * Measured against [to], the element the arriving slide holds: the composable is
- * the target's, drawn at the target's size, and the transform walks it back to
- * where it started. At progress 1 it is the identity, so the element lands
- * exactly where the slide says it sits.
+ * Only the two things a layer carries without distorting content: rotation and
+ * opacity. Where the element sits and how big it is come from the element
+ * itself, blended by `Element.travellingFrom`, so the composable drawn is the
+ * target's at its in-between box and type. At progress 1 both are the target's
+ * own, so the element lands exactly where the slide says it sits.
  */
 fun magicMoveTransform(from: Element, to: Element, progress: Float): ElementTransform {
     val fraction: Float = progress.coerceIn(0f, 1f)
-    val width: Float = lerp(from.frame.width, to.frame.width, fraction)
-    val height: Float = lerp(from.frame.height, to.frame.height, fraction)
 
     return ElementTransform(
-        translationX = lerp(from.frame.centerX, to.frame.centerX, fraction) - to.frame.centerX,
-        translationY = lerp(from.frame.centerY, to.frame.centerY, fraction) - to.frame.centerY,
-        scaleX = if (to.frame.width == 0f) 1f else width / to.frame.width,
-        scaleY = if (to.frame.height == 0f) 1f else height / to.frame.height,
         rotation = lerp(from.rotation, to.rotation, fraction),
         opacity = lerp(from.opacity, to.opacity, fraction),
     )

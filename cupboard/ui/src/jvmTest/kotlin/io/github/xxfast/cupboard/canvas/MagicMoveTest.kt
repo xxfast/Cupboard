@@ -25,27 +25,21 @@ class MagicMoveTest {
         assertEquals(ElementTransform(rotation = 90f, opacity = 1f), landed)
     }
 
-    /** Measured against the target, so the start is the whole of the distance back. */
+    /**
+     * Where the element is and how big it is never come through the layer: the
+     * box and the type are blended on the element itself (`travellingFrom`), so
+     * content reflows into its new size rather than being stretched to it.
+     */
     @Test
-    fun theStartOfTheJourneyIsWhereTheElementCameFrom() {
+    fun theStartOfTheJourneyIsTheElementAsItLeft() {
         val start: ElementTransform = magicMoveTransform(from, to, 0f)
-        assertEquals(-500f, start.translationX)
-        assertEquals(-250f, start.translationY)
-        assertEquals(0.5f, start.scaleX)
-        assertEquals(0.5f, start.scaleY)
-        assertEquals(0f, start.rotation)
-        assertEquals(0.5f, start.opacity)
+        assertEquals(ElementTransform(rotation = 0f, opacity = 0.5f), start)
     }
 
     @Test
-    fun halfwayIsHalfwayInEveryDimension() {
+    fun halfwayIsHalfwayInRotationAndOpacityOnly() {
         val half: ElementTransform = magicMoveTransform(from, to, 0.5f)
-        assertEquals(-250f, half.translationX)
-        assertEquals(-125f, half.translationY)
-        assertEquals(0.75f, half.scaleX)
-        assertEquals(0.75f, half.scaleY)
-        assertEquals(45f, half.rotation)
-        assertEquals(0.75f, half.opacity)
+        assertEquals(ElementTransform(rotation = 45f, opacity = 0.75f), half)
     }
 
     @Test

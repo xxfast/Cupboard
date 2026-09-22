@@ -100,3 +100,61 @@ fun magicMovePairs(from: Slide, to: Slide): List<Pair<Element, Element>> {
         if (index == -1) null else available.removeAt(index) to arriving
     }
 }
+
+/**
+ * This element [fraction] of the way through travelling from [from], for a Magic
+ * Move to draw.
+ *
+ * The geometry rides the element rather than a scale on its layer, because what
+ * a slide holds has a size of its own: type set at 48pt in a box that used to be
+ * wider is 48pt in a narrower box, not 48pt stretched to fit, so the box is lerped
+ * and the content laid out again inside it, the way Keynote reflows. The one
+ * thing that does grow is the type itself, when the two sides set it differently
+ * and are the same kind of element: a title travelling into a subtitle shrinks
+ * as it goes. Everything else is the arriving element's, so at 1 this is `this`.
+ */
+fun Element.travellingFrom(from: Element, fraction: Float): Element {
+    val t: Float = fraction.coerceIn(0f, 1f)
+    if (t >= 1f) return this
+
+    val frame = Frame(
+        x = blend(from.frame.x, frame.x, t),
+        y = blend(from.frame.y, frame.y, t),
+        width = blend(from.frame.width, frame.width, t),
+        height = blend(from.frame.height, frame.height, t),
+    )
+
+    return when (this) {
+        is TextElement -> copy(
+            frame = frame,
+            fontSize = if (from is TextElement) blend(from.fontSize, fontSize, t) else fontSize,
+        )
+        is ShapeElement -> copy(
+            frame = frame,
+            labelSize = if (from is ShapeElement) blend(from.labelSize, labelSize, t) else labelSize,
+            cornerRadius = if (from is ShapeElement) blend(from.cornerRadius, cornerRadius, t) else cornerRadius,
+        )
+        is CodeElement -> copy(
+            frame = frame,
+            fontSize = if (from is CodeElement) blend(from.fontSize, fontSize, t) else fontSize,
+        )
+        is TerminalElement -> copy(
+            frame = frame,
+            fontSize = if (from is TerminalElement) blend(from.fontSize, fontSize, t) else fontSize,
+        )
+        is DiagramElement -> copy(
+            frame = frame,
+            fontSize = if (from is DiagramElement) blend(from.fontSize, fontSize, t) else fontSize,
+        )
+        is EquationElement -> copy(
+            frame = frame,
+            fontSize = if (from is EquationElement) blend(from.fontSize, fontSize, t) else fontSize,
+        )
+        // A group's children sit in absolute coordinates, so the group's own box
+        // is all that moves here: its renderer scales them into it.
+        is ImageElement, is GalleryElement, is VideoElement, is AudioElement, is GroupElement ->
+            update(frame, opacity, rotation, flippedHorizontally, flippedVertically, locked)
+    }
+}
+
+private fun blend(from: Float, to: Float, t: Float): Float = from + (to - from) * t
