@@ -587,6 +587,11 @@ struct CodeFormat {
     let size: Double
     let showLineNumbers: Bool
     let wrap: Bool
+    /// How many versions of its source the block holds, and which one the editor
+    /// is showing. 0 unless exactly one code block is selected, which is the
+    /// Versions list's cue to stay away.
+    let versionCount: Int
+    let shownVersion: Int
 
     init(_ props: CodeProps) {
         language = props.language
@@ -594,6 +599,8 @@ struct CodeFormat {
         size = Double(props.fontSize)
         showLineNumbers = props.showLineNumbers
         wrap = props.wrap
+        versionCount = Int(props.versionCount)
+        shownVersion = Int(props.shownVersion)
     }
 }
 

@@ -26,13 +26,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.sourceAt
 import kotlin.math.roundToInt
 
 /** How long a block takes to walk from one step to the next. */
 private const val CodeStepDuration: Int = 350
 
-/** How far, in rows, a line arrives from and leaves towards. */
-private const val CodeStepSlide: Float = 0.4f
+/**
+ * How far, in rows, a line arrives from and leaves towards. Shared with
+ * [MorphedCodeLines], whose tokens come and go the same distance.
+ */
+internal const val CodeStepSlide: Float = 0.4f
 
 /** What one line does between two steps. */
 internal enum class LineMotion { Kept, Added, Removed }
@@ -108,6 +112,11 @@ private fun SteppedLine?.strength(): Float = if (this?.dimmed == true) CodeDimAl
  * Matching is by original line number, so nothing is diffed: the block filling in
  * a body line by line is the same line arriving, not a new one that looks like it.
  *
+ * All of that is one version of the block. A step that names another version has
+ * no lines in common with the one before it, so it hands over to
+ * [MorphedCodeLines], which animates the same change a token at a time on the
+ * same clock. The line path is what draws at rest either way.
+ *
  * A row is laid out rather than set as one string because the two orderings have
  * to be measured against each other, which is also what makes wrap behave: a line
  * that reflows is measured taller and everything under it stacks below that.
@@ -136,14 +145,27 @@ internal fun AnimatedCodeLines(
         from = to
     }
 
+    // A step names the version of the block it plays, so the lines a step shows
+    // are that version's lines and not the block's first ones.
+    val fromSource: String = element.sourceAt(from.version)
+    val toSource: String = element.sourceAt(to.version)
+
+    // Two versions are not one text with rows added and taken away, so nothing
+    // here can carry a line from one to the other: the token morph does that
+    // instead, and hands back at rest, where both ends are one version again.
+    if (fromSource != toSource) {
+        MorphedCodeLines(element, from, to, progress, modifier)
+        return
+    }
+
     val chrome: CodeChrome = element.theme.chrome
     val was: List<SteppedLine> =
-        remember(element.code, element.language, element.theme, from) {
-            steppedLines(element.code, element.language, element.theme, from)
+        remember(fromSource, element.language, element.theme, from) {
+            steppedLines(fromSource, element.language, element.theme, from)
         }
     val now: List<SteppedLine> =
-        remember(element.code, element.language, element.theme, to) {
-            steppedLines(element.code, element.language, element.theme, to)
+        remember(toSource, element.language, element.theme, to) {
+            steppedLines(toSource, element.language, element.theme, to)
         }
 
     val rows: List<CodeRow> = remember(was, now) {

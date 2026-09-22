@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -80,6 +83,7 @@ import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.resolvedLink
+import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
@@ -134,6 +138,15 @@ internal fun ColumnScope.FormatPanel(
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onAddGallerySteps: (String) -> Unit,
+    /**
+     * The code block's versions: which one the canvas is showing
+     * ([EditorState.codeVersion]) and the four verbs of the Versions list.
+     */
+    codeVersion: Int,
+    onSelectCodeVersion: (Int) -> Unit,
+    onAddCodeVersion: (String) -> Unit,
+    onRemoveCodeVersion: (elementId: String, index: Int) -> Unit,
+    onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit,
     /** The slide fallback's own arguments: what Format shows with nothing selected. */
     slide: Slide,
     layouts: List<Slide>,
@@ -227,6 +240,11 @@ internal fun ColumnScope.FormatPanel(
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
                 onAddGallerySteps = onAddGallerySteps,
+                codeVersion = codeVersion,
+                onSelectCodeVersion = onSelectCodeVersion,
+                onAddCodeVersion = onAddCodeVersion,
+                onRemoveCodeVersion = onRemoveCodeVersion,
+                onMoveCodeVersion = onMoveCodeVersion,
             )
         }
     }
@@ -614,6 +632,11 @@ private fun KindBody(
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onAddGallerySteps: (String) -> Unit,
+    codeVersion: Int,
+    onSelectCodeVersion: (Int) -> Unit,
+    onAddCodeVersion: (String) -> Unit,
+    onRemoveCodeVersion: (elementId: String, index: Int) -> Unit,
+    onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit,
 ) {
     when {
         segment == FormatSegment.Text && primary is TextElement -> TextBody(
@@ -635,8 +658,16 @@ private fun KindBody(
             onReplaceImage = onReplaceImage,
         )
 
-        segment == FormatSegment.Code && primary is CodeElement ->
-            CodeBody(primary = primary, elements = elements, onUpdate = onUpdate)
+        segment == FormatSegment.Code && primary is CodeElement -> CodeBody(
+            primary = primary,
+            elements = elements,
+            onUpdate = onUpdate,
+            version = codeVersion,
+            onSelectVersion = onSelectCodeVersion,
+            onAddVersion = onAddCodeVersion,
+            onRemoveVersion = onRemoveCodeVersion,
+            onMoveVersion = onMoveCodeVersion,
+        )
 
         segment == FormatSegment.Terminal && primary is TerminalElement ->
             TerminalBody(primary = primary, elements = elements, onUpdate = onUpdate)
@@ -900,16 +931,23 @@ private fun ShapeLabelBody(
 
 /**
  * A code block's content settings: what language it is highlighted as, how big
- * it is set, and the two switches about how it wraps.
+ * it is set, the two switches about how it wraps, and the versions it morphs
+ * between.
  *
  * The code itself isn't edited here. It is typed on the canvas, the way a text
- * box's text is; this is only how the block is read.
+ * box's text is; this is only how the block is read, and which of its versions
+ * the canvas is typing into.
  */
 @Composable
 private fun CodeBody(
     primary: CodeElement,
     elements: List<Element>,
     onUpdate: (List<Element>) -> Unit,
+    version: Int,
+    onSelectVersion: (Int) -> Unit,
+    onAddVersion: (String) -> Unit,
+    onRemoveVersion: (elementId: String, index: Int) -> Unit,
+    onMoveVersion: (elementId: String, from: Int, to: Int) -> Unit,
 ) {
     val enabled: Boolean = !primary.locked
     // The document's language is free-form and resolved case-insensitively
@@ -953,6 +991,101 @@ private fun CodeBody(
         checked = primary.wrap,
         onToggle = if (!enabled) null else ({ on -> format { it.copy(wrap = on) } }),
     )
+
+    // One block only: which version is showing is a fact about this block and
+    // about the canvas drawing it, and a picker speaking for several selected
+    // blocks at once would have nothing to show for itself.
+    if (elements.size != 1) return
+
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val sources: List<String> = primary.sources
+    // The state's version is free to be out of range for a moment (an undo that
+    // took the last one back), and the list has to point at a row that is there.
+    val shown: Int = version.coerceIn(sources.indices)
+
+    PanelDivider()
+    SectionLabel("VERSIONS")
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (index in sources.indices) VersionRow(
+            label = "Version ${index + 1}",
+            selected = index == shown,
+            enabled = enabled,
+            onClick = { onSelectVersion(index) },
+        )
+    }
+
+    // Up and down rather than a drag: a version list is short, the order is the
+    // order it plays in, and two buttons walk a version along it a click at a
+    // time without a gesture to arbitrate against the canvas.
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TonalButton(
+            label = "+",
+            enabled = enabled,
+            onClick = { onAddVersion(primary.id) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "−",
+            enabled = enabled && sources.size > 1,
+            onClick = { onRemoveVersion(primary.id, shown) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▲",
+            enabled = enabled && shown > 0,
+            onClick = { onMoveVersion(primary.id, shown, shown - 1) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▼",
+            enabled = enabled && shown < sources.size - 1,
+            onClick = { onMoveVersion(primary.id, shown, shown + 1) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+
+    Text(
+        text = "The canvas edits the shown version. A step morphs into the next.",
+        color = tokens.subtle,
+        fontSize = 11.5.sp,
+    )
+}
+
+/**
+ * One version in the code block's list: which one it is, and whether it is the
+ * one the canvas is showing.
+ *
+ * Dressed like the build-order rows next door, minus the grab glyph: nothing is
+ * dragged here, so the row is a plain target rather than a handle.
+ */
+@Composable
+private fun VersionRow(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val corner: RoundedCornerShape = RoundedCornerShape(6.dp)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(corner)
+            .background(if (selected) tokens.tonal else tokens.rowBg)
+            .let { if (selected) it.border(1.dp, tokens.accent, corner) else it }
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = if (selected) tokens.tonalText else tokens.text,
+            fontSize = 12.5.sp,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        )
+    }
 }
 
 /**

@@ -36,6 +36,8 @@ import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.presentationNumbers
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.slideById
+import io.github.xxfast.cupboard.document.sourceAt
+import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.AlignEdge
@@ -128,6 +130,16 @@ data class EditorState(
     @Transient val alsoSelectedSlideIds: Set<String> = emptySet(),
     /** The element selection, in the order it was made. Empty when nothing is selected. */
     val selectedElementIds: List<String> = emptyList(),
+    /**
+     * Which version of the selected code block the editor is showing and typing
+     * into ([CodeElement.versions]). 0 for every other element, and back to 0
+     * whenever the selection moves to another block or another slide, since a
+     * version index only means anything against the block it indexes.
+     *
+     * Serialized like [inspectorTab]: which version you were writing is part of
+     * where you left the editor.
+     */
+    val codeVersion: Int = 0,
     /** Whether Edit > Undo / Redo are live. The history itself stays in the
      * presenter: shells only need to know what to grey out, and a state that
      * carried its own past would serialize every version of the document. */
@@ -318,6 +330,34 @@ data class EditorState(
      * aligns the rest to in every editor that has an opinion.
      */
     val primaryElement: Element? get() = selectedElements.firstOrNull()
+
+    /**
+     * The code block [codeVersion] speaks for: the selection when it is exactly
+     * one code block, null otherwise. A version picker has nothing to point at
+     * until a single block is selected.
+     */
+    val selectedCodeElement: CodeElement? get() = selectedElementIds.singleOrNull()
+        ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+        as? CodeElement
+
+    /** How many versions the version picker offers, 0 when no code block is selected. */
+    val codeVersionCount: Int get() = selectedCodeElement?.sources?.size ?: 0
+
+    /**
+     * Which version of [element] the canvas draws, which is [codeVersion] for the
+     * selected block and version 0 for every other one: one block at a time is
+     * being written, and the rest of the slide shows the code it opens on.
+     *
+     * Computed rather than stored, like every other derivation here: the version
+     * showing is a function of the selection, and a second copy of it would be a
+     * second thing to keep true.
+     */
+    fun shownVersion(element: CodeElement): Int =
+        if (element.id == selectedCodeElement?.id) codeVersion.coerceIn(element.sources.indices)
+        else 0
+
+    /** [shownVersion]'s text: what the canvas renders and what the caret types into. */
+    fun shownSource(element: CodeElement): String = element.sourceAt(shownVersion(element))
 
     /**
      * Whether Use As Default has something to take the deck's text look off, and
@@ -972,6 +1012,36 @@ sealed interface EditorEvent {
      * every event that isn't allowed to land mid-edit.
      */
     data object EndTextEdit : EditorEvent
+    /**
+     * Shows version [index] of the selected code block, clamped into the versions
+     * it has. Nothing in the document changes, so no history entry: which version
+     * you are looking at is where you are, not an edit.
+     */
+    data class SelectCodeVersion(val index: Int) : EditorEvent
+    /**
+     * Adds a version to the code block [elementId], as a copy of the one on show,
+     * and moves to it: a rewrite starts from the text it rewrites.
+     *
+     * One history entry. A no-op when the id is not an unlocked code block on the
+     * selected slide, the way every element edit is.
+     */
+    data class AddCodeVersion(val elementId: String) : EditorEvent
+    /**
+     * Takes version [index] off the code block [elementId]. The block's steps
+     * follow the text they pointed at, and the ones pointing at the version that
+     * went fall back to the nearest one left.
+     *
+     * One history entry. A no-op when the id is stale, when the block has only
+     * the one version (a block with no source at all is not a state), or when
+     * [index] names no version it has.
+     */
+    data class RemoveCodeVersion(val elementId: String, val index: Int) : EditorEvent
+    /**
+     * Moves version [from] of the code block [elementId] to sit at [to], steps
+     * following their text like [RemoveCodeVersion]'s do. One history entry, and
+     * a move that lands where it started is a no-op.
+     */
+    data class MoveCodeVersion(val elementId: String, val from: Int, val to: Int) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     /**
      * Edit Slide Layouts: the navigator swaps its slides for the deck's layouts

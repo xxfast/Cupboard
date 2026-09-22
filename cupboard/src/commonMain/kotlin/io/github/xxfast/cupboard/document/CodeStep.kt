@@ -26,11 +26,21 @@ data class LineRange(val first: Int, val last: Int) {
  * Steps are held by the element ([CodeElement.steps]) and advanced through by
  * builds ([Build.elementStep]): the element says what its states are, the slide's
  * build order says when they arrive.
+ *
+ * [version] is which of the block's sources the step shows ([CodeElement.versions]),
+ * and is what makes a morph a morph: two steps on two versions are the same block
+ * saying two different things, and the renderer diffs one into the other. It is
+ * last in the list so the positional `CodeStep(reveal, highlight)` calls written
+ * before versions existed still mean what they meant.
+ *
+ * [reveal] and [highlight] count lines of that step's own version, not of
+ * version 0: a step showing a rewrite points at the rewrite's lines.
  */
 @Serializable
 data class CodeStep(
     val reveal: List<LineRange> = emptyList(),
     val highlight: List<LineRange> = emptyList(),
+    val version: Int = 0,
 )
 
 /**

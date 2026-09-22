@@ -33,6 +33,7 @@ import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.highlightedLines
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listMarkers
+import io.github.xxfast.cupboard.document.sourceAt
 import io.github.xxfast.cupboard.document.stepCount
 import io.github.xxfast.cupboard.document.visibleLines
 
@@ -342,19 +343,23 @@ private fun SourceWriter.shapeLiteral(element: ShapeElement): String = when {
  * A block with steps of its own is emitted as a `when (step)` over the slide's
  * steps, since which of its states is showing is the slide's build order to
  * decide. A block without them draws whole and needs no `when` at all.
+ *
+ * A step on a later version ([CodeStep.version]) exports that version's source,
+ * so a morph exports as the text either side of it. The tween between the two is
+ * not exported: the `when` hands over a new list of lines, and the exported deck
+ * cuts where Cupboard morphs.
  */
 private fun SourceWriter.code(slide: Slide, element: CodeElement) {
-    val lines: List<String> = element.code.split("\n")
     val steps: Int = slide.stepCount()
 
     block("CodeBlock(", ")") {
         if (element.steps.isEmpty() || steps == 1) {
-            codeLines(lines, slide.codeStepFor(element, steps - 1), "lines = listOf(", "),")
+            codeLines(element, slide.codeStepFor(element, steps - 1), "lines = listOf(", "),")
         } else {
             block("lines = when (step) {", "},") {
                 for (step in 0 until steps) {
                     val label: String = if (step == steps - 1) "else" else "$step"
-                    codeLines(lines, slide.codeStepFor(element, step), "$label -> listOf(", ")")
+                    codeLines(element, slide.codeStepFor(element, step), "$label -> listOf(", ")")
                 }
             }
         }
@@ -365,12 +370,14 @@ private fun SourceWriter.code(slide: Slide, element: CodeElement) {
 }
 
 private fun SourceWriter.codeLines(
-    lines: List<String>,
+    element: CodeElement,
     step: CodeStep?,
     open: String,
     close: String,
 ) {
     val state: CodeStep = step ?: CodeStep()
+    // The step's own version, since that is what its line ranges count in.
+    val lines: List<String> = element.sourceAt(state.version).split("\n")
     val shown: List<Int> = visibleLines(lines.size, state)
     val lit: Set<Int> = highlightedLines(lines.size, state)
 

@@ -76,7 +76,15 @@ extension EditorView {
                 if let image = ui.image { imageSection(image, ui) }
 
             case "Code":
-                if let code = ui.code { codeSection(code) }
+                if let code = ui.code {
+                    codeSection(code)
+                    // Only a lone code block has versions to list: the count is
+                    // 0 for a selection the picker could not point at.
+                    if code.versionCount > 0 {
+                        palette.divider.frame(height: 1)
+                        codeVersionsSection(code)
+                    }
+                }
 
             case "Terminal":
                 if let terminal = ui.terminal { terminalSection(terminal) }

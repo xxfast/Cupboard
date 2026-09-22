@@ -240,6 +240,10 @@ fun EditorScreen(
             onInsertGallery = onInsertGallery,
             onAddGalleryImages = onAddGalleryImages,
             onAddGallerySteps = viewModel::onAddGallerySteps,
+            onSelectCodeVersion = viewModel::onSelectCodeVersion,
+            onAddCodeVersion = viewModel::onAddCodeVersion,
+            onRemoveCodeVersion = viewModel::onRemoveCodeVersion,
+            onMoveCodeVersion = viewModel::onMoveCodeVersion,
         )
     }
 }
@@ -368,6 +372,12 @@ fun EditorView(
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
     /** Write a gallery's step builds onto the slide, one per image. */
     onAddGallerySteps: (String) -> Unit = {},
+    /** The selected code block's versions: pick the one the canvas draws and
+     * types into, and add, remove or reorder them. */
+    onSelectCodeVersion: (Int) -> Unit = {},
+    onAddCodeVersion: (String) -> Unit = {},
+    onRemoveCodeVersion: (elementId: String, index: Int) -> Unit = { _, _ -> },
+    onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -560,6 +570,7 @@ fun EditorView(
                                 editingElementId = state.editingElementId,
                                 onBeginTextEdit = onBeginTextEdit,
                                 onEndTextEdit = onEndTextEdit,
+                                shownCodeVersion = { element -> state.shownVersion(element) },
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
                                 slideWidth = state.document.slideWidth,
                                 slideHeight = state.document.slideHeight,
@@ -673,6 +684,11 @@ fun EditorView(
                         onReplaceImage = onReplaceImage,
                         onAddGalleryImages = onAddGalleryImages,
                         onAddGallerySteps = onAddGallerySteps,
+                        codeVersion = state.codeVersion,
+                        onSelectCodeVersion = onSelectCodeVersion,
+                        onAddCodeVersion = onAddCodeVersion,
+                        onRemoveCodeVersion = onRemoveCodeVersion,
+                        onMoveCodeVersion = onMoveCodeVersion,
                     )
                 }
             }

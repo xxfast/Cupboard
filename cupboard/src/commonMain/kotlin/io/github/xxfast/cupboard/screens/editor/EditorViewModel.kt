@@ -29,7 +29,11 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
@@ -232,6 +236,10 @@ class EditorViewModel(
     fun onPreviewElements(elements: List<Element>) { scope.launch { events.emit(PreviewElements(elements)) } }
     fun onBeginTextEdit(id: String) { scope.launch { events.emit(BeginTextEdit(id)) } }
     fun onEndTextEdit() { scope.launch { events.emit(EndTextEdit) } }
+    fun onSelectCodeVersion(index: Int) { scope.launch { events.emit(SelectCodeVersion(index)) } }
+    fun onAddCodeVersion(elementId: String) { scope.launch { events.emit(AddCodeVersion(elementId)) } }
+    fun onRemoveCodeVersion(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeVersion(elementId, index)) } }
+    fun onMoveCodeVersion(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveCodeVersion(elementId, from, to)) } }
     fun onInsertElement(element: Element) { scope.launch { events.emit(InsertElement(element)) } }
     fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
     fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }

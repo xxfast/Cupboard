@@ -118,7 +118,9 @@ import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.outdentLine
 import io.github.xxfast.cupboard.document.placeholderRole
+import io.github.xxfast.cupboard.document.sourceAt
 import io.github.xxfast.cupboard.document.takesCaret
+import io.github.xxfast.cupboard.document.withSource
 import io.github.xxfast.cupboard.screens.editor.GuideDrag
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
@@ -262,6 +264,17 @@ fun EditorCanvas(
     /** Escape, or a press anywhere else on the slide: the caret leaves. */
     onEndTextEdit: () -> Unit = {},
     /**
+     * Which version of a code block this canvas draws, and which one the caret
+     * types into: `EditorState.shownVersion`, which is the inspector's picked
+     * version for the selected block and version 0 for every other.
+     *
+     * A lambda rather than an index because it is a fact about a block and not
+     * about the canvas, and it comes from the loop's state like everything else
+     * the canvas shows. Defaulted to the first version, which is what a shell
+     * with no version picker draws.
+     */
+    shownCodeVersion: (CodeElement) -> Int = { 0 },
+    /**
      * A shell's way into the caret's own Cut/Copy/Paste/Select All, and its cue
      * that it wants them: passed one, the fields hand it their verbs and a
      * right-click inside an edit session is caught here rather than opening the
@@ -376,7 +389,7 @@ fun EditorCanvas(
                 // block composed invisibly would still re-highlight on every
                 // keystroke the field streams through the loop.
                 if (element.id == editing?.id) continue
-                ElementView(element)
+                ElementView(element.atShownVersion(shownCodeVersion))
             }
             if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 
@@ -857,6 +870,7 @@ fun EditorCanvas(
 
                 is CodeElement -> CodeEditor(
                     element = editing,
+                    version = shownCodeVersion(editing),
                     onPreviewElements = onPreviewElements,
                     onEndTextEdit = onEndTextEdit,
                     fieldMenuBridge = fieldMenuBridge,
@@ -1194,6 +1208,17 @@ private fun TextEditor(
 private const val CodeIndent: String = "    "
 
 /**
+ * This element as the editor canvas draws it: a code block in the version the
+ * inspector is showing, everything else itself.
+ *
+ * The version is written into [CodeElement.code] rather than carried beside the
+ * element, so every renderer under here keeps drawing a block the one way it
+ * always has. The copy is the canvas's alone and never reaches the document.
+ */
+private fun Element.atShownVersion(version: (CodeElement) -> Int): Element =
+    if (this !is CodeElement) this else copy(code = sourceAt(version(this)))
+
+/**
  * [element] as an editable code block, sitting exactly where its code draws.
  *
  * [TextEditor]'s pattern throughout: the value is held here so the caret moves
@@ -1210,15 +1235,21 @@ private const val CodeIndent: String = "    "
 @Composable
 private fun CodeEditor(
     element: CodeElement,
+    version: Int,
     onPreviewElements: (List<Element>) -> Unit,
     onEndTextEdit: () -> Unit,
     fieldMenuBridge: FieldMenuBridge? = null,
     modifier: Modifier = Modifier,
 ) {
+    // What the block draws, which is what the caret goes into: a picked version
+    // is edited in place rather than opening its first one.
+    val source: String = element.sourceAt(version)
     // Re-seeded when the caret moves to another block, everything selected the
-    // way [TextEditor] seeds a text box.
-    var value: TextFieldValue by remember(element.id) {
-        mutableStateOf(TextFieldValue(element.code, TextRange(0, element.code.length)))
+    // way [TextEditor] seeds a text box. Keyed on the version too, so picking
+    // another one under the caret retypes the field rather than leaving the
+    // previous version's text over the new one's block.
+    var value: TextFieldValue by remember(element.id, version) {
+        mutableStateOf(TextFieldValue(source, TextRange(0, source.length)))
     }
     val focusRequester: FocusRequester = remember { FocusRequester() }
     LaunchedEffect(element.id) { focusRequester.requestFocus() }
@@ -1238,7 +1269,7 @@ private fun CodeEditor(
     val update: (TextFieldValue) -> Unit = { edited ->
         val typed: Boolean = edited.text != value.text
         value = edited
-        if (typed) onPreviewElements(listOf(element.copy(code = edited.text)))
+        if (typed) onPreviewElements(listOf(element.withSource(version, edited.text)))
     }
 
     // As the text box: the menu's verbs are the chords' verbs.
@@ -1336,7 +1367,7 @@ private fun CodeEditor(
                                         text = edited,
                                         selection = TextRange(start + CodeIndent.length),
                                     )
-                                    onPreviewElements(listOf(element.copy(code = edited)))
+                                    onPreviewElements(listOf(element.withSource(version, edited)))
                                     true
                                 }
 

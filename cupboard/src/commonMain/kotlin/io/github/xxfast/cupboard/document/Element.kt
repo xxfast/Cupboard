@@ -615,6 +615,18 @@ data class CodeElement(
     override val locked: Boolean = false,
     val code: String = "",
     /**
+     * The later versions of the same block, for a code morph: [code] is version
+     * 0 and `versions[i]` is version i + 1, each one the previous one rewritten.
+     *
+     * Versions rather than one string per step, because a morph is a diff: a
+     * [CodeStep] names the version it shows, and the renderer tokenizes both and
+     * tweens the tokens they have in common (see `diffCode`). Empty, and so every
+     * document written before this field, is a block with one version and nothing
+     * to morph into. `CodeVersions.kt` holds the edits, which keep the steps
+     * pointing at the text they pointed at.
+     */
+    val versions: List<String> = emptyList(),
+    /**
      * Free-form, and resolved case-insensitively by the renderer: documents on
      * disk already carry lowercase names, and an unknown one highlights as plain
      * text rather than failing to open. `CodeLanguages` is what a picker offers.

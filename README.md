@@ -37,3 +37,8 @@ Clone with submodules: `git clone --recursive`, or `git submodule update --init`
 - Desktop, hot reload: `./gradlew :desktopApp:hotRun --auto`
 - macOS SwiftUI host: `./macosApp/run.sh`
 - Tests: `./gradlew :cupboard:allTests`, or `:cupboard:jvmTest` for the quick loop
+
+## Acknowledgements
+
+The token diff behind the code morph is adapted from [Rahul Ravikumar](https://rahulrav.com/blog/magic_move.html)'s
+`storyboard-warp` in [storyboard](https://github.com/bnorm/storyboard), Apache-2.0. See [`NOTICE`](./NOTICE).

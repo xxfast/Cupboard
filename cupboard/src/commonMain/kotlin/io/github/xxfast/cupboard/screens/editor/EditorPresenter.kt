@@ -8,6 +8,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
@@ -60,11 +61,17 @@ import io.github.xxfast.cupboard.document.setSlideTransition
 import io.github.xxfast.cupboard.document.slideAt
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideGroup
+import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.updateElements
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.cupboard.document.versionsAfterMoving
+import io.github.xxfast.cupboard.document.versionsAfterRemoving
+import io.github.xxfast.cupboard.document.withVersionAdded
+import io.github.xxfast.cupboard.document.withVersionMoved
+import io.github.xxfast.cupboard.document.withVersionRemoved
 import io.github.xxfast.cupboard.document.withNewIds
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignFrames
@@ -130,6 +137,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
@@ -262,6 +273,14 @@ private fun Element.linkedTo(target: LinkTarget?): Element? {
 /** Folds [elements] back into the document through their slide. */
 private fun EditorState.withElements(elements: List<Element>): EditorState =
     copy(document = document.updateSlide(selectedSlide.updateElements(elements)))
+
+/**
+ * This state showing [version] of [element], or unchanged when [element] is not
+ * the block the version picker speaks for: `codeVersion` belongs to the
+ * selection, so an edit to any other block must leave it alone.
+ */
+private fun EditorState.withCodeVersion(element: CodeElement, version: Int): EditorState =
+    if (element.id == selectedCodeElement?.id) copy(codeVersion = version) else this
 
 /** [withElements] for the slide's build order: the whole list, in playing order. */
 private fun EditorState.withBuilds(builds: List<Build>): EditorState =
@@ -1315,6 +1334,56 @@ fun EditorPresenter(
                 settled.copy(editingElementId = null)
             }
 
+            // Looking at another version is not an edit either: no history
+            // entry, and an index the block does not have lands on the
+            // nearest one it does.
+            is SelectCodeVersion -> state.selectedCodeElement
+                ?.let { element ->
+                    state.copy(codeVersion = event.index.coerceIn(element.sources.indices))
+                }
+                ?: state
+
+            // The three version edits below are ordinary element edits with an
+            // ordinary history entry each. Each moves [codeVersion] to wherever
+            // the text it was on ended up, and only when the block it edits is
+            // the selected one, since that is the only block it speaks for.
+            is AddCodeVersion -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.let { element ->
+                    val at: Int = state.shownVersion(element)
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(listOf(element.withVersionAdded(at)))
+                        .withCodeVersion(element, at + 1)
+                }
+                ?: state
+
+            is RemoveCodeVersion -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.takeIf { it.sources.size > 1 && event.index in it.sources.indices }
+                ?.let { element ->
+                    val map: List<Int> = versionsAfterRemoving(element.sources.size, event.index)
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(listOf(element.withVersionRemoved(event.index)))
+                        .withCodeVersion(element, map[state.shownVersion(element)])
+                }
+                ?: state
+
+            is MoveCodeVersion -> (state.unlockedElement(event.elementId) as? CodeElement)
+                ?.takeIf {
+                    event.from != event.to &&
+                        event.from in it.sources.indices &&
+                        event.to in it.sources.indices
+                }
+                ?.let { element ->
+                    val map: List<Int> =
+                        versionsAfterMoving(element.sources.size, event.from, event.to)
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(listOf(element.withVersionMoved(event.from, event.to)))
+                        .withCodeVersion(element, map[state.shownVersion(element)])
+                }
+                ?: state
+
             // Disclosure is not an edit, so it makes no history entry, the
             // same way Keynote won't undo a twisty. The document still
             // changes: collapsed state is stored on the slide. Layouts never
@@ -1717,8 +1786,18 @@ fun EditorPresenter(
                     id != reduced.selectedSlideId && reduced.document.slides.any { it.id == id }
                 }
 
+            // The version showing follows the selection: point at another block,
+            // or at another slide, and the editor is back on version 0, since a
+            // version index only means anything against the block it indexes.
+            // Here rather than in the twenty-odd reductions that move the
+            // selection, for the same reason the pruning above is.
+            val keepsCodeVersion: Boolean =
+                reduced.selectedSlideId == state.selectedSlideId &&
+                    reduced.selectedElementIds == state.selectedElementIds
+
             state = reduced.copy(
                 alsoSelectedSlideIds = alsoSelected,
+                codeVersion = if (keepsCodeVersion) reduced.codeVersion else 0,
                 canUndo = undone.isNotEmpty(),
                 canRedo = redone.isNotEmpty(),
                 canPaste = clipboard != null,

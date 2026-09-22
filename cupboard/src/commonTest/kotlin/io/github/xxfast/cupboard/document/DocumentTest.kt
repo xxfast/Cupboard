@@ -341,6 +341,7 @@ class DocumentTest {
                 "Rendering Pipeline",
                 "Scene Graph",
                 "Slides as Data",
+                "Magic Move for Code",
                 "Native Interop",
                 "Benchmarks",
                 "Frame Budget",
@@ -376,9 +377,9 @@ class DocumentTest {
 
         val whyKmp = document.slides.first { it.title == "Why KMP" }
         val collapsed = document.toggleCollapsed(whyKmp.id)
-        // Indices 3 (Rendering Pipeline), 4 (Scene Graph) and 5 (Slides as Data) hidden;
-        // the rest keep their absolute indices, so numbering (index + 1) is unchanged.
-        assertEquals(listOf(0, 1, 2, 6, 7, 8, 9), collapsed.visibleIndices())
+        // Indices 3 (Rendering Pipeline) through 6 (Magic Move for Code) hidden; the
+        // rest keep their absolute indices, so numbering (index + 1) is unchanged.
+        assertEquals(listOf(0, 1, 2, 7, 8, 9, 10), collapsed.visibleIndices())
 
         val expanded = collapsed.toggleCollapsed(whyKmp.id)
         assertEquals(document.slides.indices.toList(), expanded.visibleIndices())

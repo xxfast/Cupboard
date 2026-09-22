@@ -923,6 +923,104 @@ extension EditorView {
         }
     }
 
+    /// The versions of the block's source, oldest first: what the canvas types
+    /// into, and what a morph plays through. One row each, the one on show
+    /// picked, over the list controls the gallery strip carries.
+    ///
+    /// Reordering is the two chevrons rather than a drag, unlike the build
+    /// order's rows: these are a short list of labels, and the buttons are what
+    /// the strip beside them already reorders with.
+    func codeVersionsSection(_ code: CodeFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Versions")
+
+            VStack(spacing: 4) {
+                ForEach(Array(0..<code.versionCount), id: \.self) { index in
+                    CodeVersionRow(
+                        index: index,
+                        picked: index == code.shownVersion,
+                        palette: palette
+                    ) {
+                        host.selectCodeVersion(index: Int32(index))
+                    }
+                }
+            }
+
+            HStack(spacing: 6) {
+                galleryStep("plus", help: "Add Version") { host.addCodeVersion() }
+                // The core keeps the last version standing, so the button that
+                // would take it says so by greying.
+                galleryStep("minus", help: "Remove Version") {
+                    host.removeCodeVersion(index: Int32(code.shownVersion))
+                }
+                .disabled(code.versionCount < 2)
+                galleryStep("chevron.up", help: "Move Up") {
+                    host.moveCodeVersion(
+                        from: Int32(code.shownVersion),
+                        to: Int32(code.shownVersion - 1)
+                    )
+                }
+                .disabled(code.shownVersion <= 0)
+                galleryStep("chevron.down", help: "Move Down") {
+                    host.moveCodeVersion(
+                        from: Int32(code.shownVersion),
+                        to: Int32(code.shownVersion + 1)
+                    )
+                }
+                .disabled(code.shownVersion >= code.versionCount - 1)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// One row of the Versions list: the badge and what the version is called.
+    /// The build order row's look without its drag, since these reorder by
+    /// button.
+    struct CodeVersionRow: View {
+        let index: Int
+        /// This is the version the canvas shows and the caret types into.
+        let picked: Bool
+        let palette: Palette
+        let onTap: () -> Void
+
+        @State private var hovering = false
+
+        private var shape: RoundedRectangle {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+        }
+
+        var body: some View {
+            HStack(spacing: 9) {
+                Text("\(index + 1)")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(picked ? palette.accentText : palette.badgeOffText)
+                    .frame(width: 17, height: 17)
+                    .background(picked ? palette.accent : palette.badgeOff, in: Circle())
+
+                Text("Version \(index + 1)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.text)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(EdgeInsets(top: 7, leading: 9, bottom: 7, trailing: 9))
+            .background(fill, in: shape)
+            .overlay {
+                if picked { shape.inset(by: 0.5).stroke(palette.accent, lineWidth: 1) }
+            }
+            .contentShape(shape)
+            .onTapGesture(perform: onTap)
+            .onHover { hovering = $0 }
+        }
+
+        /// The build order row's fills: the accent at 22% for the picked one,
+        /// the row fill lifted on hover for the rest.
+        private var fill: Color {
+            if picked { return palette.accent.opacity(0.22) }
+            return hovering ? palette.rowHov : palette.rowBg
+        }
+    }
+
     /// The palette a code block is painted in, which is its look rather than its
     /// content, so it sits in Style while the language and the gutter sit in the
     /// Code segment.

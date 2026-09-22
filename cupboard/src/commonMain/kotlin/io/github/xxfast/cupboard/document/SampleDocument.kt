@@ -113,6 +113,79 @@ private fun codeSlide(): Slide {
 }
 
 /**
+ * Shows off the code morph: one function rewritten twice, and the block carrying
+ * the tokens both versions share from one shape to the next.
+ *
+ * Three versions of the same eight lines, a callback that becomes a suspend
+ * function that becomes a flow. The signature, the call into `api`, the `user`
+ * it binds and the closing brace survive all three, so most of the block travels
+ * rather than being thrown away and retyped, which is the whole trick.
+ */
+private fun codeMorphSlide(): Slide {
+    val title = TextElement(
+        frame = Frame(146f, 130f, 1627f, 142f),
+        text = "Magic Move for Code",
+        fontSize = 94f,
+        fontWeight = 700,
+        letterSpacing = -1f,
+        color = 0xFFFFFFFF,
+    )
+    val subtitle = TextElement(
+        frame = Frame(146f, 281f, 1627f, 61f),
+        text = "Callback, then suspend, then flow",
+        fontSize = 39f,
+        color = 0xFFA9A0D8,
+    )
+    val code = CodeElement(
+        frame = Frame(146f, 390f, 1627f, 400f),
+        language = "kotlin",
+        fontSize = 32f,
+        code = """
+            fun load(id: String, onResult: (User) -> Unit) {
+                api.fetch(id) { user ->
+                    onResult(user)
+                }
+            }
+        """.trimIndent(),
+        versions = listOf(
+            """
+                suspend fun load(id: String): User {
+                    val user = api.fetch(id)
+                    return user
+                }
+            """.trimIndent(),
+            """
+                fun load(id: String): Flow<User> = flow {
+                    val user = api.fetch(id)
+                    emit(user)
+                }
+            """.trimIndent(),
+        ),
+        steps = listOf(
+            CodeStep(version = 0),
+            CodeStep(version = 1),
+            CodeStep(version = 2),
+        ),
+    )
+
+    return Slide(
+        title = "Magic Move for Code",
+        depth = 1,
+        elements = listOf(title, subtitle, code),
+        builds = listOf(
+            // The block arrives on its first version; the two builds after it
+            // only morph it, the way the stepped block on "Slides as Data" is
+            // only revealed further.
+            Build(code.id),
+            Build(code.id, elementStep = 1),
+            Build(code.id, elementStep = 2),
+        ),
+        notes = "Two clicks, two rewrites. Watch the parameter list rather than the " +
+            "keywords: what moves is what both versions still say.",
+    )
+}
+
+/**
  * Shows off the terminal element and its typewriter build: the two commands that
  * take the core to Windows, typed out one after the other with their output
  * landing between them.
@@ -353,6 +426,7 @@ fun sampleDocument(): Document {
             pipeline,
             diagramSlide(),
             codeSlide(),
+            codeMorphSlide(),
             terminalSlide(),
             titleSlide("Benchmarks"),
             equationSlide(),

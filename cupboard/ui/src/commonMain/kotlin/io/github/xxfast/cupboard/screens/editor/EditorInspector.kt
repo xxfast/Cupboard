@@ -159,6 +159,13 @@ fun EditorInspector(
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
     /** Write the selected gallery's step builds onto the slide, one per image. */
     onAddGallerySteps: (String) -> Unit = {},
+    /** The selected code block's versions: which one the canvas shows, and the
+     * four verbs of the Code segment's Versions list. All of it the core's. */
+    codeVersion: Int = 0,
+    onSelectCodeVersion: (Int) -> Unit = {},
+    onAddCodeVersion: (String) -> Unit = {},
+    onRemoveCodeVersion: (elementId: String, index: Int) -> Unit = { _, _ -> },
+    onMoveCodeVersion: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -232,6 +239,11 @@ fun EditorInspector(
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
                 onAddGallerySteps = onAddGallerySteps,
+                codeVersion = codeVersion,
+                onSelectCodeVersion = onSelectCodeVersion,
+                onAddCodeVersion = onAddCodeVersion,
+                onRemoveCodeVersion = onRemoveCodeVersion,
+                onMoveCodeVersion = onMoveCodeVersion,
                 slide = slide,
                 layouts = layouts,
                 isEditingLayouts = isEditingLayouts,

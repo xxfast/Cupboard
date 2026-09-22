@@ -1,0 +1,13 @@
+Cupboard
+
+The token diff behind the code morph
+(cupboard/src/commonMain/kotlin/io/github/xxfast/cupboard/document/CodeDiff.kt)
+is adapted from storyboard-warp's HeckelDiff.kt by Rahul Ravikumar, licensed
+under the Apache License, Version 2.0:
+
+  https://github.com/bnorm/storyboard (originally https://github.com/tikurahul/warp)
+  https://rahulrav.com/blog/magic_move.html
+
+It implements P. Heckel, "A technique for isolating differences between files",
+Comm. ACM 21(4), 264-268 (1978). The changes made are listed at the top of
+CodeDiff.kt.

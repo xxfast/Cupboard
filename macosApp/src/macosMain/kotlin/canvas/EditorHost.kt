@@ -661,6 +661,14 @@ class CodeProps(
     val showLineNumbers: Boolean,
     val wrap: Boolean,
 )
+    /**
+     * How many versions of its source the block holds, and which of them the
+     * editor is showing. 0 versions unless exactly one code block is selected:
+     * a version picker has nothing to point at until it is, the way the core's
+     * `codeVersionCount` has nothing to count.
+     */
+    val versionCount: Int,
+    val shownVersion: Int,
 
 /**
  * The primary selected element's terminal style, flattened for the native
@@ -1201,6 +1209,9 @@ class EditorHost(
                     onBeginTextEdit = viewModel::onBeginTextEdit,
                     onEndTextEdit = viewModel::onEndTextEdit,
                     fieldMenuBridge = fieldMenu,
+                    // The version the inspector picked, so the canvas shows it
+                    // and the caret types into it; every other block is at rest.
+                    shownCodeVersion = { element -> state.shownVersion(element) },
                     // Nothing to tell the loop: the caret has not moved and the
                     // document has not changed. Straight out to the shell, which
                     // pops the field menu at the event it is already holding.
@@ -2291,9 +2302,43 @@ class EditorHost(
             showLineNumbers = code.showLineNumbers,
             wrap = code.wrap,
         )
+            versionCount = state.codeVersionCount,
+            shownVersion = state.shownVersion(code),
     }
 
     /**
+    /**
+     * Shows version [index] of the selected block, which is what the Versions
+     * list picks. Clamped by the core, and no edit: which version you are
+     * looking at is where you are.
+     */
+    fun selectCodeVersion(index: Int) {
+        viewModel.onSelectCodeVersion(index)
+    }
+
+    /**
+     * Adds a version to the selected block, as a copy of the one on show, and
+     * moves to it. The three below resolve the block themselves, the way
+     * [useAsDefaultTextStyle] resolves its element: the panel names a version,
+     * never an id.
+     */
+    fun addCodeVersion() {
+        val id: String = state.selectedCodeElement?.id ?: return
+        viewModel.onAddCodeVersion(id)
+    }
+
+    /** Takes version [index] off the selected block. The core keeps the last one. */
+    fun removeCodeVersion(index: Int) {
+        val id: String = state.selectedCodeElement?.id ?: return
+        viewModel.onRemoveCodeVersion(id, index)
+    }
+
+    /** Moves version [from] to sit at [to], the block's steps following their text. */
+    fun moveCodeVersion(from: Int, to: Int) {
+        val id: String = state.selectedCodeElement?.id ?: return
+        viewModel.onMoveCodeVersion(id, from, to)
+    }
+
      * The languages a picker offers, in menu order. The document's list, not the
      * shell's: what highlights and what it is called are the core's business.
      */
