@@ -497,7 +497,7 @@ private fun ImageElementView(element: ImageElement) {
 private fun Caption(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
-        color = Color.White.copy(alpha = 0.7f),
+        color = LocalSlideInk.current.copy(alpha = 0.7f),
         fontSize = CaptionSize.sp,
         fontFamily = FontFamily.SansSerif,
         maxLines = 1,
@@ -563,12 +563,14 @@ private fun AssetImageContent(
 
 @Composable
 private fun ImagePlaceholder(text: String, width: Float, height: Float) {
+    val ink: Color = LocalSlideInk.current
+
     Box(
         modifier = Modifier
             .size(width.dp, height.dp)
             .drawBehind {
                 drawRoundRect(
-                    color = Color.White.copy(alpha = 0.3f),
+                    color = ink.copy(alpha = 0.3f),
                     style = Stroke(
                         width = 1.5.dp.toPx(),
                         pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx())),
@@ -580,7 +582,7 @@ private fun ImagePlaceholder(text: String, width: Float, height: Float) {
     ) {
         Text(
             text = text,
-            color = Color.White.copy(alpha = 0.45f),
+            color = ink.copy(alpha = 0.45f),
             fontSize = 13.sp,
         )
     }

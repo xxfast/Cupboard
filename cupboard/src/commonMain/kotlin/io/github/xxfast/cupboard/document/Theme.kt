@@ -115,20 +115,109 @@ data class Theme(
 )
 
 /**
- * The five themes every deck can reach, dark-first: a slide stays dark in both
- * app themes, so there is no light one here.
+ * The themes every deck can reach: the app's own look, four vivid gradients, two
+ * light ones, and the four muted darks that came first.
+ *
+ * A slide's look is the document's and never the app's, so a light theme is light
+ * in both app themes and a dark one dark. The vivid four set white ink on a
+ * saturated gradient and cut their shapes out of it in translucent white; the
+ * light two pair dark ink with [CodeTheme.Notepad], the one light syntax palette.
  *
  * "Cupboard" is the app's own look, and so is exactly what a document that has
  * never been themed already shows: [ElementDefaults]' own values, no background
- * of its own, and [defaultLayouts]. The other four are recolourings of the same
- * four layouts, which is why each is a [defaultLayouts] over its own defaults
- * rather than a hand-built list.
+ * of its own, and [defaultLayouts]. The rest are recolourings of the same four
+ * layouts, which is why each is a [defaultLayouts] over its own defaults rather
+ * than a hand-built list.
  */
 object BuiltInThemes {
     val Cupboard: Theme = theme(
         name = "Cupboard",
         background = null,
         defaults = ElementDefaults(),
+    )
+
+    val Aurora: Theme = theme(
+        name = "Aurora",
+        background = SlideBackground.Gradient(start = 0xFF6A11CB, end = 0xFF2575FC),
+        defaults = ElementDefaults(
+            textColor = 0xFFFFFFFF,
+            bodyColor = 0xFFE2DBFF,
+            shapeFill = 0x33FFFFFF,
+            shapeStroke = 0xB3FFFFFF,
+            shapeLabelColor = 0xFFFFFFFF,
+            codeTheme = CodeTheme.Atom,
+            accent = 0xFF5EF2C2,
+        ),
+    )
+
+    val Sunset: Theme = theme(
+        name = "Sunset",
+        background = SlideBackground.Gradient(start = 0xFFFF512F, end = 0xFFDD2476),
+        defaults = ElementDefaults(
+            textColor = 0xFFFFFFFF,
+            bodyColor = 0xFFFFE3D6,
+            shapeFill = 0x33FFFFFF,
+            shapeStroke = 0xB3FFFFFF,
+            shapeLabelColor = 0xFFFFFFFF,
+            codeTheme = CodeTheme.Monokai,
+            accent = 0xFFFFD166,
+        ),
+    )
+
+    val Ocean: Theme = theme(
+        name = "Ocean",
+        background = SlideBackground.Gradient(start = 0xFF0F52E0, end = 0xFF0A9BB5),
+        defaults = ElementDefaults(
+            textColor = 0xFFFFFFFF,
+            bodyColor = 0xFFD6F1FF,
+            shapeFill = 0x33FFFFFF,
+            shapeStroke = 0xB3FFFFFF,
+            shapeLabelColor = 0xFFFFFFFF,
+            codeTheme = CodeTheme.Atom,
+            accent = 0xFF7CF5E4,
+        ),
+    )
+
+    val Candy: Theme = theme(
+        name = "Candy",
+        background = SlideBackground.Gradient(start = 0xFFFF4E9B, end = 0xFF8F5BFF),
+        defaults = ElementDefaults(
+            textColor = 0xFFFFFFFF,
+            bodyColor = 0xFFFFE0F0,
+            shapeFill = 0x33FFFFFF,
+            shapeStroke = 0xB3FFFFFF,
+            shapeLabelColor = 0xFFFFFFFF,
+            codeTheme = CodeTheme.Pastel,
+            accent = 0xFFFFE066,
+        ),
+    )
+
+    val Paper: Theme = theme(
+        name = "Paper",
+        background = SlideBackground.Color(0xFFFAF7F2),
+        defaults = ElementDefaults(
+            textColor = 0xFF1F1B16,
+            bodyColor = 0xFF5C554C,
+            shapeFill = 0x29E4572E,
+            shapeStroke = 0xCCE4572E,
+            shapeLabelColor = 0xFF1F1B16,
+            codeTheme = CodeTheme.Notepad,
+            accent = 0xFFE4572E,
+        ),
+    )
+
+    val Mint: Theme = theme(
+        name = "Mint",
+        background = SlideBackground.Gradient(start = 0xFFE8FFF4, end = 0xFFC9F2FF),
+        defaults = ElementDefaults(
+            textColor = 0xFF0B3B3C,
+            bodyColor = 0xFF3C6B6B,
+            shapeFill = 0x2900A884,
+            shapeStroke = 0xCC00A884,
+            shapeLabelColor = 0xFF0B3B3C,
+            codeTheme = CodeTheme.Notepad,
+            accent = 0xFF00A884,
+        ),
     )
 
     val Graphite: Theme = theme(
@@ -188,7 +277,9 @@ object BuiltInThemes {
         ),
     )
 
-    val all: List<Theme> = listOf(Cupboard, Graphite, Nord, Solarized, Terminal)
+    val all: List<Theme> = listOf(
+        Cupboard, Aurora, Sunset, Ocean, Candy, Paper, Mint, Graphite, Nord, Solarized, Terminal,
+    )
 }
 
 /** A built-in: its own defaults, and the four default layouts dressed in them. */

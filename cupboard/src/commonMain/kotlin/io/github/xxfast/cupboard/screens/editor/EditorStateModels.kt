@@ -250,7 +250,7 @@ data class EditorState(
      */
     val slideBeforeLayouts: String? = null,
     /**
-     * The themes the user has saved, on top of the five built-ins. Kept in its
+     * The themes the user has saved, on top of the built-ins. Kept in its
      * own file rather than in the deck ([themes] is what a picker offers), so a
      * theme saved out of one document is there in the next.
      *

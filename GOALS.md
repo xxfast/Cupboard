@@ -9,7 +9,7 @@
   - macOS: SwiftUI / AppKit
   - Windows: WinUI 3
   - Linux: Compose for Desktop (Material 3)
-- The center slide canvas is one shared Compose Multiplatform surface, pixel-identical on all three platforms. Fixed 944x531 (16:9) @1x, document-owned dark styling regardless of app theme.
+- The center slide canvas is one shared Compose Multiplatform surface, pixel-identical on all three platforms. Fixed 944x531 (16:9) @1x, document-owned styling regardless of app theme: a deck's theme decides light or dark, the app's never does.
 - First-class code slides: syntax-highlighted source with step-based reveal/highlight animations.
 - Full UI spec lives in `design/README.md`; `design/Slides Editor v2.dc.html` is the source of truth.
 

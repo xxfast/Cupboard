@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -25,6 +26,13 @@ import kotlin.math.min
 
 /** The scale factor SlideSurface applied: screen px per document unit, over base density. */
 val LocalCanvasScale = compositionLocalOf { 1f }
+
+/**
+ * The ink for slide furniture that has no colour of its own in the document: an
+ * image's caption, an empty image's dashes. White on a dark slide and black on a
+ * light one, read off the background [SlideSurface] is painting.
+ */
+val LocalSlideInk = compositionLocalOf { Color.White }
 
 /**
  * Fixed-size slide space scaled to fit its container, CuP-style: the content is
@@ -61,6 +69,7 @@ fun SlideSurface(
         CompositionLocalProvider(
             LocalDensity provides Density(density.density * scale, density.fontScale),
             LocalCanvasScale provides scale,
+            LocalSlideInk provides if (slideBackground.isLight()) Color.Black else Color.White,
         ) {
             Box(
                 modifier = Modifier
@@ -74,6 +83,14 @@ fun SlideSurface(
             )
         }
     }
+}
+
+/** Whether ink on this background wants to be dark: the mean luminance of its stops. */
+private fun SlideBackground?.isLight(): Boolean = when (this) {
+    null -> false
+    is SlideBackground.Color -> color.toComposeColor().luminance() > 0.5f
+    is SlideBackground.Gradient ->
+        (start.toComposeColor().luminance() + end.toComposeColor().luminance()) / 2 > 0.5f
 }
 
 private fun DrawScope.drawSlideBackground(background: SlideBackground?) {

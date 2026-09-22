@@ -44,9 +44,9 @@ class ThemeTest {
     )
 
     @Test
-    fun theBuiltInsAreFiveDistinctThemesOverTheSameFourLayouts() {
-        assertEquals(5, BuiltInThemes.all.size)
-        assertEquals(5, BuiltInThemes.all.map { it.name }.toSet().size)
+    fun theBuiltInsAreDistinctThemesOverTheSameFourLayouts() {
+        assertEquals(11, BuiltInThemes.all.size)
+        assertEquals(11, BuiltInThemes.all.map { it.name }.toSet().size)
         for (theme in BuiltInThemes.all) {
             assertEquals(layoutTitles, theme.layouts.map { it.title }, theme.name)
         }
