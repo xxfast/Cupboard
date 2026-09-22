@@ -536,16 +536,21 @@ fun Slide.elementSteps(elementId: String): List<Build> =
  * [elementSteps] disagree about is [count] and [durationMs].
  */
 private fun stepBuilds(elementId: String, count: Int, durationMs: Int): List<Build> =
-    (1 until count).map { index ->
-        Build(
-            elementId = elementId,
-            kind = BuildKind.Action,
-            effect = BuildEffect.Dissolve,
-            durationMs = durationMs,
-            trigger = BuildTrigger.OnClick,
-            elementStep = index,
-        )
-    }
+    (1 until count).map { index -> stepBuild(elementId, index, durationMs) }
+
+/**
+ * The one click that walks [elementId] onto its step [index]: an action build
+ * with no action, so all it does is move the step (see [gallerySteps] for why
+ * it is not an `In`).
+ */
+fun stepBuild(elementId: String, index: Int, durationMs: Int = CodeStepBuildDuration): Build = Build(
+    elementId = elementId,
+    kind = BuildKind.Action,
+    effect = BuildEffect.Dissolve,
+    durationMs = durationMs,
+    trigger = BuildTrigger.OnClick,
+    elementStep = index,
+)
 
 /** How long one picture takes to dissolve into the next, in both the build and the canvas. */
 const val GalleryStepDuration: Int = 400

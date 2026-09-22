@@ -144,8 +144,9 @@ class EditorCodeStepsTest {
         val state: EditorState = viewModel.await { it.block().steps.size == 4 }
         assertEquals(steps[0], state.block().steps[1], "a new state starts from the one before it")
         assertEquals(1, state.codeStep)
-        // The builds behind the insertion move up with the steps they play.
-        assertEquals(listOf(null, 2, 3), state.playedSteps())
+        // The builds behind the insertion move up with the steps they play, and
+        // the new step is queued between them.
+        assertEquals(listOf(null, 1, 2, 3), state.playedSteps())
         assertTrue(state.canUndo)
 
         viewModel.onUndo()
@@ -167,8 +168,24 @@ class EditorCodeStepsTest {
         val state: EditorState = viewModel.await { it.block().steps.size == 4 }
         assertEquals(CodeStep(version = 1), state.block().steps.last())
         assertEquals(3, state.codeStep)
-        // Nothing sat at or behind the end, so no build moved.
-        assertEquals(listOf(null, 1, 2), state.playedSteps())
+        // Nothing sat at or behind the end, so no build moved; the walk was
+        // queued, so the new step is too.
+        assertEquals(listOf(null, 1, 2, 3), state.playedSteps())
+    }
+
+    @Test
+    fun addingAStepTakesTheVersionShowingNotTheOneOnTheRowPicked() = runTest {
+        val viewModel: EditorViewModel = selected()
+
+        viewModel.onSelectCodeStep(0)
+        viewModel.await { it.codeStep == 0 }
+        // Versions + would do this: the canvas moves on, the picked row stays.
+        viewModel.onSelectCodeVersion(1)
+        viewModel.await { it.codeVersion == 1 }
+        viewModel.onAddCodeStep("code")
+
+        val state: EditorState = viewModel.await { it.block().steps.size == 4 }
+        assertEquals(steps[0].copy(version = 1), state.block().steps[1])
     }
 
     @Test

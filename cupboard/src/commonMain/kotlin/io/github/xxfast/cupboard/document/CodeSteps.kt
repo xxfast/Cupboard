@@ -47,8 +47,10 @@ fun CodeElement.withStepUpdated(index: Int, step: CodeStep): CodeElement {
  * This slide with [step] added to the code block [elementId], behind step
  * [after] ([CodeElement.withStepAdded]'s rule, `-1` being the front).
  *
- * Builds at or behind the insertion move up with the steps they play, so a walk
- * that had three clicks still has three clicks and a fourth state to write one
+ * Builds at or behind the insertion move up with the steps they play, and a
+ * block whose walk is already in the build order gets one more click, for the
+ * new step, in its place in that walk: a step added to a queued block is queued.
+ * A block with no step builds yet gets none, that is what Add Step Builds is
  * for. An id the slide holds no code block under leaves it exactly as it is.
  */
 fun Slide.addingCodeStep(elementId: String, after: Int, step: CodeStep): Slide {
@@ -57,9 +59,28 @@ fun Slide.addingCodeStep(elementId: String, after: Int, step: CodeStep): Slide {
     if (grown.steps.size == element.steps.size) return this
 
     val at: Int = after + 1
-    return updateElement(grown).remappingStepBuilds(elementId) { index ->
+    val shifted: Slide = updateElement(grown).remappingStepBuilds(elementId) { index ->
         if (index >= at) index + 1 else index
     }
+    return shifted.queueingStep(elementId, at)
+}
+
+/**
+ * [shifted] with a click for step [at] of [elementId], when the block's walk is
+ * in the build order at all. Step 0 never takes a click, so a step put at the
+ * front hands the click to the one it pushed to 1.
+ *
+ * The click lands straight after the last of the block's clicks below it, or
+ * ahead of its first when there is none, so the walk stays in step order.
+ */
+private fun Slide.queueingStep(elementId: String, at: Int): Slide {
+    fun Build.walks(): Boolean = this.elementId == elementId && elementStep != null
+    if (builds.none { it.walks() }) return this
+
+    val target: Int = maxOf(at, 1)
+    val below: Int = builds.indexOfLast { it.walks() && it.elementStep!! < target }
+    val position: Int = if (below == -1) builds.indexOfFirst { it.walks() } else below + 1
+    return copy(builds = builds.toMutableList().also { it.add(position, stepBuild(elementId, target)) })
 }
 
 /**

@@ -87,8 +87,9 @@ class CodeStepsTest {
         val grown: Slide = slide().addingCodeStep("code", after = 0, step = CodeStep())
 
         assertEquals(4, grown.codeBlock().steps.size)
-        // The build on step 0 stays; the two behind the insertion move up.
-        assertEquals(listOf(null, 0, 2, 3), grown.playedSteps())
+        // The build on step 0 stays, the two behind the insertion move up, and
+        // the new step gets its click in between: the walk was queued already.
+        assertEquals(listOf(null, 0, 1, 2, 3), grown.playedSteps())
         // Another element's builds are none of this element's business.
         assertEquals(1, grown.builds.first { it.elementId == "text" }.elementStep)
     }
@@ -169,5 +170,22 @@ class CodeStepsTest {
 
         assertEquals(slide.gallerySteps("gallery"), slide.elementSteps("gallery"))
         assertEquals(listOf(1, 2), slide.elementSteps("gallery").map { it.elementStep })
+    }
+
+    @Test
+    fun aStepAddedToABlockNotYetQueuedGetsNoClick() {
+        val quiet: Slide = slide().copy(builds = listOf(Build("code")))
+        val grown: Slide = quiet.addingCodeStep("code", after = 2, step = CodeStep())
+
+        assertEquals(4, grown.codeBlock().steps.size)
+        assertEquals(listOf(null), grown.playedSteps())
+    }
+
+    @Test
+    fun aStepPutAtTheFrontHandsItsClickToTheOneItPushedBack() {
+        val grown: Slide = slide().addingCodeStep("code", after = -1, step = CodeStep())
+
+        // Step 0 never takes a click: the old first step, now at 1, does.
+        assertEquals(listOf(null, 1, 1, 2, 3), grown.playedSteps())
     }
 }

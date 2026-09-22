@@ -1438,8 +1438,11 @@ fun EditorPresenter(
                         element.id == state.selectedCodeElement?.id && it in element.steps.indices
                     }
                     val after: Int = picked ?: element.steps.lastIndex
-                    val added: CodeStep = picked?.let { element.steps[it] }
-                        ?: CodeStep(version = state.shownVersion(element))
+                    // The lines from the step being edited, the version from the
+                    // canvas: the one just added in the Versions list is the one
+                    // a new step is for, and the picked row still says the old.
+                    val added: CodeStep = (picked?.let { element.steps[it] } ?: CodeStep())
+                        .copy(version = state.shownVersion(element))
 
                     undone.push(state.document)
                     redone.clear()
