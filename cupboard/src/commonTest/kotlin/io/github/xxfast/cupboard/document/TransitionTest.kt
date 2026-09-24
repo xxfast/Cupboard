@@ -158,4 +158,51 @@ class TravellingElementTest {
         assertEquals(20f, at.labelSize)
         assertEquals(20f, at.cornerRadius)
     }
+
+    @Test
+    fun coloursTravelChannelByChannel() {
+        val a = to.copy(color = 0xFF000000, fontWeight = 400)
+        val b = to.copy(color = 0xFFFFFFFF, fontWeight = 700)
+        val at: TextElement = b.travellingFrom(a, 0.5f) as TextElement
+        assertEquals(0xFF808080, at.color)
+        assertEquals(550, at.fontWeight)
+    }
+
+    @Test
+    fun aShapeBlendsItsPaint() {
+        val a = ShapeElement(
+            frame = from.frame,
+            fill = 0x00000000,
+            strokeColor = 0xFF0000FF,
+            strokeWidth = 0f,
+            labelColor = 0xFF000000,
+            gradient = ShapeGradient(start = 0xFF000000, end = 0xFF000000, angle = 0f),
+            shadow = ShapeShadow(color = 0x00000000, blur = 0f, dx = 0f, dy = 0f),
+        )
+        val b = ShapeElement(
+            frame = to.frame,
+            fill = 0xFFFFFFFF,
+            strokeColor = 0xFFFF0000,
+            strokeWidth = 4f,
+            labelColor = 0xFFFFFFFF,
+            gradient = ShapeGradient(start = 0xFFFFFFFF, end = 0xFFFFFFFF, angle = 180f),
+            shadow = ShapeShadow(color = 0xFF000000, blur = 10f, dx = 2f, dy = 8f),
+        )
+        val at: ShapeElement = b.travellingFrom(a, 0.5f) as ShapeElement
+        assertEquals(0x80808080, at.fill)
+        assertEquals(0xFF800080, at.strokeColor)
+        assertEquals(2f, at.strokeWidth)
+        assertEquals(0xFF808080, at.labelColor)
+        assertEquals(ShapeGradient(start = 0xFF808080, end = 0xFF808080, angle = 90f), at.gradient)
+        assertEquals(ShapeShadow(color = 0x80000000, blur = 5f, dx = 1f, dy = 4f), at.shadow)
+    }
+
+    /** A flat fill has no gradient to blend against, so the arriving one is drawn as is. */
+    @Test
+    fun aGradientArrivingFromAFlatFillIsTheArrivingOne() {
+        val a = ShapeElement(frame = from.frame, gradient = null)
+        val gradient = ShapeGradient(start = 0xFFFFFFFF, end = 0xFF000000)
+        val b = ShapeElement(frame = to.frame, gradient = gradient)
+        assertEquals(gradient, (b.travellingFrom(a, 0.5f) as ShapeElement).gradient)
+    }
 }

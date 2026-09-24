@@ -51,6 +51,7 @@ import io.github.xxfast.cupboard.document.isVisibleAt
 import io.github.xxfast.cupboard.document.magicMovePairs
 import io.github.xxfast.cupboard.document.pieceRevealAt
 import io.github.xxfast.cupboard.document.resolvedLink
+import io.github.xxfast.cupboard.document.stepCount
 
 /** How far the slide number sits off the slide's right and bottom edges, in doc units. */
 private const val SlideNumberInset: Float = 64f
@@ -81,7 +82,12 @@ private const val SlideNumberColor: Long = 0x99FFFFFF
  *
  * A Magic Move is drawn here rather than by the player, because it is the only
  * transition that is about elements rather than about slides: see
- * [LocalPlayTransition] for how a slide learns it is in one.
+ * [LocalPlayTransition] for how a slide learns it is in one. The arriving slide
+ * draws all of it, at full opacity: the background crossfading, the leaving
+ * slide's unmatched elements fading out, the matched ones travelling and its own
+ * unmatched ones fading in. The leaving slide draws nothing, so which of the two
+ * the player has on top makes no difference and nothing is dimmed by a layer
+ * fading the whole slide.
  */
 @Composable
 fun SlideView(
@@ -102,11 +108,14 @@ fun SlideView(
     val magic: PlayTransition? =
         play?.takeIf { it.transition.kind == TransitionKind.MagicMove }
 
-    // Which side of the cut this slide is on. Matched elements are drawn once,
-    // on the arriving slide: they are the same objects to the audience, so the
-    // slide they are leaving lets them go rather than fading a second copy out.
-    val arriving: Boolean = magic != null && magic.toSlide.id == slide.id
-    val leaving: Boolean = magic != null && magic.fromSlide?.id == slide.id
+    // Which side of the cut this slide is on. The arriving slide draws the
+    // whole move, so the leaving one has nothing to do but hold its place.
+    val arrival: PlayTransition? = magic?.takeIf { it.toSlide.id == slide.id }
+    val arriving: Boolean = arrival != null
+    if (magic != null && magic.fromSlide?.id == slide.id) {
+        Box(modifier)
+        return
+    }
 
     val travelling: List<Pair<Element, Element>> = remember(magic) {
         val from: Slide = magic?.fromSlide ?: return@remember emptyList()
@@ -125,14 +134,29 @@ fun SlideView(
     SlideSurface(
         modifier = modifier,
         slideBackground = slide.effectiveBackground(layout, background),
+        crossfade = arrival?.let { BackgroundCrossfade(it.fromBackground, progress.value) },
         slideWidth = slideWidth,
         slideHeight = slideHeight,
     ) {
         for (element in slide.inheritedElements(layout)) ElementView(element)
 
-        for (element in slide.elements) {
-            if (leaving && travelling.any { (from, _) -> from.id == element.id }) continue
+        // What the leaving slide is letting go of, fading out where it stood. At
+        // the step it was on when left: the last one going forward, the first
+        // coming back. Drawn whole, with no build or code step read, because a
+        // fade is all that is left of it.
+        val from: Slide? = arrival?.fromSlide
+        if (arrival != null && from != null) {
+            val fromStep: Int = if (arrival.forward) from.stepCount() - 1 else 0
 
+            for (element in from.elements) {
+                if (travelling.any { (origin, _) -> origin.id == element.id }) continue
+                if (!from.isVisibleAt(element.id, fromStep)) continue
+
+                ElementView(element, transform = element.fadingTransform(1f - progress.value))
+            }
+        }
+
+        for (element in slide.elements) {
             val origin: Element? =
                 if (arriving) travelling.firstOrNull { (_, to) -> to.id == element.id }?.first
                 else null
@@ -149,11 +173,13 @@ fun SlideView(
             // looked up by id below stays on [element]; only the drawing moves.
             val drawn: Element =
                 if (origin != null) element.travellingFrom(origin, progress.value) else element
+            val alignment: Alignment? =
+                origin?.let { travellingAlignment(it, element, progress.value) }
 
             // The editor draws every element at rest: nothing is hidden, nothing
             // animates itself in, and no build is read at all.
             if (step == null) {
-                ElementView(drawn, transform = travel)
+                ElementView(drawn, transform = travel, alignment = alignment)
                 continue
             }
 
@@ -207,6 +233,7 @@ fun SlideView(
                         entry = entry?.build,
                         pieces = reveal,
                         transform = transform,
+                        alignment = alignment,
                         // A step is what makes this the show: a movie autoplays,
                         // answers a tap and stops itself here, and does none of
                         // the three on the editor's canvas.

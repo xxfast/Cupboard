@@ -48,13 +48,16 @@ val LocalSlideInk = compositionLocalOf { Color.White }
  * that fraction of native size and the container clips it (no reflow).
  *
  * [background] is whether to paint one at all; [slideBackground] is which one,
- * null being the app's own dark gradient.
+ * null being the app's own dark gradient. [crossfade] paints another background
+ * under it and [slideBackground] over that at the crossfade's progress: how a
+ * Magic Move's arriving slide takes over from the one it is replacing.
  */
 @Composable
 fun SlideSurface(
     modifier: Modifier = Modifier,
     background: Boolean = true,
     slideBackground: SlideBackground? = null,
+    crossfade: BackgroundCrossfade? = null,
     zoom: Float? = null,
     slideWidth: Float = Document.SLIDE_WIDTH,
     slideHeight: Float = Document.SLIDE_HEIGHT,
@@ -76,7 +79,10 @@ fun SlideSurface(
                     .requiredSize(slideWidth.dp, slideHeight.dp)
                     .clip(RoundedCornerShape(4.dp))
                     .let {
-                        if (background) it.drawBehind { drawSlideBackground(slideBackground) }
+                        if (background) it.drawBehind {
+                            if (crossfade != null) drawSlideBackground(crossfade.from)
+                            drawSlideBackground(slideBackground, crossfade?.progress ?: 1f)
+                        }
                         else it
                     },
                 content = content,
@@ -93,7 +99,7 @@ private fun SlideBackground?.isLight(): Boolean = when (this) {
         (start.toComposeColor().luminance() + end.toComposeColor().luminance()) / 2 > 0.5f
 }
 
-private fun DrawScope.drawSlideBackground(background: SlideBackground?) {
+private fun DrawScope.drawSlideBackground(background: SlideBackground?, alpha: Float = 1f) {
     when (background) {
         // design: linear-gradient(140deg, #2a2452 0%, #171930 55%, #101223 100%)
         null -> drawRect(
@@ -103,10 +109,11 @@ private fun DrawScope.drawSlideBackground(background: SlideBackground?) {
                 1.0f to Color(0xFF101223),
                 start = Offset.Zero,
                 end = Offset(size.width * 0.643f, size.height * 0.766f),
-            )
+            ),
+            alpha = alpha,
         )
 
-        is SlideBackground.Color -> drawRect(color = background.color.toComposeColor())
+        is SlideBackground.Color -> drawRect(color = background.color.toComposeColor(), alpha = alpha)
 
         is SlideBackground.Gradient -> drawRect(
             brush = Brush.linearGradient(
@@ -116,7 +123,8 @@ private fun DrawScope.drawSlideBackground(background: SlideBackground?) {
                 ),
                 start = gradientStop(size, background.angle, -1f),
                 end = gradientStop(size, background.angle, 1f),
-            )
+            ),
+            alpha = alpha,
         )
     }
 }

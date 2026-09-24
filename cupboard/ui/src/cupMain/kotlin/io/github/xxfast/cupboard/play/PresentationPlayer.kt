@@ -43,6 +43,8 @@ import io.github.xxfast.cupboard.document.PlaybackType
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TransitionTrigger
+import io.github.xxfast.cupboard.document.effectiveBackground
+import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.stepCount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -277,7 +279,13 @@ public fun PresentationPlayer(
                 // earlier slide's, played in the direction of travel.
                 val governing: SlideTransition =
                     (if (state.forward) from.transition else to.transition) ?: return@remember null
-                PlayTransition(from, to, state.forward, governing)
+                PlayTransition(
+                    fromSlide = from,
+                    toSlide = to,
+                    forward = state.forward,
+                    transition = governing,
+                    fromBackground = from.effectiveBackground(document.layoutOf(from), document.background),
+                )
             }
 
             // A slide that leaves on its own: once it is out of builds, it waits

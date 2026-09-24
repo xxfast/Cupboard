@@ -42,11 +42,18 @@ internal fun SlideTransition?.toTransitionSet(layoutDirection: LayoutDirection):
             exit = { ExitTransition.None },
         )
 
-        // Magic Move crossfades the slide as a whole; the elements that travel
-        // across it are the arriving slide's business. See `SlideView`.
-        TransitionKind.Dissolve, TransitionKind.MagicMove -> TransitionSet(
+        TransitionKind.Dissolve -> TransitionSet(
             enter = { fadeIn(tween(duration)) },
             exit = { fadeOut(tween(duration)) },
+        )
+
+        // A cut as far as CuP is concerned: the arriving slide draws the whole
+        // move itself, background crossfade and all, and the leaving slide draws
+        // nothing while it goes. Fading the slides here would fade the
+        // travelling elements with them. See `SlideView`.
+        TransitionKind.MagicMove -> TransitionSet(
+            enter = { EnterTransition.None },
+            exit = { ExitTransition.None },
         )
 
         // Both slides move together, the arriving one shouldering the leaving

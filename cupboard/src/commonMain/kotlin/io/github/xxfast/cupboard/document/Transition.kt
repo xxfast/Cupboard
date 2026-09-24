@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard.document
 
 import kotlinx.serialization.Serializable
+import kotlin.math.roundToInt
 
 /**
  * How one slide gives way to the next.
@@ -108,10 +109,12 @@ fun magicMovePairs(from: Slide, to: Slide): List<Pair<Element, Element>> {
  * The geometry rides the element rather than a scale on its layer, because what
  * a slide holds has a size of its own: type set at 48pt in a box that used to be
  * wider is 48pt in a narrower box, not 48pt stretched to fit, so the box is lerped
- * and the content laid out again inside it, the way Keynote reflows. The one
- * thing that does grow is the type itself, when the two sides set it differently
- * and are the same kind of element: a title travelling into a subtitle shrinks
- * as it goes. Everything else is the arriving element's, so at 1 this is `this`.
+ * and the content laid out again inside it, the way Keynote reflows. When the two
+ * sides are the same kind of element, its look travels too: type size and weight,
+ * colours, strokes, corners, shadows, all blended, so a title turning into a
+ * subtitle shrinks and recolours as it goes rather than switching on landing.
+ * What has no in-between (words, fonts, alignment, an image) is the arriving
+ * element's throughout, so at 1 this is `this`.
  */
 fun Element.travellingFrom(from: Element, fraction: Float): Element {
     val t: Float = fraction.coerceIn(0f, 1f)
@@ -125,14 +128,35 @@ fun Element.travellingFrom(from: Element, fraction: Float): Element {
     )
 
     return when (this) {
-        is TextElement -> copy(
+        is TextElement -> if (from !is TextElement) copy(frame = frame) else copy(
             frame = frame,
-            fontSize = if (from is TextElement) blend(from.fontSize, fontSize, t) else fontSize,
+            fontSize = blend(from.fontSize, fontSize, t),
+            fontWeight = blend(from.fontWeight.toFloat(), fontWeight.toFloat(), t).roundToInt(),
+            lineHeight = blend(from.lineHeight, lineHeight, t),
+            letterSpacing = blend(from.letterSpacing, letterSpacing, t),
+            color = blendColor(from.color, color, t),
         )
-        is ShapeElement -> copy(
+        is ShapeElement -> if (from !is ShapeElement) copy(frame = frame) else copy(
             frame = frame,
-            labelSize = if (from is ShapeElement) blend(from.labelSize, labelSize, t) else labelSize,
-            cornerRadius = if (from is ShapeElement) blend(from.cornerRadius, cornerRadius, t) else cornerRadius,
+            cornerRadius = blend(from.cornerRadius, cornerRadius, t),
+            fill = blendColor(from.fill, fill, t),
+            // A gradient blends with a gradient; with a flat fill on either side
+            // there is nothing to blend it against, so it is the target's.
+            gradient = if (from.gradient == null || gradient == null) gradient else ShapeGradient(
+                start = blendColor(from.gradient.start, gradient.start, t),
+                end = blendColor(from.gradient.end, gradient.end, t),
+                angle = blend(from.gradient.angle, gradient.angle, t),
+            ),
+            strokeColor = blendColor(from.strokeColor, strokeColor, t),
+            strokeWidth = blend(from.strokeWidth, strokeWidth, t),
+            shadow = if (from.shadow == null || shadow == null) shadow else ShapeShadow(
+                color = blendColor(from.shadow.color, shadow.color, t),
+                blur = blend(from.shadow.blur, shadow.blur, t),
+                dx = blend(from.shadow.dx, shadow.dx, t),
+                dy = blend(from.shadow.dy, shadow.dy, t),
+            ),
+            labelSize = blend(from.labelSize, labelSize, t),
+            labelColor = blendColor(from.labelColor, labelColor, t),
         )
         is CodeElement -> copy(
             frame = frame,
@@ -142,19 +166,43 @@ fun Element.travellingFrom(from: Element, fraction: Float): Element {
             frame = frame,
             fontSize = if (from is TerminalElement) blend(from.fontSize, fontSize, t) else fontSize,
         )
-        is DiagramElement -> copy(
+        is DiagramElement -> if (from !is DiagramElement) copy(frame = frame) else copy(
             frame = frame,
-            fontSize = if (from is DiagramElement) blend(from.fontSize, fontSize, t) else fontSize,
+            fontSize = blend(from.fontSize, fontSize, t),
+            nodeFill = blendColor(from.nodeFill, nodeFill, t),
+            nodeStroke = blendColor(from.nodeStroke, nodeStroke, t),
+            nodeText = blendColor(from.nodeText, nodeText, t),
+            edgeColor = blendColor(from.edgeColor, edgeColor, t),
         )
-        is EquationElement -> copy(
+        is EquationElement -> if (from !is EquationElement) copy(frame = frame) else copy(
             frame = frame,
-            fontSize = if (from is EquationElement) blend(from.fontSize, fontSize, t) else fontSize,
+            fontSize = blend(from.fontSize, fontSize, t),
+            color = blendColor(from.color, color, t),
+        )
+        is ImageElement -> if (from !is ImageElement) copy(frame = frame) else copy(
+            frame = frame,
+            adjust = ImageAdjust(
+                exposure = blend(from.adjust.exposure, adjust.exposure, t),
+                saturation = blend(from.adjust.saturation, adjust.saturation, t),
+                contrast = blend(from.adjust.contrast, adjust.contrast, t),
+            ),
         )
         // A group's children sit in absolute coordinates, so the group's own box
         // is all that moves here: its renderer scales them into it.
-        is ImageElement, is GalleryElement, is VideoElement, is AudioElement, is GroupElement ->
+        is GalleryElement, is VideoElement, is AudioElement, is GroupElement ->
             update(frame, opacity, rotation, flippedHorizontally, flippedVertically, locked)
     }
 }
 
 private fun blend(from: Float, to: Float, t: Float): Float = from + (to - from) * t
+
+/** A packed ARGB colour [t] of the way from [from] to [to], channel by channel. */
+private fun blendColor(from: Long, to: Long, t: Float): Long {
+    var out = 0L
+    for (shift in listOf(24, 16, 8, 0)) {
+        val a: Float = ((from shr shift) and 0xFF).toFloat()
+        val b: Float = ((to shr shift) and 0xFF).toFloat()
+        out = out or (blend(a, b, t).roundToInt().toLong().coerceIn(0L, 255L) shl shift)
+    }
+    return out
+}

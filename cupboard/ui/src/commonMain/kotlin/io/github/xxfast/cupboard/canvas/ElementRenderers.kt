@@ -26,6 +26,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -145,6 +146,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * translation and a scale on top of its frame, for an element in flight: a Magic
  * Move between two slides is the one thing that draws one. Null is the element at
  * rest, which is everything else.
+ *
+ * [alignment] is where a text element's words sit in its box, overriding the
+ * element's own: a Magic Move blends it between the two slides' alignments, since
+ * there is no in-between of `Start` and `End` on the element itself. Null is the
+ * element's own, which is everything but a text in flight.
  */
 @Composable
 fun ElementView(
@@ -158,6 +164,7 @@ fun ElementView(
     entry: Build? = null,
     pieces: PieceReveal? = null,
     transform: ElementTransform? = null,
+    alignment: Alignment? = null,
     playing: Boolean = false,
 ) {
     Box(
@@ -175,7 +182,7 @@ fun ElementView(
             }
     ) {
         when (element) {
-            is TextElement -> TextElementView(element, pieces)
+            is TextElement -> TextElementView(element, pieces, alignment ?: element.alignment())
             is ShapeElement -> ShapeElementView(element)
             is ImageElement -> ImageElementView(element)
             is GalleryElement -> GalleryElementView(
@@ -253,10 +260,13 @@ internal fun TextElement.textStyle(): TextStyle {
 }
 
 /** Where in its frame the text sits. Shared with the editor for the same reason. */
-internal fun TextElement.alignment(): Alignment = when (align) {
-    TextAlign.Start -> Alignment.TopStart
-    TextAlign.Center -> Alignment.TopCenter
-    TextAlign.End -> Alignment.TopEnd
+internal fun TextElement.alignment(): Alignment = BiasAlignment(align.bias(), -1f)
+
+/** The alignment as a horizontal bias, -1 at the start edge and 1 at the end. */
+internal fun TextAlign.bias(): Float = when (this) {
+    TextAlign.Start -> -1f
+    TextAlign.Center -> 0f
+    TextAlign.End -> 1f
 }
 
 /**
@@ -272,6 +282,7 @@ internal fun TextElement.alignment(): Alignment = when (align) {
 private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
     element: TextElement,
     pieces: PieceReveal? = null,
+    alignment: Alignment = element.alignment(),
 ) {
     val style: TextStyle = element.textStyle()
 
@@ -297,7 +308,7 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
                 if (ranges.isEmpty()) AnnotatedString(element.text)
                 else deliveredText(element.text, 0, ranges, shown, fade.value, style.color),
             style = style,
-            modifier = Modifier.align(element.alignment()),
+            modifier = Modifier.align(alignment),
         )
         return
     }
@@ -311,7 +322,7 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
         lines.runningFold(0) { at, line -> at + line.length + 1 }
     }
 
-    Column(modifier = Modifier.align(element.alignment()).fillMaxWidth()) {
+    Column(modifier = Modifier.align(alignment).fillMaxWidth()) {
         for ((index, line) in lines.withIndex()) {
             val indent: Float = line.listIndentLevel() * ListIndent
             val body: String = line.listBody()

@@ -1,10 +1,14 @@
 package io.github.xxfast.cupboard.canvas
 
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.util.lerp
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.TextElement
 
 /**
  * The slide change currently on screen, for the renderers that have to draw
@@ -24,13 +28,25 @@ val LocalPlayTransition = compositionLocalOf<PlayTransition?> { null }
  * going forward and the arriving slide's coming back: a transition belongs to the
  * slide it plays on the way out of, so walking backwards undoes exactly what
  * walking forwards did.
+ *
+ * [fromBackground] is what the leaving slide paints, already resolved through its
+ * layout and the deck (`Slide.effectiveBackground`), because the arriving slide
+ * crossfades from it and has no document in hand to resolve it itself.
  */
 data class PlayTransition(
     val fromSlide: Slide?,
     val toSlide: Slide,
     val forward: Boolean,
     val transition: SlideTransition,
+    val fromBackground: SlideBackground? = null,
 )
+
+/**
+ * A background part-way through becoming another: [from] under the slide's own,
+ * which is drawn at [progress] opacity. Null in [from] is the app's own gradient,
+ * as everywhere a background is null.
+ */
+data class BackgroundCrossfade(val from: SlideBackground?, val progress: Float)
 
 /**
  * A live override of what an element's own frame would have drawn: where it sits
@@ -71,6 +87,19 @@ fun magicMoveTransform(from: Element, to: Element, progress: Float): ElementTran
         rotation = lerp(from.rotation, to.rotation, fraction),
         opacity = lerp(from.opacity, to.opacity, fraction),
     )
+}
+
+/**
+ * Where a travelling text's words sit in its box at [progress]: the from side's
+ * alignment sliding to the to side's, as a bias, since the words themselves are
+ * what the audience tracks and a box realigning under them in one frame reads as
+ * a jump. Null for anything that is not text on both sides, or that keeps its
+ * alignment, so the element draws where it always would.
+ */
+fun travellingAlignment(from: Element, to: Element, progress: Float): Alignment? {
+    if (from !is TextElement || to !is TextElement || from.align == to.align) return null
+    val bias: Float = lerp(from.align.bias(), to.align.bias(), progress.coerceIn(0f, 1f))
+    return BiasAlignment(bias, -1f)
 }
 
 /**
