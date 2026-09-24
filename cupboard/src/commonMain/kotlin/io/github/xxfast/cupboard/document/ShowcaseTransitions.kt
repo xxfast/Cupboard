@@ -68,8 +68,8 @@ internal fun transitionSlides(): List<Slide> {
 }
 
 /**
- * One transition demo: a slide big enough to see move, dressed in its own tint
- * so the motion has an edge to read against.
+ * One transition demo: the transition's name centred on the stage, dressed in
+ * its own tint so neighbouring slides differ.
  */
 private fun transitionSlide(
     name: String,
@@ -79,27 +79,20 @@ private fun transitionSlide(
 ): Slide {
     val tint: Long = TransitionTints[index % TransitionTints.size]
 
-    // Bars across the stage: a plain colour field gives the eye nothing to track,
-    // and a push of a flat slide onto a flat slide looks like nothing happening.
-    val bars: List<Element> = List(4) { bar ->
-        shapeElement(
-            ShapeKind.Rectangle,
-            Frame(ShowcaseMargin, ShowcaseStage.y + 60f + bar * 150f, ShowcaseWidth, 96f),
-            ShowcaseDefaults,
-        ).copy(
-            cornerRadius = 12f,
-            label = if (bar == 0) name else "",
-            labelSize = 56f,
-        )
-    }
+    val label: TextElement = TextElement(
+        frame = Frame(ShowcaseMargin, ShowcaseStage.y + (ShowcaseStage.height - 120f) / 2f, ShowcaseWidth, 120f),
+        text = name,
+        fontSize = 96f,
+        fontWeight = BoldWeight,
+        align = TextAlign.Center,
+        color = ShowcaseDefaults.textColor,
+    )
 
     return featureSlide(
         title = "Transition: $name",
         subtitle = "SlideTransition(${transition.kind}, ${transition.direction})",
-        elements = bars,
-        notes = "Look for: four bars and a tinted background, so the motion has edges to " +
-            "read against.\n\n" +
-            "In play: advance *out of* this slide, not into it. A transition belongs to " +
+        elements = listOf(label),
+        notes = "In play: advance *out of* this slide, not into it. A transition belongs to " +
             "the slide being left. Expect $look.",
     ).copy(
         background = SlideBackground.Color(tint),
