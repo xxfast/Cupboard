@@ -83,8 +83,9 @@ class RenderSnapshotTest {
     }
 
     /**
-     * Every built-in theme on its own "Title & Body" layout, with a shape in its
-     * default dress, one filled with its accent, and a code block. For a human
+     * Every built-in theme on its own "Title & Body" layout (the Basic ones'
+     * "Title and Bullets"), with a shape in its default dress, one filled with
+     * its accent, and a code block. For a human
      * again: whether a palette is any good is not a thing to assert.
      */
     @OptIn(ExperimentalComposeUiApi::class)
@@ -94,7 +95,7 @@ class RenderSnapshotTest {
         directory.mkdirs()
 
         for (theme in BuiltInThemes.all) {
-            val layout: Slide = theme.layouts.first { it.title == "Title & Body" }
+            val layout: Slide = theme.layouts.first { it.title == "Title & Body" || it.title == "Title and Bullets" }
             val shape = shapeElement(ShapeKind.Rectangle, Frame(560f, 300f, 150f, 80f), theme.defaults)
             val slide: Slide = layout.copy(
                 elements = layout.elements + listOf(

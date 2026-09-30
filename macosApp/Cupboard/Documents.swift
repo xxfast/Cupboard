@@ -146,7 +146,7 @@ extension CupboardHostApp {
     var fileCommands: some Commands {
         Group {
             CommandGroup(replacing: .newItem) {
-                Button("New") { newDocument() }
+                Button("New") { openWindow(id: ThemeChooserView.windowId) }
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Open...") { openDocument() }
                     .keyboardShortcut("o", modifiers: .command)
@@ -194,7 +194,8 @@ extension CupboardHostApp {
 
     /// A fresh `Untitled.cupboard` in Cupboard's own folder, opened like any
     /// other deck: making it and opening it are separate so there is one path
-    /// into a window, not two.
+    /// into a window, not two. File > New goes through the theme chooser
+    /// instead, which ends in `openDocument(at:)` the same way.
     ///
     /// doNewDocument is the exporter's doing: `new` is a reserved ObjC method
     /// family, so newDocument arrives here under that name.

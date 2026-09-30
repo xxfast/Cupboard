@@ -63,6 +63,12 @@ struct CupboardHostApp: App {
             DocumentWindow(ref: $ref)
         }
         .windowStyle(.hiddenTitleBar)
+        // File > New's theme chooser: one window, raised again by a second Cmd+N.
+        Window("New Presentation", id: ThemeChooserView.windowId) {
+            ThemeChooserView(onCreate: { openDocument(at: $0) })
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1024, height: 768)
         .commands {
             fileCommands
             exportCommands

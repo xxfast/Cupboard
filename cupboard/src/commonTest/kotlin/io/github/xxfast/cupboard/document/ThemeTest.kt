@@ -44,12 +44,83 @@ class ThemeTest {
     )
 
     @Test
-    fun theBuiltInsAreDistinctThemesOverTheSameFourLayouts() {
-        assertEquals(11, BuiltInThemes.all.size)
-        assertEquals(11, BuiltInThemes.all.map { it.name }.toSet().size)
-        for (theme in BuiltInThemes.all) {
+    fun theBuiltInsAreDistinctThemes() {
+        assertEquals(16, BuiltInThemes.all.size)
+        assertEquals(16, BuiltInThemes.all.map { it.name }.toSet().size)
+        assertEquals(BuiltInThemes.basic + BuiltInThemes.cupboard, BuiltInThemes.all)
+        assertEquals(listOf("Basic", "Cupboard"), BuiltInThemes.categories.map { it.name })
+    }
+
+    @Test
+    fun cupboardsOwnAreOverTheSameFourLayouts() {
+        assertEquals(11, BuiltInThemes.cupboard.size)
+        for (theme in BuiltInThemes.cupboard) {
             assertEquals(layoutTitles, theme.layouts.map { it.title }, theme.name)
         }
+    }
+
+    /** Keynote's layouts, by the names Keynote shows them under, less the two Live Video ones. */
+    @Test
+    fun theBasicsAreOverKeynotesOwnLayouts() {
+        val basic: List<String> = listOf(
+            "Title", "Title and Photo", "Title and Photo Alt", "Title and Bullets", "Bullets",
+            "Title, Bullets and Photo", "Section", "Title Only", "Agenda", "Statement", "Big Fact",
+            "Quote", "Photo - 3 Up", "Photo", "Blank",
+        )
+        val plain: List<String> = listOf(
+            "Title", "Photo - Horizontal", "Title - Centre", "Photo - Vertical", "Title - Top",
+            "Title and Bullets", "Title, Bullets and Photo", "Bullets", "Photo - 3 Up", "Quote",
+            "Photo", "Blank",
+        )
+
+        assertEquals(
+            listOf("Basic White", "Basic Black", "Classic White", "White", "Black"),
+            BuiltInThemes.basic.map { it.name },
+        )
+        for (theme in BuiltInThemes.basic) {
+            val expected: List<String> = if (theme.name in listOf("White", "Black")) plain else basic
+            assertEquals(expected, theme.layouts.map { it.title }, theme.name)
+            val ids: List<String> = theme.layouts.flatMap { layout -> layout.elements.map { it.id } + layout.id }
+            assertEquals(ids.size, ids.toSet().size, theme.name)
+        }
+    }
+
+    /** Switching between Basic themes carries every line of a title card to its own slot. */
+    @Test
+    fun aBasicThemeSwitchKeepsTitleSubtitleAndAuthorInPlace() {
+        val deck: Document = Document().applyingTheme(BuiltInThemes.BasicWhite)
+        val card: Slide = Slide(id = "card").instantiating(deck.layouts.first())
+        val texts: List<String> = listOf("Cupboard", "Slides for developers", "xxfast, 2026")
+        val written: Slide = card.copy(
+            elements = card.elements.zip(texts) { element, text -> (element as TextElement).copy(text = text) },
+        )
+
+        val switched: Document = deck.copy(slides = listOf(written)).applyingTheme(BuiltInThemes.ClassicWhite)
+
+        val slide: Slide = switched.slides.single()
+        val classic: Slide = switched.layouts.first()
+        assertEquals(texts, slide.elements.map { (it as TextElement).text })
+        assertEquals(classic.elements.map { it.frame }, slide.elements.map { it.frame })
+        assertEquals(TextFont.Canela, (slide.elements.first() as TextElement).fontFamily)
+        assertEquals(TextAlign.Center, (slide.elements.last() as TextElement).align)
+    }
+
+    /** Basic White sets its title card flush left with an author line; White centres it without one. */
+    @Test
+    fun theBasicTitleCardsDifferOnlyWhereKeynotesDo() {
+        val basic: Slide = BuiltInThemes.BasicWhite.layouts.first()
+        val white: Slide = BuiltInThemes.White.layouts.first()
+        val classic: Slide = BuiltInThemes.ClassicWhite.layouts.first()
+
+        fun titleOf(layout: Slide): TextElement =
+            layout.placeholders().getValue(PlaceholderSlot(PlaceholderRole.Title, 0)) as TextElement
+
+        assertEquals(TextAlign.Start, titleOf(basic).align)
+        assertEquals(TextAlign.Center, titleOf(white).align)
+        assertEquals(3, basic.elements.size)
+        assertEquals(2, white.elements.size)
+        assertEquals(TextFont.Canela, titleOf(classic).fontFamily)
+        assertEquals(0xFFFFFFFF, titleOf(BuiltInThemes.Black.layouts.first()).color)
     }
 
     /** "Cupboard" is the app's own look, so it is what an unthemed deck already shows. */
@@ -92,7 +163,7 @@ class ThemeTest {
         assertEquals("What I wrote", title.text)
         assertEquals(BuiltInThemes.Terminal.defaults.textColor, title.color)
         assertEquals(BuiltInThemes.Terminal.defaults.textFont, title.fontFamily)
-        assertEquals(code.placeholders().getValue(PlaceholderRole.Title).frame, title.frame)
+        assertEquals(code.placeholders().getValue(PlaceholderSlot(PlaceholderRole.Title, 0)).frame, title.frame)
 
         // The layout's other placeholder arrives as an instance of its own.
         assertTrue(slide.elements.any { it.placeholderRole == PlaceholderRole.Code })

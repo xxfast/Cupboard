@@ -33,6 +33,71 @@ class SlideLayoutsTest {
         ),
     )
 
+    /** A title card: a title, then a subtitle and an author line, both bodies. */
+    private fun card(): Slide {
+        fun line(id: String, y: Float, text: String, role: PlaceholderRole): TextElement =
+            TextElement(id = id, frame = Frame(94f, y, 1731f, 70f), text = text, role = role)
+
+        return Slide(
+            id = "card",
+            title = "Title",
+            elements = listOf(
+                line("card-title", 420f, "Title", PlaceholderRole.Title),
+                line("card-subtitle", 575f, "Subtitle", PlaceholderRole.Body),
+                line("card-author", 938f, "Author", PlaceholderRole.Body),
+            ),
+        )
+    }
+
+    @Test
+    fun aRoleCanRepeatAndEachPlaceholderHasItsOwnSlot() {
+        assertEquals(
+            listOf(
+                PlaceholderSlot(PlaceholderRole.Title, 0),
+                PlaceholderSlot(PlaceholderRole.Body, 0),
+                PlaceholderSlot(PlaceholderRole.Body, 1),
+            ),
+            card().placeholders().keys.toList(),
+        )
+    }
+
+    @Test
+    fun aSlideOnALayoutWithTwoBodiesGetsBoth() {
+        val slide: Slide = Slide(id = "one").instantiating(card())
+
+        assertEquals(listOf("Title", "Subtitle", "Author"), slide.elements.map { (it as TextElement).text })
+        assertEquals(card().elements.map { it.frame }, slide.elements.map { it.frame })
+        assertTrue(slide.elements.none { it.id.startsWith("card-") })
+    }
+
+    @Test
+    fun reapplyingKeepsEachBodysTextInItsOwnSlot() {
+        val slide: Slide = Slide(id = "one").instantiating(card())
+        val written: Slide = slide.copy(
+            elements = slide.elements.mapIndexed { index, element ->
+                (element as TextElement).copy(text = "Line $index", frame = Frame(0f, 0f, 10f, 10f))
+            },
+        )
+
+        val reapplied: Slide = written.applyingLayout(card())
+
+        assertEquals(listOf("Line 0", "Line 1", "Line 2"), reapplied.elements.map { (it as TextElement).text })
+        assertEquals(card().elements.map { it.frame }, reapplied.elements.map { it.frame })
+        assertEquals(written.elements.map { it.id }, reapplied.elements.map { it.id })
+    }
+
+    /** A second body the new layout has no second slot for keeps its text and its frame. */
+    @Test
+    fun aSlotTheNewLayoutLacksIsLeftWhereItIs() {
+        val slide: Slide = Slide(id = "one").instantiating(card())
+        val author: Element = slide.elements.last()
+
+        val moved: Slide = slide.applyingLayout(layout())
+
+        assertEquals(author, moved.elements.single { it.id == author.id })
+        assertEquals(layout().elements[1].frame, moved.elements[1].frame)
+    }
+
     @Test
     fun aDeckStartsWithTheFourDefaultLayouts() {
         val layouts: List<Slide> = defaultLayouts()

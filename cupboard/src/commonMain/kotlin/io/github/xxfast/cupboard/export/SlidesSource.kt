@@ -253,10 +253,12 @@ private fun TextAlign.compose(): String = when (this) {
     TextAlign.End -> "End"
 }
 
+/** A named face exports as the generic family it falls back to: the exported project bundles no fonts. */
 private fun TextFont.compose(): String = when (this) {
     TextFont.Sans -> "Default"
     TextFont.Serif -> "Serif"
     TextFont.Monospace -> "Monospace"
+    else -> generic.compose()
 }
 
 /** The kinds that export as themselves. Everything else falls back to a rounded box. */

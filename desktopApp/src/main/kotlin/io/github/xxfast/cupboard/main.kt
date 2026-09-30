@@ -43,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.MenuScope
 import androidx.compose.ui.window.Window
@@ -50,6 +51,7 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
@@ -67,6 +69,7 @@ import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
+import io.github.xxfast.cupboard.screens.chooser.ThemeChooserScreen
 import io.github.xxfast.cupboard.screens.editor.EditorMenuItem
 import io.github.xxfast.cupboard.screens.editor.EditorMenuSection
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
@@ -434,6 +437,20 @@ fun main() {
     val documents = Documents(Cupboard.editor())
 
     application {
+        documents.chooser?.let { chooser ->
+            DialogWindow(
+                onCloseRequest = documents::dismissChooser,
+                title = "Choose a Theme",
+                state = rememberDialogState(size = DpSize(1024.dp, 768.dp)),
+            ) {
+                ThemeChooserScreen(
+                    viewModel = chooser,
+                    onCancel = documents::dismissChooser,
+                    onCreate = documents::create,
+                )
+            }
+        }
+
         // One window per open deck. Keyed by the editor, not by its place in the
         // list: closing the middle one has to take that window away rather than
         // hand its state to the deck that shuffles up into the slot.
@@ -701,7 +718,7 @@ private fun EditorWindow(
                 Item(
                     text = "New",
                     shortcut = editShortcut(Key.N),
-                    onClick = { documents.new(window) },
+                    onClick = { documents.choose(window) },
                 )
                 Item(
                     text = "Open...",

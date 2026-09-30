@@ -112,11 +112,31 @@ data class Theme(
      * makes a hand-built style library travel with a saved look.
      */
     val objectStyles: List<ObjectStyle> = emptyList(),
+    /**
+     * Layouts drawn for a slide size of their own, by the preset they are drawn
+     * for. [layouts] are drawn at 16:9; a size with an entry here uses these
+     * instead, the way Keynote ships its Basic themes' 4:3 masters as a set of
+     * their own rather than squeezing the 16:9 ones (the type is larger, the
+     * margins different).
+     *
+     * Empty for everything but those five, and for every saved theme: a size
+     * with no entry takes [layouts] and scales them to fit, which is what
+     * [deck] and a slide-size change have always done.
+     */
+    val presetLayouts: Map<SlideSizePreset, List<Slide>> = emptyMap(),
 )
 
 /**
- * The themes every deck can reach: the app's own look, four vivid gradients, two
- * light ones, and the four muted darks that came first.
+ * The themes every deck can reach: Keynote's five Basic ones, then Cupboard's own
+ * eleven (the app's own look, four vivid gradients, two light ones, and the four
+ * muted darks that came first).
+ *
+ * The Basic five are Keynote's File > New set, and are Keynote's to the number:
+ * backgrounds, faces, text-box and shape defaults and every layout are read out
+ * of Keynote's own theme files (see `BasicLayouts.kt`). Basic White and Basic
+ * Black set Helvetica Neue flush left with an author line; Classic White centres
+ * Canela titles over Graphik; White and Black are Keynote's older, plainer pair,
+ * centred Helvetica Neue on a layout set of their own.
  *
  * A slide's look is the document's and never the app's, so a light theme is light
  * in both app themes and a dark one dark. The vivid four set white ink on a
@@ -130,6 +150,52 @@ data class Theme(
  * than a hand-built list.
  */
 object BuiltInThemes {
+    val BasicWhite: Theme = keynoteTheme(
+        name = "Basic White",
+        background = SlideBackground.Color(0xFFFFFFFF),
+        defaults = keynoteDefaults(ink = 0xFF000000, shape = 0xFF000000, code = CodeTheme.Notepad),
+        layouts = ::basicWhiteLayouts,
+        standard = ::basicWhiteStandardLayouts,
+    )
+
+    val BasicBlack: Theme = keynoteTheme(
+        name = "Basic Black",
+        background = SlideBackground.Color(0xFF000000),
+        defaults = keynoteDefaults(ink = 0xFFFFFFFF, shape = 0xFFFFFFFF, code = CodeTheme.Darcula),
+        layouts = ::basicBlackLayouts,
+        standard = ::basicBlackStandardLayouts,
+    )
+
+    val ClassicWhite: Theme = keynoteTheme(
+        name = "Classic White",
+        background = SlideBackground.Color(0xFFFFFFFF),
+        defaults = keynoteDefaults(
+            ink = 0xFF000000,
+            shape = 0xFF000000,
+            code = CodeTheme.Notepad,
+            font = TextFont.CanelaText,
+            size = 44f,
+        ),
+        layouts = ::classicWhiteLayouts,
+        standard = ::classicWhiteStandardLayouts,
+    )
+
+    val White: Theme = keynoteTheme(
+        name = "White",
+        background = SlideBackground.Color(0xFFFFFFFF),
+        defaults = keynoteDefaults(ink = 0xFF000000, shape = 0xFF00A2FF, code = CodeTheme.Notepad),
+        layouts = ::whiteLayouts,
+        standard = ::whiteStandardLayouts,
+    )
+
+    val Black: Theme = keynoteTheme(
+        name = "Black",
+        background = SlideBackground.Color(0xFF000000),
+        defaults = keynoteDefaults(ink = 0xFFFFFFFF, shape = 0xFF00A2FF, code = CodeTheme.Darcula),
+        layouts = ::blackLayouts,
+        standard = ::blackStandardLayouts,
+    )
+
     val Cupboard: Theme = theme(
         name = "Cupboard",
         background = null,
@@ -277,18 +343,76 @@ object BuiltInThemes {
         ),
     )
 
-    val all: List<Theme> = listOf(
+    val basic: List<Theme> = listOf(BasicWhite, BasicBlack, ClassicWhite, White, Black)
+
+    val cupboard: List<Theme> = listOf(
         Cupboard, Aurora, Sunset, Ocean, Candy, Paper, Mint, Graphite, Nord, Solarized, Terminal,
     )
+
+    val all: List<Theme> = basic + cupboard
+
+    /** How the new-deck chooser groups them, in the order its sidebar lists them. */
+    val categories: List<ThemeCategory> = listOf(
+        ThemeCategory(name = "Basic", themes = basic),
+        ThemeCategory(name = "Cupboard", themes = cupboard),
+    )
 }
+
+/**
+ * A named shelf of themes: one row of the new-deck chooser's sidebar, and the
+ * grid it shows when picked. Keynote's Basic, Business, Education and so on.
+ */
+@Serializable
+data class ThemeCategory(val name: String, val themes: List<Theme>)
 
 /** A built-in: its own defaults, and the four default layouts dressed in them. */
 private fun theme(name: String, background: SlideBackground?, defaults: ElementDefaults): Theme =
     Theme(name = name, background = background, defaults = defaults, layouts = defaultLayouts(defaults))
 
+/** A Basic built-in: Keynote's defaults, and Keynote's 16:9 and 4:3 layouts dressed in them. */
+private fun keynoteTheme(
+    name: String,
+    background: SlideBackground,
+    defaults: ElementDefaults,
+    layouts: (ElementDefaults) -> List<Slide>,
+    standard: (ElementDefaults) -> List<Slide>,
+): Theme = Theme(
+    name = name,
+    background = background,
+    defaults = defaults,
+    layouts = layouts(defaults),
+    presetLayouts = mapOf(SlideSizePreset.Standard to standard(defaults)),
+)
+
+/**
+ * A Basic built-in's defaults, as Keynote's theme files set them: a fresh text
+ * box in the theme's body face at [size] in [ink], a fresh shape filled with
+ * [shape], no border, and labelled in whichever of black and white reads on it.
+ */
+private fun keynoteDefaults(
+    ink: Long,
+    shape: Long,
+    code: CodeTheme,
+    font: TextFont = TextFont.HelveticaNeue,
+    size: Float = 48f,
+): ElementDefaults = ElementDefaults(
+    textColor = ink,
+    bodyColor = ink,
+    textFont = font,
+    textSize = size,
+    textLineHeight = 1.2f,
+    shapeFill = shape,
+    shapeStroke = 0x00000000,
+    shapeLabelColor = if (shape == 0xFFFFFFFF) 0xFF000000 else 0xFFFFFFFF,
+    codeTheme = code,
+    accent = 0xFF00A2FF,
+)
+
 /**
  * This deck put on [theme]: its background, its defaults, and copies of its
  * layouts under fresh ids, so editing them afterwards is editing the deck's own.
+ * A deck on a preset size the theme has layouts drawn for gets those
+ * ([Theme.presetLayouts]); any other gets the 16:9 ones as they are.
  *
  * Slides are remapped by layout *title* rather than by id, because the incoming
  * layouts are a different set of objects with the same names: a slide on "Code"
@@ -305,7 +429,8 @@ private fun theme(name: String, background: SlideBackground?, defaults: ElementD
  * theme's palette would be six ways to undo the change one shape at a time.
  */
 fun Document.applyingTheme(theme: Theme): Document {
-    val fresh: List<Slide> = theme.layouts.map { it.duplicated() }
+    val drawn: List<Slide> = slideSizePreset()?.let { theme.presetLayouts[it] } ?: theme.layouts
+    val fresh: List<Slide> = drawn.map { it.duplicated() }
     val byTitle: Map<String, Slide> = fresh.associateBy { it.title }
     val titles: Map<String, String> = layouts.associate { it.id to it.title }
 
@@ -319,6 +444,26 @@ fun Document.applyingTheme(theme: Theme): Document {
             slide.applyingLayout(slide.layoutId?.let { titles[it] }?.let { byTitle[it] })
         },
     )
+}
+
+/**
+ * A fresh deck called [name] on this theme at [size], with no slides yet: what
+ * a new document and the chooser's thumbnail both start from.
+ *
+ * A theme with layouts drawn for [size] sizes the empty deck first and is put on
+ * after, so its layouts land exactly as drawn. Any other is put on at 16:9 and
+ * then scaled to [size] with everything on it, the Slide Size change's own rule.
+ */
+fun Theme.deck(name: String, size: SlideSizePreset): Document {
+    if (size in presetLayouts) {
+        return Document(name = name)
+            .resized(size.width, size.height, scaleContent = false)
+            .applyingTheme(this)
+    }
+
+    return Document(name = name)
+        .applyingTheme(this)
+        .resized(size.width, size.height, scaleContent = true)
 }
 
 /**

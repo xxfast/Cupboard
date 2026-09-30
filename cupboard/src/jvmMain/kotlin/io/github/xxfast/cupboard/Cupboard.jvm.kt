@@ -1,6 +1,11 @@
 package io.github.xxfast.cupboard
 
+import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
+import io.github.xxfast.cupboard.document.SlideSizePreset
+import io.github.xxfast.cupboard.document.Theme
+import io.github.xxfast.cupboard.screens.chooser.ThemeChooserState
+import io.github.xxfast.cupboard.screens.chooser.ThemeChooserViewModel
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +47,18 @@ fun Cupboard.editor(
 ): EditorViewModel = runBlocking { openEditor(bundle, directory, dispatcher) }
 
 /**
+ * The new-deck chooser, File > New's theme sheet. Its last state's
+ * [ThemeChooserState.selectedTheme] and [ThemeChooserState.size] are what
+ * [newDocument] takes on Create.
+ *
+ * [dispatcher] is the host's serialized main dispatcher, as for [editor].
+ */
+fun Cupboard.themeChooser(
+    dispatcher: CoroutineDispatcher = Dispatchers.Main,
+    initialState: ThemeChooserState = ThemeChooserState(),
+): ThemeChooserViewModel = ThemeChooserViewModel(initialState, dispatcher)
+
+/**
  * An editor over the deck at [bundle], or why it could not be opened. What File
  * > Open comes down to, and what a double-clicked `.cupboard` does.
  *
@@ -57,9 +74,15 @@ fun Cupboard.openDocument(
 /**
  * A brand new bundle in [directory], named after the first [name] nothing else
  * answers to, and where it went. Open it with [openDocument] like any other.
+ *
+ * [theme] and [size] are what the new-deck chooser picked, see [themeChooser].
  */
-fun Cupboard.newDocument(directory: Path = cupboardDirectory(), name: String = "Untitled"): Path =
-    createBundle(directory, name)
+fun Cupboard.newDocument(
+    directory: Path = cupboardDirectory(),
+    name: String = "Untitled",
+    theme: Theme = BuiltInThemes.Cupboard,
+    size: SlideSizePreset = SlideSizePreset.Widescreen,
+): Path = createBundle(directory, name, theme, size)
 
 /**
  * A fresh bundle holding the feature showcase deck, and where it went: Help >

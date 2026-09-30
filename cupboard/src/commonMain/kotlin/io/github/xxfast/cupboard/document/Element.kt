@@ -96,8 +96,9 @@ sealed interface Element {
 }
 
 /**
- * What a placeholder stands for, and so what an instance of it is: the one fact
- * apply and reapply map a slide's elements to a layout's by.
+ * What a placeholder stands for, and so what an instance of it is: with its
+ * place among the others of its role, what apply and reapply map a slide's
+ * elements to a layout's by (see [PlaceholderSlot]).
  *
  * Only the kinds that can hold slide content carry one ([TextElement],
  * [ImageElement], [CodeElement]): a shape or a diagram on a layout is decoration,
@@ -124,12 +125,49 @@ val Element.placeholderRole: PlaceholderRole?
 enum class TextAlign { Start, Center, End }
 
 /**
- * Generic families only, and deliberately so: the canvas draws on every target
- * from the same document, and nothing bundles or resolves font files yet. A
- * document that named "Inter" would render as one thing on macOS and another
- * wherever the face is missing.
+ * The face a text box is set in: three generic families, and the handful of
+ * named ones Keynote's Basic themes are set in.
+ *
+ * Named families are a closed list rather than a free string, and each carries
+ * the generic one it stands in for: the canvas draws on every target from the
+ * same document, and a face missing on one of them (Linux, the web, Android, a
+ * Mac that never downloaded Canela) has to fall back to something that still
+ * reads as the same kind of type. [familyName] is what the system knows the face
+ * as; [generic] is what draws when it doesn't.
+ *
+ * Weight is not part of the face: Light, Regular, Medium and Bold are
+ * [TextElement.fontWeight] at 300, 400, 500 and 700.
  */
-enum class TextFont { Sans, Serif, Monospace }
+enum class TextFont {
+    Sans,
+    Serif,
+    Monospace,
+    HelveticaNeue,
+    Canela,
+    CanelaText,
+    CanelaDeck,
+    Graphik,
+    ;
+
+    /** The system's name for this face; null for the three generic families. */
+    val familyName: String?
+        get() = when (this) {
+            Sans, Serif, Monospace -> null
+            HelveticaNeue -> "Helvetica Neue"
+            Canela -> "Canela"
+            CanelaText -> "Canela Text"
+            CanelaDeck -> "Canela Deck"
+            Graphik -> "Graphik"
+        }
+
+    /** The generic family this one falls back to where [familyName] isn't installed. */
+    val generic: TextFont
+        get() = when (this) {
+            Sans, Serif, Monospace -> this
+            HelveticaNeue, Graphik -> Sans
+            Canela, CanelaText, CanelaDeck -> Serif
+        }
+}
 
 /**
  * A list is a property of the whole box, not of a range: every line of

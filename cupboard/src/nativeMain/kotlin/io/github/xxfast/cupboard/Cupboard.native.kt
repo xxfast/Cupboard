@@ -1,6 +1,11 @@
 package io.github.xxfast.cupboard
 
+import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
+import io.github.xxfast.cupboard.document.SlideSizePreset
+import io.github.xxfast.cupboard.document.Theme
+import io.github.xxfast.cupboard.screens.chooser.ThemeChooserState
+import io.github.xxfast.cupboard.screens.chooser.ThemeChooserViewModel
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.toKString
@@ -77,9 +82,27 @@ fun Cupboard.saveAs(
  * A brand new bundle, named after the first [name] nothing else answers to, and
  * where it went. [directory] is this app's own folder when null. Open it with
  * [openDocument] like any other deck.
+ *
+ * [theme] and [size] are what the new-deck chooser picked, see [themeChooser].
  */
-fun Cupboard.newDocument(directory: String? = null, name: String = "Untitled"): String =
-    createBundle(directory?.let { Path(it) } ?: cupboardDirectory(), name).toString()
+fun Cupboard.newDocument(
+    directory: String? = null,
+    name: String = "Untitled",
+    theme: Theme = BuiltInThemes.Cupboard,
+    size: SlideSizePreset = SlideSizePreset.Widescreen,
+): String = createBundle(directory?.let { Path(it) } ?: cupboardDirectory(), name, theme, size).toString()
+
+/**
+ * The new-deck chooser, File > New's theme sheet. Its last state's
+ * [ThemeChooserState.selectedTheme] and [ThemeChooserState.size] are what
+ * [newDocument] takes on Create.
+ *
+ * [dispatcher] is the host's serialized main dispatcher, as for [editor].
+ */
+fun Cupboard.themeChooser(
+    dispatcher: CoroutineDispatcher,
+    initialState: ThemeChooserState = ThemeChooserState(),
+): ThemeChooserViewModel = ThemeChooserViewModel(initialState, dispatcher)
 
 /**
  * The decks this machine opened last, newest first, at most ten, and only the

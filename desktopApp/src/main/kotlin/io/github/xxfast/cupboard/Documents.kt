@@ -1,9 +1,15 @@
 package io.github.xxfast.cupboard
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.awt.ComposeWindow
 import io.github.xxfast.cupboard.document.CupboardBundle
+import io.github.xxfast.cupboard.document.SlideSizePreset
+import io.github.xxfast.cupboard.document.Theme
+import io.github.xxfast.cupboard.screens.chooser.ThemeChooserViewModel
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import java.awt.FileDialog
 import java.awt.Frame
@@ -38,9 +44,39 @@ internal class Documents(first: EditorViewModel) {
         frames[viewModel] = frame
     }
 
+    /** The theme chooser while File > New has it up, null when it doesn't. */
+    var chooser: ThemeChooserViewModel? by mutableStateOf(null)
+        private set
+
+    /** The window File > New was asked from, the owner of whatever Create opens. */
+    private var chooserOwner: Frame? = null
+
     /** A fresh deck in Cupboard's own folder, opened like any other. */
     fun new(owner: Frame) {
         open(Cupboard.newDocument(), owner)
+    }
+
+    /**
+     * File > New: the theme chooser, and the deck only once Create is pressed.
+     * A second ask while one is up keeps the one there.
+     */
+    fun choose(owner: Frame) {
+        if (chooser != null) return
+        chooserOwner = owner
+        chooser = Cupboard.themeChooser()
+    }
+
+    /** Create: a deck on [theme] at [size], opened like any other, and the chooser away. */
+    fun create(theme: Theme, size: SlideSizePreset) {
+        val owner: Frame? = chooserOwner
+        dismissChooser()
+        if (owner != null) open(Cupboard.newDocument(theme = theme, size = size), owner)
+    }
+
+    fun dismissChooser() {
+        chooser?.close()
+        chooser = null
+        chooserOwner = null
     }
 
     /**

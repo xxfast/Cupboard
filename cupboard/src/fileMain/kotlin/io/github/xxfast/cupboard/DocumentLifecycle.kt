@@ -1,11 +1,14 @@
 package io.github.xxfast.cupboard
 
+import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.DocumentLoad
 import io.github.xxfast.cupboard.document.RecentDocuments
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.Theme
+import io.github.xxfast.cupboard.document.deck
 import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.instantiating
 import io.github.xxfast.cupboard.document.showcaseDocument
@@ -101,12 +104,20 @@ internal suspend fun openBundle(
  * inside takes that same name, so the title bar and the file agree from the
  * first frame.
  *
+ * The deck is on [theme] at [size] from the start: what the new-deck chooser
+ * picked, or the app's own look at 16:9 for a shell that asked nothing.
+ *
  * Nothing is opened here. A shell makes the bundle and then opens it like any
  * other, which is one path through the editor rather than two.
  */
-internal fun createBundle(directory: Path, name: String): Path {
+internal fun createBundle(
+    directory: Path,
+    name: String,
+    theme: Theme = BuiltInThemes.Cupboard,
+    size: SlideSizePreset = SlideSizePreset.Widescreen,
+): Path {
     val bundle: Path = uniqueBundle(directory, name)
-    CupboardBundle.create(bundle, freshDocument(bundle.deckName()))
+    CupboardBundle.create(bundle, freshDocument(bundle.deckName(), theme, size))
     return bundle
 }
 
@@ -193,14 +204,19 @@ private suspend fun editorOver(
 }
 
 /**
- * What a new deck opens on: one slide, on the deck's title layout.
+ * What a new deck opens on: one slide, on the first layout of [theme], at [size].
+ *
+ * Themed and sized before the slide goes in, so the slide takes the layout as it
+ * stands on this deck rather than being rescaled after. See [Theme.deck] for how
+ * a theme with layouts drawn for [size] differs from one scaled to it.
  *
  * Never an empty deck. A [Document] with no slides is a canvas with nothing to
  * draw and a navigator with nothing to select, and every reduction in the
  * editor assumes there is a slide to be on.
  */
-private fun freshDocument(name: String): Document {
-    val deck = Document(name = name)
+private fun freshDocument(name: String, theme: Theme, size: SlideSizePreset): Document {
+    val deck: Document = theme.deck(name, size)
+
     return deck.copy(slides = listOf(Slide().instantiating(deck.layouts.firstOrNull())))
 }
 

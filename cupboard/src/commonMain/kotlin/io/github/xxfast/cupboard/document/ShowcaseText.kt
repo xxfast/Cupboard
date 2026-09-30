@@ -189,15 +189,19 @@ private fun textAlignmentSlide(): Slide {
     )
 }
 
-/** Every [TextFont]. Generic families only, which is what makes them portable. */
+/**
+ * Every [TextFont]: the three generic families, then the named faces, each of
+ * which falls back to its generic one where the system doesn't have it.
+ */
 private fun textFontsSlide(): Slide {
+    val rows: Int = (TextFont.entries.size + 1) / 2
     val specimens: List<Element> = TextFont.entries.flatMapIndexed { index, font ->
-        val cell: Frame = gridCell(columns = 1, rows = TextFont.entries.size, index = index)
+        val cell: Frame = gridCell(columns = 2, rows = rows, index = index)
         listOf(
             TextElement(
                 frame = cell.demoBox(),
                 text = "$font  $Specimen  0123456789",
-                fontSize = 44f,
+                fontSize = 32f,
                 fontFamily = font,
                 color = ShowcaseDefaults.textColor,
             ),
@@ -207,12 +211,13 @@ private fun textFontsSlide(): Slide {
 
     return featureSlide(
         title = "Text Fonts",
-        subtitle = "every TextFont: generic families, resolved by the platform",
+        subtitle = "every TextFont: generic families, then named faces that fall back to them",
         elements = specimens,
-        notes = "Look for: three visibly different faces. Serif should have feet, " +
-            "Monospace should have every glyph on the same advance (line the digits " +
-            "up against the row above). If all three look the same the platform is " +
-            "falling back to one family.",
+        notes = "Look for: three visibly different generic faces. Serif should have feet, " +
+            "Monospace should have every glyph on the same advance. Then the named ones: " +
+            "HelveticaNeue and Graphik are sans, the three Canelas serif. A named face " +
+            "the system lacks (Linux, the web, a Mac that never downloaded Canela) draws " +
+            "as its generic family instead, which is the fallback working, not a bug.",
     )
 }
 

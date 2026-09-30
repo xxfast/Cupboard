@@ -90,7 +90,6 @@ import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
-import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.colorMatrix
 import io.github.xxfast.cupboard.document.imageSourceRect
@@ -243,11 +242,7 @@ internal fun TextElement.textStyle(): TextStyle {
         fontSize = fontSize.sp,
         fontWeight = FontWeight(fontWeight),
         fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
-        fontFamily = when (fontFamily) {
-            TextFont.Sans -> FontFamily.SansSerif
-            TextFont.Serif -> FontFamily.Serif
-            TextFont.Monospace -> FontFamily.Monospace
-        },
+        fontFamily = fontFamilyOf(fontFamily),
         textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
         lineHeight = (fontSize * lineHeight).sp,
         letterSpacing = letterSpacing.sp,

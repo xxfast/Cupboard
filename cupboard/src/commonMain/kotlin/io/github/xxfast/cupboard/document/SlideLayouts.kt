@@ -204,14 +204,31 @@ fun Document.moveLayout(id: String, afterId: String?): Document {
 }
 
 /**
- * This layout's placeholders by role, first of each winning: what a slide on it
- * fills in. Everything else on the layout is a static object, which slides
- * inherit rather than own (see [inheritedElements]).
+ * Where a placeholder sits among its layout's: its role, and which of that role
+ * it is, counting from zero in element order. A title card's subtitle is the
+ * first [PlaceholderRole.Body] and its author line the second.
+ *
+ * What a slide's element is matched to its layout's by, so a role can repeat:
+ * the second body on a slide is the second body on its layout, and a theme
+ * change carries a subtitle to the subtitle.
  */
-fun Slide.placeholders(): Map<PlaceholderRole, Element> = buildMap {
-    for (element in elements) {
-        val role: PlaceholderRole = element.placeholderRole ?: continue
-        if (role !in keys) put(role, element)
+data class PlaceholderSlot(val role: PlaceholderRole, val ordinal: Int)
+
+/**
+ * This slide's elements that carry a role, by slot, in element order: on a
+ * layout, what a slide on it fills in; on a slide, the instances it filled in
+ * with. Everything else on a layout is a static object, which slides inherit
+ * rather than own (see [inheritedElements]).
+ */
+fun Slide.placeholders(): Map<PlaceholderSlot, Element> {
+    val counts: MutableMap<PlaceholderRole, Int> = mutableMapOf()
+    return buildMap {
+        for (element in elements) {
+            val role: PlaceholderRole = element.placeholderRole ?: continue
+            val ordinal: Int = counts[role] ?: 0
+            counts[role] = ordinal + 1
+            put(PlaceholderSlot(role, ordinal), element)
+        }
     }
 }
 
@@ -238,12 +255,13 @@ fun Slide.effectiveBackground(layout: Slide?, deck: SlideBackground? = null): Sl
 /**
  * This slide moved onto [layout], or off every layout when that is null.
  *
- * Content survives: an element already carrying a role takes that placeholder's
- * frame and look and keeps its own id, its own text and its own builds, so
- * switching layouts re-dresses a slide rather than rewriting it. A placeholder
- * the slide has nothing for is copied in fresh, and an element whose role the new
- * layout has no placeholder for is left exactly where it is: a title that stays
- * put is better than one that vanishes because the new layout has no title.
+ * Content survives: an element carrying a role takes the frame and look of the
+ * placeholder in the same [PlaceholderSlot] and keeps its own id, its own text
+ * and its own builds, so switching layouts re-dresses a slide rather than
+ * rewriting it. A placeholder the slide has nothing for is copied in fresh, and
+ * an element whose slot the new layout has no placeholder for is left exactly
+ * where it is: a title that stays put is better than one that vanishes because
+ * the new layout has no title.
  *
  * Also what Reapply Layout is: applying the layout a slide is already on puts
  * every instance back where the layout says it goes.
@@ -251,17 +269,19 @@ fun Slide.effectiveBackground(layout: Slide?, deck: SlideBackground? = null): Sl
 fun Slide.applyingLayout(layout: Slide?): Slide {
     if (layout == null) return copy(layoutId = null)
 
-    val placeholders: Map<PlaceholderRole, Element> = layout.placeholders()
+    val placeholders: Map<PlaceholderSlot, Element> = layout.placeholders()
+    val slots: Map<String, PlaceholderSlot> = placeholders().entries
+        .associate { (slot, element) -> element.id to slot }
     val redressed: List<Element> = elements.map { element ->
-        val placeholder: Element = element.placeholderRole
-            ?.let { role -> placeholders[role] }
+        val placeholder: Element = slots[element.id]
+            ?.let { slot -> placeholders[slot] }
             ?: return@map element
         return@map element.applyingPlaceholder(placeholder)
     }
 
-    val filled: Set<PlaceholderRole> = elements.mapNotNullTo(mutableSetOf()) { it.placeholderRole }
+    val filled: Set<PlaceholderSlot> = slots.values.toSet()
     val added: List<Element> = placeholders
-        .filterKeys { role -> role !in filled }
+        .filterKeys { slot -> slot !in filled }
         .values
         .map { it.withNewIds() }
 

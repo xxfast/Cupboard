@@ -1,8 +1,14 @@
 package io.github.xxfast.cupboard
 
+import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.DocumentLoad
+import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideSizePreset
+import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.placeholderRole
 import io.github.xxfast.cupboard.document.decodeDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -134,6 +140,30 @@ class CupboardLifecycleTest {
 
         opened.viewModel.close()
         saved.close()
+    }
+
+    @Test
+    fun aNewDeckTakesTheThemeAndSizeTheChooserPicked() {
+        val directory: Path = tempDirectory()
+
+        val bundle: Path = Cupboard.newDocument(
+            directory,
+            theme = BuiltInThemes.BasicBlack,
+            size = SlideSizePreset.Standard,
+        )
+
+        val deck: Document = deckIn(bundle)
+        assertEquals("Basic Black", deck.themeName)
+        assertEquals(1440f, deck.slideWidth)
+        assertEquals(1080f, deck.slideHeight)
+        assertEquals(BuiltInThemes.BasicBlack.layouts.map { it.title }, deck.layouts.map { it.title })
+        // Keynote's own 4:3 masters rather than the 16:9 ones squeezed: its 82pt title at 1440/1024.
+        val title = deck.slides.single().elements.first { it.placeholderRole == PlaceholderRole.Title }
+        assertEquals(82f * 1440f / 1024f, (title as TextElement).fontSize, 0.1f)
+        // The one slide is on the title layout, as it stands on this 4:3 deck.
+        val slide: Slide = deck.slides.single()
+        assertEquals(deck.layouts.first().id, slide.layoutId)
+        assertTrue(slide.elements.all { it.frame.x + it.frame.width <= 1440f })
     }
 
     private fun deckIn(bundle: Path): Document {
