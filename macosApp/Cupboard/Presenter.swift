@@ -46,7 +46,7 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
     var onSwap: (() -> Void)?
 
     /// [session] is the show that is playing, or nil for none; [enabled] is what
-    /// the View menu says, and [screen] the display to fill, nil for a window
+    /// the Play menu says, and [screen] the display to fill, nil for a window
     /// that opens at a size and sits where the user puts it.
     func sync(session: PlaySession?, enabled: Bool, screen: NSScreen?) {
         guard enabled, let session, session.hasPresenter else {

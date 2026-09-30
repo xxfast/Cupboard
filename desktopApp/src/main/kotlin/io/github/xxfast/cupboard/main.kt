@@ -124,10 +124,16 @@ private data class PlayRequest(
      */
     val rehearse: Boolean = false,
     /**
+     * Play > In Window: the editor window wears the show, where it already
+     * is, instead of a show window taking a display. The presenter display
+     * is a window of its own either way.
+     */
+    val inWindow: Boolean = false,
+    /**
      * Which display the show fills, as an index into [playScreens]. The
      * presenter display takes the other one, so swapping the two is this
-     * index flipping. Ignored with a single display, and by previews and
-     * rehearsals, neither of which places anything.
+     * index flipping. Ignored with a single display, and by previews,
+     * rehearsals and in-window shows, none of which places anything.
      */
     val showScreen: Int = 0,
 )
@@ -172,6 +178,9 @@ private val PreviewWindowHeight = 540.dp
  */
 private val PresenterWindowWidth = 1280.dp
 private val PresenterWindowHeight = 720.dp
+
+/** The slide's own 944x531, which an in-window show sizes its content to. */
+private const val SlideAspectRatio: Float = 944f / 531f
 
 /** The wall clock the presenter display shows, in the shell's own formatter. */
 private val ClockFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -509,14 +518,54 @@ private fun EditorWindow(
 
     // Swapping the displays is the show's index flipping: both windows are
     // placed off it, so the show takes the other screen and the presenter
-    // display takes the one it left. Null with a single display, or over a
-    // preview or a rehearsal, neither of which has a show window to move,
-    // which is what greys the menu item and drops the X key.
+    // display takes the one it left. Remembered, so the next show starts
+    // swapped too. Null with a single display, or over a preview, a
+    // rehearsal or an in-window show, none of which has a show window to
+    // move, which is what greys the menu item and drops the X key.
     val swapDisplays: (() -> Unit)? = playing
-        ?.takeIf { !it.preview && !it.rehearse && screens.size > 1 }
+        ?.takeIf { !it.preview && !it.rehearse && !it.inWindow && screens.size > 1 }
         ?.let { request ->
-            { playing = request.copy(showScreen = if (request.showScreen == 0) 1 else 0) }
+            {
+                val showScreen: Int = if (request.showScreen == 0) 1 else 0
+                PlayPreferences.showOnPrimaryDisplay = showScreen == 0
+                playing = request.copy(showScreen = showScreen)
+            }
         }
+
+    // The document and index the editor has right now: play is a snapshot,
+    // later edits don't reach the running presentation. Played the way the
+    // Play menu is ticked, from the toolbar's pill and the menu alike.
+    //
+    // Off in layout mode: a layout is not a slide of the talk, and the index
+    // the player would start from names nothing there.
+    val playSlideshow: ((Document, Int) -> Unit)? = if (state.isEditingLayouts) null else {
+        { document, index ->
+            screens = playScreens()
+            playing = PlayRequest(
+                document = document,
+                slideIndex = index,
+                inWindow = PlayPreferences.inWindow,
+                // The talk goes to the projector and the lectern keeps the
+                // laptop, whichever display the editor is on: the first one
+                // that isn't primary, unless a swap has said otherwise.
+                showScreen = if (PlayPreferences.showOnPrimaryDisplay) 0 else 1,
+            )
+        }
+    }
+
+    // One controller per show, out here rather than in the show's windows:
+    // an in-window show plays in the editor window, and the presenter display
+    // has to follow the same one from its own. Keyed so each show starts on
+    // a fresh one.
+    val controller: PlayerController = key(playing != null) { rememberPlayerController() }
+    val close: () -> Unit = { playing = null }
+
+    // The show this window wears in place of the editor, if it is wearing one.
+    val playingHere: PlayRequest? = playing?.takeIf { it.inWindow }
+
+    // Hoisted so an in-window show can size the editor window and hand the
+    // frame back when it ends. The defaults are the ones [Window] would pick.
+    val editorWindowState: WindowState = rememberWindowState()
 
     // A rehearsal is the talk with nowhere to project it: the presenter
     // display alone, on this machine's own screen, running the same player
@@ -555,6 +604,10 @@ private fun EditorWindow(
         // Autosave settles within the moment, so (Edited) is a flicker rather
         // than a warning: it is the document apps' word for the same thing.
         title = state.title + if (state.savePending) " (Edited)" else "",
+        state = editorWindowState,
+        // An in-window show takes the window's keys, the same ones a show
+        // window has, and nothing below gets a look in.
+        //
         // Forward delete, the half the menu accelerator can't carry: Delete
         // shows as Backspace there, which is the delete key on a mac board.
         // Dispatches exactly like the menu item does, focus and all: with the
@@ -565,6 +618,8 @@ private fun EditorWindow(
         onKeyEvent = { event ->
             val down: Boolean = event.type == KeyEventType.KeyDown
             when {
+                playingHere != null -> showKeys(controller, close)(event)
+
                 down && event.key == Key.Delete && state.canDelete -> {
                     viewModel.onDelete()
                     true
@@ -792,10 +847,12 @@ private fun EditorWindow(
 
                 Separator()
 
+                // Greyed under an in-window show: Backspace is the show's step
+                // back there, and a greyed item lets its key through.
                 Item(
                     text = "Delete",
                     shortcut = KeyShortcut(Key.Backspace),
-                    enabled = state.canDelete,
+                    enabled = state.canDelete && playingHere == null,
                     onClick = viewModel::onDelete,
                 )
                 Item(
@@ -863,15 +920,6 @@ private fun EditorWindow(
                     enabled = previewSlide != null,
                     onClick = { previewSlide?.invoke() },
                 )
-
-                // No accelerator either, and no toolbar button: the toolbar
-                // has one Play pill and no room beside it, so the menu is
-                // where a rehearsal starts.
-                Item(
-                    text = "Rehearse Slideshow",
-                    enabled = rehearseSlideshow != null,
-                    onClick = { rehearseSlideshow?.invoke() },
-                )
             }
 
             // Whole-box text styling. Bold, Italic and Underline take the
@@ -920,23 +968,6 @@ private fun EditorWindow(
                     checked = state.showNotes,
                     onCheckedChange = { viewModel.onToggleNotes() },
                 )
-                // Live rather than a setting you arm beforehand: ticked
-                // mid-show the presenter display comes up on the spot, and
-                // unticked it goes away without touching the show.
-                CheckboxItem(
-                    text = "Show Presenter Display",
-                    checked = showPresenter,
-                    onCheckedChange = { showPresenter = it },
-                )
-                // A verb rather than a switch: neither display is the
-                // right one, they are just the two the show is using. X
-                // does the same from either show window, which is where
-                // the hands are once the talk is up.
-                Item(
-                    text = "Swap Displays",
-                    enabled = swapDisplays != null,
-                    onClick = { swapDisplays?.invoke() },
-                )
 
                 Separator()
 
@@ -979,6 +1010,70 @@ private fun EditorWindow(
                         if (state.isEditingLayouts) viewModel.onExitSlideLayouts()
                         else viewModel.onEditSlideLayouts()
                     },
+                )
+            }
+
+            // Keynote's Play menu: the verb, how it plays, the rehearsal, and
+            // the presenter display. Written here rather than as a shared
+            // spec: every entry but the verbs is about this machine's windows.
+            Menu("Play", mnemonic = 'P') {
+                Item(
+                    text = "Play Slideshow",
+                    shortcut = editShortcut(Key.P, alt = true),
+                    enabled = playSlideshow != null && playing == null,
+                    onClick = {
+                        playSlideshow?.invoke(
+                            state.document,
+                            state.selectedSlideIndex().coerceAtLeast(0),
+                        )
+                    },
+                )
+
+                Separator()
+
+                // A preference rather than a verb: Play Slideshow, from here
+                // or the toolbar, plays whichever of these is ticked, and it
+                // stays ticked across launches.
+                RadioButtonItem(
+                    text = "In Full Screen",
+                    selected = !PlayPreferences.inWindow,
+                    onClick = { PlayPreferences.inWindow = false },
+                )
+                RadioButtonItem(
+                    text = "In Window",
+                    selected = PlayPreferences.inWindow,
+                    onClick = { PlayPreferences.inWindow = true },
+                )
+
+                Separator()
+
+                // No accelerator, and no toolbar button: the toolbar has one
+                // Play pill and no room beside it, so the menu is where a
+                // rehearsal starts.
+                Item(
+                    text = "Rehearse Slideshow",
+                    enabled = rehearseSlideshow != null,
+                    onClick = { rehearseSlideshow?.invoke() },
+                )
+
+                Separator()
+
+                // Live rather than a setting you arm beforehand: ticked
+                // mid-show the presenter display comes up on the spot, and
+                // unticked it goes away without touching the show.
+                CheckboxItem(
+                    text = "Show Presenter Display",
+                    checked = showPresenter,
+                    onCheckedChange = { showPresenter = it },
+                )
+                // A verb rather than a switch: neither display is the
+                // right one, they are just the two the show is using. X
+                // does the same from either show window, which is where
+                // the hands are once the talk is up.
+                Item(
+                    text = "Swap Displays",
+                    enabled = swapDisplays != null,
+                    onClick = { swapDisplays?.invoke() },
                 )
             }
 
@@ -1037,7 +1132,38 @@ private fun EditorWindow(
                 window = window,
             )
 
-            Box(
+            // An in-window show wears this window where it stands: same place,
+            // same width, and the height the slide's 16:9 wants under the
+            // title bar, like Keynote's. The frame goes back to how it was
+            // when the show ends. Floating windows only: a maximized or
+            // full-screen one has no frame of its own to give.
+            if (playingHere != null) DisposableEffect(Unit) {
+                val before: DpSize = editorWindowState.size
+                val floating: Boolean = editorWindowState.placement == WindowPlacement.Floating
+                if (floating) {
+                    val chrome = window.insets
+                    val width: Float = before.width.value - chrome.left - chrome.right
+                    val height: Float = width / SlideAspectRatio + chrome.top + chrome.bottom
+                    editorWindowState.size = DpSize(before.width, height.dp)
+                }
+
+                onDispose { if (floating) editorWindowState.size = before }
+            }
+
+            if (playingHere != null) {
+                // Same store as a show window: the player here is a second
+                // composition over the deck, like it is there.
+                CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+                    PresentationPlayer(
+                        document = playingHere.document,
+                        startIndex = playingHere.slideIndex,
+                        modifier = Modifier.fillMaxSize(),
+                        onExit = close,
+                        controller = controller,
+                        onOpenUrl = ::openInBrowser,
+                    )
+                }
+            } else Box(
                 Modifier
                     .fillMaxSize()
                     .dragAndDropTarget(
@@ -1047,25 +1173,7 @@ private fun EditorWindow(
             ) {
                 EditorScreen(
                     viewModel = viewModel,
-                    // The document and index the editor has right now: play is a
-                    // snapshot, later edits don't reach the running presentation.
-                    //
-                    // Off in layout mode: a layout is not a slide of the talk, and
-                    // the index the player would start from names nothing there.
-                    onPlay = if (state.isEditingLayouts) null else {
-                        { document, index ->
-                            val displays: List<Rectangle> = playScreens()
-                            screens = displays
-                            playing = PlayRequest(
-                                document = document,
-                                slideIndex = index,
-                                // The talk goes to the projector and the lectern
-                                // keeps the laptop: the show opens on the first
-                                // display that isn't the primary one.
-                                showScreen = if (displays.size > 1) 1 else 0,
-                            )
-                        }
-                    },
+                    onPlay = playSlideshow,
                     onPlayPreview = previewSlide,
                     onShowContextMenu = nativeMenu?.let { menu ->
                         { elementId, positionInWindow ->
@@ -1114,23 +1222,22 @@ private fun EditorWindow(
     }
 
     playing?.let { request ->
-        val controller = rememberPlayerController()
-        val close = { playing = null }
-
         // A preview sits in a window on top of the editor: you are still
         // working on the slide, so the deck should not take the screen
-        // away to show it to you. Escape closes it either way.
+        // away to show it to you. Escape closes it either way. A full-screen
+        // show on a single display takes all of it; with more, the effect
+        // below puts it on its display first.
         val showState: WindowState = if (request.preview) {
             rememberWindowState(
                 size = DpSize(PreviewWindowWidth, PreviewWindowHeight),
                 position = WindowPosition(Alignment.Center),
             )
         } else {
-            rememberWindowState(placement = WindowPlacement.Maximized)
+            rememberWindowState(placement = WindowPlacement.Fullscreen)
         }
 
         // The presenter display's window state lives out here so it keeps
-        // its display across a trip through the View menu: put away and
+        // its display across a trip through the Play menu: put away and
         // brought back, it comes up where the swap left it. A rehearsal
         // takes the screen instead: it is the only window of the show.
         val presenterState: WindowState = if (request.rehearse) {
@@ -1148,11 +1255,11 @@ private fun EditorWindow(
             screens.firstOrNull()?.let { presenterState.moveOnto(it, WindowPlacement.Maximized) }
         }
 
-        // Two displays or more: the show fills one of them and the
-        // presenter display fills the other, and both move when the index
-        // does. A single display keeps what it always did, the show
-        // maximized with the presenter display windowed on top.
-        if (!request.preview && !request.rehearse && screens.size > 1) LaunchedEffect(request.showScreen) {
+        // A full-screen show on two displays or more: the show fills one of
+        // them and the presenter display fills the other, wherever the
+        // editor is, and both move when the index does.
+        val fullScreen: Boolean = !request.preview && !request.rehearse && !request.inWindow
+        if (fullScreen && screens.size > 1) LaunchedEffect(request.showScreen) {
             showState.moveOnto(screens[request.showScreen], WindowPlacement.Fullscreen)
             presenterState.moveOnto(
                 bounds = screens[if (request.showScreen == 0) 1 else 0],
@@ -1161,8 +1268,9 @@ private fun EditorWindow(
         }
 
         // No show window for a rehearsal: the talk plays inside the
-        // presenter window instead, taking no room there.
-        if (!request.rehearse) Window(
+        // presenter window instead, taking no room there. None for an
+        // in-window show either, the editor window is wearing it.
+        if (!request.rehearse && !request.inWindow) Window(
             onCloseRequest = close,
             title = if (request.preview) "Cupboard Preview" else "Cupboard Play",
             state = showState,
@@ -1201,11 +1309,13 @@ private fun EditorWindow(
 
         // The lectern's half of the show, following the same controller.
         // Never for a preview: a preview is one slide looked at from the
-        // editor, there is nobody at a lectern. Always for a rehearsal,
-        // which is this window and nothing else.
-        if (request.rehearse || (!request.preview && showPresenter)) Window(
+        // editor, there is nobody at a lectern. Never for a full-screen
+        // show on one display either, the show has that display to itself.
+        // Always for a rehearsal, which is this window and nothing else.
+        val lectern: Boolean = request.inWindow || (fullScreen && screens.size > 1)
+        if (request.rehearse || (lectern && showPresenter)) Window(
             // Closing this alone leaves the show up: it is a second screen,
-            // not the show. The View menu brings it back. A rehearsal has
+            // not the show. The Play menu brings it back. A rehearsal has
             // no show behind it, so closing it ends the whole thing.
             onCloseRequest = if (request.rehearse) close else {
                 { showPresenter = false }

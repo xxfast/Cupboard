@@ -4,32 +4,42 @@ import CupboardCanvas
 
 // MARK: - Show
 
-/// A running presentation, and where it is playing. Two screens gives the show
-/// one of its own and the presenter display the other; one screen is the path
-/// this app has always taken, the show replacing the editor in the main window.
+/// Where a show plays. Keynote's two answers, off the Play menu: over the
+/// displays, or in the editor's own window.
+enum Stage {
+    /// The editor window becomes the player, where it already is. The presenter
+    /// display, if any, is a window of its own.
+    case window
+    /// The displays: the deck fills one, and with a second the presenter display
+    /// fills the other. One display still gets covered, editor and all.
+    case screens
+}
+
+/// A running presentation, and where it is playing.
 ///
 /// Settled when the show starts rather than read per frame: a display waking up
 /// or sleeping mid-show is no reason to move the deck out from under a speaker.
 struct Show {
     let session: PlaySession
-    let external: Bool
+    let stage: Stage
 
-    /// A show: its own screen whenever there is one to give it.
-    static func play(_ session: PlaySession) -> Show {
-        Show(session: session, external: NSScreen.screens.count >= 2)
+    /// A show, where the Play menu says: the editor window, or the displays
+    /// however many there are.
+    static func play(_ session: PlaySession, inWindow: Bool) -> Show {
+        Show(session: session, stage: inWindow ? .window : .screens)
     }
 
-    /// One slide on its own. Always in the main window, whatever is plugged in:
+    /// One slide on its own. Always in the editor window, whatever is plugged in:
     /// a preview is something you look at while editing, not something you show.
     static func preview(_ session: PlaySession) -> Show {
-        Show(session: session, external: false)
+        Show(session: session, stage: .window)
     }
 
     /// A run-through for the speaker alone: the presenter display, and no deck
-    /// on any screen. Never external, whatever is plugged in, since [external]
-    /// is about the screen an audience is looking at and there isn't one.
+    /// in front of anyone. [ShowDisplays] arranges it, which is what makes it the
+    /// displays' rather than the window's, though there is no audience screen.
     static func rehearse(_ session: PlaySession) -> Show {
-        Show(session: session, external: false)
+        Show(session: session, stage: .screens)
     }
 
     /// Whether this show is a rehearsal, which is the session's own fact.
@@ -42,8 +52,8 @@ enum ShowKey {
     static let swap: UInt16 = 7 // x
 }
 
-/// The show's own window on a second screen: borderless, over the menu bar and
-/// the dock, filling the screen the audience is looking at.
+/// The show's own window on a display: borderless, over the menu bar and the
+/// dock, filling the screen the audience is looking at.
 ///
 /// Playback keys are the Compose player's, as they are in the main window. What
 /// it leaves comes back up the responder chain to here, which is where the swap
@@ -70,12 +80,15 @@ final class ShowKeyWindow: NSWindow {
 /// Driven by [ShowBridge] on every view update, the way the traffic lights are:
 /// one place decides what should be up, off the state that is on screen now.
 final class ShowDisplays {
+    /// Where the last swap left the show, remembered across shows and launches
+    /// the way Keynote does: a lectern wired the other way round stays that way.
+    private static let swappedKey = "showOnPrimaryDisplay"
+
     private let presenter = PresenterWindow()
     private var window: ShowKeyWindow?
     private var session: PlaySession?
-    /// Settled when the show opens. NSScreen.main follows the keyboard, so
-    /// re-reading it once the show window is key would answer with the screen the
-    /// show is already on, and every placement pass would fight the last one.
+    /// Settled when the show opens, so every placement pass agrees with the
+    /// last. [presenterScreen] is nil with one display: nowhere to put it.
     private var showScreen: NSScreen?
     private var presenterScreen: NSScreen?
 
@@ -89,11 +102,12 @@ final class ShowDisplays {
     }
 
     /// [show] is what is playing, or nil for nothing; [presenterEnabled] is what
-    /// the View menu says.
+    /// the Play menu says.
     func sync(show: Show?, presenterEnabled: Bool) {
-        guard let show, show.external || show.rehearsal else {
-            // The presenter first: closing the show window disposes the session,
-            // and the presenter is drawing a view that goes with it.
+        guard let show, show.stage == .screens else {
+            // In the window, the presenter is a window too, with no screen to
+            // fill. The presenter first: closing the show window disposes the
+            // session, and the presenter is drawing a view that goes with it.
             presenter.sync(session: show?.session, enabled: presenterEnabled, screen: nil)
             close()
             return
@@ -103,11 +117,11 @@ final class ShowDisplays {
             close()
             open(show.session)
         }
-        // A rehearsal is the presenter display. The View menu's toggle says
-        // whether a show gets one behind it, which is not a question here.
+        // A rehearsal is the presenter display. The Play menu's toggle says
+        // whether a show gets one behind it, and one display has no room for it.
         presenter.sync(
             session: show.session,
-            enabled: show.rehearsal || presenterEnabled,
+            enabled: show.rehearsal || (presenterEnabled && presenterScreen != nil),
             screen: presenterScreen
         )
         // No show window to drive from, so the presenter takes the keyboard.
@@ -116,25 +130,40 @@ final class ShowDisplays {
         place()
     }
 
-    /// The View menu's item and the X key: the show moves to the other screen and
-    /// the presenter takes the one it left.
+    /// The Play menu's item and the X key: the show moves to the other screen and
+    /// the presenter takes the one it left. Remembered, so the next show opens
+    /// the same way round.
     func swapDisplays() {
-        guard window != nil, !rehearsing else { return }
+        guard window != nil, !rehearsing, presenterScreen != nil else { return }
         (showScreen, presenterScreen) = (presenterScreen, showScreen)
+        let defaults = UserDefaults.standard
+        defaults.set(!defaults.bool(forKey: Self.swappedKey), forKey: Self.swappedKey)
         presenter.place(on: presenterScreen)
         place()
     }
 
     private func open(_ session: PlaySession) {
         let screens = NSScreen.screens
-        guard let primary = NSScreen.main ?? screens.first else { return }
-        // The show goes to the first screen that is not the one the app is on.
-        // Falling back to that same screen covers a display leaving between the
-        // start of the show and this pass: still a show, just nowhere to put the
-        // presenter behind it. A rehearsal never leaves the screen the speaker
-        // is on: what it puts there is a point, not a deck.
-        showScreen = session.isRehearsal ? primary : (screens.first { $0 !== primary } ?? primary)
-        presenterScreen = primary
+        // The menu bar's screen, not NSScreen.main: that follows the keyboard,
+        // and which screen the editor happens to be on says nothing about which
+        // one the audience is looking at.
+        guard let primary = screens.first else { return }
+        if session.isRehearsal {
+            // Never off the speaker's screen: what it puts there is a point,
+            // not a deck.
+            showScreen = primary
+            presenterScreen = primary
+        } else if screens.count >= 2 {
+            // The first other display gets the deck and the primary the
+            // presenter, unless a swap last time said otherwise.
+            let swapped = UserDefaults.standard.bool(forKey: Self.swappedKey)
+            showScreen = swapped ? primary : screens[1]
+            presenterScreen = swapped ? screens[1] : primary
+        } else {
+            // One display: the deck covers it, and the presenter has nowhere.
+            showScreen = primary
+            presenterScreen = nil
+        }
         self.session = session
 
         let window = ShowKeyWindow(

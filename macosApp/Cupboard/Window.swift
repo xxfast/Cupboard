@@ -216,6 +216,65 @@ struct PlayCanvas: NSViewRepresentable {
     }
 }
 
+/// The editor window as the play window, for as long as this is up: the frame
+/// cut to the slide's 16:9 below the same top-left and width, and no traffic
+/// lights. Taken down with the show, which is when the window gets back the
+/// exact frame it had, so an in-window show leaves nothing moved.
+struct PlayFrame: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        // Not in the window until the next pass.
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            context.coordinator.enter(window)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.leave()
+    }
+
+    final class Coordinator {
+        private weak var window: NSWindow?
+        private var restore: NSRect?
+
+        func enter(_ window: NSWindow) {
+            self.window = window
+            lights(window, hidden: true)
+            // A window in system full screen is already all slide; its frame
+            // is AppKit's.
+            guard !window.styleMask.contains(.fullScreen) else { return }
+            restore = window.frame
+            let content = window.contentRect(forFrameRect: window.frame)
+            let height = (content.width * 531 / 944).rounded()
+            let slide = NSRect(
+                x: content.minX,
+                y: content.maxY - height,
+                width: content.width,
+                height: height
+            )
+            window.setFrame(window.frameRect(forContentRect: slide), display: true)
+        }
+
+        func leave() {
+            guard let window else { return }
+            if let restore { window.setFrame(restore, display: true) }
+            lights(window, hidden: false)
+        }
+
+        private func lights(_ window: NSWindow, hidden: Bool) {
+            for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+                window.standardWindowButton(kind)?.isHidden = hidden
+            }
+        }
+    }
+}
+
 /// Observation bridge over the Kotlin store. Compose state is invisible to
 /// SwiftUI, so the host tells us when anything changed and we bump [generation];
 /// views that read it re-pull the outline and thumbnails. This is what makes
@@ -237,7 +296,7 @@ final class EditorModel {
     /// Shared so the window setup and the editor view drive the same buttons.
     @ObservationIgnored let lights = TrafficLights()
     /// The show's windows. One arrangement per window, settled when its show
-    /// starts; the View menu's Swap Displays drives this window's.
+    /// starts; the Play menu's Swap Displays drives this window's.
     @ObservationIgnored let displays = ShowDisplays()
     @ObservationIgnored private var unsubscribe: (() -> Void)?
 

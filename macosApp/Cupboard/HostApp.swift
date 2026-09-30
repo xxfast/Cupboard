@@ -45,9 +45,12 @@ struct CupboardHostApp: App {
     /// model when nothing has focus (the app is up but every window is closed).
     @FocusedValue(\.editor) private var focusedEditor: EditorModel?
     @Environment(\.openWindow) var openWindow
-    /// Whether the View menu wants a presenter display. Remembered across
+    /// Whether the Play menu wants a presenter display. Remembered across
     /// launches: a lectern setup is not something to re-pick every show.
     @AppStorage("showPresenterDisplay") private var showPresenter = true
+    /// In Full Screen or In Window, which Play Slideshow and the toolbar's Play
+    /// both follow. Sticky for the same reason.
+    @AppStorage("playInWindow") private var playInWindow = false
 
     var model: EditorModel { focusedEditor ?? DocumentStore.shared.model(for: nil) }
 
@@ -132,14 +135,6 @@ struct CupboardHostApp: App {
                     get: { ui.showNotes },
                     set: { _ in host.toggleNotes() }
                 ))
-                // Ours rather than the document's: which screen the presenter
-                // display is on is a lectern preference, not a fact about the deck.
-                Toggle("Show Presenter Display", isOn: $showPresenter)
-                // The X key does this too, from either play window. No key
-                // equivalent here: a bare letter in the bar would shadow typing
-                // in the editor, and the shows are where it is wanted.
-                Button("Swap Displays") { model.displays.swapDisplays() }
-                    .disabled(model.show?.external != true)
 
                 Divider()
 
@@ -165,11 +160,15 @@ struct CupboardHostApp: App {
                     if ui.editingLayouts { host.exitSlideLayouts() } else { host.editSlideLayouts() }
                 }
             }
-            insertMenu
+            // Grouped because CommandsBuilder takes ten statements and these
+            // are more: each Group is one of them again. Play comes straight
+            // after View, where Keynote has it.
+            Group {
+                playMenu
+                insertMenu
+            }
             slideMenu
             formatMenu
-            // Grouped because CommandsBuilder takes ten statements and these
-            // two are the eleventh: the Group is one of them again.
             Group {
                 arrangeMenu
                 helpCommands
@@ -222,13 +221,63 @@ struct CupboardHostApp: App {
                 let window = model
                 window.show = .preview(host.startPreview(onExit: { window.show = nil }))
             }
+        }
+    }
+
+    /// Keynote's Play menu: the show, where it plays, the rehearsal, and the
+    /// presenter display, which both places honour.
+    private var playMenu: some Commands {
+        CommandMenu("Play") {
+            // Reading generation is what keeps the enabled states fresh.
+            let _ = model.generation
+            let ui = Chrome(host)
+            // The toolbar button's rule: a layout is not a slide of the talk.
+            // And one show at a time, since the key equivalent still reaches
+            // the bar from a show in the window.
+            Button("Play Slideshow") {
+                let window = model
+                window.show = .play(
+                    host.startPlay(onExit: { window.show = nil }),
+                    inWindow: playInWindow
+                )
+            }
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .disabled(ui.editingLayouts || model.show != nil)
+
+            Divider()
+
+            // A radio pair: which one is ticked is where the next show goes.
+            Picker("Play", selection: $playInWindow) {
+                Text("In Full Screen").tag(false)
+                Text("In Window").tag(true)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+
+            Divider()
 
             // The show, presenter display only, from the selected slide. No key
-            // equivalent either, for the same reason the preview has none.
+            // equivalent, for the same reason the preview has none.
             Button("Rehearse Slideshow") {
                 let window = model
                 window.show = .rehearse(host.startRehearsal(onExit: { window.show = nil }))
             }
+
+            Divider()
+
+            // Ours rather than the document's: whether there is a presenter
+            // display is a lectern preference, not a fact about the deck.
+            Toggle("Show Presenter Display", isOn: $showPresenter)
+            // The X key does this too, from either play window. No key
+            // equivalent here: a bare letter in the bar would shadow typing
+            // in the editor, and the shows are where it is wanted. Only a full
+            // screen show across two displays has anything to swap.
+            Button("Swap Displays") { model.displays.swapDisplays() }
+                .disabled(
+                    model.show?.stage != .screens
+                        || model.show?.rehearsal == true
+                        || NSScreen.screens.count < 2
+                )
         }
     }
 
@@ -269,13 +318,13 @@ struct DocumentWindow: View {
     var body: some View {
         @Bindable var window = model
         return Group {
-            // A show with a screen of its own leaves this window alone: the
-            // editor stays up behind it, the way it does under a full-screen
-            // Keynote. Only the one-display path takes the window over, and
-            // a rehearsal is not one: it has no deck to put anywhere.
-            if let show = model.show, !show.external, !show.rehearsal {
+            // A show on the displays leaves this window alone: the editor stays
+            // up behind it, the way it does under a full-screen Keynote. One in
+            // the window takes it over, frame and all, until it ends.
+            if let show = model.show, show.stage == .window {
                 PlayCanvas(session: show.session)
                     .background(Color.black)
+                    .background(PlayFrame().frame(width: 0, height: 0))
             } else {
                 EditorView(model: model, show: $window.show)
             }
@@ -383,6 +432,9 @@ struct EditorView: View {
     /// deliberately not the document's: it is a knob on one run of the tool, not
     /// something an image wears.
     @State var backgroundTolerance: Double = 0.25
+    /// The Play menu's In Full Screen / In Window, which the toolbar's Play
+    /// follows as well.
+    @AppStorage("playInWindow") var playInWindow = false
 
     var host: EditorHost { model.host }
     var palette: Palette { Palette.of(colorScheme) }
@@ -483,11 +535,11 @@ struct EditorView: View {
         .overlay(alignment: .top) { palette.divider.frame(height: 1) }
     }
 
-    /// The show, on its own screen when there is a second one and in this window
-    /// when there is not.
+    /// The show, over the displays or in this window, whichever the Play menu
+    /// has ticked.
     func startPlay() {
         // Kotlin calls onExit on the main thread, so touching @State is safe.
-        show = .play(host.startPlay(onExit: { show = nil }))
+        show = .play(host.startPlay(onExit: { show = nil }), inWindow: playInWindow)
     }
 
     /// Plays the selected slide on its own, in the same full-screen player Play
