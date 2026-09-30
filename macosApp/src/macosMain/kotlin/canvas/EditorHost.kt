@@ -26,6 +26,7 @@ import io.github.xxfast.cupboard.forgetRecent
 import io.github.xxfast.cupboard.newDocument
 import io.github.xxfast.cupboard.openDocument
 import io.github.xxfast.cupboard.recentDocuments
+import io.github.xxfast.cupboard.resetShowcase
 import io.github.xxfast.cupboard.saveAs
 import io.github.xxfast.cupboard.showcase
 import io.github.xxfast.cupboard.document.ActionKind
@@ -3827,12 +3828,19 @@ object Documents {
     fun newDocument(): String = Cupboard.newDocument()
 
     /**
-     * The same for the feature showcase deck: a bundle of its own in Cupboard's
-     * folder, holding one slide per feature the document model can express, and
-     * where it went. Help > Open Feature Showcase, opened with [open] like any
-     * other deck.
+     * Where the feature showcase deck is: one bundle in Cupboard's folder,
+     * holding one slide per feature the document model can express, laid down
+     * on the first ask and kept, edits and all. Help > Feature Showcase > Open,
+     * opened with [open] like any other deck.
      */
     fun showcaseDocument(): String = Cupboard.showcase()
+
+    /**
+     * The showcase back to how it shipped, and where it is: Help > Feature
+     * Showcase > Reset. Close any host on it first, or its autosave writes the
+     * old deck back over this one.
+     */
+    fun resetShowcase(): String = Cupboard.resetShowcase()
 
     /** The deck at [path] in a host of its own, or why it could not be opened. */
     fun open(path: String): OpenOutcome = when (val result: OpenResult = Cupboard.openDocument(path)) {

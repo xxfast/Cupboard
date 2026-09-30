@@ -425,7 +425,7 @@ private fun MenuScope.MenuItems(
     }
 }
 
-fun main() {
+fun main(args: Array<String>) {
     // AWT title bars on macOS stay light aqua regardless of the OS appearance
     // unless the app opts into following it. JetBrains Runtime honours this;
     // other JVMs and platforms ignore it. Must be set before the first window.
@@ -434,7 +434,11 @@ fun main() {
     // The deck this machine was last on, opened before there is a window to put
     // it in: loading blocks, and an editor window with no editor has nothing to
     // draw. Every deck after this one arrives through the File menu.
-    val documents = Documents(Cupboard.editor())
+    // `--showcase` swaps it for the feature showcase, reset to how it shipped.
+    val first: EditorViewModel =
+        if ("--showcase" in args) Cupboard.editor(bundle = Cupboard.resetShowcase()) else Cupboard.editor()
+
+    val documents = Documents(first)
 
     application {
         documents.chooser?.let { chooser ->
@@ -1094,13 +1098,13 @@ private fun EditorWindow(
                 )
             }
 
-            // One entry, and it opens a deck: the showcase is a document rather
-            // than a help page, so it goes through [Documents] like File > New.
+            // The showcase is a document rather than a help page, so both of
+            // these go through [Documents] like File > New.
             Menu("Help", mnemonic = 'H') {
-                Item(
-                    text = "Open Feature Showcase",
-                    onClick = { documents.showcase(window) },
-                )
+                Menu("Feature Showcase") {
+                    Item(text = "Open", onClick = { documents.showcase(window) })
+                    Item(text = "Reset", onClick = { documents.resetShowcase(window) })
+                }
             }
         }
 

@@ -29,6 +29,14 @@ import CupboardCanvas
 /// an environment value a delegate cannot read, so the paths go to
 /// [OpenRequests] and the first window drains them.
 final class ActivationDelegate: NSObject, NSApplicationDelegate {
+    /// `--showcase` launches on the showcase alone: without this, window
+    /// restoration brings back the decks from last time alongside it. Registered
+    /// rather than set, so it lasts this launch and never reaches the defaults.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        guard CommandLine.arguments.contains("--showcase") else { return }
+        UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true])
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.activate()
     }

@@ -18,7 +18,8 @@ xcodebuild -project macosApp/Cupboard.xcodeproj \
 # terminal either, so the window only appeared after a dock click. `open`
 # activates the app the way Finder does; --stdout/--stderr keep the logs on
 # this terminal, -W keeps the script in the foreground, and the trap makes
-# Ctrl-C quit the app rather than orphan it.
+# Ctrl-C quit the app rather than orphan it. This script's own arguments go to
+# the app (`./macosApp/run.sh --showcase`).
 trap 'pkill -x Cupboard 2>/dev/null || true' INT TERM
 APP="$DERIVED_DATA/Build/Products/Debug/Cupboard.app"
 # The log path must be one the app's own process can open, so it is the real
@@ -27,7 +28,7 @@ APP="$DERIVED_DATA/Build/Products/Debug/Cupboard.app"
 # tty (CI, editors), logs go to the system log like any open'd app.
 TTY_PATH="$(tty 2>/dev/null || true)"
 if [ -n "$TTY_PATH" ] && [ -e "$TTY_PATH" ]; then
-  open -n -W --stdout "$TTY_PATH" --stderr "$TTY_PATH" "$APP"
+  open -n -W --stdout "$TTY_PATH" --stderr "$TTY_PATH" "$APP" --args "$@"
 else
-  open -n -W "$APP"
+  open -n -W "$APP" --args "$@"
 fi

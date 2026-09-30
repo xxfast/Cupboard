@@ -122,20 +122,35 @@ internal fun createBundle(
 }
 
 /**
- * [createBundle] for the feature showcase: a bundle in [directory] holding
- * [showcaseDocument], and where it went.
+ * The feature showcase's bundle in [directory], and where it is.
  *
- * A bundle of its own rather than a window onto an in-memory deck, so Help >
- * Open Feature Showcase lands on the one path into the editor that every other
- * way in takes, and so a reader can scribble on the deck without losing it on
- * quit. Numbered up like any other new bundle, so opening it twice is two decks
- * rather than one overwritten.
+ * One bundle, always the same one: laid down from [showcaseDocument] the first
+ * time and opened as it stands every time after, so a reader can scribble on the
+ * deck and find it still scribbled on. [resetShowcaseBundle] puts it back.
+ *
+ * A bundle rather than a window onto an in-memory deck, so Help > Feature
+ * Showcase lands on the one path into the editor that every other way in takes.
  */
-internal fun createShowcaseBundle(directory: Path): Path {
-    val bundle: Path = uniqueBundle(directory, SHOWCASE_NAME)
-    CupboardBundle.create(bundle, showcaseDocument().copy(name = bundle.deckName()))
+internal fun showcaseBundle(directory: Path): Path {
+    val bundle: Path = Path(directory, "$SHOWCASE_NAME.${CupboardBundle.EXTENSION}")
+    if (!CupboardBundle.isBundle(bundle)) CupboardBundle.create(bundle, showcaseDeck())
     return bundle
 }
+
+/**
+ * [showcaseBundle] back to how it shipped: the deck rewritten from
+ * [showcaseDocument] and every asset added since gone.
+ *
+ * Nothing is closed here. An editor still open on the bundle would autosave its
+ * deck straight back over this one, so a shell stops it first.
+ */
+internal fun resetShowcaseBundle(directory: Path): Path {
+    val bundle: Path = showcaseBundle(directory)
+    CupboardBundle.replace(bundle, showcaseDeck())
+    return bundle
+}
+
+private fun showcaseDeck(): Document = showcaseDocument().copy(name = SHOWCASE_NAME)
 
 /**
  * Writes this editor's deck and everything it points at into a new bundle at

@@ -80,12 +80,34 @@ internal class Documents(first: EditorViewModel) {
     }
 
     /**
-     * The feature showcase deck, in a bundle of its own and in a window of its
-     * own. [new]'s path exactly: the factory lays the bundle down and this opens
-     * it, so there is nothing special about the window it lands in.
+     * The feature showcase deck, in a window of its own. [new]'s path exactly:
+     * the factory hands back its bundle and this opens it, so there is nothing
+     * special about the window it lands in. One bundle, so a second Open raises
+     * the window already on it.
      */
     fun showcase(owner: Frame) {
         open(Cupboard.showcase(), owner)
+    }
+
+    /**
+     * The showcase back to how it shipped.
+     *
+     * A window already on it is stopped before the reset, since its autosave
+     * would write the old deck straight back, and takes the fresh deck in the
+     * same slot, the way [saveAs] swaps one. With no window on it, it opens.
+     */
+    fun resetShowcase(owner: Frame) {
+        val location: String = Cupboard.showcase().toString()
+        val index: Int = editors.indexOfFirst { it.location == location }
+        if (index < 0) {
+            open(Cupboard.resetShowcase(), owner)
+            return
+        }
+
+        val showing: EditorViewModel = editors[index]
+        showing.close()
+        frames -= showing
+        editors[index] = Cupboard.editor(bundle = Cupboard.resetShowcase())
     }
 
     /**

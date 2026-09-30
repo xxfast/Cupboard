@@ -10,6 +10,8 @@ import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.placeholderRole
 import io.github.xxfast.cupboard.document.decodeDocument
+import io.github.xxfast.cupboard.document.encodeToString
+import io.github.xxfast.cupboard.document.showcaseDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.buffered
@@ -140,6 +142,39 @@ class CupboardLifecycleTest {
 
         opened.viewModel.close()
         saved.close()
+    }
+
+    @Test
+    fun opensTheSameShowcaseEveryTimeWithItsEdits() {
+        val directory: Path = tempDirectory()
+
+        val first: Path = Cupboard.showcase(directory)
+        assertEquals("Feature Showcase.cupboard", first.name)
+        assertEquals(showcaseDocument().slides.size, deckIn(first).slides.size)
+
+        write(Path(first, "document.json"), Document(name = "Scribbled").encodeToString())
+        val second: Path = Cupboard.showcase(directory)
+
+        // Not numbered up, and not written over: the reader's edits are still there.
+        assertEquals(first.toString(), second.toString())
+        assertEquals("Scribbled", deckIn(second).name)
+    }
+
+    @Test
+    fun resetsTheShowcaseToHowItShipped() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.showcase(directory)
+        write(Path(bundle, "document.json"), Document(name = "Scribbled").encodeToString())
+        runBlocking { CupboardBundle.assetStore(bundle).write("hero.png", byteArrayOf(7)) }
+
+        val reset: Path = Cupboard.resetShowcase(directory)
+
+        assertEquals(bundle.toString(), reset.toString())
+        val deck: Document = deckIn(reset)
+        assertEquals("Feature Showcase", deck.name)
+        assertEquals(showcaseDocument().slides.size, deck.slides.size)
+        // What the reader added goes with the deck that pointed at it.
+        assertTrue(runBlocking { CupboardBundle.assetStore(reset).ids() }.isEmpty())
     }
 
     @Test

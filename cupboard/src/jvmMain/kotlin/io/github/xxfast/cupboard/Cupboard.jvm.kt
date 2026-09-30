@@ -85,12 +85,20 @@ fun Cupboard.newDocument(
 ): Path = createBundle(directory, name, theme, size)
 
 /**
- * A fresh bundle holding the feature showcase deck, and where it went: Help >
- * Open Feature Showcase. Opened with [openDocument] like any other deck, which
- * is why this hands back a path rather than an editor.
+ * The feature showcase deck's bundle, made on the first ask and the same one
+ * after, edits and all: Help > Feature Showcase > Open. Opened with
+ * [openDocument] like any other deck, which is why this hands back a path rather
+ * than an editor.
  */
 fun Cupboard.showcase(directory: Path = cupboardDirectory()): Path =
-    createShowcaseBundle(directory)
+    showcaseBundle(directory)
+
+/**
+ * [showcase] back to how it shipped, and where it is: Help > Feature Showcase >
+ * Reset. Close any editor on it first, or its autosave writes the old deck back.
+ */
+fun Cupboard.resetShowcase(directory: Path = cupboardDirectory()): Path =
+    resetShowcaseBundle(directory)
 
 /**
  * [viewModel]'s deck copied into a new bundle at [target], and an editor on it.

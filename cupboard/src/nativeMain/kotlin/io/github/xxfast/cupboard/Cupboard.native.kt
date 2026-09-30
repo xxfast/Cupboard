@@ -105,17 +105,25 @@ fun Cupboard.themeChooser(
 ): ThemeChooserViewModel = ThemeChooserViewModel(initialState, dispatcher)
 
 /**
+ * The feature showcase deck's bundle, made on the first ask and the same one
+ * after, edits and all: Help > Feature Showcase > Open. Opened with
+ * [openDocument] like any other deck.
+ */
+fun Cupboard.showcase(directory: String? = null): String =
+    showcaseBundle(directory?.let { Path(it) } ?: cupboardDirectory()).toString()
+
+/**
+ * [showcase] back to how it shipped, and where it is: Help > Feature Showcase >
+ * Reset. Close any editor on it first, or its autosave writes the old deck back.
+ */
+fun Cupboard.resetShowcase(directory: String? = null): String =
+    resetShowcaseBundle(directory?.let { Path(it) } ?: cupboardDirectory()).toString()
+
+/**
  * The decks this machine opened last, newest first, at most ten, and only the
  * ones still on disk. What a File > Open Recent menu renders, and what
  * [openDocument] takes straight back.
  */
-/**
- * A fresh bundle holding the feature showcase deck, and where it went: Help >
- * Open Feature Showcase. Opened with [openDocument] like any other deck.
- */
-fun Cupboard.showcase(directory: String? = null): String =
-    createShowcaseBundle(directory?.let { Path(it) } ?: cupboardDirectory()).toString()
-
 fun Cupboard.recentDocuments(): List<String> =
     runBlocking { recentsIn(cupboardDirectory()).list() }
 

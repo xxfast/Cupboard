@@ -81,6 +81,19 @@ object CupboardBundle {
     }
 
     /**
+     * [create] over a bundle that may already be there: [document] replaces the
+     * deck, and every asset beside it goes, so nothing the old deck pointed at
+     * outlives it. What putting the feature showcase back to how it shipped is.
+     */
+    fun replace(path: Path, document: Document) {
+        val assets = Path(path, ASSETS_DIRECTORY)
+        if (SystemFileSystem.exists(assets)) {
+            for (file in SystemFileSystem.list(assets)) SystemFileSystem.delete(file)
+        }
+        create(path, document)
+    }
+
+    /**
      * The deck's JSON as it sits in [bundle], or null when there is none.
      *
      * Read straight rather than through [documentStore] so [decodeDocument] can

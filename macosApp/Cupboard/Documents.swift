@@ -56,6 +56,10 @@ final class DocumentStore {
     private var parked: [DocumentRef: EditorHost] = [:]
     /// The deck this machine opens by default, which is the window with no ref.
     private var fallback: EditorModel?
+    /// `--showcase` at launch: the default window starts on the feature showcase,
+    /// reset to how it shipped. Once only, so a later default window is the
+    /// usual deck.
+    private var launchShowcase = CommandLine.arguments.contains("--showcase")
 
     /// Whether a window is already on [ref], which is what makes a second Open
     /// of the same deck raise it rather than read the bundle again.
@@ -76,6 +80,14 @@ final class DocumentStore {
         return true
     }
 
+    /// The editor a window is showing [ref] in, if one is: an opened window's,
+    /// or the default window's when that happens to be on the same bundle.
+    func showing(_ ref: DocumentRef) -> EditorModel? {
+        if let model = models[ref] { return model }
+        guard let fallback, DocumentRef(path: fallback.host.location()) == ref else { return nil }
+        return fallback
+    }
+
     /// Leaves [host] for the window about to open on [ref].
     func park(_ host: EditorHost, as ref: DocumentRef) { parked[ref] = host }
 
@@ -83,7 +95,10 @@ final class DocumentStore {
     func model(for ref: DocumentRef?) -> EditorModel {
         guard let ref else {
             if let fallback { return fallback }
-            let made = EditorModel()
+            let made = launchShowcase
+                ? EditorModel(host: Documents.shared.open(path: Documents.shared.resetShowcase()).host ?? EditorHost())
+                : EditorModel()
+            launchShowcase = false
             fallback = made
             return made
         }
@@ -164,18 +179,37 @@ extension CupboardHostApp {
         }
     }
 
-    /// One entry, and it opens a deck: the showcase is a document rather than a
-    /// help page, so it takes New's path rather than a window of its own kind.
+    /// The showcase is a document rather than a help page, so Open takes New's
+    /// path rather than a window of its own kind.
     var helpCommands: some Commands {
         CommandGroup(replacing: .help) {
-            Button("Open Feature Showcase") { openShowcase() }
+            Menu("Feature Showcase") {
+                Button("Open") { openShowcase() }
+                Button("Reset") { resetShowcase() }
+            }
         }
     }
 
-    /// The feature showcase in a window of its own. `showcaseDocument` lays the
-    /// bundle down and this opens it, the way `newDocument` works.
+    /// The feature showcase in a window of its own. `showcaseDocument` hands
+    /// back its one bundle and this opens it, the way `newDocument` works, so a
+    /// second Open raises the window already on it.
     func openShowcase() {
         openDocument(at: Documents.shared.showcaseDocument())
+    }
+
+    /// The showcase back to how it shipped. A window already on it is stopped
+    /// before the reset, since its autosave would write the old deck straight
+    /// back, and then moved onto the fresh deck the way Save As moves one. With
+    /// no window on it, it opens.
+    func resetShowcase() {
+        let ref = DocumentRef(path: Documents.shared.showcaseDocument())
+        guard let showing = DocumentStore.shared.showing(ref) else {
+            openDocument(at: Documents.shared.resetShowcase())
+            return
+        }
+        showing.host.close()
+        guard let host = Documents.shared.open(path: Documents.shared.resetShowcase()).host else { return }
+        showing.adopt(host)
     }
 
     @ViewBuilder
