@@ -23,7 +23,7 @@ Almost none of it has had a visual pass. That's 0.6.0.
 
 Shipped cores whose surfaces never landed, mostly parked on the bundle format, which exists now.
 
-- [ ] Video/audio surfaces: Insert menu + toolbar, Video/Audio inspector sections on both shells, the macOS AVPlayer overlay in play, a JVM playback answer (no codec on the classpath: poster + open-in-OS-player is the fallback).
+- [x] Video/audio surfaces: Insert menu + toolbar, Video/Audio inspector sections on both shells, the macOS AVPlayer overlay in play, a JVM playback answer (no codec on the classpath: poster + open-in-OS-player is the fallback). (`b344dbb`, needs a visual pass; playback has never been run. Not done: the overlay ignores rotation, opacity and transitions, rehearse plays nothing, big movies are read whole into memory.)
 - [ ] Image fills on shapes and image slide backgrounds.
 - [ ] Real fonts: family picker over the fonts the OS has, embedded in the bundle so a deck renders the same on another machine; generic Sans/Serif/Monospace stay as the fallbacks.
 - [x] Diagram step authoring: the Steps section the Code inspector got (`8e6ddd7`), for `DiagramStep`. (`34e726a`, needs a visual pass)
