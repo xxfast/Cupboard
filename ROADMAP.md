@@ -26,7 +26,7 @@ Shipped cores whose surfaces never landed, mostly parked on the bundle format, w
 - [ ] Video/audio surfaces: Insert menu + toolbar, Video/Audio inspector sections on both shells, the macOS AVPlayer overlay in play, a JVM playback answer (no codec on the classpath: poster + open-in-OS-player is the fallback).
 - [ ] Image fills on shapes and image slide backgrounds.
 - [ ] Real fonts: family picker over the fonts the OS has, embedded in the bundle so a deck renders the same on another machine; generic Sans/Serif/Monospace stay as the fallbacks.
-- [ ] Diagram step authoring: the Steps section the Code inspector got (`8e6ddd7`), for `DiagramStep`.
+- [x] Diagram step authoring: the Steps section the Code inspector got (`8e6ddd7`), for `DiagramStep`. (`34e726a`, needs a visual pass)
 - [ ] Inline links: link ranges inside a text box, not just whole-box.
 
 ## 0.3.0: Editing debts
