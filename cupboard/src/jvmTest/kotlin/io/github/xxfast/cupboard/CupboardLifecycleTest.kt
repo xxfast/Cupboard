@@ -6,11 +6,13 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.DocumentLoad
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.ShowcasePictureId
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.placeholderRole
 import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.encodeToString
+import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -23,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -151,13 +154,29 @@ class CupboardLifecycleTest {
         val first: Path = Cupboard.showcase(directory)
         assertEquals("Feature Showcase.cupboard", first.name)
         assertEquals(showcaseDocument().slides.size, deckIn(first).slides.size)
+        assertHoldsTheShowcaseAssets(first)
 
         write(Path(first, "document.json"), Document(name = "Scribbled").encodeToString())
+        runBlocking { CupboardBundle.assetStore(first).delete(ShowcasePictureId) }
         val second: Path = Cupboard.showcase(directory)
 
-        // Not numbered up, and not written over: the reader's edits are still there.
+        // Not numbered up, and not written over: the reader's edits are still
+        // there, and so is the picture they deleted being gone.
         assertEquals(first.toString(), second.toString())
         assertEquals("Scribbled", deckIn(second).name)
+        assertNull(runBlocking { CupboardBundle.assetStore(second).read(ShowcasePictureId) })
+    }
+
+    @Test
+    fun aShowcaseFromBeforeTheAssetsShippedIsLeftWithout() {
+        val directory: Path = tempDirectory()
+        val bundle = Path(directory, "Feature Showcase.cupboard")
+        CupboardBundle.create(bundle, showcaseDocument())
+
+        val opened: Path = Cupboard.showcase(directory)
+
+        assertEquals(bundle.toString(), opened.toString())
+        assertTrue(runBlocking { CupboardBundle.assetStore(opened).ids() }.isEmpty())
     }
 
     @Test
@@ -173,8 +192,40 @@ class CupboardLifecycleTest {
         val deck: Document = deckIn(reset)
         assertEquals("Feature Showcase", deck.name)
         assertEquals(showcaseDocument().slides.size, deck.slides.size)
-        // What the reader added goes with the deck that pointed at it.
-        assertTrue(runBlocking { CupboardBundle.assetStore(reset).ids() }.isEmpty())
+        // What the reader added goes with the deck that pointed at it, and what
+        // the showcase shipped with comes back.
+        assertNull(runBlocking { CupboardBundle.assetStore(reset).read("hero.png") })
+        assertHoldsTheShowcaseAssets(reset)
+    }
+
+    @Test
+    fun resetPutsTheAssetsIntoAShowcaseThatNeverHadThem() {
+        val directory: Path = tempDirectory()
+        CupboardBundle.create(Path(directory, "Feature Showcase.cupboard"), showcaseDocument())
+
+        assertHoldsTheShowcaseAssets(Cupboard.resetShowcase(directory))
+    }
+
+    @Test
+    fun aFreshMachinesFirstDeckHasTheShowcaseAssets() {
+        val directory: Path = tempDirectory()
+        val bundle = Path(directory, "First.cupboard")
+
+        val viewModel = Cupboard.editor(bundle, Dispatchers.Unconfined, directory)
+
+        assertHoldsTheShowcaseAssets(bundle)
+        viewModel.close()
+    }
+
+    @Test
+    fun aDeckAlreadyInTheBundleGetsNoShowcaseAssets() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Talk")
+
+        val viewModel = Cupboard.editor(bundle, Dispatchers.Unconfined, directory)
+
+        assertTrue(runBlocking { CupboardBundle.assetStore(bundle).ids() }.isEmpty())
+        viewModel.close()
     }
 
     @Test
@@ -199,6 +250,13 @@ class CupboardLifecycleTest {
         val slide: Slide = deck.slides.single()
         assertEquals(deck.layouts.first().id, slide.layoutId)
         assertTrue(slide.elements.all { it.frame.x + it.frame.width <= 1440f })
+    }
+
+    private fun assertHoldsTheShowcaseAssets(bundle: Path) {
+        val store = CupboardBundle.assetStore(bundle)
+        for ((id, bytes) in showcaseAssets()) {
+            assertContentEquals(bytes, runBlocking { store.read(id) }, "$id in $bundle")
+        }
     }
 
     private fun deckIn(bundle: Path): Document {

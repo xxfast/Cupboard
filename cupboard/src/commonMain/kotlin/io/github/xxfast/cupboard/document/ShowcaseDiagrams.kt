@@ -149,7 +149,13 @@ private fun diagramStepsSlide(): Slide {
             "Skia and Compile arrive, then Render and Skia stay bright while the rest " +
             "dims. An edge should only be drawn when both its ends are, so no arrow " +
             "should ever point into empty space. The layout must not shift between " +
-            "steps: nodes hold their positions as others appear.",
+            "steps: nodes hold their positions as others appear.\n\n" +
+            "To edit the steps: select the diagram, and in the Format inspector's " +
+            "Diagram tab open Steps. Pick a step to preview it on the canvas, then edit " +
+            "its Shown Nodes and Highlighted Nodes as node ids, A, B, C (the diagram's " +
+            "own ids are the hint). Add Step makes another, and Add Step Builds writes " +
+            "one build per step, so a diagram whose steps were made by hand gets the " +
+            "clicks that walk them. Builds follow their steps when one moves or goes.",
     )
 }
 

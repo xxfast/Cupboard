@@ -50,10 +50,23 @@ fun exportGif(
 ): ByteArray {
     val frames: List<RasterFrame> = document.exportFrames(options.everyBuild)
         .map { rasterizer.frame(it.slideIndex, it.step).scaledTo(options.width) }
+    val delay: Int = (options.frameDelayMs / 10).coerceIn(2, 65535)
+    return gif(frames, delay, options.loop)
+}
 
+/**
+ * [frame] as a GIF of one frame that never moves: a picture rather than an
+ * animation, which is what the showcase deck ships its generated images as.
+ *
+ * The same fixed palette and dither as [exportGif]: whoever draws [frame] picks
+ * colours the cube holds if they want them to come out flat.
+ */
+internal fun stillGif(frame: RasterFrame): ByteArray = gif(listOf(frame), delay = 0, loop = false)
+
+/** [frames] written out, each held for [delay] hundredths of a second. */
+private fun gif(frames: List<RasterFrame>, delay: Int, loop: Boolean): ByteArray {
     val width: Int = frames.firstOrNull()?.width ?: 1
     val height: Int = frames.firstOrNull()?.height ?: 1
-    val delay: Int = (options.frameDelayMs / 10).coerceIn(2, 65535)
 
     val out = ByteSink(1 shl 18)
     out.text("GIF89a")
@@ -65,7 +78,7 @@ fun exportGif(
     out.byte(0)
     out.bytes(globalPalette())
 
-    if (options.loop) {
+    if (loop) {
         // NETSCAPE2.0, the extension every viewer reads a loop count out of.
         out.byte(0x21)
         out.byte(0xFF)

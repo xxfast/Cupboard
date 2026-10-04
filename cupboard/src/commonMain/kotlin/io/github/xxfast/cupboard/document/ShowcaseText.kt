@@ -14,6 +14,7 @@ internal fun textSlides(): List<Slide> = listOf(
     textSpacingSlide(),
     textAlignmentSlide(),
     textFontsSlide(),
+    namedFontsSlide(),
     bulletListSlide(),
     numberedListSlide(),
     textColorsSlide(),
@@ -218,6 +219,63 @@ private fun textFontsSlide(): Slide {
             "HelveticaNeue and Graphik are sans, the three Canelas serif. A named face " +
             "the system lacks (Linux, the web, a Mac that never downloaded Canela) draws " +
             "as its generic family instead, which is the fallback working, not a bug.",
+    )
+}
+
+/**
+ * [TextElement.fontName]: any family by the name the machine knows it as, with
+ * [TextElement.fontFamily] as what draws where that name resolves nowhere. The
+ * last row names a family no machine has, so its fallback always shows.
+ */
+private fun namedFontsSlide(): Slide {
+    val families: List<Pair<String, TextFont>> = listOf(
+        "Helvetica Neue" to TextFont.Sans,
+        "Georgia" to TextFont.Serif,
+        "Menlo" to TextFont.Monospace,
+        "Courier New" to TextFont.Monospace,
+        "Avenir Next" to TextFont.Sans,
+        "No Such Family" to TextFont.Serif,
+    )
+
+    val rows: List<Element> = families.flatMapIndexed { index, (name, fallback) ->
+        val cell: Frame = gridCell(columns = 1, rows = families.size, index = index, gap = 16f)
+        listOf(
+            TextElement(
+                frame = Frame(cell.x, cell.y, 1040f, cell.height),
+                text = "$name  $ShortSpecimen  0123",
+                fontSize = 40f,
+                fontFamily = fallback,
+                color = ShowcaseDefaults.textColor,
+            ).withFont(name),
+            TextElement(
+                frame = Frame(cell.x + 1060f, cell.y + 12f, cell.width - 1060f, cell.height - 12f),
+                text = "fontName \"$name\", falls back to $fallback",
+                fontSize = 24f,
+                align = TextAlign.End,
+                color = ShowcaseDefaults.bodyColor,
+            ),
+        )
+    }
+
+    return featureSlide(
+        title = "Fonts",
+        subtitle = "fontName: any installed family, with a generic fontFamily to fall back on",
+        elements = rows,
+        notes = "Look for: six lines, each set in the family its own first words name, " +
+            "and a caption on the right naming that family and its fallback. What " +
+            "draws depends on the machine. A Mac has the first five. Windows has " +
+            "Georgia and Courier New but not Helvetica Neue, Menlo or Avenir Next. " +
+            "Linux usually has none of them, and every line there draws in its " +
+            "fallback, which is the fallback working rather than a bug.\n\n" +
+            "The last line names a family no machine has, so it always draws as Serif. " +
+            "Select it and the inspector's font row says Not installed, and what it is " +
+            "showing instead. Open the Font menu on any line and pick a family from " +
+            "its Installed section to set that line in it.\n\n" +
+            "A font travels with the deck through Document > Fonts > Add Font File " +
+            "in the inspector: " +
+            "the file goes into the bundle and the deck draws in it on every machine. " +
+            "Deliberately not covered: no deck font ships with the showcase, because " +
+            "a font file is bytes this deck cannot generate.",
     )
 }
 

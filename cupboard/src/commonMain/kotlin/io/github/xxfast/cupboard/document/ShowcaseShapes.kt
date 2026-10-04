@@ -10,6 +10,7 @@ internal fun shapeSlides(): List<Slide> = listOf(
     shapeLabelsSlide(),
     cornerRadiusSlide(),
     gradientsSlide(),
+    imageFillsSlide(),
     strokesSlide(),
     shadowsSlide(),
     linesAndArrowsSlide(),
@@ -94,6 +95,59 @@ private fun gradientsSlide(): Slide {
         notes = "Look for: the first box flat, the other five running purple to teal. " +
             "0 points the purple end up, 90 points it left, and each later box turns " +
             "the ramp clockwise from there. No two of the five should look alike.",
+    )
+}
+
+/**
+ * Every [ImageFillMode], off `entries`, in boxes taller than they are wide: the
+ * picture is 4:3 and smaller than the box, so no two modes can land on the same
+ * pixels. Under them, the picture clipped to two outlines that are not boxes.
+ */
+private fun imageFillsSlide(): Slide {
+    val modesArea = Frame(ShowcaseStage.x, ShowcaseStage.y, ShowcaseStage.width, 470f)
+    val clipsArea = Frame(ShowcaseStage.x, ShowcaseStage.y + 498f, ShowcaseStage.width, 262f)
+    val modes: List<ImageFillMode> = ImageFillMode.entries
+
+    val laid: List<Element> = modes.flatMapIndexed { index, mode ->
+        val cell: Frame = gridCell(modesArea, columns = modes.size, rows = 1, index = index)
+        // Tile repeats at the picture's own size, so it gets the small motif:
+        // the 240 pixel picture would repeat barely once across the box.
+        val asset: String = if (mode == ImageFillMode.Tile) ShowcaseTileId else ShowcasePictureId
+        tile(cell, mode.name) { box -> plainShape(box).copy(imageFill = ImageFill(asset, mode)) }
+    }
+
+    val outlines: List<Pair<Int, ShapeKind>> = listOf(1 to ShapeKind.Star, 3 to ShapeKind.Ellipse)
+    val clipped: List<Element> = outlines.flatMap { (index, kind) ->
+        val cell: Frame = gridCell(clipsArea, columns = 5, rows = 1, index = index)
+        tile(cell, "$kind, ScaleToFill") { box ->
+            // Square, so the star is a star and the ellipse a circle.
+            val square = Frame(box.x + (box.width - box.height) / 2, box.y, box.height, box.height)
+            plainShape(square, kind).copy(imageFill = ImageFill(ShowcasePictureId))
+        }
+    }
+
+    return featureSlide(
+        title = "Image Fills",
+        subtitle = "ImageFill: every ImageFillMode, then the picture clipped to an outline",
+        elements = laid + clipped,
+        notes = "Look for: five tall boxes holding the same picture five ways. ScaleToFill " +
+            "covers its box and crops the picture's sides off, border and all. " +
+            "ScaleToFit shows the whole picture, border on all four sides, with the " +
+            "shape's own translucent purple fill as the letterbox above and below it. " +
+            "Stretch pulls it to the box, so the circle stands up as a tall oval. Tile " +
+            "repeats the small diamond motif from the top-left corner. Original draws " +
+            "the picture at its own 240 by 180, smaller than the box, with the purple " +
+            "fill showing on every side. Under them a star and a circle with the " +
+            "picture inside their outlines and nothing outside them, the stroke drawn " +
+            "over the edge.\n\n" +
+            "Select a shape and change its mode in the Fill control of the Format " +
+            "inspector. Switching Fill to Color or Gradient drops the picture and goes " +
+            "back to the colour that was stored under it; picking a colour while the " +
+            "picture shows only changes the letterbox.\n\n" +
+            "The pictures are generated when the showcase is laid down. A showcase " +
+            "from before they shipped has none until Help > Feature Showcase > Reset, " +
+            "and every shape here then draws its plain purple fill, which is the " +
+            "missing-bytes fallback working.",
     )
 }
 

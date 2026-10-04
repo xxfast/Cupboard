@@ -34,9 +34,12 @@ interface AssetStore {
  * and the tests that care about the editor rather than the bytes get: it behaves
  * like a real store and forgets everything when the process ends. The in-memory
  * counterpart of [inMemoryDocumentStore].
+ *
+ * [initial] is what it holds before anything is written: the showcase's bytes,
+ * for a preview shell that opens on the showcase.
  */
-class InMemoryAssetStore : AssetStore {
-    private val assets: MutableMap<String, ByteArray> = mutableMapOf()
+class InMemoryAssetStore(initial: Map<String, ByteArray> = emptyMap()) : AssetStore {
+    private val assets: MutableMap<String, ByteArray> = initial.toMutableMap()
 
     override suspend fun read(id: String): ByteArray? = assets[id]
 

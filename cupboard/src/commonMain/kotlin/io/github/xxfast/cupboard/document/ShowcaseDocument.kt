@@ -27,7 +27,7 @@ fun showcaseDocument(): Document {
             shapeSlides() +
             sectionSlide("Elements", "The properties every element carries") +
             elementSlides() +
-            sectionSlide("Media", "Images, sound and movies, without any bytes") +
+            sectionSlide("Media", "Generated pictures and a tone; bring your own movie") +
             mediaSlides() +
             sectionSlide("Code", "Palettes, gutters, steps and morphs") +
             codeSlides() +

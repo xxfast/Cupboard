@@ -11,6 +11,7 @@ import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.deck
 import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.instantiating
+import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
@@ -59,6 +60,10 @@ internal suspend fun openEditor(
     if (bundle.toString() == CupboardBundle.default(directory).toString()) {
         CupboardBundle.migrate(directory, bundle)
     }
+    // Nothing here yet means the store's default, the showcase, is what opens:
+    // a fresh machine's first deck, so it gets the showcase's bytes too. A
+    // bundle that already has a deck is never written into.
+    if (!CupboardBundle.isBundle(bundle)) CupboardBundle.addAssets(bundle, showcaseAssets())
     val store: KStore<Document> = CupboardBundle.documentStore(bundle)
     return editorOver(bundle, directory, store.get() ?: showcaseDocument(), store, dispatcher)
 }
@@ -124,29 +129,34 @@ internal fun createBundle(
 /**
  * The feature showcase's bundle in [directory], and where it is.
  *
- * One bundle, always the same one: laid down from [showcaseDocument] the first
- * time and opened as it stands every time after, so a reader can scribble on the
- * deck and find it still scribbled on. [resetShowcaseBundle] puts it back.
+ * One bundle, always the same one: laid down from [showcaseDocument] and
+ * [showcaseAssets] the first time and opened as it stands every time after, so a
+ * reader can scribble on the deck and find it still scribbled on.
+ * [resetShowcaseBundle] puts it back.
+ *
+ * A showcase laid down before it shipped any bytes keeps having none until it
+ * is reset: every slide that points at them reads without them.
  *
  * A bundle rather than a window onto an in-memory deck, so Help > Feature
  * Showcase lands on the one path into the editor that every other way in takes.
  */
 internal fun showcaseBundle(directory: Path): Path {
     val bundle: Path = Path(directory, "$SHOWCASE_NAME.${CupboardBundle.EXTENSION}")
-    if (!CupboardBundle.isBundle(bundle)) CupboardBundle.create(bundle, showcaseDeck())
+    if (!CupboardBundle.isBundle(bundle)) CupboardBundle.create(bundle, showcaseDeck(), showcaseAssets())
     return bundle
 }
 
 /**
  * [showcaseBundle] back to how it shipped: the deck rewritten from
- * [showcaseDocument] and every asset added since gone.
+ * [showcaseDocument], every asset added since gone, and [showcaseAssets] put
+ * back in their place.
  *
  * Nothing is closed here. An editor still open on the bundle would autosave its
  * deck straight back over this one, so a shell stops it first.
  */
 internal fun resetShowcaseBundle(directory: Path): Path {
     val bundle: Path = showcaseBundle(directory)
-    CupboardBundle.replace(bundle, showcaseDeck())
+    CupboardBundle.replace(bundle, showcaseDeck(), showcaseAssets())
     return bundle
 }
 

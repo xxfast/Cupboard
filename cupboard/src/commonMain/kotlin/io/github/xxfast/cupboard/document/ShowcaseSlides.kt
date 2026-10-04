@@ -5,6 +5,7 @@ internal fun slideSlides(layouts: List<Slide>): List<Slide> =
     listOf(
         backgroundColorSlide(),
         backgroundGradientSlide(),
+        backgroundImageSlide(),
         slideNumberSlide(),
         skippedSlide(),
     ) + layoutSlides(layouts)
@@ -43,6 +44,55 @@ private fun backgroundGradientSlide(): Slide = featureSlide(
 ).copy(
     background = SlideBackground.Gradient(start = 0xFF3A1C71, end = 0xFF00897B, angle = 140f),
 )
+
+/**
+ * [SlideBackground.Image]: the showcase picture behind the whole slide.
+ *
+ * The picture is loud by design, so the header and the demo text each sit on a
+ * dark translucent panel. The panels go in under everything [featureSlide]
+ * draws, which is why they are put on after it rather than passed to it.
+ */
+private fun backgroundImageSlide(): Slide {
+    val headerPanel = Frame(ShowcaseMargin - 40f, 50f, ShowcaseWidth + 80f, 184f)
+    val bodyPanel = Frame(ShowcaseMargin - 40f, ShowcaseStage.y + 540f, 1120f, 180f)
+
+    val panels: List<Element> = listOf(headerPanel, bodyPanel).map { frame ->
+        ShapeElement(frame = frame, fill = 0xB3101018, strokeWidth = 0f, cornerRadius = 24f)
+    }
+
+    val slide: Slide = featureSlide(
+        title = "Slide Background: Image",
+        subtitle = "SlideBackground.Image, the showcase picture scaled to fill the slide",
+        elements = listOf(
+            TextElement(
+                frame = Frame(ShowcaseMargin, bodyPanel.y + 30f, bodyPanel.width - 80f, 130f),
+                text = "SlideBackground.Image(ShowcasePictureId)\n" +
+                    "mode = ImageFillMode.ScaleToFill",
+                fontSize = 40f,
+                lineHeight = 1.5f,
+                fontFamily = TextFont.Monospace,
+                color = ShowcaseDefaults.textColor,
+            ),
+        ),
+        notes = "Look for: the showcase picture edge to edge behind the slide: purple " +
+            "bands running down to teal, the amber circle, the white diagonal, and the " +
+            "picture's white border down both sides. The picture is 4:3 and the slide " +
+            "16:9, so ScaleToFill crops it top and bottom and those two edges of the " +
+            "border are gone. The header and the code line sit on dark panels and stay " +
+            "readable over all of it.\n\n" +
+            "Click an empty part of the slide and change the background's mode in the " +
+            "Format inspector. Scale to Fit leaves bands either side, and what shows in " +
+            "them is the deck's own background, the next one down the cascade. Tile " +
+            "repeats the picture from the top-left at its own 240 by 180.\n\n" +
+            "A showcase laid down before the pictures shipped has no bytes until Help " +
+            "> Feature Showcase > Reset: this slide then shows the deck's own " +
+            "background with the two panels on it, which is the fallback working.",
+    )
+    return slide.copy(
+        elements = panels + slide.elements,
+        background = SlideBackground.Image(ShowcasePictureId),
+    )
+}
 
 /** [Slide.showsSlideNumber], Keynote's per-slide switch. */
 private fun slideNumberSlide(): Slide = featureSlide(

@@ -1,19 +1,28 @@
 package io.github.xxfast.cupboard.canvas
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.renderComposeScene
 import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.InMemoryAssetStore
+import io.github.xxfast.cupboard.document.ShowcaseNightId
+import io.github.xxfast.cupboard.document.ShowcasePictureId
+import io.github.xxfast.cupboard.document.ShowcaseTileId
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
 import io.github.xxfast.cupboard.document.stepCount
+import org.jetbrains.compose.resources.decodeToImageBitmap
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -24,6 +33,10 @@ import kotlin.test.assertTrue
  * have caught. The one thing asserted is that every step of every slide draws at
  * all, which is [io.github.xxfast.cupboard.play.PlayFidelityTest]'s check over a
  * deck that carries considerably more build settings than the sample one.
+ *
+ * Drawn over [showcaseAssets], the way a laid-down showcase bundle is, with the
+ * pictures decoded up front: `renderComposeScene` draws one frame, and a decode
+ * that lands after it would leave every picture as its fallback.
  */
 class ShowcaseSnapshotTest {
 
@@ -74,6 +87,27 @@ class ShowcaseSnapshotTest {
     }
 
     /**
+     * Every picture the showcase ships decodes through the codec the canvas
+     * reads assets with, at the size it was generated at. A GIF the canvas could
+     * not read would draw every one of them as its fallback, and the snapshots
+     * above would look like a deck laid down before the bytes shipped.
+     */
+    @Test
+    fun everyShowcasePictureDecodesOnTheCanvas() {
+        val assets: Map<String, ByteArray> = showcaseAssets()
+        val sizes: Map<String, Pair<Int, Int>> = mapOf(
+            ShowcasePictureId to (240 to 180),
+            ShowcaseNightId to (240 to 180),
+            ShowcaseTileId to (48 to 48),
+        )
+
+        for ((id, size) in sizes) {
+            val image: ImageBitmap = assets.getValue(id).decodeToImageBitmap()
+            assertEquals(size, image.width to image.height, id)
+        }
+    }
+
+    /**
      * Every step of every slide draws, at the size it was asked for. The deck
      * carries every build effect, every delivery, every trigger and both action
      * shapes, so a step of it that throws is a build setting the canvas has
@@ -96,19 +130,32 @@ class ShowcaseSnapshotTest {
     }
 }
 
+/** The showcase's bytes, in a store and a cache that already holds them decoded. */
+private val ShowcaseStore = InMemoryAssetStore(showcaseAssets())
+private val ShowcaseImages: AssetImageCache = AssetImageCache().apply {
+    for (id in listOf(ShowcasePictureId, ShowcaseNightId, ShowcaseTileId)) {
+        put(id, showcaseAssets().getValue(id).decodeToImageBitmap())
+    }
+}
+
 /** One slide of this deck at [step], drawn on its own layout and background. */
 @OptIn(ExperimentalComposeUiApi::class)
 private fun Document.render(slide: Slide, step: Int, number: Int?): Image =
     renderComposeScene(1920, 1080) {
-        SlideView(
-            slide = slide,
-            layout = layoutOf(slide),
-            step = step,
-            number = number,
-            background = background,
-            slideWidth = slideWidth,
-            slideHeight = slideHeight,
-        )
+        CompositionLocalProvider(
+            LocalAssetStore provides ShowcaseStore,
+            LocalAssetImages provides ShowcaseImages,
+        ) {
+            SlideView(
+                slide = slide,
+                layout = layoutOf(slide),
+                step = step,
+                number = number,
+                background = background,
+                slideWidth = slideWidth,
+                slideHeight = slideHeight,
+            )
+        }
     }
 
 /** The slide's title as a file name: lowercase, and words joined by dashes. */

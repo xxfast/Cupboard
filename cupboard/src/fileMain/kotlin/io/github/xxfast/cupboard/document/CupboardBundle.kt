@@ -68,29 +68,53 @@ object CupboardBundle {
     }
 
     /**
-     * Lays out an empty bundle at [path]: `document.json` holding [document],
-     * and the `assets/` folder beside it.
+     * Lays out a bundle at [path]: `document.json` holding [document], and the
+     * `assets/` folder beside it holding [assets], by id. Empty for every deck
+     * but the showcase, which is the one deck that is born with bytes.
      *
      * Written straight rather than through kstore so this stays callable off a
      * coroutine, which is what a "New" menu item and a save-as both want.
      */
-    fun create(path: Path, document: Document = Document()) {
+    fun create(
+        path: Path,
+        document: Document = Document(),
+        assets: Map<String, ByteArray> = emptyMap(),
+    ) {
         SystemFileSystem.createDirectories(Path(path, ASSETS_DIRECTORY))
         SystemFileSystem.sink(documentFile(path)).buffered()
             .use { it.writeString(document.encodeToString()) }
+        addAssets(path, assets)
     }
 
     /**
      * [create] over a bundle that may already be there: [document] replaces the
      * deck, and every asset beside it goes, so nothing the old deck pointed at
-     * outlives it. What putting the feature showcase back to how it shipped is.
+     * outlives it. [assets] go in after, which is what putting the feature
+     * showcase back to how it shipped is.
      */
-    fun replace(path: Path, document: Document) {
-        val assets = Path(path, ASSETS_DIRECTORY)
-        if (SystemFileSystem.exists(assets)) {
-            for (file in SystemFileSystem.list(assets)) SystemFileSystem.delete(file)
+    fun replace(path: Path, document: Document, assets: Map<String, ByteArray> = emptyMap()) {
+        val folder = Path(path, ASSETS_DIRECTORY)
+        if (SystemFileSystem.exists(folder)) {
+            for (file in SystemFileSystem.list(folder)) SystemFileSystem.delete(file)
         }
-        create(path, document)
+        create(path, document, assets)
+    }
+
+    /**
+     * Writes [assets] into [bundle], each under its id, over whatever was there.
+     *
+     * Synchronous, like [create]: it runs once when a deck is laid down, never
+     * per frame. The ids are the caller's own constants, so a separator in one is
+     * a bug rather than a case, the same as [FileAssetStore] treats it.
+     */
+    internal fun addAssets(bundle: Path, assets: Map<String, ByteArray>) {
+        if (assets.isEmpty()) return
+        val folder = Path(bundle, ASSETS_DIRECTORY)
+        SystemFileSystem.createDirectories(folder)
+        for ((id, bytes) in assets) {
+            require('/' !in id && '\\' !in id) { "an asset id must be a single file name, was '$id'" }
+            SystemFileSystem.sink(Path(folder, id)).buffered().use { it.write(bytes) }
+        }
     }
 
     /**

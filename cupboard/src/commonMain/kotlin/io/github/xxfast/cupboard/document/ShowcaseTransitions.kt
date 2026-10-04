@@ -174,8 +174,11 @@ private fun magicMoveSlides(): List<Slide> {
     )
 }
 
-/** Where clicking an element takes the show: every [LinkTarget], as buttons. */
-internal fun linkSlides(): List<Slide> = listOf(linkButtonsSlide())
+/**
+ * Where clicking an element takes the show: every [LinkTarget] as buttons, then
+ * runs of words inside a text box that point somewhere of their own.
+ */
+internal fun linkSlides(): List<Slide> = listOf(linkButtonsSlide(), textLinksSlide())
 
 private fun linkButtonsSlide(): Slide {
     // Every subtype of LinkTarget, in the order they read as a row of controls.
@@ -227,6 +230,62 @@ private fun linkButtonsSlide(): Slide {
             "works after the deck is reordered. Open a URL should be handed to the host " +
             "and open a browser. Exit the show closes play mode.",
     )
+}
+
+/**
+ * [TextElement.links]: ranges of a box's text with targets of their own, and a
+ * box whose whole-box link gives way to a range inside it.
+ */
+private fun textLinksSlide(): Slide {
+    val ranged: Frame = gridCell(stage(360f), columns = 1, rows = 2, index = 0)
+    val both: Frame = gridCell(stage(360f), columns = 1, rows = 2, index = 1)
+
+    val sentence = TextElement(
+        frame = ranged.demoBox(),
+        text = "Read the source on GitHub, go back to the cover, or carry on to the next slide.",
+        fontSize = 44f,
+        color = ShowcaseDefaults.textColor,
+    )
+        .linking("on GitHub", LinkTarget.Url("https://github.com/xxfast/Cupboard"))
+        .linking("back to the cover", LinkTarget.Slide(ShowcaseCoverId))
+        .linking("the next slide", LinkTarget.Next)
+
+    val wholeBox = TextElement(
+        frame = both.demoBox(),
+        text = "This whole box opens a URL, except these words, which go to the previous slide.",
+        fontSize = 44f,
+        color = ShowcaseDefaults.textColor,
+        linkTarget = LinkTarget.Url("https://github.com/xxfast"),
+    ).linking("these words", LinkTarget.Previous)
+
+    return featureSlide(
+        title = "Links in Text",
+        subtitle = "TextLink: part of a text box pointing somewhere of its own",
+        elements = listOf(
+            sentence,
+            captionUnder(ranged, "three TextLink ranges: a URL, the cover by id, and Next"),
+            wholeBox,
+            captionUnder(both, "a whole-box link, and one range inside it that wins"),
+        ),
+        notes = "Look for: two white sentences with some of their words in the accent " +
+            "colour and underlined. The first has three such runs: on GitHub, back to " +
+            "the cover, and the next slide. The second has one, these words; the rest " +
+            "of that box is a link too, but a whole-box link draws nothing.\n\n" +
+            "In play: on GitHub opens a browser, back to the cover jumps to the first " +
+            "slide by id, and the next slide walks on one. Anywhere else on the first " +
+            "box does nothing. On the second box, these words go to the previous slide " +
+            "and every other word opens the URL: inside a range, the range wins.\n\n" +
+            "To make one: edit a text box, select some words, and Format > Add Link " +
+            "(Cmd+K) to pick a target. The inspector's Links in Text block lists the " +
+            "box's links and removes them.",
+    )
+}
+
+/** This box with [words] pointing at [target], found in its text rather than counted. */
+private fun TextElement.linking(words: String, target: LinkTarget): TextElement {
+    val start: Int = text.indexOf(words)
+    require(start >= 0) { "'$words' is not in '$text'" }
+    return withLink(start, start + words.length, target)
 }
 
 /** What a target does, for the caption under its button. */
