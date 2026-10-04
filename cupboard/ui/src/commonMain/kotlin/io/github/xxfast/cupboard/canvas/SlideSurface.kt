@@ -7,14 +7,18 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -51,18 +55,29 @@ val LocalSlideInk = compositionLocalOf { Color.White }
  * null being the app's own dark gradient. [crossfade] paints another background
  * under it and [slideBackground] over that at the crossfade's progress: how a
  * Magic Move's arriving slide takes over from the one it is replacing.
+ *
+ * [fallbackBackgrounds] is the rest of the cascade under [slideBackground],
+ * nearest first (`Slide.backgroundCascade` past its head). Only a picture reads
+ * it: whatever a [SlideBackground.Image] leaves uncovered, or all of it while its
+ * bytes are missing, shows the next one down, and the app's gradient under that.
  */
 @Composable
 fun SlideSurface(
     modifier: Modifier = Modifier,
     background: Boolean = true,
     slideBackground: SlideBackground? = null,
+    fallbackBackgrounds: List<SlideBackground> = emptyList(),
     crossfade: BackgroundCrossfade? = null,
     zoom: Float? = null,
     slideWidth: Float = Document.SLIDE_WIDTH,
     slideHeight: Float = Document.SLIDE_HEIGHT,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val layers: List<SlideBackground?> = backgroundLayers(slideBackground, fallbackBackgrounds)
+    val fromLayers: List<SlideBackground?>? = crossfade?.let { backgroundLayers(it.from) }
+    val images: Map<String, ImageBitmap> =
+        rememberBackgroundImages(if (background) layers + fromLayers.orEmpty() else emptyList())
+
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val density = LocalDensity.current
         val scale = (zoom ?: min(
@@ -72,7 +87,9 @@ fun SlideSurface(
         CompositionLocalProvider(
             LocalDensity provides Density(density.density * scale, density.fontScale),
             LocalCanvasScale provides scale,
-            LocalSlideInk provides if (slideBackground.isLight()) Color.Black else Color.White,
+            // A picture is read as whatever it sits on: sampling its pixels for
+            // the two bits of furniture that ask would cost more than it buys.
+            LocalSlideInk provides if (layers.last().isLight()) Color.Black else Color.White,
         ) {
             Box(
                 modifier = Modifier
@@ -80,8 +97,8 @@ fun SlideSurface(
                     .clip(RoundedCornerShape(4.dp))
                     .let {
                         if (background) it.drawBehind {
-                            if (crossfade != null) drawSlideBackground(crossfade.from)
-                            drawSlideBackground(slideBackground, crossfade?.progress ?: 1f)
+                            if (fromLayers != null) drawSlideBackground(fromLayers, images)
+                            drawSlideBackground(layers, images, crossfade?.progress ?: 1f)
                         }
                         else it
                     },
@@ -91,15 +108,79 @@ fun SlideSurface(
     }
 }
 
-/** Whether ink on this background wants to be dark: the mean luminance of its stops. */
+/**
+ * What actually paints behind a slide, top first: [top], and when that is a
+ * picture, the cascade under it down to the first background that covers the
+ * slide, or null (the app's own gradient) when none of them does.
+ *
+ * Never empty, and always ending in something opaque, so drawing it bottom-up
+ * covers the slide whichever of its pictures have landed.
+ */
+private fun backgroundLayers(
+    top: SlideBackground?,
+    fallbacks: List<SlideBackground> = emptyList(),
+): List<SlideBackground?> {
+    if (top == null) return listOf(null)
+    val cascade: List<SlideBackground> = listOf(top) + fallbacks
+    val covering: Int = cascade.indexOfFirst { it !is SlideBackground.Image }
+    return if (covering < 0) cascade + null else cascade.take(covering + 1)
+}
+
+/**
+ * The decoded pictures among [layers], by asset id. One that is still being read,
+ * or that the store has nothing under, is simply not in the map, and its layer
+ * draws nothing over the ones under it.
+ */
+@Composable
+private fun rememberBackgroundImages(layers: List<SlideBackground?>): Map<String, ImageBitmap> {
+    val ids: List<String> = layers
+        .filterIsInstance<SlideBackground.Image>()
+        .map { it.assetId }
+        .distinct()
+    val images: MutableMap<String, ImageBitmap> = mutableMapOf()
+    for (id in ids) key(id) {
+        val image: ImageBitmap? = rememberAssetImage(id)
+        if (image != null) images[id] = image
+    }
+    return images
+}
+
+/**
+ * Whether ink on this background wants to be dark: the mean luminance of its
+ * stops. A picture is never asked: [backgroundLayers] ends in what it sits on.
+ */
 private fun SlideBackground?.isLight(): Boolean = when (this) {
-    null -> false
+    null, is SlideBackground.Image -> false
     is SlideBackground.Color -> color.toComposeColor().luminance() > 0.5f
     is SlideBackground.Gradient ->
         (start.toComposeColor().luminance() + end.toComposeColor().luminance()) / 2 > 0.5f
 }
 
-private fun DrawScope.drawSlideBackground(background: SlideBackground?, alpha: Float = 1f) {
+/**
+ * [layers] painted bottom-up at [alpha]. More than one fading at once goes through
+ * a layer of its own, so the stack fades as one picture rather than each part of
+ * it letting the one under it through.
+ */
+private fun DrawScope.drawSlideBackground(
+    layers: List<SlideBackground?>,
+    images: Map<String, ImageBitmap>,
+    alpha: Float = 1f,
+) {
+    if (alpha >= 1f || layers.size == 1) {
+        for (layer in layers.asReversed()) drawSlideBackground(layer, images, alpha)
+        return
+    }
+
+    drawContext.canvas.saveLayer(Rect(Offset.Zero, size), Paint().apply { this.alpha = alpha })
+    for (layer in layers.asReversed()) drawSlideBackground(layer, images)
+    drawContext.canvas.restore()
+}
+
+private fun DrawScope.drawSlideBackground(
+    background: SlideBackground?,
+    images: Map<String, ImageBitmap>,
+    alpha: Float = 1f,
+) {
     when (background) {
         // design: linear-gradient(140deg, #2a2452 0%, #171930 55%, #101223 100%)
         null -> drawRect(
@@ -126,5 +207,10 @@ private fun DrawScope.drawSlideBackground(background: SlideBackground?, alpha: F
             ),
             alpha = alpha,
         )
+
+        is SlideBackground.Image -> {
+            val image: ImageBitmap = images[background.assetId] ?: return
+            drawImageFill(image, background.mode, alpha)
+        }
     }
 }

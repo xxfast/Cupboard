@@ -33,10 +33,16 @@ data class ObjectStyle(
     val cornerRadius: Float,
 )
 
-/** This shape wearing [style]: its appearance, and nothing else about it. */
+/**
+ * This shape wearing [style]: its appearance, and nothing else about it.
+ *
+ * Its picture goes, if it had one: a style is a fill, and a fill under a picture
+ * would be a style applied with nothing to show for it.
+ */
 fun ShapeElement.applyingObjectStyle(style: ObjectStyle): ShapeElement = copy(
     fill = style.fill,
     gradient = style.gradient,
+    imageFill = null,
     strokeColor = style.strokeColor,
     strokeWidth = style.strokeWidth,
     shadow = style.shadow,
@@ -45,6 +51,9 @@ fun ShapeElement.applyingObjectStyle(style: ObjectStyle): ShapeElement = copy(
 
 /**
  * This shape's look lifted out as a style called [name]: Save Style.
+ *
+ * A picture fill stays with the shape: it is bytes rather than a look, and a
+ * style carries none. What is saved is the solid and the gradient under it.
  *
  * A fresh id every time, so saving the same shape twice is two entries rather
  * than one that quietly replaced the other. The six [defaultObjectStyles] keep

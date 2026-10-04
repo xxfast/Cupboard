@@ -90,6 +90,7 @@ import io.github.xxfast.cupboard.screens.editor.insertSections
 import io.github.xxfast.cupboard.screens.editor.insertWebVideo
 import io.github.xxfast.cupboard.screens.editor.replaceImage
 import io.github.xxfast.cupboard.screens.editor.setPoster
+import io.github.xxfast.cupboard.screens.editor.writeFillImage
 import io.github.xxfast.cupboard.screens.editor.layoutSections
 import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
@@ -749,6 +750,16 @@ private fun EditorWindow(
                 scope.launch { viewModel.setPoster(element, picked.bytes, picked.extension) }
             }
         }
+        // A picture fill's panel: the same one, and only the write. The
+        // inspector knows what the picture is for, so it gets the id back and
+        // makes that edit itself. A cancel calls nothing back.
+        val chooseFillImage: ((String) -> Unit) -> Unit = { onChosen ->
+            chooseImage(window)?.let { picked ->
+                scope.launch {
+                    viewModel.writeFillImage(picked.bytes, picked.extension)?.let(onChosen)
+                }
+            }
+        }
 
         // The recents list as of the last time this window came forward.
         //
@@ -1324,6 +1335,7 @@ private fun EditorWindow(
                     onInsertWebVideo = insertWebVideo,
                     onReplaceMedia = replaceMedia,
                     onChoosePoster = choosePoster,
+                    onChooseImage = chooseFillImage,
                 )
             }
         }

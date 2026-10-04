@@ -278,6 +278,12 @@ private fun SourceWriter.shape(element: ShapeElement) {
         line("// TODO(cupboard): the ${element.kind.name.lowercase()} shape is not exported yet")
     }
 
+    // A picture fill would need the bytes shipped beside the source, which this
+    // writer doesn't do for any image: the gradient or solid under it stands in.
+    if (element.imageFill != null) {
+        line("// TODO(cupboard): the image fill is not exported yet, the fill under it stands in")
+    }
+
     val shape: String = shapeLiteral(element)
     val fill: String = element.gradient?.let { gradient ->
         "gradientBrush(${gradient.start.colorLiteral()}, ${gradient.end.colorLiteral()}, " +

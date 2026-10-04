@@ -68,6 +68,8 @@ struct Chrome {
     /// The outlines an image may be cut to, in Kotlin's order. A position is
     /// what goes back, the way a transition kind's is; -1 is no mask at all.
     let maskKinds: [String]
+    /// The Scale popup's rows, shapes and backgrounds alike: Keynote's five.
+    let imageFillModes: [String]
     /// Where the primary points when it is clicked in a show, nil unless it is
     /// one of the three kinds that hold a link at all.
     let link: LinkFormat?
@@ -168,6 +170,7 @@ struct Chrome {
         video = host.selectedVideo().map(MediaFormat.init)
         audio = host.selectedAudio().map(MediaFormat.init)
         maskKinds = host.maskKindTitles()
+        imageFillModes = host.imageFillModeTitles()
         link = host.selectedLink().map(LinkFormat.init)
         linkKinds = host.linkKindTitles()
         slideChoices = SlideChoice.all(host)
@@ -309,19 +312,22 @@ struct SlideSize: Equatable {
 /// The deck's own properties as a Swift value. Only the background so far, and
 /// shaped exactly like the slide's below so one set of controls drives either.
 struct DeckProps: Equatable {
-    /// 0 the app's own dark gradient, 1 a flat colour, 2 a gradient.
+    /// 0 the app's own dark gradient, 1 a flat colour, 2 a gradient, 3 a picture.
     let backgroundKind: Int
     /// Packed ARGB. When the deck wears another kind these are what switching to
     /// this one would commit, the same trick the slide background plays.
     let color: Int64
     let gradientStart: Int64
     let gradientEnd: Int64
+    /// How the picture is laid in, a place in `imageFillModes`.
+    let imageMode: Int
 
     init(_ host: EditorHost) {
         backgroundKind = Int(host.deckBackgroundKind())
         color = host.deckBackgroundColor()
         gradientStart = host.deckBackgroundGradientStart()
         gradientEnd = host.deckBackgroundGradientEnd()
+        imageMode = Int(host.deckBackgroundImageMode())
     }
 }
 
@@ -427,13 +433,15 @@ struct BuildEntry: Identifiable, Equatable {
 struct SlideProps: Equatable {
     /// Whether the slide draws its place in the presentation on itself.
     let numberVisible: Bool
-    /// 0 the deck's own background, 1 a flat colour, 2 a gradient.
+    /// 0 the deck's own background, 1 a flat colour, 2 a gradient, 3 a picture.
     let backgroundKind: Int
     /// Packed ARGB. When the slide wears another kind these are what switching
     /// to this one would commit, so the controls never have to invent a value.
     let color: Int64
     let gradientStart: Int64
     let gradientEnd: Int64
+    /// How the picture is laid in, a place in `imageFillModes`.
+    let imageMode: Int
 
     init(_ host: EditorHost) {
         numberVisible = host.slideNumberVisible()
@@ -441,6 +449,7 @@ struct SlideProps: Equatable {
         color = host.backgroundColor()
         gradientStart = host.backgroundGradientStart()
         gradientEnd = host.backgroundGradientEnd()
+        imageMode = Int(host.backgroundImageMode())
     }
 }
 
@@ -500,12 +509,14 @@ struct ShapeFormat {
     let cornerRadius: Double
     /// Packed ARGB, the document model's colour format. So is every colour below.
     let fill: Int64
-    /// Whether the gradient paints. The fill is what paints when it does not.
-    let hasGradient: Bool
+    /// What paints the inside: the colour, the gradient, or a picture.
+    let fillKind: FillKind
     let gradientStart: Int64
     let gradientEnd: Int64
     /// CSS degrees: 0 points up and the angle turns clockwise.
     let gradientAngle: Double
+    /// How the picture is laid in, a place in `imageFillModes`.
+    let imageMode: Int
     let strokeColor: Int64
     let strokeWidth: Double
     let hasShadow: Bool
@@ -517,16 +528,25 @@ struct ShapeFormat {
     let label: String
     let labelSize: Double
 
+    /// The core's `ShapeFillKind`, in its order.
+    enum FillKind: Int {
+        case color, gradient, image
+    }
+
+    /// The picture's Scale to Fit place: the one mode that leaves the fill colour showing.
+    static let scaleToFit = 1
+
     init(_ props: ShapeProps) {
         kind = props.kindName
         isRectangle = props.isRectangle
         isLine = props.isLine
         cornerRadius = Double(props.cornerRadius)
         fill = props.fill
-        hasGradient = props.hasGradient
+        fillKind = FillKind(rawValue: Int(props.fillKind)) ?? .color
         gradientStart = props.gradientStart
         gradientEnd = props.gradientEnd
         gradientAngle = Double(props.gradientAngle)
+        imageMode = Int(props.imageFillMode)
         strokeColor = props.strokeColor
         strokeWidth = Double(props.strokeWidth)
         hasShadow = props.hasShadow

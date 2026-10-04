@@ -253,6 +253,18 @@ fun Slide.effectiveBackground(layout: Slide?, deck: SlideBackground? = null): Sl
     background ?: layout?.background ?: deck
 
 /**
+ * Every background [effectiveBackground] could have picked, nearest first: the
+ * slide's own, its layout's and [deck]'s, the ones that are not set left out.
+ * Its head is [effectiveBackground]; empty is the app's own dark gradient.
+ *
+ * What a renderer reads past the head for: a [SlideBackground.Image] leaves
+ * whatever it doesn't cover to the next one down, which is also what draws in its
+ * place while its bytes are missing.
+ */
+fun Slide.backgroundCascade(layout: Slide?, deck: SlideBackground? = null): List<SlideBackground> =
+    listOfNotNull(background, layout?.background, deck)
+
+/**
  * This slide moved onto [layout], or off every layout when that is null.
  *
  * Content survives: an element carrying a role takes the frame and look of the

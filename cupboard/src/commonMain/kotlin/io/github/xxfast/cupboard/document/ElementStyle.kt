@@ -12,7 +12,7 @@ package io.github.xxfast.cupboard.document
  *
  * What is deliberately left out is the content ([TextElement.text],
  * [TextElement.link], [TextElement.linkTarget], [ShapeElement.link],
- * [ImageElement.link], [ImageElement.assetId], [ImageElement.mask],
+ * [ImageElement.link], [ImageElement.assetId], [ShapeElement.imageFill], [ImageElement.mask],
  * [ImageElement.caption], [ShapeElement.label], [CodeElement.code],
  * [CodeElement.language], [TerminalElement.text], [TerminalElement.title],
  * [DiagramElement.source], [DiagramElement.steps], [EquationElement.latex],
@@ -23,6 +23,10 @@ package io.github.xxfast.cupboard.document
  * Copying a style is not copying an element, and pasting one onto a laid-out
  * slide must not move anything. A link is where the box points, which is what it
  * says rather than how it looks, however much of its look follows from it.
+ *
+ * A shape's picture is its bytes the way an image's is, so it stays behind too:
+ * the solid and the gradient under it take the source's, and show again the day
+ * the picture goes.
  *
  * A line's arrowheads travel with the rest of the shape's look: which ends are
  * capped is how the line is drawn, not what it joins. The kind stays behind

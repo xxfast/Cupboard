@@ -165,6 +165,12 @@ fun EditorScreen(
     onReplaceMedia: ((Element) -> Unit)? = null,
     /** The image picker, for a movie's poster frame: the Movie segment's Choose. */
     onChoosePoster: ((VideoElement) -> Unit)? = null,
+    /**
+     * The image picker, for a picture fill: a shape's Fill and every Background.
+     * The shell shows the panel and writes the file in (see [writeFillImage]),
+     * then hands back the asset id; a cancel hands back nothing.
+     */
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -265,6 +271,7 @@ fun EditorScreen(
             onInsertWebVideo = onInsertWebVideo,
             onReplaceMedia = onReplaceMedia,
             onChoosePoster = onChoosePoster,
+            onChooseImage = onChooseImage,
             onAddElementSteps = viewModel::onAddElementSteps,
             onSelectCodeVersion = viewModel::onSelectCodeVersion,
             onAddCodeVersion = viewModel::onAddCodeVersion,
@@ -416,6 +423,8 @@ fun EditorView(
     onReplaceMedia: ((Element) -> Unit)? = null,
     /** The image picker, for a movie's poster frame. */
     onChoosePoster: ((VideoElement) -> Unit)? = null,
+    /** The image picker, for a shape's or a background's picture fill. */
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)? = null,
     /** Write a gallery's step builds onto the slide, one per image. */
     onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: pick the one the canvas draws and
@@ -750,6 +759,7 @@ fun EditorView(
                         onAddGalleryImages = onAddGalleryImages,
                         onReplaceMedia = onReplaceMedia,
                         onChoosePoster = onChoosePoster,
+                        onChooseImage = onChooseImage,
                         onAddElementSteps = onAddElementSteps,
                         codeVersion = state.codeVersion,
                         onSelectCodeVersion = onSelectCodeVersion,

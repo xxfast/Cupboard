@@ -575,24 +575,42 @@ extension EditorView {
         }
     }
 
-    /// What paints the shape: one colour, or a two-stop gradient. Switching to a
-    /// kind the shape is not wearing commits it there and then, off the values it
-    /// came back with, so the wells below always have something to show and never
-    /// have to invent a colour.
+    /// What paints the shape: one colour, a two-stop gradient, or a picture.
+    /// Switching to a kind the shape is not wearing commits it there and then, off
+    /// the values it came back with, so the wells below always have something to
+    /// show and never have to invent a colour. A picture has nothing to come back
+    /// with, so Image asks for one first, and a cancelled panel changes nothing.
     func fillSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
         disclosure("Fill", ui) {
             fillPreview(shape)
         } body: {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 2) {
-                    segment("Color", on: !shape.hasGradient) { host.clearSelectedShapeGradient() }
-                    segment("Gradient", on: shape.hasGradient) { setGradient(shape) }
+                    segment("Color", on: shape.fillKind == .color) { host.setSelectedShapeSolidFill() }
+                    segment("Gradient", on: shape.fillKind == .gradient) { setGradient(shape) }
+                    segment("Image", on: shape.fillKind == .image) {
+                        if shape.fillKind != .image { Media.chooseShapeFill(in: host) }
+                    }
                 }
                 .padding(2)
                 .frame(height: Inspect.control + 4)
                 .background(palette.inspectorControl, in: Capsule())
 
-                if shape.hasGradient {
+                switch shape.fillKind {
+                case .image:
+                    imageFillControls(
+                        thumbnail: host.shapeFillThumbnail(width: Int32(Self.imageFillThumb.width)),
+                        mode: shape.imageMode,
+                        modes: ui.imageFillModes,
+                        onChoose: { Media.chooseShapeFill(in: host) },
+                        onMode: { host.setSelectedShapeImageFillMode(index: Int32($0)) }
+                    )
+                    // A fitted picture leaves the rest of the shape to the
+                    // colour, so the colour is still the user's to pick.
+                    if shape.imageMode == ShapeFormat.scaleToFit {
+                        colorWell("Colour", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
+                    }
+                case .gradient:
                     HStack(spacing: 8) {
                         colorWell("Start", argb: shape.gradientStart) {
                             setGradient(shape, start: $0)
@@ -608,10 +626,52 @@ extension EditorView {
                         }
                         .frame(width: 92)
                     }
-                } else {
+                case .color:
                     colorWell("Colour", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
                 }
             }
+        }
+    }
+
+    /// How big a picture fill's thumbnail is drawn, in points.
+    static let imageFillThumb = CGSize(width: 64, height: 44)
+
+    /// A picture fill's controls, a shape's or a background's alike: the picture
+    /// small, a way to pick another, and how it is laid in.
+    @ViewBuilder func imageFillControls(
+        thumbnail: NSImage?,
+        mode: Int,
+        modes: [String],
+        onChoose: @escaping () -> Void,
+        onMode: @escaping (Int) -> Void
+    ) -> some View {
+        let side = Self.imageFillThumb
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        HStack(spacing: 8) {
+            Group {
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    palette.ctrl
+                }
+            }
+            .frame(width: side.width, height: side.height)
+            .clipShape(shape)
+            .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+
+            Spacer(minLength: 0)
+
+            arrangeButton("Choose...", enabled: true, action: onChoose)
+                .frame(width: Inspect.field + 20)
+        }
+
+        HStack(spacing: 8) {
+            rowLabel("Scale")
+            Spacer(minLength: 0)
+            stylePopup(modes, selected: mode, onPick: onMode)
+                .frame(width: Inspect.field * 2 + 20)
         }
     }
 
@@ -2899,7 +2959,7 @@ extension EditorView {
     }
 
     /// What the slide paints behind its elements: the deck's own, a flat colour,
-    /// or a two-stop gradient. Switching to a kind the slide is not wearing
+    /// a two-stop gradient, or a picture. Switching to a kind the slide is not wearing
     /// commits it there and then, so the swatches below always have something to
     /// mark, and every pick is one edit and one undo entry.
     func backgroundSection(_ ui: Chrome) -> some View {
@@ -2910,16 +2970,23 @@ extension EditorView {
             color: slide.color,
             gradientStart: slide.gradientStart,
             gradientEnd: slide.gradientEnd,
+            imageMode: slide.imageMode,
+            imageModes: ui.imageFillModes,
+            thumbnail: slide.backgroundKind == 3
+                ? host.backgroundImageThumbnail(width: Int32(Self.imageFillThumb.width))
+                : nil,
             inherits: "The deck's own background.",
             onDefault: { host.setBackgroundDefault() },
             onColor: { host.setBackgroundColor(argb: $0) },
-            onGradient: { host.setBackgroundGradient(start: $0, end: $1) }
+            onGradient: { host.setBackgroundGradient(start: $0, end: $1) },
+            onChooseImage: { Media.chooseBackground(in: host) },
+            onImageMode: { host.setBackgroundImageMode(index: Int32($0)) }
         )
     }
 
-    /// The same three kinds, one level down: what a slide falls back to when it
+    /// The same four kinds, one level down: what a slide falls back to when it
     /// carries none of its own. The controls are the slide's, handed the deck's
-    /// four numbers and the deck's setters, because a background is a background
+    /// values and the deck's setters, because a background is a background
     /// wherever it hangs.
     func deckBackgroundSection(_ ui: Chrome) -> some View {
         let deck = ui.deck
@@ -2929,26 +2996,42 @@ extension EditorView {
             color: deck.color,
             gradientStart: deck.gradientStart,
             gradientEnd: deck.gradientEnd,
+            imageMode: deck.imageMode,
+            imageModes: ui.imageFillModes,
+            thumbnail: deck.backgroundKind == 3
+                ? host.deckBackgroundImageThumbnail(width: Int32(Self.imageFillThumb.width))
+                : nil,
             inherits: "The app's own dark gradient.",
             onDefault: { host.setDeckBackgroundDefault() },
             onColor: { host.setDeckBackgroundColor(argb: $0) },
-            onGradient: { host.setDeckBackgroundGradient(start: $0, end: $1) }
+            onGradient: { host.setDeckBackgroundGradient(start: $0, end: $1) },
+            onChooseImage: { Media.chooseDeckBackground(in: host) },
+            onImageMode: { host.setDeckBackgroundImageMode(index: Int32($0)) }
         )
     }
 
     /// [inherits] is what the Default segment means here: the thing behind is a
     /// different thing for a slide than for the deck, and it is the only word
     /// that changes between the two.
+    ///
+    /// Image is the one kind with nothing to switch to: no picture rides along
+    /// the way the colours do, so it opens the panel, and a cancelled one leaves
+    /// the background as it was.
     @ViewBuilder func backgroundControls(
         _ title: String,
         kind: Int,
         color: Int64,
         gradientStart: Int64,
         gradientEnd: Int64,
+        imageMode: Int,
+        imageModes: [String],
+        thumbnail: NSImage?,
         inherits: String,
         onDefault: @escaping () -> Void,
         onColor: @escaping (Int64) -> Void,
-        onGradient: @escaping (Int64, Int64) -> Void
+        onGradient: @escaping (Int64, Int64) -> Void,
+        onChooseImage: @escaping () -> Void,
+        onImageMode: @escaping (Int) -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel(title)
@@ -2957,6 +3040,7 @@ extension EditorView {
                 segment("Default", on: kind == 0, action: onDefault)
                 segment("Color", on: kind == 1) { onColor(color) }
                 segment("Gradient", on: kind == 2) { onGradient(gradientStart, gradientEnd) }
+                segment("Image", on: kind == 3) { if kind != 3 { onChooseImage() } }
             }
             .padding(2)
             .frame(height: Inspect.control + 4)
@@ -2968,6 +3052,14 @@ extension EditorView {
             case 2:
                 stopRow("Start", selected: gradientStart) { onGradient($0, gradientEnd) }
                 stopRow("End", selected: gradientEnd) { onGradient(gradientStart, $0) }
+            case 3:
+                imageFillControls(
+                    thumbnail: thumbnail,
+                    mode: imageMode,
+                    modes: imageModes,
+                    onChoose: onChooseImage,
+                    onMode: onImageMode
+                )
             default:
                 Text(inherits)
                     .font(.system(size: 12))

@@ -91,6 +91,23 @@ suspend fun EditorViewModel.replaceImage(
 }
 
 /**
+ * [bytes] written into the deck as a picture to fill something with, and the id
+ * they went in under: what a shape's Image fill and a background's Image point
+ * at once the inspector has it.
+ *
+ * Only the write, unlike its siblings here: what the picture lands on is the
+ * inspector's to say (a selection of shapes, a slide, a layout, the deck), so it
+ * makes that edit itself with the id. Decoded first, for [insertImage]'s reason;
+ * null is a file that does not decode, and writes nothing.
+ */
+suspend fun EditorViewModel.writeFillImage(bytes: ByteArray, extension: String): String? {
+    decodeImage(bytes) ?: return null
+    val assetId: String = "${newId()}.${extension.lowercase()}"
+    assets.write(assetId, bytes)
+    return assetId
+}
+
+/**
  * [files] written into the deck and put on the selected slide as one gallery.
  *
  * The multi-file twin of [insertImage], and the same three steps per file: decode

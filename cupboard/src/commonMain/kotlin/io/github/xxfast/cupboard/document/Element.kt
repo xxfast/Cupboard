@@ -296,9 +296,10 @@ data class ShapeShadow(
 /**
  * A shape on a slide.
  *
- * There is no image fill: image bytes live on the side, and bytes on the side
- * arrive with the bundle format, the same wait [ImageElement] and
- * [SlideBackground] are in.
+ * Its inside paints one of three ways, nearest first: [imageFill], [gradient],
+ * then the solid [fill]. The ones underneath stay stored, so dropping a picture or
+ * a gradient goes back to what was there rather than to a default. See
+ * [fillKind] for which one is showing.
  */
 @Serializable
 @SerialName("shape")
@@ -314,8 +315,18 @@ data class ShapeElement(
     /** Only [ShapeKind.Rectangle] rounds by this; every other kind ignores it. */
     val cornerRadius: Float = 10f,
     val fill: Long = 0x387F52FF,
-    /** Painted instead of [fill] when set. */
+    /** Painted instead of [fill] when set, and under [imageFill] when that is. */
     val gradient: ShapeGradient? = null,
+    /**
+     * A picture painted instead of [gradient] and [fill], clipped to the shape's
+     * own outline. The stroke, the shadow and the label draw over and around it as
+     * they would over a colour. [ShapeKind.Line] has no inside and ignores it.
+     *
+     * Bytes the store can't read draw whatever is under it instead, and so does
+     * the part of the box a [ImageFillMode.ScaleToFit] picture leaves uncovered,
+     * which is the solid [fill].
+     */
+    val imageFill: ImageFill? = null,
     val strokeColor: Long = 0xB3A98FFF,
     val strokeWidth: Float = 1.5f,
     val shadow: ShapeShadow? = null,

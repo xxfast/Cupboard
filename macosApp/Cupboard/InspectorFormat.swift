@@ -472,10 +472,14 @@ extension EditorView {
         }
     }
 
-    /// What the Fill header shows: the colour, its gradient, or the struck-out
-    /// well that means none.
+    /// What the Fill header shows: the colour, its gradient, the word Image, or
+    /// the struck-out well that means none.
     @ViewBuilder func fillPreview(_ shape: ShapeFormat) -> some View {
-        if shape.hasGradient {
+        if shape.fillKind == .image {
+            Text("Image")
+                .font(.system(size: Inspect.text))
+                .foregroundStyle(palette.subtle)
+        } else if shape.fillKind == .gradient {
             previewWell {
                 LinearGradient(
                     colors: [Color(argb: shape.gradientStart), Color(argb: shape.gradientEnd)],

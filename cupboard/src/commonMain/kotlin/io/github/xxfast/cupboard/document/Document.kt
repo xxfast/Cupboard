@@ -165,9 +165,8 @@ data class Slide(
 /**
  * A slide's own background, when it wants one other than the deck's default.
  *
- * Colors are packed ARGB like everywhere else. There is no image variant yet:
- * an image background is bytes on the side, and bytes on the side arrive with
- * the bundle format, the same wait [ImageElement] is in.
+ * Colors are packed ARGB like everywhere else. An [Image] is bytes on the side,
+ * an id the asset store resolves the way an [ImageElement]'s is.
  */
 @Serializable
 sealed interface SlideBackground {
@@ -185,6 +184,22 @@ sealed interface SlideBackground {
         val start: Long,
         val end: Long,
         val angle: Float = 140f,
+    ) : SlideBackground
+
+    /**
+     * A picture behind the slide, laid into it by [mode] the way a shape's
+     * [ImageFill] is laid into the shape.
+     *
+     * Not opaque the way the other two are: wherever it leaves the slide uncovered
+     * (a fit's letterbox, a transparent pixel, all of it while the bytes are
+     * missing or still being read), what shows is the next background down
+     * `Slide.backgroundCascade`, or the app's own dark gradient when there is none.
+     */
+    @Serializable
+    @SerialName("image")
+    data class Image(
+        val assetId: String,
+        val mode: ImageFillMode = ImageFillMode.ScaleToFill,
     ) : SlideBackground
 }
 

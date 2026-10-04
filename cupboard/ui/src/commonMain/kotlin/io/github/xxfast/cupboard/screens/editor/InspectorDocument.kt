@@ -52,6 +52,7 @@ internal fun ColumnScope.DocumentPanel(
     onSetDocumentBackground: (SlideBackground?) -> Unit,
     onSetSlideSize: (Float, Float, Boolean) -> Unit,
     onSetPlayback: (PlaybackSettings) -> Unit,
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
 ) {
     PanelBody {
         SectionLabel("THEME")
@@ -122,7 +123,11 @@ internal fun ColumnScope.DocumentPanel(
         PanelDivider()
 
         SectionLabel("DECK BACKGROUND")
-        BackgroundControls(background = documentBackground, onChange = onSetDocumentBackground)
+        BackgroundControls(
+            background = documentBackground,
+            onChange = onSetDocumentBackground,
+            onChooseImage = onChooseImage,
+        )
     }
 }
 

@@ -165,6 +165,10 @@ fun EditorInspector(
     onReplaceMedia: ((Element) -> Unit)? = null,
     /** Pick an image file as the selected movie's poster frame. Null greys it. */
     onChoosePoster: ((VideoElement) -> Unit)? = null,
+    /** Pick an image file for a picture fill (a shape's, or a slide's, layout's
+     * or the deck's background) and hand back the asset it went in as. Null
+     * greys Image. */
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)? = null,
     /** Write the selected gallery's step builds onto the slide, one per image. */
     onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: which one the canvas shows, and the
@@ -266,6 +270,7 @@ fun EditorInspector(
                 onAddGalleryImages = onAddGalleryImages,
                 onReplaceMedia = onReplaceMedia,
                 onChoosePoster = onChoosePoster,
+                onChooseImage = onChooseImage,
                 onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,
@@ -329,6 +334,7 @@ fun EditorInspector(
                 onSetDocumentBackground = onSetDocumentBackground,
                 onSetSlideSize = onSetSlideSize,
                 onSetPlayback = onSetPlayback,
+                onChooseImage = onChooseImage,
             )
         }
     }

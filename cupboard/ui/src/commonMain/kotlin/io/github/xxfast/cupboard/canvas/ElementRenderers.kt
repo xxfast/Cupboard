@@ -48,7 +48,9 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -79,6 +81,7 @@ import io.github.xxfast.cupboard.document.GalleryStepDuration
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ImageFill
 import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
@@ -362,6 +365,13 @@ private fun ShapeElement.brush(): Brush {
     }
 }
 
+/**
+ * A shape: its outline filled, bordered and shadowed, its label in the middle.
+ *
+ * A picture fill paints over the solid rather than in place of it, clipped to the
+ * outline: the solid is what shows around a fit, and the gradient or solid is
+ * what shows in its place until the bytes land, or for good when they never do.
+ */
 @Composable
 private fun ShapeElementView(element: ShapeElement) {
     // A line is a stroke between two corners rather than an outline with a
@@ -372,6 +382,11 @@ private fun ShapeElementView(element: ShapeElement) {
     }
 
     val shape: Shape = element.shape()
+    val imageFill: ImageFill? = element.imageFill
+    val image: ImageBitmap? = rememberAssetImage(imageFill?.assetId)
+    val brush: Brush =
+        if (image != null) SolidColor(element.fill.toComposeColor()) else element.brush()
+
     Box(
         modifier = Modifier
             .size(element.frame.width.dp, element.frame.height.dp)
@@ -387,7 +402,16 @@ private fun ShapeElementView(element: ShapeElement) {
                     spotColor = shadow.color.toComposeColor(),
                 )
             }
-            .background(element.brush(), shape)
+            .background(brush, shape)
+            .let { base ->
+                if (image == null || imageFill == null) return@let base
+                base.drawBehind {
+                    val outline = Path().apply {
+                        addOutline(shape.createOutline(size, layoutDirection, this@drawBehind))
+                    }
+                    clipPath(outline) { drawImageFill(image, imageFill.mode) }
+                }
+            }
             .border(element.strokeWidth.dp, element.strokeColor.toComposeColor(), shape),
         contentAlignment = Alignment.Center,
     ) {

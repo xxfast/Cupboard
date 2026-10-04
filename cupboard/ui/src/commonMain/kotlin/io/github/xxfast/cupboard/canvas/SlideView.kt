@@ -41,6 +41,7 @@ import io.github.xxfast.cupboard.document.actionBuildAt
 import io.github.xxfast.cupboard.document.actionStateAt
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.diagramStepFor
+import io.github.xxfast.cupboard.document.backgroundCascade
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.entryBuildAt
 import io.github.xxfast.cupboard.document.exitBuildAt
@@ -134,6 +135,7 @@ fun SlideView(
     SlideSurface(
         modifier = modifier,
         slideBackground = slide.effectiveBackground(layout, background),
+        fallbackBackgrounds = slide.backgroundCascade(layout, background).drop(1),
         crossfade = arrival?.let { BackgroundCrossfade(it.fromBackground, progress.value) },
         slideWidth = slideWidth,
         slideHeight = slideHeight,

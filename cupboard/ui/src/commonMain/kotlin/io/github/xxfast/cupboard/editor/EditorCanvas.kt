@@ -109,6 +109,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.backgroundCascade
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
 import io.github.xxfast.cupboard.document.elementById
@@ -380,6 +381,7 @@ fun EditorCanvas(
         SlideSurface(
             modifier = Modifier.fillMaxSize().padding(start = rulerInset, top = rulerInset),
             slideBackground = slide.effectiveBackground(layout, background),
+            fallbackBackgrounds = slide.backgroundCascade(layout, background).drop(1),
             zoom = zoom,
             slideWidth = slideWidth,
             slideHeight = slideHeight,

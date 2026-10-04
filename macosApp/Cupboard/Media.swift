@@ -100,6 +100,28 @@ enum Media {
         }
     }
 
+    /// A picture inside every selected shape. A cancelled panel leaves the fill
+    /// as it was, which is what makes picking the Image segment safe to undo by Esc.
+    static func chooseShapeFill(in host: EditorHost) {
+        pick(prompt: "Choose") { bytes, extension_ in
+            host.setSelectedShapeImageFill(bytes: bytes, extension: extension_)
+        }
+    }
+
+    /// A picture behind the selected slide, or the layout being edited.
+    static func chooseBackground(in host: EditorHost) {
+        pick(prompt: "Choose") { bytes, extension_ in
+            host.setBackgroundImage(bytes: bytes, extension: extension_)
+        }
+    }
+
+    /// A picture behind every slide that asks for no background of its own.
+    static func chooseDeckBackground(in host: EditorHost) {
+        pick(prompt: "Choose") { bytes, extension_ in
+            host.setDeckBackgroundImage(bytes: bytes, extension: extension_)
+        }
+    }
+
     /// [url]'s movie on the slide. The poster and the size come off the file
     /// first, which takes AVFoundation a moment, so the insert lands after.
     /// A file AVFoundation cannot read still inserts, as the dark box.

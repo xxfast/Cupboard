@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.screens.editor
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -47,6 +48,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
@@ -59,6 +61,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -69,6 +72,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.canvas.rememberAssetImage
+import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -1121,16 +1126,25 @@ private fun valueAt(x: Float, width: Int): Float =
     if (width == 0) 0f else (x / width).coerceIn(0f, 1f)
 
 /**
- * Default / Color / Gradient over the palette the picked mode asks for, one
- * settled [onChange] per tap. Null is Default: whatever sits behind this one,
+ * Default / Color / Gradient / Image over the controls the picked mode asks for,
+ * one settled [onChange] per tap. Null is Default: whatever sits behind this one,
  * which for a slide is its layout's or the deck's and for the deck is the app's
  * own dark gradient.
  *
- * Shared by the slide's Background section and the deck's: the two differ only
- * in where the background they show comes from and where the picked one goes.
+ * Shared by the slide's Background section, the layout's and the deck's: they
+ * differ only in where the background they show comes from and where the picked
+ * one goes.
+ *
+ * [onChooseImage] is the shell's image picker, which hands back the asset the
+ * picked file went in as. Null is a shell with no file picker, which leaves Image
+ * inert.
  */
 @Composable
-internal fun BackgroundControls(background: SlideBackground?, onChange: (SlideBackground?) -> Unit) {
+internal fun BackgroundControls(
+    background: SlideBackground?,
+    onChange: (SlideBackground?) -> Unit,
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
+) {
     SegmentedRow {
         Segment(
             selected = background == null,
@@ -1163,6 +1177,25 @@ internal fun BackgroundControls(background: SlideBackground?, onChange: (SlideBa
         ) {
             SegmentLabel("Gradient", selected = background is SlideBackground.Gradient, enabled = true)
         }
+        Segment(
+            selected = background is SlideBackground.Image,
+            first = false,
+            // There is no picture to land on, so switching in asks for one
+            // first, and a cancelled panel is no switch at all.
+            onClick = onChooseImage?.let { choose ->
+                {
+                    if (background !is SlideBackground.Image) {
+                        choose { assetId -> onChange(SlideBackground.Image(assetId)) }
+                    }
+                }
+            },
+        ) {
+            SegmentLabel(
+                text = "Image",
+                selected = background is SlideBackground.Image,
+                enabled = onChooseImage != null || background is SlideBackground.Image,
+            )
+        }
     }
 
     when (background) {
@@ -1187,5 +1220,78 @@ internal fun BackgroundControls(background: SlideBackground?, onChange: (SlideBa
                 onPick = { color -> onChange(background.copy(end = color)) },
             )
         }
+
+        is SlideBackground.Image -> ImageFillControls(
+            assetId = background.assetId,
+            mode = background.mode,
+            enabled = true,
+            onChoose = onChooseImage?.let { choose ->
+                { choose { assetId -> onChange(background.copy(assetId = assetId)) } }
+            },
+            onPickMode = { mode -> onChange(background.copy(mode = mode)) },
+        )
     }
+}
+
+/** Keynote's names for the five ways a picture is laid into its box, in its order. */
+private val ImageFillModes: List<Pair<ImageFillMode, String>> = listOf(
+    ImageFillMode.ScaleToFill to "Scale to Fill",
+    ImageFillMode.ScaleToFit to "Scale to Fit",
+    ImageFillMode.Stretch to "Stretch",
+    ImageFillMode.Tile to "Tile",
+    ImageFillMode.Original to "Original Size",
+)
+
+/**
+ * A picture fill's controls, a shape's and a background's alike: the picture
+ * small, Choose... to swap it for another, and the Scale it is laid in by.
+ *
+ * The thumbnail is cropped to its well whatever the [mode]: it says which
+ * picture, and the canvas is right there to say how it sits. [onChoose] null is
+ * a shell with no file picker, which greys Choose... and keeps the picture.
+ */
+@Composable
+internal fun ImageFillControls(
+    assetId: String,
+    mode: ImageFillMode,
+    enabled: Boolean,
+    onChoose: (() -> Unit)?,
+    onPickMode: (ImageFillMode) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val image: ImageBitmap? = rememberAssetImage(assetId)
+
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(width = 64.dp, height = 40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(tokens.track)
+                .border(1.dp, tokens.outline, RoundedCornerShape(8.dp)),
+        ) {
+            if (image != null) Image(
+                bitmap = image,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
+        TonalButton(
+            label = "Choose...",
+            enabled = enabled && onChoose != null,
+            onClick = { onChoose?.invoke() },
+            modifier = Modifier.weight(1f),
+        )
+    }
+    DropdownField(
+        label = "Scale",
+        value = mode,
+        options = ImageFillModes,
+        enabled = enabled,
+        onPick = onPickMode,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }

@@ -292,10 +292,14 @@ private fun textBox(element: TextElement, id: Int): String = buildString {
  * A shape as a preset geometry, for the three kinds that map cleanly.
  *
  * Everything else (lines with arrowheads, callouts, stars with a point count of
- * their own) is left to the picture underneath rather than approximated into a
- * shape that is nearly right.
+ * their own, and any shape filled with a picture) is left to the picture
+ * underneath rather than approximated into a shape that is nearly right.
  */
 private fun shapeBox(element: ShapeElement, id: Int): String? {
+    // A solid over the picture would hide the one thing the shape is showing, and
+    // the picture is already in the slide underneath.
+    if (element.imageFill != null) return null
+
     val preset: String = when (element.kind) {
         ShapeKind.Rectangle -> if (element.cornerRadius > 0f) "roundRect" else "rect"
         ShapeKind.Ellipse -> "ellipse"

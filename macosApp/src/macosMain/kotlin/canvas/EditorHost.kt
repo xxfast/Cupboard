@@ -66,6 +66,7 @@ import io.github.xxfast.cupboard.document.GalleryImage
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
@@ -109,6 +110,7 @@ import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.equationElement
+import io.github.xxfast.cupboard.document.fillKind
 import io.github.xxfast.cupboard.document.fitted
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatLineRanges
@@ -128,6 +130,10 @@ import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
+import io.github.xxfast.cupboard.document.withFillMode
+import io.github.xxfast.cupboard.document.withGradient
+import io.github.xxfast.cupboard.document.withImageFill
+import io.github.xxfast.cupboard.document.withSolidFill
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
 import io.github.xxfast.cupboard.document.toggleUnderline
@@ -218,11 +224,12 @@ private const val IMAGE_INSERT_SHARE: Float = 0.6f
 private const val MIN_MASK_EXTENT: Float = 0.02f
 
 /**
- * How many gallery strip thumbnails are kept decoded. A strip is a dozen at the
- * most and a deck holds a handful of galleries, so this outlives switching
- * between them without holding a whole deck's pictures at once.
+ * How many inspector thumbnails are kept decoded: the gallery strip's, and the
+ * one a picture fill or background shows. A strip is a dozen at the most and a
+ * deck holds a handful of galleries, so this outlives switching between them
+ * without holding a whole deck's pictures at once.
  */
-private const val GALLERY_THUMBNAILS: Int = 48
+private const val ASSET_THUMBNAILS: Int = 48
 
 private const val DEFAULT_BACKGROUND_COLOR: Long = 0xFF101223
 private const val DEFAULT_GRADIENT_START: Long = 0xFF2A2452
@@ -294,6 +301,22 @@ private val MaskKindTitles: List<String> = listOf(
     "Quote Bubble",
     "Callout",
 )
+
+/** What [ImageFillMode]'s five are called in the Scale popup, Keynote's words, in the enum's order. */
+private val ImageFillModeTitles: List<String> = listOf(
+    "Scale to Fill",
+    "Scale to Fit",
+    "Stretch",
+    "Tile",
+    "Original Size",
+)
+
+/** [index] as a place in [ImageFillModeTitles], or null when it is not one. */
+private fun imageFillMode(index: Int): ImageFillMode? = ImageFillMode.entries.getOrNull(index)
+
+/** This background's picture mode as a place in [ImageFillModeTitles]; Scale to Fill when it is no picture. */
+private fun SlideBackground?.imageMode(): Int =
+    ((this as? SlideBackground.Image)?.mode ?: ImageFillMode.ScaleToFill).ordinal
 
 /** Where [target] sits in [LinkKindTitles]. Null points nowhere, which is 0. */
 private fun linkKindIndex(target: LinkTarget?): Int = when (target) {
@@ -620,12 +643,16 @@ class ShapeProps(
     val cornerRadius: Float,
     /** Packed ARGB, the document model's color format. So is every color below. */
     val fill: Long,
-    /** Whether the gradient is what paints, [fill] being what paints when it is not. */
+    /** What paints the inside, the core's `fillKind` as a place: 0 color, 1 gradient, 2 image. */
+    val fillKind: Int,
+    /** Whether the shape carries a gradient. It paints only while [fillKind] is 1. */
     val hasGradient: Boolean,
     val gradientStart: Long,
     val gradientEnd: Long,
     /** CSS degrees: 0 points up and the angle turns clockwise. */
     val gradientAngle: Float,
+    /** How the picture is laid in, a place in `imageFillModeTitles()`; Scale to Fill with none. */
+    val imageFillMode: Int,
     val strokeColor: Long,
     val strokeWidth: Float,
     val hasShadow: Boolean,
@@ -1245,22 +1272,23 @@ class EditorHost(
     private val thumbnails = mutableMapOf<String, Thumbnail>()
 
     /**
-     * Gallery strip thumbnails, by asset id and the width they were drawn at,
-     * least recently added dropped first. The strip re-asks for every picture on
-     * every pass, and decoding a photo per pass would starve the main thread the
-     * way rendering a slide row per pass once did.
+     * Inspector thumbnails (the gallery strip, picture fills and backgrounds), by
+     * asset id and the width they were drawn at, least recently added dropped
+     * first. The inspector re-asks for every picture on every pass, and decoding
+     * a photo per pass would starve the main thread the way rendering a slide row
+     * per pass once did.
      */
-    private val galleryThumbnails = mutableMapOf<String, NSImage>()
+    private val assetThumbnails = mutableMapOf<String, NSImage>()
 
     /** The keys a decode is already on its way for, so a miss asks once. */
-    private val galleryThumbnailsPending = mutableSetOf<String>()
+    private val assetThumbnailsPending = mutableSetOf<String>()
 
     /**
-     * Bumped whenever a gallery thumbnail lands. A decode finishes after the
+     * Bumped whenever an inspector thumbnail lands. A decode finishes after the
      * state that asked for it, so its arrival is a change of its own: without
      * this the strip would stay empty until the next edit. See [onChange].
      */
-    private val galleryTick = MutableStateFlow(0)
+    private val thumbnailTick = MutableStateFlow(0)
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -1900,15 +1928,23 @@ class EditorHost(
      * alternative is blocking a SwiftUI body on reading a photo off disk.
      */
     fun galleryThumbnail(index: Int, width: Int): NSImage? {
-        if (width <= 0) return null
         val gallery: GalleryElement = state.primaryElement as? GalleryElement ?: return null
         val assetId: String = gallery.images.getOrNull(index)?.assetId ?: return null
+        return assetThumbnail(assetId, width)
+    }
+
+    /**
+     * [assetId]'s picture, [width] points wide, off the one cache every inspector
+     * thumbnail shares: the gallery strip, a shape's image fill, a background.
+     */
+    private fun assetThumbnail(assetId: String, width: Int): NSImage? {
+        if (width <= 0) return null
         val key = "$assetId@$width"
-        galleryThumbnails[key]?.let { return it }
-        if (!galleryThumbnailsPending.add(key)) return null
+        assetThumbnails[key]?.let { return it }
+        if (!assetThumbnailsPending.add(key)) return null
         scope.launch {
-            val drawn: DrawnThumbnail? = decodeGalleryThumbnail(assetId, width)
-            galleryThumbnailsPending.remove(key)
+            val drawn: DrawnThumbnail? = decodeThumbnail(assetId, width)
+            assetThumbnailsPending.remove(key)
             if (drawn == null) return@launch
             val png: ByteArray = drawn.png
             val data: NSData = png.usePinned { pinned ->
@@ -1916,11 +1952,11 @@ class EditorHost(
             }
             val image = NSImage(data = data)
             image.setSize(NSMakeSize(width.toDouble(), drawn.height.toDouble()))
-            galleryThumbnails[key] = image
-            while (galleryThumbnails.size > GALLERY_THUMBNAILS) {
-                galleryThumbnails.remove(galleryThumbnails.keys.first())
+            assetThumbnails[key] = image
+            while (assetThumbnails.size > ASSET_THUMBNAILS) {
+                assetThumbnails.remove(assetThumbnails.keys.first())
             }
-            galleryTick.value += 1
+            thumbnailTick.value += 1
         }
         return null
     }
@@ -1933,7 +1969,7 @@ class EditorHost(
      * Bytes rather than an [NSImage], so the decode and the resample both stay
      * off the main thread and only the wrapping happens back on it.
      */
-    private suspend fun decodeGalleryThumbnail(assetId: String, width: Int): DrawnThumbnail? =
+    private suspend fun decodeThumbnail(assetId: String, width: Int): DrawnThumbnail? =
         withContext(Dispatchers.Default) {
             val bytes: ByteArray = viewModel.assets.read(assetId) ?: return@withContext null
             val decoded: SkiaImage =
@@ -2511,10 +2547,12 @@ class EditorHost(
             isLine = shape.kind == ShapeKind.Line,
             cornerRadius = shape.cornerRadius,
             fill = shape.fill,
+            fillKind = shape.fillKind.ordinal,
             hasGradient = shape.gradient != null,
             gradientStart = gradient.start,
             gradientEnd = gradient.end,
             gradientAngle = gradient.angle,
+            imageFillMode = (shape.imageFill?.mode ?: ImageFillMode.ScaleToFill).ordinal,
             strokeColor = shape.strokeColor,
             strokeWidth = shape.strokeWidth,
             hasShadow = shape.shadow != null,
@@ -2531,20 +2569,70 @@ class EditorHost(
     fun canFormatShapes(): Boolean =
         state.selectedElements.any { it is ShapeElement && !it.locked }
 
-    /** A solid fill. It only paints once the gradient is off; see [clearSelectedShapeGradient]. */
+    /**
+     * A solid fill. It only paints once the gradient and the picture are off; see
+     * [setSelectedShapeSolidFill]. Under a Scale to Fit picture it is what shows
+     * around it, which is why picking one leaves the picture where it is.
+     */
     fun setSelectedShapeFill(argb: Long) {
         formatShapes { it.copy(fill = argb) }
     }
 
-    /** Paints instead of the fill, from [start] to [end] along [angle] CSS degrees. */
+    /** Paints instead of the fill, from [start] to [end] along [angle] CSS degrees. The picture goes. */
     fun setSelectedShapeGradient(start: Long, end: Long, angle: Float) {
-        formatShapes { it.copy(gradient = ShapeGradient(start, end, angle)) }
+        formatShapes { it.withGradient(ShapeGradient(start, end, angle)) }
     }
 
-    /** Back to the solid fill, which the shape was carrying all along. */
-    fun clearSelectedShapeGradient() {
-        formatShapes { it.copy(gradient = null) }
+    /** Back to the solid fill, which the shape was carrying all along: the gradient and the picture go. */
+    fun setSelectedShapeSolidFill() {
+        formatShapes { it.withSolidFill() }
     }
+
+    /**
+     * [bytes] as the picture inside every unlocked shape in the selection, laid
+     * in the way each already was (Scale to Fill for one that had none). The
+     * poster's route: written under a fresh id off the main thread, applied back
+     * on it to the shapes that were selected when the panel closed.
+     */
+    fun setSelectedShapeImageFill(bytes: NSData, extension: String) {
+        val targets: List<String> = state.selectedElements
+            .filter { it is ShapeElement && !it.locked }
+            .map { it.id }
+        if (targets.isEmpty()) return
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val size: NaturalSize = writeAsset(data, extension) ?: return@launch
+            // Re-read, for replaceImage's reason: the write took a moment.
+            val edits: List<Element> = targets.mapNotNull { id ->
+                val live: ShapeElement = state.selectedSlide.elementById(id) as? ShapeElement
+                    ?: return@mapNotNull null
+                if (live.locked) null else live.withImageFill(size.assetId)
+            }
+            if (edits.isEmpty()) return@launch
+            viewModel.onUpdateElements(edits)
+        }
+    }
+
+    /** How the selection's pictures are laid in, a place in `imageFillModeTitles()`. Shapes with none are left alone. */
+    fun setSelectedShapeImageFillMode(index: Int) {
+        val mode: ImageFillMode = imageFillMode(index) ?: return
+        formatShapes { it.withFillMode(mode) }
+    }
+
+    /**
+     * The primary shape's picture, [width] points wide, null while it decodes
+     * and for a shape with none. [galleryThumbnail]'s contract: null now, the
+     * picture on a later pass.
+     */
+    fun shapeFillThumbnail(width: Int): NSImage? {
+        val shape: ShapeElement = state.primaryElement as? ShapeElement ?: return null
+        val assetId: String = shape.imageFill?.assetId ?: return null
+        return assetThumbnail(assetId, width)
+    }
+
+    /** What the Scale popups offer, shapes and backgrounds alike, in [ImageFillMode]'s order. */
+    fun imageFillModeTitles(): List<String> = ImageFillModeTitles
 
     /** The outline, or the whole of a line. Zero width is no outline at all. */
     fun setSelectedShapeStroke(color: Long, width: Float) {
@@ -3509,11 +3597,12 @@ class EditorHost(
         viewModel.onUpdateSlide(slide.copy(showsSlideNumber = visible))
     }
 
-    /** What the slide paints behind its elements: 0 the deck's own, 1 color, 2 gradient. */
+    /** What the slide paints behind its elements: 0 the deck's own, 1 color, 2 gradient, 3 image. */
     fun backgroundKind(): Int = when (state.selectedSlide.background) {
         null -> 0
         is SlideBackground.Color -> 1
         is SlideBackground.Gradient -> 2
+        is SlideBackground.Image -> 3
     }
 
     /**
@@ -3542,6 +3631,38 @@ class EditorHost(
     /** The angle stays the model's, which is the deck's own: only the stops are the shell's. */
     fun setBackgroundGradient(start: Long, end: Long) {
         setBackground(SlideBackground.Gradient(start, end))
+    }
+
+    /** How the slide's picture is laid in, a place in `imageFillModeTitles()`; Scale to Fill with none. */
+    fun backgroundImageMode(): Int = state.selectedSlide.background.imageMode()
+
+    /** The slide's picture, [width] points wide, null while it decodes. See [shapeFillThumbnail]. */
+    fun backgroundImageThumbnail(width: Int): NSImage? =
+        (state.selectedSlide.background as? SlideBackground.Image)?.let { assetThumbnail(it.assetId, width) }
+
+    /**
+     * [bytes] behind the selected slide (or layout), the poster's route. The mode
+     * it was already in is kept, so replacing the picture doesn't re-lay it.
+     * Resolved again once the write lands, by id, so a selection that moved in
+     * the meantime doesn't take someone else's background.
+     */
+    fun setBackgroundImage(bytes: NSData, extension: String) {
+        val target: String = state.selectedSlide.id
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val size: NaturalSize = writeAsset(data, extension) ?: return@launch
+            val slide: Slide = state.selectedSlide.takeIf { it.id == target } ?: return@launch
+            val mode: ImageFillMode = (slide.background as? SlideBackground.Image)?.mode
+                ?: ImageFillMode.ScaleToFill
+            viewModel.onUpdateSlide(slide.copy(background = SlideBackground.Image(size.assetId, mode)))
+        }
+    }
+
+    fun setBackgroundImageMode(index: Int) {
+        val image: SlideBackground.Image = state.selectedSlide.background as? SlideBackground.Image ?: return
+        val mode: ImageFillMode = imageFillMode(index) ?: return
+        setBackground(image.copy(mode = mode))
     }
 
     private fun setBackground(background: SlideBackground?) {
@@ -3810,6 +3931,7 @@ class EditorHost(
         null -> 0
         is SlideBackground.Color -> 1
         is SlideBackground.Gradient -> 2
+        is SlideBackground.Image -> 3
     }
 
     fun deckBackgroundColor(): Long =
@@ -3832,6 +3954,30 @@ class EditorHost(
 
     fun setDeckBackgroundGradient(start: Long, end: Long) {
         viewModel.onSetDocumentBackground(SlideBackground.Gradient(start, end))
+    }
+
+    fun deckBackgroundImageMode(): Int = state.document.background.imageMode()
+
+    fun deckBackgroundImageThumbnail(width: Int): NSImage? =
+        (state.document.background as? SlideBackground.Image)?.let { assetThumbnail(it.assetId, width) }
+
+    /** [bytes] under every slide that asks for no background of its own. [setBackgroundImage]'s twin. */
+    fun setDeckBackgroundImage(bytes: NSData, extension: String) {
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val size: NaturalSize = writeAsset(data, extension) ?: return@launch
+            val mode: ImageFillMode = (state.document.background as? SlideBackground.Image)?.mode
+                ?: ImageFillMode.ScaleToFill
+            viewModel.onSetDocumentBackground(SlideBackground.Image(size.assetId, mode))
+        }
+    }
+
+    fun setDeckBackgroundImageMode(index: Int) {
+        val image: SlideBackground.Image = state.document.background as? SlideBackground.Image ?: return
+        val mode: ImageFillMode = imageFillMode(index) ?: return
+        if (image.mode == mode) return
+        viewModel.onSetDocumentBackground(image.copy(mode = mode))
     }
 
     /**
@@ -3961,10 +4107,10 @@ class EditorHost(
      */
     fun onChange(callback: () -> Unit): () -> Unit {
         val job = scope.launch { viewModel.states.collect { callback() } }
-        // A gallery thumbnail lands after the pass that asked for it, and no
+        // An inspector thumbnail lands after the pass that asked for it, and no
         // state changed to say so. Dropping the first skips the value the flow
         // is already holding, so subscribing is not itself a change.
-        val thumbs = scope.launch { galleryTick.drop(1).collect { callback() } }
+        val thumbs = scope.launch { thumbnailTick.drop(1).collect { callback() } }
         return {
             job.cancel()
             thumbs.cancel()

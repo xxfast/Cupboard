@@ -66,12 +66,15 @@ import io.github.xxfast.cupboard.document.GalleryImage
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.ImageFill
+import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.ShapeFillKind
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
@@ -83,6 +86,7 @@ import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.applyingObjectStyle
+import io.github.xxfast.cupboard.document.fillKind
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatLineRanges
 import io.github.xxfast.cupboard.document.formatNodeIds
@@ -96,6 +100,10 @@ import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
 import io.github.xxfast.cupboard.document.toggleUnderline
+import io.github.xxfast.cupboard.document.withFillMode
+import io.github.xxfast.cupboard.document.withGradient
+import io.github.xxfast.cupboard.document.withImageFill
+import io.github.xxfast.cupboard.document.withSolidFill
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -147,6 +155,11 @@ internal fun ColumnScope.FormatPanel(
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onReplaceMedia: ((Element) -> Unit)?,
     onChoosePoster: ((VideoElement) -> Unit)?,
+    /**
+     * The image picker for a picture fill: a shape's Fill, and the slide's or the
+     * layout's Background. Hands back the asset the picked file went in as.
+     */
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
     onAddElementSteps: (String) -> Unit,
     /**
      * The code block's versions: which one the canvas is showing
@@ -204,6 +217,7 @@ internal fun ColumnScope.FormatPanel(
             onExitSlideLayouts = onExitSlideLayouts,
             onAddPlaceholder = onAddPlaceholder,
             onRenameSlide = onRenameSlide,
+            onChooseImage = onChooseImage,
         )
         return
     }
@@ -243,6 +257,7 @@ internal fun ColumnScope.FormatPanel(
                 onPreview = onPreviewElements,
                 expandedSections = expandedSections,
                 onToggleSection = onToggleSection,
+                onChooseImage = onChooseImage,
             )
 
             FormatSegment.Arrange -> ArrangeBody(
@@ -314,6 +329,7 @@ private fun StyleBody(
     onPreview: (List<Element>) -> Unit,
     expandedSections: Set<InspectorSection>,
     onToggleSection: (InspectorSection) -> Unit,
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
 ) {
     when (primary) {
         is ShapeElement -> ShapeStyleBody(
@@ -322,6 +338,7 @@ private fun StyleBody(
             onUpdate = onUpdate,
             expandedSections = expandedSections,
             onToggleSection = onToggleSection,
+            onChooseImage = onChooseImage,
         )
 
         is CodeElement -> DropdownField(
@@ -363,6 +380,12 @@ private fun StyleBody(
  * A shape's looks: Fill, Border and Shadow as disclosures, then the corner
  * radius of the one kind that has one.
  *
+ * Fill is Color, Gradient or Image, read off [fillKind]. A picture has nothing
+ * to start from the way a gradient starts from the solid, so switching to Image
+ * asks [onChooseImage] for one first, and a cancelled panel leaves the fill be.
+ * Under a Scale to Fit picture the solid stays offered, since it is what paints
+ * the letterbox.
+ *
  * A line takes the same three with different words on them. It has no inside to
  * fill, so the Fill disclosure is absent rather than dead, and its Border is the
  * stroke plus the two ends, which is where Keynote puts them too.
@@ -374,9 +397,12 @@ private fun ShapeStyleBody(
     onUpdate: (List<Element>) -> Unit,
     expandedSections: Set<InspectorSection>,
     onToggleSection: (InspectorSection) -> Unit,
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
 ) {
     val enabled: Boolean = !primary.locked
+    val fillKind: ShapeFillKind = primary.fillKind
     val gradient: ShapeGradient? = primary.gradient
+    val imageFill: ImageFill? = primary.imageFill
     val shadow: ShapeShadow? = primary.shadow
     val isLine: Boolean = primary.kind == ShapeKind.Line
 
@@ -394,78 +420,110 @@ private fun ShapeStyleBody(
         title = "Fill",
         expanded = InspectorSection.Fill in expandedSections,
         onToggle = { onToggleSection(InspectorSection.Fill) },
-        summary = { ColorSummary(gradient?.start ?: primary.fill) },
+        summary = {
+            if (fillKind == ShapeFillKind.Image) ValueSummary("Image")
+            else ColorSummary(gradient?.start ?: primary.fill)
+        },
     ) {
         SegmentedRow {
             Segment(
-                selected = gradient == null,
+                selected = fillKind == ShapeFillKind.Color,
                 first = true,
-                // Dropping the gradient is all it takes to go back to the solid:
-                // the fill was never overwritten, so it is still the one to
-                // return to.
-                onClick = if (enabled) ({ format { it.copy(gradient = null) } }) else null,
+                // Dropping the gradient and the picture is all it takes to go
+                // back to the solid: the fill was never overwritten, so it is
+                // still the one to return to.
+                onClick = if (enabled) ({ format { it.withSolidFill() } }) else null,
             ) {
-                SegmentLabel("Color", selected = gradient == null, enabled = enabled)
+                SegmentLabel("Color", selected = fillKind == ShapeFillKind.Color, enabled = enabled)
             }
             Segment(
-                selected = gradient != null,
+                selected = fillKind == ShapeFillKind.Gradient,
                 first = false,
                 // A shape switched into a gradient has none yet, so it starts
-                // from its own fill and runs to the palette's deep indigo.
+                // from its own fill and runs to the palette's deep indigo. One
+                // that had one before its picture goes back to that.
                 onClick = if (enabled) ({
-                    format {
-                        if (it.gradient != null) it
-                        else it.copy(gradient = ShapeGradient(it.fill, SHAPE_GRADIENT_END))
+                    format { it.withGradient(it.gradient ?: ShapeGradient(it.fill, SHAPE_GRADIENT_END)) }
+                }) else null,
+            ) {
+                SegmentLabel("Gradient", selected = fillKind == ShapeFillKind.Gradient, enabled = enabled)
+            }
+            // Shapes already showing a picture keep theirs, the way shapes with
+            // a gradient keep theirs. The rest take the primary's, or, when the
+            // primary has none either, whatever the panel comes back with.
+            val canImage: Boolean = enabled && (imageFill != null || onChooseImage != null)
+            Segment(
+                selected = fillKind == ShapeFillKind.Image,
+                first = false,
+                onClick = if (canImage) ({
+                    if (imageFill != null) {
+                        format { if (it.imageFill != null) it else it.copy(imageFill = imageFill) }
+                    } else onChooseImage?.invoke { assetId ->
+                        format { if (it.imageFill != null) it else it.withImageFill(assetId) }
                     }
                 }) else null,
             ) {
-                SegmentLabel("Gradient", selected = gradient != null, enabled = enabled)
+                SegmentLabel("Image", selected = fillKind == ShapeFillKind.Image, enabled = canImage)
             }
         }
 
-        if (gradient == null) {
-            SwatchRow(
-                colors = TEXT_SWATCHES,
-                selected = primary.fill,
-                enabled = enabled,
-                onPick = { color -> format { it.copy(fill = color) } },
-            )
-            HexField(
-                label = "Hex",
-                color = primary.fill,
-                enabled = enabled,
-                onCommit = { color -> format { it.copy(fill = color) } },
-            )
-        } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                HexField(
-                    label = "Start",
-                    color = gradient.start,
+        when {
+            imageFill != null -> {
+                ImageFillControls(
+                    assetId = imageFill.assetId,
+                    mode = imageFill.mode,
                     enabled = enabled,
-                    onCommit = { color ->
-                        format { it.copy(gradient = it.gradient?.copy(start = color)) }
+                    onChoose = onChooseImage?.let { choose ->
+                        { choose { assetId -> format { it.withImageFill(assetId) } } }
                     },
-                    modifier = Modifier.weight(1f),
+                    onPickMode = { mode -> format { it.withFillMode(mode) } },
                 )
-                HexField(
-                    label = "End",
-                    color = gradient.end,
+                // A picture painted over a colour: still a plain fill edit, so
+                // the picture stays.
+                if (imageFill.mode == ImageFillMode.ScaleToFit) SolidFillFields(
+                    fill = primary.fill,
                     enabled = enabled,
-                    onCommit = { color ->
-                        format { it.copy(gradient = it.gradient?.copy(end = color)) }
-                    },
-                    modifier = Modifier.weight(1f),
+                    onPick = { color -> format { it.copy(fill = color) } },
                 )
             }
-            NumberField(
-                label = "Angle",
-                value = gradient.angle,
+
+            gradient != null -> {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    HexField(
+                        label = "Start",
+                        color = gradient.start,
+                        enabled = enabled,
+                        onCommit = { color ->
+                            format { it.copy(gradient = it.gradient?.copy(start = color)) }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                    HexField(
+                        label = "End",
+                        color = gradient.end,
+                        enabled = enabled,
+                        onCommit = { color ->
+                            format { it.copy(gradient = it.gradient?.copy(end = color)) }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                NumberField(
+                    label = "Angle",
+                    value = gradient.angle,
+                    enabled = enabled,
+                    onCommit = { angle ->
+                        format { it.copy(gradient = it.gradient?.copy(angle = angle)) }
+                    },
+                    modifier = Modifier.width(120.dp),
+                    unit = Units.Degrees,
+                )
+            }
+
+            else -> SolidFillFields(
+                fill = primary.fill,
                 enabled = enabled,
-                onCommit = { angle ->
-                    format { it.copy(gradient = it.gradient?.copy(angle = angle)) }
-                },
-                modifier = Modifier.width(120.dp),
-                unit = Units.Degrees,
+                onPick = { color -> format { it.copy(fill = color) } },
             )
         }
     }
@@ -2188,6 +2246,7 @@ private fun ColumnScope.SlideFormatPanel(
     onExitSlideLayouts: () -> Unit,
     onAddPlaceholder: (PlaceholderRole) -> Unit,
     onRenameSlide: (String, String) -> Unit,
+    onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
 ) {
     PanelTitle(if (isEditingLayouts) "Layout" else "Slide")
     PanelDivider()
@@ -2271,6 +2330,7 @@ private fun ColumnScope.SlideFormatPanel(
         BackgroundControls(
             background = slide.background,
             onChange = { background -> onUpdate(slide.copy(background = background)) },
+            onChooseImage = onChooseImage,
         )
     }
 
@@ -2400,6 +2460,13 @@ private fun Slide.linkTitle(number: Int): String =
 
 /** Where a shape's gradient runs to when it is switched on and has none yet. */
 private const val SHAPE_GRADIENT_END: Long = 0xFF2A2452
+
+/** A shape's solid: the swatch row and the hex under it, one [onPick] apiece. */
+@Composable
+private fun SolidFillFields(fill: Long, enabled: Boolean, onPick: (Long) -> Unit) {
+    SwatchRow(colors = TEXT_SWATCHES, selected = fill, enabled = enabled, onPick = onPick)
+    HexField(label = "Hex", color = fill, enabled = enabled, onCommit = onPick)
+}
 
 /** How many style swatches fit across the 282dp panel, gaps and padding in. */
 private const val StylesPerRow: Int = 6
