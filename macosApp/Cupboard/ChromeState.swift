@@ -102,6 +102,8 @@ struct Chrome {
     /// The deck's layouts, for the Document panel's popup. Ids and names paired
     /// off one read, so the menu shows a name and hands back the id beside it.
     let layouts: [LayoutChoice]
+    /// The deck's own font cuts, for the Document panel's Fonts list.
+    let deckFonts: [DeckFontChoice]
     /// The layout the selected slide is on, nil when it is on none.
     let slideLayoutId: String?
     /// Whether Reapply Layout has a layout to put back.
@@ -186,6 +188,7 @@ struct Chrome {
         slide = SlideProps(host)
         editingLayouts = host.isEditingLayouts()
         layouts = LayoutChoice.all(host)
+        deckFonts = DeckFontChoice.all(host)
         slideLayoutId = host.selectedSlideLayoutId()
         canReapplyLayout = host.canReapplyLayout()
         slideTitle = host.selectedSlideTitle()
@@ -499,7 +502,11 @@ struct SlideProps: Equatable {
 /// `ListStyle` is spelled out: SwiftUI has one of its own, and the document
 /// model's is the one meant here.
 struct TextFormat {
-    let font: TextFont
+    /// What the font picker shows: the box's font name, or its generic family's.
+    let fontName: String
+    /// What the box draws in instead, when the face it names is neither in the
+    /// deck nor on this Mac. Nil when it is there.
+    let missingFontFallback: String?
     /// The raw weight the popup marks. `isBold` is the same number read as a flag.
     let weight: Int
     let isBold: Bool
@@ -515,7 +522,8 @@ struct TextFormat {
     let list: CupboardCanvas.ListStyle
 
     init(_ props: TextProps) {
-        font = props.fontFamily
+        fontName = props.fontDisplayName
+        missingFontFallback = props.missingFontFallback
         weight = Int(props.weightValue)
         isBold = props.isBold
         italic = props.italic

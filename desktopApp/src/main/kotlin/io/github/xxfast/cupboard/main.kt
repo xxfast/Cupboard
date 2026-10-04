@@ -761,6 +761,14 @@ private fun EditorWindow(
             }
         }
 
+        // Add Font File, from the Document tab or the font picker: the panel,
+        // then every file through the shared add, then one word about the
+        // ones that weren't fonts.
+        val addFontFile: () -> Unit = {
+            val files: List<File> = chooseFonts(window)
+            if (files.isNotEmpty()) scope.launch { viewModel.addFontFiles(files, window) }
+        }
+
         // The recents list as of the last time this window came forward.
         //
         // Compose's menus have no opened hook, so the read hangs off focus
@@ -1338,6 +1346,7 @@ private fun EditorWindow(
                     onReplaceMedia = replaceMedia,
                     onChoosePoster = choosePoster,
                     onChooseImage = chooseFillImage,
+                    onAddFontFile = addFontFile,
                 )
             }
         }

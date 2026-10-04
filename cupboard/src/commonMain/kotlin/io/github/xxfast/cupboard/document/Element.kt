@@ -135,6 +135,11 @@ enum class TextAlign { Start, Center, End }
  * reads as the same kind of type. [familyName] is what the system knows the face
  * as; [generic] is what draws when it doesn't.
  *
+ * Any other face is [TextElement.fontName], a free string beside this rather
+ * than instead of it: the name is what the box asks for, and this stays what it
+ * falls back to, so a deck set in a face only one machine has still reads as
+ * the right kind of type everywhere else.
+ *
  * Weight is not part of the face: Light, Regular, Medium and Bold are
  * [TextElement.fontWeight] at 300, 400, 500 and 700.
  */
@@ -159,6 +164,10 @@ enum class TextFont {
             CanelaDeck -> "Canela Deck"
             Graphik -> "Graphik"
         }
+
+    /** What a picker calls this face: the system's name, or the generic family's own. */
+    val displayName: String
+        get() = familyName ?: name
 
     /** The generic family this one falls back to where [familyName] isn't installed. */
     val generic: TextFont
@@ -196,6 +205,16 @@ data class TextElement(
     val color: Long = 0xFFFFFFFF,
     val align: TextAlign = TextAlign.Start,
     val fontFamily: TextFont = TextFont.Sans,
+    /**
+     * A family by the name the system or the deck knows it as (see
+     * `Document.fonts`), for every face [TextFont] has no entry for. Set, it wins
+     * over [fontFamily], which stays what draws where the name resolves nowhere,
+     * as its [TextFont.generic]. Null is every box set in [fontFamily] alone,
+     * which is every deck written before this existed.
+     *
+     * See `withFont` and `withGenericFont` for how a pick sets the two.
+     */
+    val fontName: String? = null,
     val italic: Boolean = false,
     val underline: Boolean = false,
     val strikethrough: Boolean = false,

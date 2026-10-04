@@ -182,6 +182,11 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDeckFont
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDeckFont
+import io.github.xxfast.cupboard.document.DeckFont
+import io.github.xxfast.cupboard.document.addFont
+import io.github.xxfast.cupboard.document.removeFont
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
@@ -2052,6 +2057,27 @@ fun EditorPresenter(
             // Every frame in the deck may move, so this is one entry like any
             // other edit: `resized` hands back the same document for a size the
             // deck is already on, which is what makes an unchanged pick free.
+            is AddDeckFont -> {
+                val font = DeckFont(event.assetId, event.family, event.weight, event.italic)
+                val updated: Document = state.document.addFont(font)
+                if (updated === state.document) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated)
+                }
+            }
+
+            is RemoveDeckFont -> {
+                val updated: Document = state.document.removeFont(event.assetId)
+                if (updated === state.document) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = updated)
+                }
+            }
+
             is SetSlideSize -> {
                 val resized: Document =
                     state.document.resized(event.width, event.height, event.scaleContent)

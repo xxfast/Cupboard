@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import io.github.xxfast.cupboard.canvas.AssetImageCache
+import io.github.xxfast.cupboard.canvas.DeckFontCache
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
@@ -211,6 +212,9 @@ internal fun startExport(
         val failure: Throwable? = runCatching {
             withContext(Dispatchers.Default) {
                 val images: AssetImageCache = warmedImages(assets)
+                // A frame never gets a second pass for a face to land in either,
+                // so every deck font is loaded before the first one is drawn.
+                DeckFontCache.Shared.warm(document.fonts, assets)
                 val rasterizer: Rasterizer = SlideRasterizer(
                     document = document,
                     assets = assets,

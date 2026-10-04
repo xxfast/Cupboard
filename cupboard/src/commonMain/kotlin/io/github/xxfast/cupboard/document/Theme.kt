@@ -23,8 +23,14 @@ data class ElementDefaults(
     val bodyColor: Long = 0xFFB8B3D6,
     val textFont: TextFont = TextFont.Sans,
     /**
+     * A face by name on top of [textFont], [TextElement.fontName]'s twin: set by
+     * Use As Default off a box set in one, null on every built-in theme, which
+     * stays on [TextFont] so it draws the same wherever it is opened.
+     */
+    val textFontName: String? = null,
+    /**
      * How a fresh text box is set: the four facts Use As Default carries across
-     * from one, on top of [textColor] and [textFont].
+     * from one, on top of [textColor], [textFont] and [textFontName].
      *
      * [textSize] is the size the text box factory was hardcoded to before these
      * existed, not [TextElement]'s own default: a fresh box on a slide is a
@@ -62,6 +68,7 @@ data class ElementDefaults(
 fun ElementDefaults.fromText(text: TextElement): ElementDefaults = copy(
     textColor = text.color,
     textFont = text.fontFamily,
+    textFontName = text.fontName,
     textSize = text.fontSize,
     textWeight = text.fontWeight,
     textAlign = text.align,

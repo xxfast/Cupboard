@@ -59,7 +59,7 @@ const val DefaultCodeBoxHeight: Float = 160f
  * A fresh text box filling [frame], with the placeholder a shell drops the caret
  * into and the deck's text defaults on it.
  *
- * Every one of the six is [defaults]', which is what makes Use As Default work: a
+ * Every one of the seven is [defaults]', which is what makes Use As Default work: a
  * box set the way you like it writes itself back into the deck, and the next box
  * arrives already set that way.
  */
@@ -73,6 +73,7 @@ fun textBoxElement(frame: Frame, defaults: ElementDefaults = ElementDefaults()):
         color = defaults.textColor,
         align = defaults.textAlign,
         fontFamily = defaults.textFont,
+        fontName = defaults.textFontName,
     )
 
 /**

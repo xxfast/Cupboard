@@ -13,6 +13,8 @@ struct MenuEntry: Identifiable {
     /// Empty is a separator: nothing else in a menu has no title.
     let title: String
     var enabled = true
+    /// A tick beside it, for the pick a popup currently shows. Popups only.
+    var checked = false
     /// Menu bar only. A context menu advertising shortcuts would be repeating
     /// what the bar above it already says.
     var shortcut: KeyboardShortcut? = nil
@@ -407,6 +409,7 @@ func nsMenu(_ entries: [MenuEntry]) -> NSMenu {
         }
         let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
         item.isEnabled = entry.enabled
+        item.state = entry.checked ? .on : .off
         if let children = entry.children {
             item.submenu = nsMenu(children)
         } else if let action = entry.action {

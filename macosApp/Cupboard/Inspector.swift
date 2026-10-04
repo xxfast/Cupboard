@@ -288,9 +288,7 @@ extension EditorView {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Font")
 
-            stylePopup(Self.fontTitles, selected: Self.fontIndex(text.font)) { index in
-                host.setSelectedTextFont(font: Self.fonts[index])
-            }
+            fontPicker(text)
 
             HStack(spacing: 8) {
                 stylePopup(Self.weightTitles, selected: Self.weightIndex(text.weight)) { index in
@@ -433,16 +431,6 @@ extension EditorView {
         }
         .font(.system(size: 8, weight: .heavy))
         .foregroundStyle(palette.inspectorTitle)
-    }
-
-    /// Generic families only, the document model's: nothing bundles font files
-    /// yet, so a named face would render as one thing here and another wherever
-    /// it is missing.
-    static let fonts: [TextFont] = [TextFont.sans, TextFont.serif, TextFont.monospace]
-    static let fontTitles = ["Sans", "Serif", "Monospace"]
-
-    static func fontIndex(_ font: TextFont) -> Int {
-        fonts.firstIndex { $0 == font } ?? 0
     }
 
     /// The five the popup offers. Bold is a point on this scale, so the B toggle
@@ -2823,6 +2811,8 @@ extension EditorView {
                     playbackSection(ui)
                     palette.divider.frame(height: 1)
                     deckBackgroundSection(ui)
+                    palette.divider.frame(height: 1)
+                    deckFontsSection(ui)
                     Spacer(minLength: 0)
                 }
                 .padding(Layout.panelPadding)

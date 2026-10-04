@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.canvas.ProvideDeckFonts
 import io.github.xxfast.cupboard.canvas.SlideView
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
@@ -82,6 +83,29 @@ fun PresenterDisplay(
     onLayoutChange: (PresenterLayout) -> Unit = {},
     onResetTimer: () -> Unit = {},
     modifier: Modifier = Modifier,
+) {
+    // The deck's own faces, out of the store the host provided around the lectern.
+    ProvideDeckFonts(document.fonts) {
+        Display(
+            document, position, layout, elapsedMs, clock, onNotesChange,
+            onNext, onPrevious, onLayoutChange, onResetTimer, modifier,
+        )
+    }
+}
+
+@Composable
+private fun Display(
+    document: Document,
+    position: PlayPosition,
+    layout: PresenterLayout,
+    elapsedMs: Long,
+    clock: String,
+    onNotesChange: (slideId: String, notes: String) -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onLayoutChange: (PresenterLayout) -> Unit,
+    onResetTimer: () -> Unit,
+    modifier: Modifier,
 ) {
     val order: List<Slide> = remember(document) { document.playOrder() }
     val numbers: Map<String, Int?> = remember(document) {

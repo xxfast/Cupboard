@@ -8,6 +8,9 @@ import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
+import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.fontDisplayName
+import io.github.xxfast.cupboard.document.fontFamilies
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.EquationElement
@@ -362,6 +365,23 @@ data class EditorState(
 
     /** The shape looks a style picker offers, which are the deck's. [defaults]' twin. */
     val objectStyles: List<ObjectStyle> get() = document.objectStyles
+
+    /**
+     * The families the deck carries in its bundle, once each and sorted: the
+     * font picker's first section, ahead of whatever the system has.
+     */
+    val deckFontFamilies: List<String> get() = document.fontFamilies
+
+    /**
+     * The face the primary text box is set in, as a picker names it: its font
+     * name, or its [TextFont]'s display name. Null when the primary element is
+     * not a text box.
+     *
+     * Whether that face is actually there to draw in is no question for the core,
+     * which has no font manager: `isFontAvailable` in `:cupboard:ui` answers it.
+     */
+    val selectedFontDisplayName: String?
+        get() = (primaryElement as? TextElement)?.fontDisplayName
 
     /**
      * The selected slide, which in layout mode is a layout: both lists answer to
@@ -1488,6 +1508,28 @@ sealed interface EditorEvent {
         val height: Float,
         val scaleContent: Boolean,
     ) : EditorEvent
+    /**
+     * The font file already written under [assetId] added to the deck as the cut
+     * of [family] at [weight] and [italic], so text set in that family draws in
+     * it wherever the deck is opened. A cut the deck already has (same family,
+     * weight and slant) is replaced. One history entry, and a deck already
+     * carrying exactly this is a no-op.
+     *
+     * The bytes are the shell's to write first, the way an image's are; see
+     * `addDeckFont` in `:cupboard:ui`, which writes, reads the file and sends this.
+     */
+    data class AddDeckFont(
+        val assetId: String,
+        val family: String,
+        val weight: Int,
+        val italic: Boolean,
+    ) : EditorEvent
+    /**
+     * The font under [assetId] dropped from the deck. Text set in its family
+     * stays set in it and falls back like any face that isn't there. One history
+     * entry, and an id the deck doesn't carry is a no-op.
+     */
+    data class RemoveDeckFont(val assetId: String) : EditorEvent
     data object Undo : EditorEvent
     data object Redo : EditorEvent
     data object ToggleSidebar : EditorEvent

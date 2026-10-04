@@ -81,6 +81,7 @@ import io.github.xxfast.cupboard.canvas.CodeLineHeight
 import io.github.xxfast.cupboard.canvas.CodePadding
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
+import io.github.xxfast.cupboard.canvas.LocalDeckFonts
 import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
 import io.github.xxfast.cupboard.canvas.TextRun
@@ -1192,7 +1193,7 @@ private fun TextEditor(
         BasicTextField(
             value = value,
             onValueChange = update,
-            textStyle = element.textStyle(),
+            textStyle = element.textStyle(LocalDeckFonts.current),
             cursorBrush = SolidColor(element.color.toComposeColor()),
             visualTransformation = markers,
             modifier = Modifier

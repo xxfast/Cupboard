@@ -659,16 +659,29 @@ struct RotateDial: View {
 /// anchor keeps whatever is drawn here, and the entries are the same
 /// `MenuEntry` list the menu bar and the canvas menu are built from.
 struct PopUpButton<Label: View>: View {
-    let entries: [MenuEntry]
+    let entries: () -> [MenuEntry]
     var enabled: Bool = true
     @ViewBuilder let label: () -> Label
 
     @StateObject private var anchor = MenuAnchor()
 
+    init(entries: [MenuEntry], enabled: Bool = true, @ViewBuilder label: @escaping () -> Label) {
+        self.entries = { entries }
+        self.enabled = enabled && !entries.isEmpty
+        self.label = label
+    }
+
+    /// The entries made on the click rather than on every pass of the panel:
+    /// for a menu too long to remake each time it redraws, the font list above all.
+    init(building entries: @escaping () -> [MenuEntry], @ViewBuilder label: @escaping () -> Label) {
+        self.entries = entries
+        self.label = label
+    }
+
     var body: some View {
-        Button { anchor.pop(entries) } label: { label() }
+        Button { anchor.pop(entries()) } label: { label() }
             .buttonStyle(.plain)
-            .disabled(!enabled || entries.isEmpty)
+            .disabled(!enabled)
             .background {
                 MenuAnchorView(anchor: anchor)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

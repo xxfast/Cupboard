@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.DeckFont
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
@@ -179,6 +180,15 @@ fun EditorInspector(
      * or the deck's background) and hand back the asset it went in as. Null
      * greys Image. */
     onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)? = null,
+    /** The fonts the deck carries in its bundle: the Document tab's list, and
+     * by family the font picker's first section. */
+    deckFonts: List<DeckFont> = emptyList(),
+    deckFontFamilies: List<String> = emptyList(),
+    onRemoveDeckFont: (assetId: String) -> Unit = {},
+    /** Pick font files and add them to the deck: the Document tab's Add Font
+     * File and the font picker's. Null on a shell with no file picker, which
+     * greys both. */
+    onAddFontFile: (() -> Unit)? = null,
     /** Write the selected gallery's step builds onto the slide, one per image. */
     onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: which one the canvas shows, and the
@@ -285,6 +295,8 @@ fun EditorInspector(
                 onReplaceMedia = onReplaceMedia,
                 onChoosePoster = onChoosePoster,
                 onChooseImage = onChooseImage,
+                deckFontFamilies = deckFontFamilies,
+                onAddFontFile = onAddFontFile,
                 onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,
@@ -349,6 +361,9 @@ fun EditorInspector(
                 onSetSlideSize = onSetSlideSize,
                 onSetPlayback = onSetPlayback,
                 onChooseImage = onChooseImage,
+                deckFonts = deckFonts,
+                onRemoveDeckFont = onRemoveDeckFont,
+                onAddFontFile = onAddFontFile,
             )
         }
     }

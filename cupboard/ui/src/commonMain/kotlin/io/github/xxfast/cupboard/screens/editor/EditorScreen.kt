@@ -46,6 +46,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
+import io.github.xxfast.cupboard.canvas.LocalDeckFonts
+import io.github.xxfast.cupboard.canvas.rememberDeckFonts
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
@@ -171,13 +173,24 @@ fun EditorScreen(
      * then hands back the asset id; a cancel hands back nothing.
      */
     onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)? = null,
+    /**
+     * Pick font files and add them to the deck: the Document tab's Add Font File
+     * and the font picker's last item. The shell shows the panel, reads each
+     * file and hands it to [addDeckFont], and says which ones weren't fonts.
+     * Null greys both, on a shell with no file dialog.
+     */
+    onAddFontFile: (() -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
     // The deck's bytes, provided once around the whole screen: the canvas, the
     // navigator's thumbnails and every renderer under them resolve asset ids
     // through this, and none of them has any business being handed a store.
-    CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+    // The deck's own faces come out of the same store, for the same readers.
+    CompositionLocalProvider(
+        LocalAssetStore provides viewModel.assets,
+        LocalDeckFonts provides rememberDeckFonts(state.document.fonts, viewModel.assets),
+    ) {
         EditorView(
             state = state,
             onSelectSlide = viewModel::onSelectSlide,
@@ -274,6 +287,8 @@ fun EditorScreen(
             onReplaceMedia = onReplaceMedia,
             onChoosePoster = onChoosePoster,
             onChooseImage = onChooseImage,
+            onRemoveDeckFont = viewModel::onRemoveDeckFont,
+            onAddFontFile = onAddFontFile,
             onAddElementSteps = viewModel::onAddElementSteps,
             onSelectCodeVersion = viewModel::onSelectCodeVersion,
             onAddCodeVersion = viewModel::onAddCodeVersion,
@@ -431,6 +446,10 @@ fun EditorView(
     onChoosePoster: ((VideoElement) -> Unit)? = null,
     /** The image picker, for a shape's or a background's picture fill. */
     onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)? = null,
+    /** Drop one of the deck's fonts, by the asset its file is under. */
+    onRemoveDeckFont: (assetId: String) -> Unit = {},
+    /** The font file picker, for the Document tab and the font picker. */
+    onAddFontFile: (() -> Unit)? = null,
     /** Write a gallery's step builds onto the slide, one per image. */
     onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: pick the one the canvas draws and
@@ -771,6 +790,10 @@ fun EditorView(
                         onReplaceMedia = onReplaceMedia,
                         onChoosePoster = onChoosePoster,
                         onChooseImage = onChooseImage,
+                        deckFonts = state.document.fonts,
+                        deckFontFamilies = state.deckFontFamilies,
+                        onRemoveDeckFont = onRemoveDeckFont,
+                        onAddFontFile = onAddFontFile,
                         onAddElementSteps = onAddElementSteps,
                         codeVersion = state.codeVersion,
                         onSelectCodeVersion = onSelectCodeVersion,

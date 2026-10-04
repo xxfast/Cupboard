@@ -230,13 +230,14 @@ internal const val ListIndent: Float = 24f
 private const val ListMarkerGap: Float = 6f
 
 /**
- * The style the element's text draws in.
+ * The style the element's text draws in, its face resolved against [deckFonts]
+ * ([LocalDeckFonts] at the call site; see [fontFamilyOf]).
  *
  * Internal rather than private: the editor's in-place text field styles itself
  * from this too, so the text under the caret is the same text that was there
  * before it, to the pixel.
  */
-internal fun TextElement.textStyle(): TextStyle {
+internal fun TextElement.textStyle(deckFonts: DeckFontFamilies): TextStyle {
     val decorations: List<TextDecoration> = buildList {
         if (underline || link != null) add(TextDecoration.Underline)
         if (strikethrough) add(TextDecoration.LineThrough)
@@ -251,7 +252,7 @@ internal fun TextElement.textStyle(): TextStyle {
         fontSize = fontSize.sp,
         fontWeight = FontWeight(fontWeight),
         fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
-        fontFamily = fontFamilyOf(fontFamily),
+        fontFamily = fontFamilyOf(this, deckFonts),
         textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
         lineHeight = (fontSize * lineHeight).sp,
         letterSpacing = letterSpacing.sp,
@@ -288,7 +289,7 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
     pieces: PieceReveal? = null,
     alignment: Alignment = element.alignment(),
 ) {
-    val style: TextStyle = element.textStyle()
+    val style: TextStyle = element.textStyle(LocalDeckFonts.current)
 
     val ranges: List<IntRange> = remember(element.text, pieces?.build?.delivery) {
         pieces?.let { element.pieces(it.build.delivery) }.orEmpty()

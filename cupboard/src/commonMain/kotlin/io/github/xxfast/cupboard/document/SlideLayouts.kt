@@ -36,6 +36,7 @@ fun defaultLayouts(defaults: ElementDefaults): List<Slide> = listOf(
                 color = defaults.textColor,
                 align = TextAlign.Center,
                 fontFamily = defaults.textFont,
+                fontName = defaults.textFontName,
                 role = PlaceholderRole.Title,
             ),
             TextElement(
@@ -46,6 +47,7 @@ fun defaultLayouts(defaults: ElementDefaults): List<Slide> = listOf(
                 color = defaults.bodyColor,
                 align = TextAlign.Center,
                 fontFamily = defaults.textFont,
+                fontName = defaults.textFontName,
                 role = PlaceholderRole.Body,
             ),
         ),
@@ -85,6 +87,7 @@ private fun titlePlaceholder(
     fontWeight = 700,
     color = defaults.textColor,
     fontFamily = defaults.textFont,
+    fontName = defaults.textFontName,
     role = PlaceholderRole.Title,
 )
 
@@ -99,6 +102,7 @@ private fun bodyPlaceholder(
     lineHeight = 1.5f,
     color = defaults.bodyColor,
     fontFamily = defaults.textFont,
+    fontName = defaults.textFontName,
     listStyle = ListStyle.Bullet,
     role = PlaceholderRole.Body,
 )

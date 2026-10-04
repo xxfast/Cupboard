@@ -32,6 +32,28 @@ val TextElement.isBold: Boolean get() = fontWeight >= BoldThreshold
 fun TextElement.toggleBold(): TextElement =
     copy(fontWeight = if (isBold) RegularWeight else BoldWeight)
 
+/**
+ * What the box is set in, as a font picker names it: [TextElement.fontName] when
+ * the box asks for a face by name, its [TextFont.displayName] otherwise.
+ */
+val TextElement.fontDisplayName: String get() = fontName ?: fontFamily.displayName
+
+/**
+ * Set in the family [name], as a font picker's named pick sets it: the name wins
+ * from here on and [TextElement.fontFamily] stays what it falls back to. Null or
+ * blank clears the name, so the box is back to its [TextFont] alone.
+ */
+fun TextElement.withFont(name: String?): TextElement =
+    copy(fontName = name?.trim()?.takeIf { it.isNotEmpty() })
+
+/**
+ * Set in [font] alone: the pick of one of [TextFont]'s entries, the three generic
+ * families above all. The name goes, since a box that kept one would go on
+ * drawing in it whatever was picked here.
+ */
+fun TextElement.withGenericFont(font: TextFont): TextElement =
+    copy(fontFamily = font, fontName = null)
+
 fun TextElement.toggleItalic(): TextElement = copy(italic = !italic)
 
 fun TextElement.toggleUnderline(): TextElement = copy(underline = !underline)

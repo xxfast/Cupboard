@@ -119,6 +119,11 @@ import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.galleryElement
 import io.github.xxfast.cupboard.document.imageElement
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.DeckFont
+import io.github.xxfast.cupboard.document.fontDisplayName
+import io.github.xxfast.cupboard.document.withFont
+import io.github.xxfast.cupboard.document.withGenericFont
+import io.github.xxfast.cupboard.screens.editor.addDeckFont
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.parseLineRanges
@@ -171,6 +176,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
@@ -523,6 +529,27 @@ private val AppKitResizeCursors = ResizeCursors { direction ->
 }
 
 /**
+ * A deck font row's words: the family, the weight by its usual name ("SemiBold"
+ * for 600) or as a number off the hundreds, and ", Italic" for a slanted cut.
+ */
+private fun DeckFont.title(): String {
+    val name: String = when (weight) {
+        100 -> "Thin"
+        200 -> "ExtraLight"
+        300 -> "Light"
+        400 -> "Regular"
+        500 -> "Medium"
+        600 -> "SemiBold"
+        700 -> "Bold"
+        800 -> "ExtraBold"
+        900 -> "Black"
+        else -> weight.toString()
+    }
+    val slant: String = if (italic) ", Italic" else ""
+    return "$family $name$slant"
+}
+
+/**
  * These bytes as Kotlin's. The shell hands images over as [NSData] (a panel, a
  * drop, the pasteboard all produce one), and everything past this line is a
  * [ByteArray]: the asset store has never heard of Foundation.
@@ -606,7 +633,14 @@ class ElementProps(
  * selection shows the primary's style and formats all of them.
  */
 class TextProps(
-    val fontFamily: TextFont,
+    /** What the font picker's face reads: the box's font name, or its [TextFont]'s. */
+    val fontDisplayName: String,
+    /**
+     * What the box is drawing in instead, when it asks for a face by name that
+     * neither the deck nor this Mac has. Null is a face that is there, which is
+     * also every box set in a [TextFont] alone.
+     */
+    val missingFontFallback: String?,
     /** The raw weight, for the popup. [isBold] is the same number read as a flag. */
     val weightValue: Int,
     val isBold: Boolean,
@@ -620,6 +654,16 @@ class TextProps(
     /** A multiple of the font size, not points. */
     val lineHeight: Float,
     val listStyle: ListStyle,
+)
+
+/**
+ * One of the deck's own font cuts, for the Document panel's Fonts list: the id
+ * that removes it, and the row's words ("Inter SemiBold, Italic"), worded here so
+ * Swift never has to know what a weight number is called.
+ */
+class DeckFontRow(
+    val assetId: String,
+    val title: String,
 )
 
 /**
@@ -1287,7 +1331,9 @@ class EditorHost(
     // So is the layout it resolved against: a slide draws what it inherits, so
     // editing a layout changes every thumbnail on it without touching a slide.
     // And so is the slide size, which changes the shape of an empty slide's
-    // thumbnail without changing anything on it.
+    // thumbnail without changing anything on it. And the deck fonts loaded when
+    // it was drawn: a row drawn before a face landed is in the fallback, and
+    // nothing about the slide changes when the face arrives.
     private class Thumbnail(
         val slide: Slide,
         val layout: Slide?,
@@ -1296,6 +1342,7 @@ class EditorHost(
         val width: Int,
         val slideWidth: Float,
         val slideHeight: Float,
+        val fonts: Set<String>,
         val image: NSImage,
     )
 
@@ -1365,6 +1412,8 @@ class EditorHost(
             // Where the slide's images come from. The deck's own store, so the
             // canvas draws the bytes this window's bundle is carrying.
             LocalAssetStore provides viewModel.assets,
+            // And its fonts, out of the same store.
+            LocalDeckFonts provides rememberDeckFonts(state.document.fonts, viewModel.assets),
         ) {
             Box(Modifier.fillMaxSize().background(well), contentAlignment = Alignment.Center) {
                 EditorCanvas(
@@ -2472,7 +2521,8 @@ class EditorHost(
      */
     fun selectedText(): TextProps? = (state.primaryElement as? TextElement)?.let { text ->
         TextProps(
-            fontFamily = text.fontFamily,
+            fontDisplayName = text.fontDisplayName,
+            missingFontFallback = text.missingFontFallback(),
             weightValue = text.fontWeight,
             isBold = text.isBold,
             italic = text.italic,
@@ -2499,8 +2549,54 @@ class EditorHost(
     /** Whether Format > Add Link has words to go on: the core's [EditorState.canLinkSelection]. */
     fun canLinkSelection(): Boolean = state.canLinkSelection
 
-    fun setSelectedTextFont(font: TextFont) {
-        formatSelection { it.copy(fontFamily = font) }
+    /**
+     * Set in the family [name], from the deck's own or the installed list. A
+     * named [TextFont] picked out of the installed list lands here too, as a
+     * name, which is what the core's `withFont` wants.
+     */
+    fun setSelectedTextFontName(name: String) {
+        formatSelection { it.withFont(name) }
+    }
+
+    /** One of the generic families, Sans, Serif or Monospace. Clears any name. */
+    fun setSelectedTextGenericFont(font: TextFont) {
+        formatSelection { it.withGenericFont(font) }
+    }
+
+    /** What the box draws in when its name resolves nowhere, null when it resolves. */
+    private fun TextElement.missingFontFallback(): String? {
+        val name: String = fontName ?: return null
+        if (isFontAvailable(name, state.deckFontFamilies)) return null
+        val named: String? = fontFamily.familyName?.takeIf { isFontAvailable(it, emptyList()) }
+        return named ?: fontFamily.generic.displayName
+    }
+
+    /** The deck's families, once each and sorted: the font picker's first section. */
+    fun deckFontFamilies(): List<String> = state.deckFontFamilies
+
+    /** Every cut the deck carries, in the order it was added, worded for a row. */
+    fun deckFonts(): List<DeckFontRow> = state.document.fonts.map { font ->
+        DeckFontRow(assetId = font.assetId, title = font.title())
+    }
+
+    /**
+     * [bytes], a font file, into the deck: written to its assets, read for its
+     * family, weight and slant, and added to its fonts. Off the main thread like
+     * an image insert; [completion] lands back on it with false for a file that
+     * is no readable `.ttf`, `.otf` or `.ttc`, which adds nothing.
+     */
+    fun addDeckFont(bytes: NSData, extension: String, completion: (Boolean) -> Unit) {
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return completion(false)
+        scope.launch {
+            val added: Boolean = runCatching { viewModel.addDeckFont(data, extension) }.getOrDefault(false)
+            completion(added)
+        }
+    }
+
+    /** The cut under [assetId] out of the deck. Text set in its family falls back. */
+    fun removeDeckFont(assetId: String) {
+        viewModel.onRemoveDeckFont(assetId)
     }
 
     /** The raw weight the popup picked. Bold is a point on this scale, not a flag. */
@@ -4200,9 +4296,21 @@ class EditorHost(
         // state changed to say so. Dropping the first skips the value the flow
         // is already holding, so subscribing is not itself a change.
         val thumbs = scope.launch { thumbnailTick.drop(1).collect { callback() } }
+        // Same again for a deck font: it loads after the state that named it, and
+        // the navigator's rows key on what has loaded, so its landing is a change.
+        val fonts = scope.launch {
+            viewModel.states
+                .map { it.document.fonts }
+                .distinctUntilChanged()
+                .collectLatest { deck ->
+                    DeckFontCache.Shared.warm(deck, viewModel.assets)
+                    callback()
+                }
+        }
         return {
             job.cancel()
             thumbs.cancel()
+            fonts.cancel()
         }
     }
 
@@ -4374,20 +4482,28 @@ class EditorHost(
         val background: SlideBackground? = state.document.background
         val slideWidth: Float = state.document.slideWidth
         val slideHeight: Float = state.document.slideHeight
+        val deckFonts: List<DeckFont> = state.document.fonts
+        val fonts: Set<String> = deckFonts
+            .mapNotNull { font -> font.assetId.takeIf { DeckFontCache.Shared.get(it) != null } }
+            .toSet()
         val cached = thumbnails[slide.id]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
         val usable = cached != null && cached.width == width &&
             cached.slideWidth == slideWidth && cached.slideHeight == slideHeight &&
             ((cached.slide == slide && cached.layout == layout && cached.number == number &&
-                cached.background == background) || state.isPreviewing)
+                cached.background == background && cached.fonts == fonts) || state.isPreviewing)
         if (usable) return cached.image
 
         val height = (width * slideHeight / slideWidth).toInt()
         val skiaImage = renderComposeScene(width * 2, height * 2) {
             // One frame, so an image only lands here if the canvas has already
             // decoded it: the row catches up on the next render, which is the
-            // next edit. Cheaper than blocking a thumbnail on a decode.
-            CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+            // next edit. Cheaper than blocking a thumbnail on a decode. Fonts
+            // are whatever has loaded, the same set the cache key holds.
+            CompositionLocalProvider(
+                LocalAssetStore provides viewModel.assets,
+                LocalDeckFonts provides DeckFontCache.Shared.families(deckFonts),
+            ) {
                 SlideView(
                     slide = slide,
                     layout = layout,
@@ -4407,7 +4523,7 @@ class EditorHost(
         } ?: return null
 
         thumbnails[slide.id] =
-            Thumbnail(slide, layout, number, background, width, slideWidth, slideHeight, image)
+            Thumbnail(slide, layout, number, background, width, slideWidth, slideHeight, fonts, image)
         return image
     }
 

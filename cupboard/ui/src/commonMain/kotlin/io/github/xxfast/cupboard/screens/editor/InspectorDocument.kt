@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.document.DeckFont
 import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.PlaybackType
 import io.github.xxfast.cupboard.document.SlideBackground
@@ -28,10 +29,11 @@ import kotlin.math.roundToInt
 /**
  * The Document tab: what belongs to the deck rather than to any one slide.
  *
- * The theme, the slide size, the playback settings and the background every
- * slide falls back to. The slide's own layout, appearance and background moved
- * to Format-with-nothing-selected, which is where Keynote keeps them, so this
- * tab holds exactly the four things that are true of the whole file.
+ * The theme, the slide size, the playback settings, the background every
+ * slide falls back to and the fonts the bundle carries. The slide's own layout,
+ * appearance and background moved to Format-with-nothing-selected, which is
+ * where Keynote keeps them, so this tab holds exactly the five things that are
+ * true of the whole file.
  *
  * Every control is stateless against its argument and commits one settled edit
  * per tap: there is no continuous picker here, so one tap is one history entry.
@@ -53,6 +55,9 @@ internal fun ColumnScope.DocumentPanel(
     onSetSlideSize: (Float, Float, Boolean) -> Unit,
     onSetPlayback: (PlaybackSettings) -> Unit,
     onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
+    deckFonts: List<DeckFont>,
+    onRemoveDeckFont: (assetId: String) -> Unit,
+    onAddFontFile: (() -> Unit)?,
 ) {
     PanelBody {
         SectionLabel("THEME")
@@ -128,6 +133,10 @@ internal fun ColumnScope.DocumentPanel(
             onChange = onSetDocumentBackground,
             onChooseImage = onChooseImage,
         )
+
+        PanelDivider()
+
+        DeckFontsSection(fonts = deckFonts, onRemove = onRemoveDeckFont, onAddFontFile = onAddFontFile)
     }
 }
 

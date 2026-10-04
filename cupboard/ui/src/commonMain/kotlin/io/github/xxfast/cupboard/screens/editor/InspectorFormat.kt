@@ -84,7 +84,6 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
-import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
@@ -104,6 +103,8 @@ import io.github.xxfast.cupboard.document.toggleItalic
 import io.github.xxfast.cupboard.document.toggleStrikethrough
 import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.document.withFillMode
+import io.github.xxfast.cupboard.document.withFont
+import io.github.xxfast.cupboard.document.withGenericFont
 import io.github.xxfast.cupboard.document.withGradient
 import io.github.xxfast.cupboard.document.withImageFill
 import io.github.xxfast.cupboard.document.withSolidFill
@@ -172,6 +173,13 @@ internal fun ColumnScope.FormatPanel(
      * layout's Background. Hands back the asset the picked file went in as.
      */
     onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
+    /**
+     * The deck's own families ([EditorState.deckFontFamilies]): the font picker's
+     * first section, and installed as far as the missing-font line is concerned.
+     */
+    deckFontFamilies: List<String>,
+    /** The shell's font file picker, which adds what it reads to the deck. Null greys it. */
+    onAddFontFile: (() -> Unit)?,
     onAddElementSteps: (String) -> Unit,
     /**
      * The code block's versions: which one the canvas is showing
@@ -304,6 +312,8 @@ internal fun ColumnScope.FormatPanel(
                 onAddGalleryImages = onAddGalleryImages,
                 onReplaceMedia = onReplaceMedia,
                 onChoosePoster = onChoosePoster,
+                deckFontFamilies = deckFontFamilies,
+                onAddFontFile = onAddFontFile,
                 onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,
@@ -758,6 +768,8 @@ private fun KindBody(
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onReplaceMedia: ((Element) -> Unit)?,
     onChoosePoster: ((VideoElement) -> Unit)?,
+    deckFontFamilies: List<String>,
+    onAddFontFile: (() -> Unit)?,
     onAddElementSteps: (String) -> Unit,
     codeVersion: Int,
     onSelectCodeVersion: (Int) -> Unit,
@@ -785,6 +797,8 @@ private fun KindBody(
             onUpdate = onUpdate,
             expandedSections = expandedSections,
             onToggleSection = onToggleSection,
+            deckFontFamilies = deckFontFamilies,
+            onAddFontFile = onAddFontFile,
         )
 
         segment == FormatSegment.Text && primary is ShapeElement ->
@@ -954,6 +968,8 @@ private fun TextBody(
     onUpdate: (List<Element>) -> Unit,
     expandedSections: Set<InspectorSection>,
     onToggleSection: (InspectorSection) -> Unit,
+    deckFontFamilies: List<String>,
+    onAddFontFile: (() -> Unit)?,
 ) {
     val enabled: Boolean = !primary.locked
 
@@ -967,13 +983,15 @@ private fun TextBody(
         return true
     }
 
-    DropdownField(
-        label = "Font",
-        value = primary.fontFamily,
-        options = TextFont.entries.map { font -> font to font.name },
+    FontPicker(
+        primary = primary,
+        deckFamilies = deckFontFamilies,
         enabled = enabled,
-        onPick = { font -> format { it.copy(fontFamily = font) } },
+        onPickName = { name -> format { it.withFont(name) } },
+        onPickGeneric = { font -> format { it.withGenericFont(font) } },
+        onAddFontFile = onAddFontFile,
     )
+    MissingFontNotice(primary = primary, deckFamilies = deckFontFamilies)
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         DropdownField(
             label = "Weight",

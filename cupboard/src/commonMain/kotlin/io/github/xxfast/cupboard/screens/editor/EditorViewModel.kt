@@ -112,6 +112,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDeckFont
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDeckFont
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetTextLink
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
@@ -325,6 +327,8 @@ class EditorViewModel(
     fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.emit(SetDocumentBackground(background)) } }
     fun onRenameDocument(name: String) { scope.launch { events.emit(RenameDocument(name)) } }
     fun onSetSlideSize(width: Float, height: Float, scaleContent: Boolean) { scope.launch { events.emit(SetSlideSize(width, height, scaleContent)) } }
+    fun onAddDeckFont(assetId: String, family: String, weight: Int, italic: Boolean) { scope.launch { events.emit(AddDeckFont(assetId, family, weight, italic)) } }
+    fun onRemoveDeckFont(assetId: String) { scope.launch { events.emit(RemoveDeckFont(assetId)) } }
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
     fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }

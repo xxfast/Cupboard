@@ -4,8 +4,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.renderComposeScene
 import io.github.xxfast.cupboard.canvas.AssetImageCache
+import io.github.xxfast.cupboard.canvas.DeckFontCache
 import io.github.xxfast.cupboard.canvas.LocalAssetImages
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
+import io.github.xxfast.cupboard.canvas.LocalDeckFontCache
+import io.github.xxfast.cupboard.canvas.LocalDeckFonts
 import io.github.xxfast.cupboard.canvas.SlideView
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Document
@@ -36,7 +39,9 @@ import org.jetbrains.skia.ImageInfo
  * asynchronously has not landed by then, so an image whose bytes are not already
  * decoded in [images] renders as its placeholder. A shell that wants pictures in
  * its export warms that cache first, which it can do because it is a parameter
- * rather than a private field.
+ * rather than a private field. Fonts the same: [fonts] defaults to the cache
+ * the canvas loads the deck's faces into, and `DeckFontCache.warm` fills one
+ * up front for a deck the canvas never drew.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 class SlideRasterizer(
@@ -45,6 +50,7 @@ class SlideRasterizer(
     /** Pixels across. The height follows from the deck's own aspect. */
     val width: Int = 1920,
     private val images: AssetImageCache = AssetImageCache(),
+    private val fonts: DeckFontCache = DeckFontCache.Shared,
 ) : Rasterizer {
     /** [width] at the deck's aspect, which is what every frame comes out at. */
     val height: Int =
@@ -83,6 +89,8 @@ class SlideRasterizer(
             CompositionLocalProvider(
                 LocalAssetStore provides assets,
                 LocalAssetImages provides images,
+                LocalDeckFontCache provides fonts,
+                LocalDeckFonts provides fonts.families(document.fonts),
             ) {
                 SlideView(
                     slide = slide,

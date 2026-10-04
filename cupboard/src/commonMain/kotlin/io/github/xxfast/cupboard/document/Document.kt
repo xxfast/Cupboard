@@ -86,6 +86,12 @@ data class Document(
      * presenter-driven show every deck has always been.
      */
     val playback: PlaybackSettings = PlaybackSettings(),
+    /**
+     * The faces this deck carries in its bundle, so text set in them draws the
+     * same on a machine that never installed them. What a [TextElement.fontName]
+     * resolves to first, before the system's own. See [DeckFont].
+     */
+    val fonts: List<DeckFont> = emptyList(),
 ) {
     companion object {
         /** What a deck is on unless it says otherwise, and what a renderer

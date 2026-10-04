@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.canvas.LocalLinkHandler
 import io.github.xxfast.cupboard.canvas.LocalPlayTransition
 import io.github.xxfast.cupboard.canvas.PlayTransition
+import io.github.xxfast.cupboard.canvas.ProvideDeckFonts
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PlaybackSettings
@@ -161,7 +162,6 @@ public fun rememberPlayerController(): PlayerController = remember { PlayerContr
  * [startStep] is clamped to the steps the starting slide has, so a host that
  * hands over the step the editor was on cannot open the show past the end of it.
  */
-@OptIn(PluginCupAPI::class)
 @Composable
 public fun PresentationPlayer(
     document: Document,
@@ -171,6 +171,23 @@ public fun PresentationPlayer(
     onExit: (() -> Unit)? = null,
     onOpenUrl: (String) -> Unit = {},
     controller: PlayerController = rememberPlayerController(),
+) {
+    // The deck's own faces, out of the store the host provided around the show.
+    ProvideDeckFonts(document.fonts) {
+        Player(document, startIndex, startStep, modifier, onExit, onOpenUrl, controller)
+    }
+}
+
+@OptIn(PluginCupAPI::class)
+@Composable
+private fun Player(
+    document: Document,
+    startIndex: Int,
+    startStep: Int,
+    modifier: Modifier,
+    onExit: (() -> Unit)?,
+    onOpenUrl: (String) -> Unit,
+    controller: PlayerController,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     val playback: PlaybackSettings = document.playback

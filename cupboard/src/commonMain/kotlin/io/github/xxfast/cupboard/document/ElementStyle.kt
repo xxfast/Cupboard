@@ -42,6 +42,7 @@ fun Element.applyingStyle(source: Element): Element = when {
         color = source.color,
         align = source.align,
         fontFamily = source.fontFamily,
+        fontName = source.fontName,
         italic = source.italic,
         underline = source.underline,
         strikethrough = source.strikethrough,

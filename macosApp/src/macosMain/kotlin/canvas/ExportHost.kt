@@ -174,7 +174,8 @@ class DeckExporter(private val editor: EditorHost) {
     private fun document(): Document = editor.viewModel.states.value.document
 
     /**
-     * A rasterizer with every one of the deck's pictures already decoded.
+     * A rasterizer with every one of the deck's pictures already decoded, and
+     * every one of its fonts already loaded.
      *
      * A frame is one composition and one draw, so an image the cache has not got
      * renders as its placeholder: warming it first is the difference between an
@@ -185,6 +186,10 @@ class DeckExporter(private val editor: EditorHost) {
     private fun rasterizer(document: Document, width: Int): SlideRasterizer {
         val assets: AssetStore = editor.viewModel.assets
         val images: AssetImageCache = runBlocking {
+            // The deck's faces too, into the cache the rasterizer reads by
+            // default: a frame drawn before one loads is set in the fallback.
+            DeckFontCache.Shared.warm(document.fonts, assets)
+
             val ids: List<String> = assets.ids()
             val cache = AssetImageCache(capacity = maxOf(1, ids.size))
             for (id in ids) {
