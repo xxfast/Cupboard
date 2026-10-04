@@ -203,6 +203,8 @@ private fun SourceWriter.text(element: TextElement) {
         "androidx.compose.ui.unit.sp",
     )
 
+    // One plain string in one style: range links (TextElement.links) are left
+    // behind, and their words read the same without them.
     block("Text(", ")") {
         line("text = ${kotlinString(element.displayText())},")
         line("color = ${element.color.colorLiteral()}.argb(),")

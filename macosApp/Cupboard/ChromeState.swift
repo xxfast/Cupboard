@@ -79,6 +79,9 @@ struct Chrome {
     /// The slides a link may point at: what the Slide popup offers. Numbers and
     /// names paired with their ids, the way the layouts are.
     let slideChoices: [SlideChoice]
+    /// The one selected text box's runs of linked words, nil unless exactly one
+    /// text box is selected: what the Link section's range half shows.
+    let textLinks: TextLinksFormat?
     let selectionCount: Int
     /// The primary's id, "" when nothing is selected: what the Animate panel
     /// matches build rows against so it shows this element's builds alone.
@@ -174,6 +177,7 @@ struct Chrome {
         link = host.selectedLink().map(LinkFormat.init)
         linkKinds = host.linkKindTitles()
         slideChoices = SlideChoice.all(host)
+        textLinks = host.selectedTextLinks().map(TextLinksFormat.init)
         selectionCount = Int(host.selectionCount())
         selectedElementId = host.selectedElementId()
         canGroup = host.canGroup()
@@ -242,7 +246,7 @@ struct SlideChoice: Identifiable, Equatable {
 /// gradient still carries its stops: switching kinds never has to invent one.
 struct LinkFormat: Equatable {
     let kindIndex: Int
-    /// "" is no address yet: the field has no null to spell, like the text link's.
+    /// "" is no address yet: the field has no null to spell.
     let url: String
     let slideId: String
 
@@ -250,6 +254,41 @@ struct LinkFormat: Equatable {
         kindIndex = Int(props.kindIndex)
         url = props.url
         slideId = props.slideId
+    }
+}
+
+/// The selected text box's range links as Swift values: the Selected Text block
+/// and the Links in Text list. The selection's target is a `LinkFormat`, so the
+/// one target editor shows it the way it shows the whole box's.
+struct TextLinksFormat: Equatable {
+    let canLinkSelection: Bool
+    /// The words a new link would go on, already cut short; "" when none.
+    let selectionExcerpt: String
+    let selectionLink: LinkFormat
+    let rows: [TextLinkEntry]
+
+    init(_ props: TextLinksProps) {
+        canLinkSelection = props.canLinkSelection
+        selectionExcerpt = props.selectionExcerpt
+        selectionLink = LinkFormat(props.selectionLink)
+        rows = props.rows.map(TextLinkEntry.init)
+    }
+}
+
+/// One run of linked words. Its start is its id: the runs never overlap.
+struct TextLinkEntry: Identifiable, Equatable {
+    let start: Int
+    let end: Int
+    let excerpt: String
+    let summary: String
+
+    var id: Int { start }
+
+    init(_ props: TextLinkRowProps) {
+        start = Int(props.start)
+        end = Int(props.end)
+        excerpt = props.excerpt
+        summary = props.summary
     }
 }
 
@@ -474,8 +513,6 @@ struct TextFormat {
     /// A multiple of the font size, not points.
     let lineHeight: Double
     let list: CupboardCanvas.ListStyle
-    /// "" is no link: the field has no null to spell, and blank commits nil.
-    let link: String
 
     init(_ props: TextProps) {
         font = props.fontFamily
@@ -489,7 +526,6 @@ struct TextFormat {
         align = props.align
         lineHeight = Double(props.lineHeight)
         list = props.listStyle
-        link = props.link ?? ""
     }
 }
 

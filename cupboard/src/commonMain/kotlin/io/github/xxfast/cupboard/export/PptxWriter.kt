@@ -281,6 +281,8 @@ private fun textBox(element: TextElement, id: Int): String = buildString {
         """ strike="${if (element.strikethrough) "sngStrike" else "noStrike"}">""" +
         fill(element.color) + "</a:rPr>"
 
+    // One run per line in the box's one style: the words go over, the range
+    // links (TextElement.links) on them don't, and neither does a whole-box link.
     for (line in element.text.split("\n")) {
         append("""<a:p><a:pPr algn="$align"/>""")
         append("<a:r>$run<a:t>${line.xmlEscaped()}</a:t></a:r></a:p>")

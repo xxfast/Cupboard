@@ -169,6 +169,20 @@ func formatEntries(_ host: EditorHost, enabled: Bool) -> [MenuEntry] {
         },
         command("Strikethrough") { host.toggleSelectedTextStrikethrough() },
 
+        // Its own enabled state, like the two defaults below: it needs selected
+        // words rather than a box. The link is written by the inspector's
+        // Selected Text block, so this brings that block up, caret and all
+        // (neither event ends the session).
+        MenuEntry(
+            title: "Add Link",
+            enabled: host.canLinkSelection(),
+            shortcut: KeyboardShortcut("k", modifiers: .command),
+            action: {
+                host.selectInspectorTab(tab: InspectorTab.format)
+                host.selectFormatSegment(name: "Text")
+            }
+        ),
+
         .separator(),
 
         align("Align Left", TextAlign.start),

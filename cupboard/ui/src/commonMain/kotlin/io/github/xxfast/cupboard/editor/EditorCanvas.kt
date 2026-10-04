@@ -59,6 +59,8 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -81,6 +83,10 @@ import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
+import io.github.xxfast.cupboard.canvas.TextRun
+import io.github.xxfast.cupboard.canvas.linkSpanStyle
+import io.github.xxfast.cupboard.canvas.linkedText
+import io.github.xxfast.cupboard.canvas.textRuns
 import io.github.xxfast.cupboard.canvas.TerminalBackground
 import io.github.xxfast.cupboard.canvas.TerminalBorder
 import io.github.xxfast.cupboard.canvas.TerminalCommand
@@ -109,6 +115,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.backgroundCascade
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
@@ -265,6 +272,13 @@ fun EditorCanvas(
     onBeginTextEdit: (String) -> Unit = {},
     /** Escape, or a press anywhere else on the slide: the caret leaves. */
     onEndTextEdit: () -> Unit = {},
+    /**
+     * The caret or the selection moved in the text box being edited, as
+     * `[start, end)` of its text: `EditorViewModel.onEditSelectionChanged`. It
+     * is how the inspector learns what a range link would go on; nothing here
+     * draws from it.
+     */
+    onEditSelectionChanged: (elementId: String, start: Int, end: Int) -> Unit = { _, _, _ -> },
     /**
      * Which version of a code block this canvas draws, and which one the caret
      * types into: `EditorState.shownVersion`, which is the inspector's picked
@@ -877,6 +891,7 @@ fun EditorCanvas(
                     element = editing,
                     onPreviewElements = onPreviewElements,
                     onEndTextEdit = onEndTextEdit,
+                    onSelectionChanged = onEditSelectionChanged,
                     fieldMenuBridge = fieldMenuBridge,
                     modifier = fieldContextClick,
                 )
@@ -1118,6 +1133,7 @@ private fun TextEditor(
     element: TextElement,
     onPreviewElements: (List<Element>) -> Unit,
     onEndTextEdit: () -> Unit,
+    onSelectionChanged: (elementId: String, start: Int, end: Int) -> Unit = { _, _, _ -> },
     fieldMenuBridge: FieldMenuBridge? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -1129,9 +1145,21 @@ private fun TextEditor(
     val focusRequester: FocusRequester = remember { FocusRequester() }
     LaunchedEffect(element.id) { focusRequester.requestFocus() }
 
-    val markers: VisualTransformation = remember(element.listStyle) {
-        if (element.listStyle == ListStyle.None) VisualTransformation.None
-        else ListMarkerTransformation(element.listStyle)
+    // The range links draw here the way the renderer draws them, so opening
+    // a box for typing changes nothing about how its words look. They come
+    // from the element, which is the loop's, and land on the field's own text
+    // through the same runs the renderer sets.
+    val linkStyle: SpanStyle = element.linkSpanStyle()
+    val markers: VisualTransformation = remember(element.listStyle, element.links, linkStyle) {
+        if (element.listStyle == ListStyle.None) LinkTransformation(element.links, linkStyle)
+        else ListMarkerTransformation(element.listStyle, element.links, linkStyle)
+    }
+
+    // Every move of the caret or the selection goes out through the loop, for
+    // the inspector to ask what a link would go on. Reported, never read back:
+    // the field keeps drawing its own selection, as it does its own caret.
+    LaunchedEffect(element.id, value.selection) {
+        onSelectionChanged(element.id, value.selection.start, value.selection.end)
     }
 
     val clipboard: FieldClipboard = rememberFieldClipboard()
@@ -1694,6 +1722,27 @@ private fun EquationEditor(
 }
 
 /**
+ * A plain text box's range links drawn into its field, the characters left
+ * exactly where they are. [ListMarkerTransformation] does the same for a list,
+ * on top of its markers.
+ */
+internal class LinkTransformation(
+    private val links: List<TextLink>,
+    private val linkStyle: SpanStyle,
+) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        if (links.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
+        val run: TextRun = textRuns(text.text, ListStyle.None).single()
+        return TransformedText(linkedText(text.text, run.spans(links), linkStyle), OffsetMapping.Identity)
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is LinkTransformation && other.links == links && other.linkStyle == linkStyle
+
+    override fun hashCode(): Int = 31 * links.hashCode() + linkStyle.hashCode()
+}
+
+/**
  * The markers the canvas draws in front of a list's lines, drawn into the field
  * the same way without ever being in the text.
  *
@@ -1706,7 +1755,11 @@ private fun EquationEditor(
  * in what is drawn and back again, or the caret ends up a marker's width away
  * from the character it is on.
  */
-internal class ListMarkerTransformation(private val style: ListStyle) : VisualTransformation {
+internal class ListMarkerTransformation(
+    private val style: ListStyle,
+    private val links: List<TextLink> = emptyList(),
+    private val linkStyle: SpanStyle = SpanStyle(),
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val lines: List<String> = text.text.split("\n")
         val markers: List<String> = listMarkers(text.text, style)
@@ -1746,7 +1799,19 @@ internal class ListMarkerTransformation(private val style: ListStyle) : VisualTr
             }
         }
 
-        return TransformedText(AnnotatedString(drawn.joinToString("\n")), mapping)
+        // Each line's share of the links, measured from its body, lands after
+        // that line's indent and marker: the renderer's runs, moved over by
+        // what the field draws in front of them.
+        val runs: List<TextRun> = textRuns(text.text, style)
+        val styled: AnnotatedString = buildAnnotatedString {
+            append(drawn.joinToString("\n"))
+            for ((index, run) in runs.withIndex()) {
+                val at: Int = drawnStarts[index] + prefixes[index].length
+                for (span in run.spans(links)) addStyle(linkStyle, at + span.start, at + span.end)
+            }
+        }
+
+        return TransformedText(styled, mapping)
     }
 
     /** The line an offset falls on: the first whose end it has not passed. */

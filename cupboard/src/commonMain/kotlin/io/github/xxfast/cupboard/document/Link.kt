@@ -59,6 +59,9 @@ sealed interface LinkTarget {
  *
  * The kinds that hold no link at all, groups included, answer null: a group is
  * moved and drawn as one object, but it is not one thing to click.
+ *
+ * The box as a whole, and only that: a text box's own runs of linked words
+ * ([TextElement.links]) answer through `linkAt`, and win over this inside them.
  */
 fun Element.resolvedLink(): LinkTarget? = when (this) {
     is TextElement -> linkTarget ?: link?.takeIf { it.isNotBlank() }?.let { LinkTarget.Url(it) }

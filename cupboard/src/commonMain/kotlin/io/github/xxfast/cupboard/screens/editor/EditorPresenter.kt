@@ -20,6 +20,11 @@ import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.LinkTarget
+import io.github.xxfast.cupboard.document.TextLink
+import io.github.xxfast.cupboard.document.normalisedLinks
+import io.github.xxfast.cupboard.document.shiftedLinks
+import io.github.xxfast.cupboard.document.shiftedRange
+import io.github.xxfast.cupboard.document.withLink
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
@@ -172,6 +177,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetTextLink
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
@@ -300,7 +307,44 @@ private fun Element.linkedTo(target: LinkTarget?): Element? {
  * player can do rather than as a document no host can play.
  */
 private fun EditorState.withElements(elements: List<Element>): EditorState =
-    copy(document = document.updateSlide(selectedSlide.updateElements(elements.map { it.clampedMedia() })))
+    copy(
+        document = document.updateSlide(
+            selectedSlide.updateElements(elements.map { it.clampedMedia().anchoringLinks(element(it.id)) }),
+        ),
+    )
+
+/**
+ * This text box's range links kept on the words they were put on, against
+ * [stored], the box as the document holds it before this edit lands.
+ *
+ * A box that comes in with [stored]'s links and other text is a text edit (a
+ * keystroke, a paste, a placeholder filled in) from a shell that knows nothing
+ * of ranges, so the links are carried across the edit by `shiftedLinks`. One
+ * that comes in with links of its own has said where they go, and only has them
+ * tidied. Here rather than in each reduction, because every edit that rewrites
+ * a box's text lands through [withElements].
+ */
+private fun Element.anchoringLinks(stored: Element?): Element {
+    if (this !is TextElement) return this
+    if (stored is TextElement && stored.text != text && stored.links == links) {
+        return copy(links = shiftedLinks(stored.text, text, links))
+    }
+    val tidied: List<TextLink> = normalisedLinks(links, text.length)
+    return if (tidied == links) this else copy(links = tidied)
+}
+
+/**
+ * This selection carried from [before] to [after]: as it was when the box's
+ * text didn't change, moved with the text the way a range link is when it did
+ * (`shiftedRange`), and null when the box is gone or the edit swallowed it.
+ */
+private fun TextSelection.following(before: EditorState, after: EditorState): TextSelection? {
+    val old: TextElement = before.element(elementId) as? TextElement ?: return null
+    val new: TextElement = after.element(elementId) as? TextElement ?: return null
+    if (old.text == new.text) return this
+    val (start, end) = shiftedRange(old.text, new.text, start, end) ?: return null
+    return copy(start = start, end = end)
+}
 
 /**
  * This state showing [version] of [element], or unchanged when [element] is not
@@ -585,7 +629,7 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
  * next edit, selection or history step opens.
  */
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
-    is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview,
+    is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview, is EditSelectionChanged,
     ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
     is SelectInspectorTab, CloseInspector, ToggleInspector,
     is SelectFormatSegment, is SelectAnimateSegment, is ToggleInspectorSection,
@@ -1260,6 +1304,37 @@ fun EditorPresenter(
                     undone.push(state.document)
                     redone.clear()
                     state.withElements(linked)
+                }
+                ?: state
+
+            // A range link is an edit like any other, so the session it may
+            // have arrived in is already settled by the guard below: the typing
+            // is one entry, and this is the next.
+            is SetTextLink -> (state.unlockedElement(event.elementId) as? TextElement)
+                ?.let { element ->
+                    element.withLink(event.start, event.end, event.target)
+                        .takeIf { it != element }
+                }
+                ?.let { linked ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(listOf(linked))
+                }
+                ?: state
+
+            // The field's selection, for the inspector to ask about. A
+            // collapsed caret moves [textSelection] alone: [linkSelection] is
+            // the last stretch that was actually selected, and keeps it.
+            is EditSelectionChanged -> (state.editingElement as? TextElement)
+                ?.takeIf { it.id == event.elementId }
+                ?.let { element ->
+                    val start: Int = minOf(event.start, event.end).coerceIn(0, element.text.length)
+                    val end: Int = maxOf(event.start, event.end).coerceIn(0, element.text.length)
+                    val selection = TextSelection(element.id, start, end)
+                    state.copy(
+                        textSelection = selection,
+                        linkSelection = if (selection.isCollapsed) state.linkSelection else selection,
+                    )
                 }
                 ?: state
 
@@ -2034,8 +2109,21 @@ fun EditorPresenter(
                 reduced.selectedSlideId == state.selectedSlideId &&
                     reduced.selectedElementIds == state.selectedElementIds
 
+            // The text selections follow the element selection the same way,
+            // and the box's text as it changes under them. The live one also
+            // goes with the session; the one a link goes on outlives it.
+            val linkSelection: TextSelection? = reduced.linkSelection
+                ?.takeIf { keepsCodeVersion }
+                ?.following(state, reduced)
+                ?.takeIf { !it.isCollapsed }
+            val textSelection: TextSelection? = reduced.textSelection
+                ?.takeIf { keepsCodeVersion && reduced.editingElementId == it.elementId }
+                ?.following(state, reduced)
+
             state = reduced.copy(
                 alsoSelectedSlideIds = alsoSelected,
+                linkSelection = linkSelection,
+                textSelection = textSelection,
                 codeVersion = if (keepsCodeVersion) reduced.codeVersion else 0,
                 codeStep = if (keepsCodeVersion) reduced.codeStep else null,
                 diagramStep = if (keepsCodeVersion) reduced.diagramStep else null,

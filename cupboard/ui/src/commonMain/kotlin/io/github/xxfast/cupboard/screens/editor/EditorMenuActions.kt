@@ -183,8 +183,8 @@ private fun alignItem(
 ): EditorMenuItem = EditorMenuItem(label, enabled) { viewModel.onAlignElements(edge) }
 
 /**
- * The text verbs, separator by separator: the four style toggles, the three
- * alignments, then the list styles.
+ * The text verbs, separator by separator: the four style toggles, Add Link, the
+ * three alignments, then the list styles.
  *
  * Formatting is a property of the whole box, so these apply to the selection's
  * text elements and to nothing else in it: `formatText` drops the shapes, the
@@ -216,6 +216,17 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                     enabled = formattable,
                     onPick = format { it.toggleStrikethrough() },
                 ),
+            ),
+        ),
+        // A run of words rather than the whole box, so it reads the selection
+        // the box last had instead of formatting the box. The link itself is
+        // picked in the inspector, which this only brings up on the right pane.
+        EditorMenuSection(
+            listOf(
+                EditorMenuItem("Add Link", state.canLinkSelection) {
+                    viewModel.onSelectInspectorTab(InspectorTab.Format)
+                    viewModel.onSelectFormatSegment(FormatSegment.Text)
+                },
             ),
         ),
         EditorMenuSection(

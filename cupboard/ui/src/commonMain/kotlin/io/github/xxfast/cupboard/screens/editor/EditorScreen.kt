@@ -228,6 +228,7 @@ fun EditorScreen(
             onInsertElement = viewModel::onInsertElement,
             onBeginTextEdit = viewModel::onBeginTextEdit,
             onEndTextEdit = viewModel::onEndTextEdit,
+            onEditSelectionChanged = viewModel::onEditSelectionChanged,
             onReorderElements = viewModel::onReorderElements,
             onSetElementsLocked = viewModel::onSetElementsLocked,
             onFlipElements = viewModel::onFlipElements,
@@ -256,6 +257,7 @@ fun EditorScreen(
             onSetSlideSize = viewModel::onSetSlideSize,
             onSetPlayback = viewModel::onSetPlayback,
             onSetElementLinks = viewModel::onSetElementLinks,
+            onSetTextLink = viewModel::onSetTextLink,
             onPreviewGuide = viewModel::onPreviewGuide,
             onCommitGuide = viewModel::onCommitGuide,
             onRemoveGuide = viewModel::onRemoveGuide,
@@ -325,6 +327,8 @@ fun EditorView(
     /** A double click on a text element on the canvas, and what ends that edit. */
     onBeginTextEdit: (String) -> Unit,
     onEndTextEdit: () -> Unit,
+    /** The caret's field moved its selection, for what a range link would go on. */
+    onEditSelectionChanged: (elementId: String, start: Int, end: Int) -> Unit = { _, _, _ -> },
     onReorderElements: (List<String>, ZOrderMove) -> Unit,
     onSetElementsLocked: (List<String>, Boolean) -> Unit,
     onFlipElements: (List<String>, FlipAxis) -> Unit,
@@ -371,6 +375,8 @@ fun EditorView(
     onSetPlayback: (settings: PlaybackSettings) -> Unit = {},
     /** Where the selection points, null for nowhere. */
     onSetElementLinks: (ids: List<String>, target: LinkTarget?) -> Unit = { _, _ -> },
+    /** Where a run of a text box's words points, null for nowhere. */
+    onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit = { _, _, _, _ -> },
     /** A guide drag on the canvas: its samples, its drop, the guide it throws
      * away off the slide, and its cancel. What the drag draws is
      * [EditorState.guideDrag], which these four feed. */
@@ -643,6 +649,7 @@ fun EditorView(
                                 editingElementId = state.editingElementId,
                                 onBeginTextEdit = onBeginTextEdit,
                                 onEndTextEdit = onEndTextEdit,
+                                onEditSelectionChanged = onEditSelectionChanged,
                                 shownCodeVersion = { element -> state.shownVersion(element) },
                                 shownDiagramStep = { element -> state.shownDiagramStep(element) },
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
@@ -731,6 +738,10 @@ fun EditorView(
                         onSetSlideSize = onSetSlideSize,
                         onSetPlayback = onSetPlayback,
                         onSetElementLinks = onSetElementLinks,
+                        linkSelection = state.linkSelection.takeIf { state.canLinkSelection },
+                        selectionLink = state.selectionLink,
+                        textLinkRows = state.textLinkRows,
+                        onSetTextLink = onSetTextLink,
                         objectStyles = state.objectStyles,
                         onApplyObjectStyle = onApplyObjectStyle,
                         onSaveObjectStyle = onSaveObjectStyle,

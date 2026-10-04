@@ -6,7 +6,10 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,8 +56,11 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -212,10 +218,10 @@ fun ElementView(
 }
 
 /** The white a text box starts in, and the only colour a link is allowed to take over. */
-private const val DefaultTextColor: Long = 0xFFFFFFFF
+internal const val DefaultTextColor: Long = 0xFFFFFFFF
 
 /** The design's link swatch. */
-private const val LinkColor: Long = 0xFFA98FFF
+internal const val LinkColor: Long = 0xFFA98FFF
 
 /** How far one nesting level indents a list line, and how wide its marker sits. */
 internal const val ListIndent: Float = 24f
@@ -298,13 +304,29 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
         fade.animateTo(1f, tween(pieces?.build?.durationMs ?: 0))
     }
 
+    // The text as it is set, one run for plain text and one per line for a
+    // list, and each run's share of the range links in its own offsets.
+    val runs: List<TextRun> = remember(element.text, element.listStyle) {
+        textRuns(element.text, element.listStyle)
+    }
+    val linkStyle: SpanStyle = element.linkSpanStyle()
+
+    // Links first and the delivery over them, so words still to come stay
+    // hidden however they are linked.
+    fun set(body: String, at: Int, spans: List<LinkSpan>): AnnotatedString {
+        val linked: AnnotatedString = linkedText(body, spans, linkStyle)
+        return if (ranges.isEmpty()) linked
+        else deliveredText(linked, at, ranges, shown, fade.value, style.color)
+    }
+
     // Plain text is one Text, exactly as it always was: only a list pays for the
     // row-per-line layout its markers need.
     if (element.listStyle == ListStyle.None) {
-        Text(
-            text =
-                if (ranges.isEmpty()) AnnotatedString(element.text)
-                else deliveredText(element.text, 0, ranges, shown, fade.value, style.color),
+        val run: TextRun = runs.single()
+        val spans: List<LinkSpan> = run.spans(element.links)
+        RunText(
+            text = set(run.body, run.start, spans),
+            spans = spans,
             style = style,
             modifier = Modifier.align(alignment),
         )
@@ -314,37 +336,79 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
     val lines: List<String> = element.text.split("\n")
     val markers: List<String> = listMarkers(element.text, element.listStyle)
 
-    // Where each line starts in the element's text, so a line set on its own row
-    // can still be styled against ranges measured over the whole of it.
-    val starts: List<Int> = remember(element.text) {
-        lines.runningFold(0) { at, line -> at + line.length + 1 }
-    }
-
     Column(modifier = Modifier.align(alignment).fillMaxWidth()) {
         for ((index, line) in lines.withIndex()) {
             val indent: Float = line.listIndentLevel() * ListIndent
-            val body: String = line.listBody()
             // Where this line's own text begins, which is what both its marker
             // and its body are styled against: a marker arrives with its line.
-            val at: Int = starts[index] + (line.length - body.length)
+            val run: TextRun = runs[index]
+            val spans: List<LinkSpan> = run.spans(element.links)
             Row(modifier = Modifier.fillMaxWidth().padding(start = indent.dp)) {
                 Text(
                     text =
                         if (ranges.isEmpty()) AnnotatedString(markers[index])
-                        else deliveredText(markers[index], at, ranges, shown, fade.value, style.color),
+                        else deliveredText(markers[index], run.start, ranges, shown, fade.value, style.color),
                     style = style.copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
                     modifier = Modifier.width(ListIndent.dp).padding(end = ListMarkerGap.dp),
                 )
-                Text(
-                    text =
-                        if (ranges.isEmpty()) AnnotatedString(body)
-                        else deliveredText(body, at, ranges, shown, fade.value, style.color),
+                RunText(
+                    text = set(run.body, run.start, spans),
+                    spans = spans,
                     style = style,
                     modifier = Modifier.weight(1f),
                 )
             }
         }
     }
+}
+
+/**
+ * One run of a text box, set, and clickable where it is linked.
+ *
+ * A press over a linked character is the link's: it is taken before anything
+ * under it sees it, and its release fires the link through [LocalLinkHandler].
+ * A press anywhere else is left alone, so it falls through to the box's whole
+ * link when there is one and to the show's own click when there isn't. Nothing
+ * provides a handler in the editor, and nothing reaches this there either: the
+ * canvas's input overlay sits over every element it draws.
+ *
+ * The layout is kept for the pointer handler to read and for nothing else, so
+ * nothing on screen is drawn from what a handler sees.
+ */
+@Composable
+private fun RunText(
+    text: AnnotatedString,
+    spans: List<LinkSpan>,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    val links: (LinkTarget) -> Unit = LocalLinkHandler.current
+    val laidOut: LaidOutText = remember { LaidOutText() }
+
+    Text(
+        text = text,
+        style = style,
+        onTextLayout = { laidOut.result = it },
+        modifier = modifier.then(
+            if (spans.isEmpty()) Modifier
+            else Modifier.pointerInput(spans, links) {
+                awaitEachGesture {
+                    val down: PointerInputChange = awaitFirstDown()
+                    val span: LinkSpan = laidOut.result?.linkSpanAt(down.position, spans)
+                        ?: return@awaitEachGesture
+                    down.consume()
+                    val up: PointerInputChange = waitForUpOrCancellation() ?: return@awaitEachGesture
+                    up.consume()
+                    links(span.target)
+                }
+            },
+        ),
+    )
+}
+
+/** Where a run's last layout is kept for its pointer handler. Plain, not state: nothing draws from it. */
+private class LaidOutText {
+    var result: TextLayoutResult? = null
 }
 
 /** The fill a shape paints: its gradient when it has one, its solid colour otherwise. */

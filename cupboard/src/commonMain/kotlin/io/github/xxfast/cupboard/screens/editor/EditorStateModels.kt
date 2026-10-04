@@ -29,6 +29,7 @@ import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -95,6 +96,28 @@ data class SlideDrag(
      */
     val translationY: Float = 0f,
 )
+
+/**
+ * A stretch of a text box's text, `[start, end)` in chars of [TextElement.text],
+ * as the caret's field last reported it. Collapsed when [start] is [end], which
+ * is a caret with nothing selected.
+ *
+ * Plain ints and an id rather than a range type, so the shells over the ObjC and
+ * .NET boundaries read it field by field like everything else in the state.
+ */
+data class TextSelection(val elementId: String, val start: Int, val end: Int) {
+    val isCollapsed: Boolean get() = start == end
+}
+
+/**
+ * One of the selected text box's range links, as an inspector lists it: where
+ * it runs, the words it covers (cut short past [TextLinkExcerptLength] chars) and
+ * where it points.
+ */
+data class TextLinkRow(val start: Int, val end: Int, val excerpt: String, val target: LinkTarget)
+
+/** How much of a linked run's words a [TextLinkRow] shows before it trails off. */
+const val TextLinkExcerptLength: Int = 30
 
 /**
  * A user guide on the move and where it currently sits, in doc units: an x for a
@@ -277,6 +300,28 @@ data class EditorState(
      * mid-edit, however it was left.
      */
     @Transient val editingElementId: String? = null,
+    /**
+     * Where the caret and its selection are in the text being edited, null with
+     * no session open. The field's own, reported through
+     * [EditorEvent.EditSelectionChanged] on every move; nothing here is drawn
+     * from it, it is only what the inspector asks about the link under the caret.
+     *
+     * Transient for the same reason as [editingElementId].
+     */
+    @Transient val textSelection: TextSelection? = null,
+    /**
+     * The last stretch of the selected text box that was actually selected:
+     * what a range link would go on. [textSelection]'s last non-collapsed value,
+     * and unlike it, kept when the session ends, because the click on an
+     * inspector control that applies a link is often the very click that took
+     * the caret out of the text.
+     *
+     * Dropped when the selection moves to another element, and carried along
+     * like a link (`shiftedLinks`) when the box's text changes under it.
+     *
+     * Transient for the same reason as [editingElementId].
+     */
+    @Transient val linkSelection: TextSelection? = null,
     /**
      * Where the selection was when layout mode was entered, so leaving comes back
      * to the slide you were on rather than to the top of the deck. Null whenever
@@ -511,6 +556,52 @@ data class EditorState(
 
     /** Whether the caret is in an element, and so whether keys are text rather than commands. */
     val isEditingText: Boolean get() = editingElement != null
+
+    /** The selection when it is exactly one text box, null otherwise: what range links are read off. */
+    val selectedTextElement: TextElement? get() = selectedElementIds.singleOrNull()
+        ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+        as? TextElement
+
+    /** [selectedTextElement]'s range links as an inspector lists them, empty with none selected. */
+    val textLinkRows: List<TextLinkRow> get() {
+        val element: TextElement = selectedTextElement ?: return emptyList()
+        return element.links.map { link ->
+            val words: String = element.text.substring(link.start, link.end)
+            val excerpt: String =
+                if (words.length <= TextLinkExcerptLength) words
+                else words.take(TextLinkExcerptLength).trimEnd() + "…"
+            TextLinkRow(link.start, link.end, excerpt, link.target)
+        }
+    }
+
+    /**
+     * Whether a range link has words to go on: [linkSelection] names a stretch
+     * of [selectedTextElement] that is still inside its text, and the box is
+     * unlocked. What an inspector's Link Selection control greys out behind.
+     */
+    val canLinkSelection: Boolean get() {
+        val element: TextElement = selectedTextElement?.takeIf { !it.locked } ?: return false
+        val selection: TextSelection = linkSelection?.takeIf { it.elementId == element.id } ?: return false
+        return selection.start < selection.end && selection.end <= element.text.length
+    }
+
+    /**
+     * The range link the caret is in, or the first one the selection reaches
+     * into, null when neither touches one. Read off the live [textSelection]
+     * mid-session and off [linkSelection] once the caret has gone, so the
+     * inspector keeps showing the link it was showing when the click on it
+     * ended the session.
+     */
+    val selectionLink: TextLink? get() {
+        val element: TextElement = selectedTextElement ?: return null
+        val selection: TextSelection = (textSelection ?: linkSelection)
+            ?.takeIf { it.elementId == element.id }
+            ?: return null
+        if (selection.isCollapsed) return element.links.firstOrNull {
+            selection.start >= it.start && selection.start < it.end
+        }
+        return element.links.firstOrNull { it.start < selection.end && it.end > selection.start }
+    }
 
     /**
      * Whether Edit > Cut is live, focus already resolved.
@@ -952,6 +1043,21 @@ sealed interface EditorEvent {
      */
     data class SetElementLinks(val ids: List<String>, val target: LinkTarget?) : EditorEvent
     /**
+     * Points `[start, end)` of text box [elementId]'s text at [target], null
+     * unlinking that stretch: `withLink`, so a link it overlaps is trimmed or
+     * split around it. One history entry, and one that changes nothing is none.
+     *
+     * Not one of the events that may land mid-edit: like every other edit to
+     * the box, it settles the session first, so the typing so far is its own
+     * entry and the link is the next one. A locked box refuses it.
+     */
+    data class SetTextLink(
+        val elementId: String,
+        val start: Int,
+        val end: Int,
+        val target: LinkTarget?,
+    ) : EditorEvent
+    /**
      * Appends a build to the selected slide's build order, which is where a new
      * one lands: the order is the order they play in.
      *
@@ -1095,6 +1201,15 @@ sealed interface EditorEvent {
      * every event that isn't allowed to land mid-edit.
      */
     data object EndTextEdit : EditorEvent
+    /**
+     * The caret's field moved its selection to `[start, end)` of [elementId]'s
+     * text, collapsed for a bare caret. Sent by the field on every move during a
+     * session; one for an element that isn't the one being edited is ignored.
+     *
+     * View state, like the marquee: no document, no history entry, and it keeps
+     * the session open.
+     */
+    data class EditSelectionChanged(val elementId: String, val start: Int, val end: Int) : EditorEvent
     /**
      * Shows version [index] of the selected code block, clamped into the versions
      * it has. Nothing in the document changes, so no history entry: which version

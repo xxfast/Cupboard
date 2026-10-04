@@ -389,14 +389,6 @@ extension EditorView {
         }
     }
 
-    /// Where a text box takes the show when it is clicked, which is the text
-    /// box's own link rather than the element link the other kinds carry.
-    func textLinkRow(_ text: TextFormat) -> some View {
-        StringField(placeholder: "Link", value: text.link, palette: palette) {
-            host.setSelectedTextLink(link: $0.isEmpty ? nil : $0)
-        }
-    }
-
     /// An AppKit popup button over a fixed list. Indices rather than the Kotlin
     /// enums: a tag has to be Hashable, and what these pick from is a list this
     /// file states anyway.
@@ -477,43 +469,126 @@ extension EditorView {
 
     // MARK: Link
 
-    /// Where the element takes the show when it is clicked. Every kind commits
-    /// on the pick, url and slide included, so what the popup says is what the
-    /// document holds rather than something waiting on a second control.
-    ///
-    /// The two kinds that carry a value show it: an address to open, or the
-    /// slide to jump to. The rest are the ordinary walk, and have nothing else
-    /// to say.
-    @ViewBuilder func linkSection(_ link: LinkFormat, _ ui: Chrome) -> some View {
+    /// Where the element takes the show when it is clicked: the element link a
+    /// shape and an image wear, written to the whole selection.
+    func linkSection(_ link: LinkFormat, _ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             sectionLabel("Link")
+            linkTargetEditor(link, ui) { kind, url, slideId in
+                host.setSelectedLink(kindIndex: kind, url: url, slideId: slideId)
+            }
+        }
+    }
 
-            stylePopup(ui.linkKinds, selected: link.kindIndex) { index in
-                host.setSelectedLink(kindIndex: Int32(index), url: link.url, slideId: link.slideId)
+    /// A text box's links: the box as a whole first, then the words in it.
+    /// The range half needs exactly one box selected, since a range is a
+    /// range of one box's text; with more, the box link is all there is.
+    ///
+    /// The Selected Text block holds onto the last stretch the caret selected
+    /// after the session ends, which is what lets a click in here link it.
+    func textLinkSection(_ link: LinkFormat, _ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Text Box Link")
+            linkTargetEditor(link, ui) { kind, url, slideId in
+                host.setSelectedLink(kindIndex: kind, url: url, slideId: slideId)
             }
 
-            if link.kindIndex == Self.urlLinkKind {
-                StringField(placeholder: "https://", value: link.url, palette: palette) { typed in
-                    host.setSelectedLink(
-                        kindIndex: Int32(Self.urlLinkKind),
-                        url: typed,
-                        slideId: link.slideId
-                    )
+            if let links = ui.textLinks {
+                VStack(alignment: .leading, spacing: 9) {
+                    sectionLabel("Selected Text")
+                    if links.canLinkSelection {
+                        Text("\u{201C}\(links.selectionExcerpt)\u{201D}")
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.text)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        linkTargetEditor(links.selectionLink, ui) { kind, url, slideId in
+                            host.setSelectionLink(kindIndex: kind, url: url, slideId: slideId)
+                        }
+                    } else {
+                        Text("Select text in the box to link part of it.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(palette.faint)
+                    }
+                }
+                .padding(.top, 5)
+
+                if !links.rows.isEmpty {
+                    VStack(alignment: .leading, spacing: 9) {
+                        sectionLabel("Links in Text")
+                        VStack(spacing: 4) {
+                            ForEach(links.rows) { row in textLinkListRow(row) }
+                        }
+                    }
+                    .padding(.top, 5)
                 }
             }
+        }
+    }
 
-            if link.kindIndex == Self.slideLinkKind {
-                stylePopup(
-                    ui.slideChoices.map(\.name),
-                    selected: Self.slideChoiceIndex(link.slideId, in: ui.slideChoices)
-                ) { index in
-                    guard ui.slideChoices.indices.contains(index) else { return }
-                    host.setSelectedLink(
-                        kindIndex: Int32(Self.slideLinkKind),
-                        url: link.url,
-                        slideId: ui.slideChoices[index].id
-                    )
-                }
+    /// One run of linked words: what it says, where it goes, and the button
+    /// that unlinks it. The build order row's fill, without the pick.
+    func textLinkListRow(_ row: TextLinkEntry) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\u{201C}\(row.excerpt)\u{201D}")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.text)
+                    .lineLimit(1)
+                Text(row.summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.inspectorCaption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                host.removeTextLink(start: Int32(row.start), end: Int32(row.end))
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.inspectorCaption)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Remove Link")
+        }
+        .padding(EdgeInsets(top: 6, leading: 9, bottom: 6, trailing: 9))
+        .background(palette.rowBg, in: shape)
+    }
+
+    /// Where a link goes, as a popup of kinds and the value the two kinds that
+    /// carry one need: an address to open, or the slide to jump to. Shared by
+    /// the element link, the text box link and the selected words' link, each
+    /// handing in where a pick goes.
+    ///
+    /// Every kind commits on the pick, url and slide included, so what the
+    /// popup says is what the document holds rather than something waiting on
+    /// a second control.
+    @ViewBuilder func linkTargetEditor(
+        _ link: LinkFormat,
+        _ ui: Chrome,
+        onSet: @escaping (_ kind: Int32, _ url: String, _ slideId: String) -> Void
+    ) -> some View {
+        stylePopup(ui.linkKinds, selected: link.kindIndex) { index in
+            onSet(Int32(index), link.url, link.slideId)
+        }
+
+        if link.kindIndex == Self.urlLinkKind {
+            StringField(placeholder: "https://", value: link.url, palette: palette) { typed in
+                onSet(Int32(Self.urlLinkKind), typed, link.slideId)
+            }
+        }
+
+        if link.kindIndex == Self.slideLinkKind {
+            stylePopup(
+                ui.slideChoices.map(\.name),
+                selected: Self.slideChoiceIndex(link.slideId, in: ui.slideChoices)
+            ) { index in
+                guard ui.slideChoices.indices.contains(index) else { return }
+                onSet(Int32(Self.slideLinkKind), link.url, ui.slideChoices[index].id)
             }
         }
     }

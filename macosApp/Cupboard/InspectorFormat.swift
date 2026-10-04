@@ -66,8 +66,10 @@ extension EditorView {
                 // its Text segment is the label and the size it is set in.
                 if let text = ui.text {
                     textSection(text, ui)
-                    palette.divider.frame(height: 1)
-                    textLinkRow(text)
+                    if let link = ui.link {
+                        palette.divider.frame(height: 1)
+                        textLinkSection(link, ui)
+                    }
                 } else if let shape = ui.shape {
                     shapeTextSection(shape)
                 }
@@ -117,9 +119,9 @@ extension EditorView {
                 EmptyView()
             }
 
-            // A text box carries its own link, drawn with its text above; this
-            // is the element link the other two kinds that hold one wear, a
-            // shape (on its Text segment) and an image.
+            // A text box's link sits with its text above, beside the links on
+            // its words; this is the element link the other two kinds that hold
+            // one wear, a shape (on its Text segment) and an image.
             if ui.text == nil, let link = ui.link {
                 palette.divider.frame(height: 1)
                 linkSection(link, ui)

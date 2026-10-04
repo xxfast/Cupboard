@@ -23,7 +23,7 @@ fun Theme.preview(size: SlideSizePreset = SlideSizePreset.Widescreen): Document 
     val written: List<Element> = slide.elements.map { element ->
         val text: String = samples[element.id] ?: return@map element
         if (element !is TextElement) return@map element
-        return@map element.copy(text = text)
+        return@map element.withText(text)
     }
 
     return deck.copy(slides = listOf(slide.copy(elements = written)))

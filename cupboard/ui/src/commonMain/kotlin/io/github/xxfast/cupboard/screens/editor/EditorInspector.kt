@@ -36,6 +36,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
@@ -125,6 +126,15 @@ fun EditorInspector(
     onSetPlayback: (settings: PlaybackSettings) -> Unit,
     /** Where the selection points, over the whole selection at once. */
     onSetElementLinks: (ids: List<String>, target: LinkTarget?) -> Unit,
+    /**
+     * A lone text box's range links: the run a link would go on (null with
+     * nothing linkable), the link it is in, every one the box holds, and the
+     * verb that writes one.
+     */
+    linkSelection: TextSelection?,
+    selectionLink: TextLink?,
+    textLinkRows: List<TextLinkRow>,
+    onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
     /** The deck's saved shape looks: what the Style segment's strip offers. */
     objectStyles: List<ObjectStyle>,
     onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit,
@@ -261,6 +271,10 @@ fun EditorInspector(
                 canSendBackward = canSendBackward,
                 slides = slides,
                 onSetElementLinks = onSetElementLinks,
+                linkSelection = linkSelection,
+                selectionLink = selectionLink,
+                textLinkRows = textLinkRows,
+                onSetTextLink = onSetTextLink,
                 objectStyles = objectStyles,
                 onApplyObjectStyle = onApplyObjectStyle,
                 onSaveObjectStyle = onSaveObjectStyle,

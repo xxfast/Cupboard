@@ -16,6 +16,10 @@ import io.github.xxfast.cupboard.document.Slide
  * A step is an `<img>` of its own rather than one image whose source changes:
  * every frame is then decoded by the time it is shown, and clicking forward has
  * nothing to wait for.
+ *
+ * Links come along as they look and no further: a linked box or a linked run of
+ * words is underlined in its frame, but a frame is a picture, and a click on it
+ * is the next step like a click anywhere else.
  */
 fun exportHtmlPlayer(document: Document, rasterizer: Rasterizer): String {
     val frames: List<ExportFrame> = document.exportFrames(everyBuild = true)

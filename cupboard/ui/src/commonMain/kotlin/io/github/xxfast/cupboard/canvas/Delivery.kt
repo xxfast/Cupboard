@@ -30,6 +30,20 @@ internal fun deliveredText(
     shown: Int,
     alpha: Float,
     color: Color,
+): AnnotatedString = deliveredText(AnnotatedString(body), offset, pieces, shown, alpha, color)
+
+/**
+ * [deliveredText] over a body that is already styled (its range links): the
+ * delivery goes on top, so a link still to come is as hidden as the words
+ * around it.
+ */
+internal fun deliveredText(
+    body: AnnotatedString,
+    offset: Int,
+    pieces: List<IntRange>,
+    shown: Int,
+    alpha: Float,
+    color: Color,
 ): AnnotatedString = buildAnnotatedString {
     append(body)
     if (body.isEmpty()) return@buildAnnotatedString

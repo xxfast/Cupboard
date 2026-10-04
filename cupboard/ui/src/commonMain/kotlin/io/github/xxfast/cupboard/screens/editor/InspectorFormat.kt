@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -43,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,6 +85,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.applyingObjectStyle
@@ -146,6 +149,15 @@ internal fun ColumnScope.FormatPanel(
     canSendBackward: Boolean,
     slides: List<Slide>,
     onSetElementLinks: (List<String>, LinkTarget?) -> Unit,
+    /**
+     * A lone text box's range links: the run a link would go on, null with
+     * nothing linkable ([EditorState.canLinkSelection]), the link that run is
+     * in, every link the box holds, and the verb that writes one.
+     */
+    linkSelection: TextSelection?,
+    selectionLink: TextLink?,
+    textLinkRows: List<TextLinkRow>,
+    onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
     objectStyles: List<ObjectStyle>,
     onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit,
     onSaveObjectStyle: (shapeId: String, name: String) -> Unit,
@@ -284,6 +296,10 @@ internal fun ColumnScope.FormatPanel(
                 onToggleSection = onToggleSection,
                 slides = slides,
                 onSetLinks = onSetElementLinks,
+                linkSelection = linkSelection,
+                selectionLink = selectionLink,
+                textLinkRows = textLinkRows,
+                onSetTextLink = onSetTextLink,
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
                 onReplaceMedia = onReplaceMedia,
@@ -734,6 +750,10 @@ private fun KindBody(
     onToggleSection: (InspectorSection) -> Unit,
     slides: List<Slide>,
     onSetLinks: (List<String>, LinkTarget?) -> Unit,
+    linkSelection: TextSelection?,
+    selectionLink: TextLink?,
+    textLinkRows: List<TextLinkRow>,
+    onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onReplaceMedia: ((Element) -> Unit)?,
@@ -866,6 +886,17 @@ private fun KindBody(
             enabled = !primary.locked,
             slides = slides,
             onSetLinks = onSetLinks,
+        )
+
+        // Range links are one box's words, so they wait for the box to be
+        // the whole selection.
+        if (primary is TextElement && elements.size == 1) TextLinkBlocks(
+            element = primary,
+            slides = slides,
+            linkSelection = linkSelection,
+            selectionLink = selectionLink,
+            rows = textLinkRows,
+            onSetTextLink = onSetTextLink,
         )
     }
 }
@@ -2349,13 +2380,12 @@ private fun ColumnScope.SlideFormatPanel(
 /**
  * Where the selection points, as Keynote's one menu.
  *
- * The eight rows are the seven [LinkTarget]s plus None, and the destination the
- * two open-ended ones need comes from a second control under the menu rather
- * than from a dialog: a URL is typed, a slide is picked.
- *
  * Shown against the primary and committed over the whole selection, like every
  * other control in the panel. The value is [Element.resolvedLink], so a deck
  * written before targets existed shows its old whole-box URL as the URL it is.
+ *
+ * A text box's menu is named for the box: a lone one gets [TextLinkBlocks]
+ * under it, for runs of its words, and the two menus can't read the same.
  */
 @Composable
 private fun LinkSection(
@@ -2365,29 +2395,55 @@ private fun LinkSection(
     slides: List<Slide>,
     onSetLinks: (List<String>, LinkTarget?) -> Unit,
 ) {
-    val target: LinkTarget? = primary.resolvedLink()
+    SectionLabel("LINK")
+    LinkTargetEditor(
+        label = if (primary is TextElement) "Text Box Link" else "Action",
+        target = primary.resolvedLink(),
+        key = primary.id,
+        enabled = enabled,
+        slides = slides,
+        onSet = { target -> onSetLinks(ids, target) },
+    )
+}
 
+/**
+ * One link's menu: the eight rows are the seven [LinkTarget]s plus None, and the
+ * destination the two open-ended ones need comes from a second control under the
+ * menu rather than from a dialog: a URL is typed, a slide is picked.
+ *
+ * [onSet] gets the target to write, null for None. [key] names what the menu is
+ * about (a box, a run of words), so moving to another puts the menu back where
+ * the document is.
+ */
+@Composable
+private fun LinkTargetEditor(
+    label: String,
+    target: LinkTarget?,
+    key: Any,
+    enabled: Boolean,
+    slides: List<Slide>,
+    onSet: (LinkTarget?) -> Unit,
+) {
     // The six settled rows commit on the pick, so the two open-ended ones are the
     // only reason this is state at all: "URL..." has to open its field before
     // there is a URL for the document to hold. Keyed on the live target, so an
     // undo or a new selection puts the menu back where the document is.
-    var choice: LinkChoice by remember(primary.id, target) { mutableStateOf(target.choice()) }
+    var choice: LinkChoice by remember(key, target) { mutableStateOf(target.choice()) }
 
-    SectionLabel("LINK")
     DropdownField(
-        label = "Action",
+        label = label,
         value = choice,
         options = LINK_CHOICES,
         enabled = enabled,
         onPick = { picked ->
             choice = picked
             when (picked) {
-                LinkChoice.None -> onSetLinks(ids, null)
-                LinkChoice.Next -> onSetLinks(ids, LinkTarget.Next)
-                LinkChoice.Previous -> onSetLinks(ids, LinkTarget.Previous)
-                LinkChoice.First -> onSetLinks(ids, LinkTarget.First)
-                LinkChoice.Last -> onSetLinks(ids, LinkTarget.Last)
-                LinkChoice.ExitShow -> onSetLinks(ids, LinkTarget.ExitShow)
+                LinkChoice.None -> onSet(null)
+                LinkChoice.Next -> onSet(LinkTarget.Next)
+                LinkChoice.Previous -> onSet(LinkTarget.Previous)
+                LinkChoice.First -> onSet(LinkTarget.First)
+                LinkChoice.Last -> onSet(LinkTarget.Last)
+                LinkChoice.ExitShow -> onSet(LinkTarget.ExitShow)
                 // These two name no destination yet. Their own field commits.
                 LinkChoice.Url, LinkChoice.Slide -> Unit
             }
@@ -2408,7 +2464,7 @@ private fun LinkSection(
         val typed: String = entered.trim()
         if (typed.isEmpty() || typed == url) return@EntryField false
 
-        onSetLinks(ids, LinkTarget.Url(typed))
+        onSet(LinkTarget.Url(typed))
         return@EntryField true
     }
 
@@ -2419,9 +2475,133 @@ private fun LinkSection(
         value = (target as? LinkTarget.Slide)?.slideId,
         options = slides.mapIndexed { index, slide -> slide.id to slide.linkTitle(index + 1) },
         enabled = enabled,
-        onPick = { id -> if (id != null) onSetLinks(ids, LinkTarget.Slide(id)) },
+        onPick = { id -> if (id != null) onSet(LinkTarget.Slide(id)) },
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * A text box's range links: the run of words last selected in it and where that
+ * run points, then every run already pointing somewhere.
+ *
+ * The run's menu is [LinkTargetEditor] again, against the link the run is in,
+ * and None takes the links off it. [linkSelection] is null with nothing to link,
+ * and a line says how to get something instead.
+ */
+@Composable
+private fun TextLinkBlocks(
+    element: TextElement,
+    slides: List<Slide>,
+    linkSelection: TextSelection?,
+    selectionLink: TextLink?,
+    rows: List<TextLinkRow>,
+    onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val enabled: Boolean = !element.locked
+
+    if (linkSelection != null) {
+        SwatchLabel("Selected Text")
+        Text(
+            text = "“${element.excerpt(linkSelection.start, linkSelection.end)}”",
+            color = tokens.text,
+            fontSize = 12.5.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        LinkTargetEditor(
+            label = "Action",
+            target = selectionLink?.target,
+            key = linkSelection,
+            enabled = enabled,
+            slides = slides,
+            onSet = { target -> onSetTextLink(element.id, linkSelection.start, linkSelection.end, target) },
+        )
+    } else if (enabled) Text(
+        text = "Select text in the box to link part of it.",
+        color = tokens.subtle,
+        fontSize = 11.5.sp,
+    )
+
+    if (rows.isEmpty()) return
+
+    SwatchLabel("Links in Text")
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (row in rows) TextLinkListRow(
+            excerpt = row.excerpt.oneLine(),
+            summary = row.target.summary(slides),
+            enabled = enabled,
+            onRemove = { onSetTextLink(element.id, row.start, row.end, null) },
+        )
+    }
+}
+
+/**
+ * One linked run in [TextLinkBlocks]' list: its words, where they go, and the
+ * button that unlinks them. Dressed like a [StepRow], minus the click: there is
+ * nothing under the list for a picked row to open.
+ */
+@Composable
+private fun TextLinkListRow(excerpt: String, summary: String, enabled: Boolean, onRemove: () -> Unit) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(tokens.rowBg)
+            .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = "“$excerpt”",
+                color = tokens.text,
+                fontSize = 12.5.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = summary,
+                color = tokens.subtle,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .clickable(enabled = enabled, onClick = onRemove),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text = "✕", color = if (enabled) tokens.subtle else tokens.faint, fontSize = 12.sp)
+        }
+    }
+}
+
+/** `[start, end)` of this box's words, cut short the way a [TextLinkRow]'s excerpt is. */
+private fun TextElement.excerpt(start: Int, end: Int): String {
+    val words: String = text.substring(start.coerceIn(0, text.length), end.coerceIn(start, text.length))
+    val excerpt: String =
+        if (words.length <= TextLinkExcerptLength) words
+        else words.take(TextLinkExcerptLength).trimEnd() + "…"
+    return excerpt.oneLine()
+}
+
+/** Words that may run over lines, as the one line a row has room for. */
+private fun String.oneLine(): String = replace('\n', ' ').replace('\t', ' ')
+
+/**
+ * Where a link goes, in a few words: the menu's own row for the settled targets,
+ * the address for a URL, the slide's number for a slide.
+ */
+private fun LinkTarget.summary(slides: List<Slide>): String = when (this) {
+    is LinkTarget.Url -> url
+    is LinkTarget.Slide -> slides.indexOfFirst { it.id == slideId }
+        .let { index -> if (index < 0) "Missing Slide" else "Slide ${index + 1}" }
+    else -> LINK_CHOICES.first { (row, _) -> row == choice() }.second
 }
 
 /**

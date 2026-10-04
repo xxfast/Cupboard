@@ -1029,15 +1029,17 @@ private fun EditorWindow(
                 )
             }
 
-            // Whole-box text styling. Bold, Italic and Underline take the
-            // accelerators every editor gives them; Strikethrough has no
-            // conventional one, so it goes without rather than inventing one.
+            // Whole-box text styling, and Add Link for a run of it. Bold,
+            // Italic, Underline and Add Link take the accelerators every editor
+            // gives them; Strikethrough has no conventional one, so it goes
+            // without rather than inventing one.
             Menu("Format", mnemonic = 'O') {
                 MenuItems(formatSections(state, viewModel)) { item ->
                     when (item.label) {
                         "Bold" -> editShortcut(Key.B)
                         "Italic" -> editShortcut(Key.I)
                         "Underline" -> editShortcut(Key.U)
+                        "Add Link" -> editShortcut(Key.K)
                         else -> null
                     }
                 }

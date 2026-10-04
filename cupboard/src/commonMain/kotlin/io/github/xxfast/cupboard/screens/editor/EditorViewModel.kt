@@ -113,6 +113,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackgroun
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetTextLink
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
@@ -248,6 +250,7 @@ class EditorViewModel(
     fun onPreviewElements(elements: List<Element>) { scope.launch { events.emit(PreviewElements(elements)) } }
     fun onBeginTextEdit(id: String) { scope.launch { events.emit(BeginTextEdit(id)) } }
     fun onEndTextEdit() { scope.launch { events.emit(EndTextEdit) } }
+    fun onEditSelectionChanged(elementId: String, start: Int, end: Int) { scope.launch { events.emit(EditSelectionChanged(elementId, start, end)) } }
     fun onSelectCodeVersion(index: Int) { scope.launch { events.emit(SelectCodeVersion(index)) } }
     fun onAddCodeVersion(elementId: String) { scope.launch { events.emit(AddCodeVersion(elementId)) } }
     fun onRemoveCodeVersion(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeVersion(elementId, index)) } }
@@ -282,6 +285,7 @@ class EditorViewModel(
     fun onSetSlideTransition(slideId: String, transition: SlideTransition?) { scope.launch { events.emit(SetSlideTransition(slideId, transition)) } }
     fun onSetPlayback(settings: PlaybackSettings) { scope.launch { events.emit(SetPlayback(settings)) } }
     fun onSetElementLinks(ids: List<String>, target: LinkTarget?) { scope.launch { events.emit(SetElementLinks(ids, target)) } }
+    fun onSetTextLink(elementId: String, start: Int, end: Int, target: LinkTarget?) { scope.launch { events.emit(SetTextLink(elementId, start, end, target)) } }
     fun onAddBuild(build: Build) { scope.launch { events.emit(AddBuild(build)) } }
     fun onAddElementSteps(elementId: String) { scope.launch { events.emit(AddElementSteps(elementId)) } }
     fun onUpdateBuild(index: Int, build: Build) { scope.launch { events.emit(UpdateBuild(index, build)) } }

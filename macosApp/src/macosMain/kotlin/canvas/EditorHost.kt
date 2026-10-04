@@ -160,6 +160,8 @@ import io.github.xxfast.cupboard.screens.editor.FlipAxis
 import io.github.xxfast.cupboard.screens.editor.FormatSegment
 import io.github.xxfast.cupboard.screens.editor.InspectorSection
 import io.github.xxfast.cupboard.screens.editor.InspectorTab
+import io.github.xxfast.cupboard.screens.editor.TextLinkExcerptLength
+import io.github.xxfast.cupboard.screens.editor.TextSelection
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.useContents
@@ -618,7 +620,6 @@ class TextProps(
     /** A multiple of the font size, not points. */
     val lineHeight: Float,
     val listStyle: ListStyle,
-    val link: String?,
 )
 
 /**
@@ -919,6 +920,35 @@ class LinkProps(
     val kindIndex: Int,
     val url: String,
     val slideId: String,
+)
+
+/**
+ * The one selected text box's runs of linked words, for the Text inspector's
+ * Selected Text block and its Links in Text list. Null unless exactly one text
+ * box is selected, since a range is only ever a range of one box's text.
+ *
+ * [selectionExcerpt] is the words a new link would go on, cut short the way a
+ * row's are, and "" when [canLinkSelection] says there are none. [selectionLink]
+ * is where they point, kind 0 when nowhere: [LinkProps] again, so the same
+ * target editor shows both.
+ */
+class TextLinksProps(
+    val canLinkSelection: Boolean,
+    val selectionExcerpt: String,
+    val selectionLink: LinkProps,
+    val rows: List<TextLinkRowProps>,
+)
+
+/**
+ * One run of linked words as the Links in Text list draws it: where it runs, so
+ * the remove button can name it, what it says, and where it points in a few
+ * words ("Slide 3", "Next Slide", the address).
+ */
+class TextLinkRowProps(
+    val start: Int,
+    val end: Int,
+    val excerpt: String,
+    val summary: String,
 )
 
 /**
@@ -1361,6 +1391,7 @@ class EditorHost(
                     editingElementId = state.editingElementId,
                     onBeginTextEdit = viewModel::onBeginTextEdit,
                     onEndTextEdit = viewModel::onEndTextEdit,
+                    onEditSelectionChanged = viewModel::onEditSelectionChanged,
                     // The version the inspector picked, so the canvas shows it
                     // and the caret types into it; every other block is at rest.
                     shownCodeVersion = { element -> state.shownVersion(element) },
@@ -2452,7 +2483,6 @@ class EditorHost(
             align = text.align,
             lineHeight = text.lineHeight,
             listStyle = text.listStyle,
-            link = text.link,
         )
     }
 
@@ -2465,6 +2495,9 @@ class EditorHost(
      */
     fun canFormatText(): Boolean =
         state.selectedElements.any { it is TextElement && !it.locked }
+
+    /** Whether Format > Add Link has words to go on: the core's [EditorState.canLinkSelection]. */
+    fun canLinkSelection(): Boolean = state.canLinkSelection
 
     fun setSelectedTextFont(font: TextFont) {
         formatSelection { it.copy(fontFamily = font) }
@@ -2511,11 +2544,6 @@ class EditorHost(
 
     fun setSelectedTextList(style: ListStyle) {
         formatSelection { it.copy(listStyle = style) }
-    }
-
-    /** Blank is no link at all, so an emptied field clears it rather than storing "". */
-    fun setSelectedTextLink(link: String?) {
-        formatSelection { it.copy(link = link?.takeIf { url -> url.isNotBlank() }) }
     }
 
     // Every text setter goes through here: the core decides which of the
@@ -3141,15 +3169,76 @@ class EditorHost(
         if (element !is TextElement && element !is ShapeElement && element !is ImageElement) {
             return null
         }
-        val target: LinkTarget? = element.resolvedLink()
-        return LinkProps(
-            kindIndex = linkKindIndex(target),
-            url = (target as? LinkTarget.Url)?.url ?: "",
-            // What picking Slide would commit: the deck's first slide, so the
-            // popup marks something rather than opening on nothing.
-            slideId = (target as? LinkTarget.Slide)?.slideId
-                ?: state.document.slides.firstOrNull()?.id.orEmpty(),
+        return linkProps(element.resolvedLink())
+    }
+
+    /** [target] as the target editor shows it, whoever it belongs to. */
+    private fun linkProps(target: LinkTarget?): LinkProps = LinkProps(
+        kindIndex = linkKindIndex(target),
+        url = (target as? LinkTarget.Url)?.url ?: "",
+        // What picking Slide would commit: the deck's first slide, so the
+        // popup marks something rather than opening on nothing.
+        slideId = (target as? LinkTarget.Slide)?.slideId
+            ?: state.document.slides.firstOrNull()?.id.orEmpty(),
+    )
+
+    /**
+     * The selected text box's range links and the words a new one would go on,
+     * null unless exactly one text box is selected. See [TextLinksProps].
+     */
+    fun selectedTextLinks(): TextLinksProps? {
+        val element: TextElement = state.selectedTextElement ?: return null
+        val selection: TextSelection? = state.linkSelection.takeIf { state.canLinkSelection }
+        val words: String = selection?.let { element.text.substring(it.start, it.end) }.orEmpty()
+        val excerpt: String =
+            if (words.length <= TextLinkExcerptLength) words
+            else words.take(TextLinkExcerptLength).trimEnd() + "…"
+
+        return TextLinksProps(
+            canLinkSelection = state.canLinkSelection,
+            selectionExcerpt = excerpt,
+            selectionLink = linkProps(state.selectionLink?.target),
+            rows = state.textLinkRows.map { row ->
+                TextLinkRowProps(row.start, row.end, row.excerpt, linkSummary(row.target))
+            },
         )
+    }
+
+    /**
+     * [target] in a few words, for a list row: the address itself, the slide by
+     * its number (by name when it is skipped and has none), and the popup's own
+     * title for the rest.
+     */
+    private fun linkSummary(target: LinkTarget): String = when (target) {
+        is LinkTarget.Url -> target.url.ifBlank { LinkKindTitles[linkKindIndex(target)] }
+        is LinkTarget.Slide -> state.slideNumber(target.slideId)?.let { number -> "Slide $number" }
+            ?: state.document.slides.firstOrNull { it.id == target.slideId }?.title
+            ?: "Missing Slide"
+        else -> LinkKindTitles[linkKindIndex(target)]
+    }
+
+    /**
+     * Points the words in [EditorState.linkSelection] at the [kindIndex]th kind,
+     * the way [setSelectedLink] points whole elements. Index 0 unlinks them.
+     * Nothing to link writes nothing, so a stale click from a panel a frame
+     * behind can't land on a range the user has moved off.
+     */
+    fun setSelectionLink(kindIndex: Int, url: String, slideId: String) {
+        if (kindIndex !in LinkKindTitles.indices) return
+        if (!state.canLinkSelection) return
+        val selection: TextSelection = state.linkSelection ?: return
+        viewModel.onSetTextLink(
+            selection.elementId,
+            selection.start,
+            selection.end,
+            linkTargetOf(kindIndex, url, slideId),
+        )
+    }
+
+    /** Unlinks `[start, end)` of the selected text box: a Links in Text row's remove button. */
+    fun removeTextLink(start: Int, end: Int) {
+        val element: TextElement = state.selectedTextElement ?: return
+        viewModel.onSetTextLink(element.id, start, end, null)
     }
 
     /**

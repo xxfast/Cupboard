@@ -201,9 +201,9 @@ data class TextElement(
     val strikethrough: Boolean = false,
     val listStyle: ListStyle = ListStyle.None,
     /**
-     * The whole box as one hyperlink, as a bare URL. Ranges inside the text come
-     * with the attributed-string work; until then a link is a property of the
-     * element, which is enough for the shape it takes on a slide.
+     * The whole box as one hyperlink, as a bare URL. A run of words inside the
+     * text links through [links] instead; this is the box as a whole, which is
+     * what every link was before ranges existed.
      *
      * Kept alongside [linkTarget] rather than folded into it because every deck
      * written before targets existed carries this one. [resolvedLink] reads both.
@@ -215,6 +215,16 @@ data class TextElement(
      * the string only for a [LinkTarget.Url].
      */
     val linkTarget: LinkTarget? = null,
+    /**
+     * The runs of [text] that point somewhere of their own, in order and never
+     * overlapping (see [TextLink] and `normalisedLinks`). Inside one, its target
+     * wins over the whole-box [resolvedLink]; everywhere else the box answers as
+     * it always has.
+     *
+     * Anchored to [text], so whatever rewrites the text carries these along with
+     * it through `withText`.
+     */
+    val links: List<TextLink> = emptyList(),
     /** See [PlaceholderRole]: set, this is a placeholder on a layout or an instance on a slide. */
     val role: PlaceholderRole? = null,
 ) : Element {

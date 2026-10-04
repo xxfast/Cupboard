@@ -11,7 +11,7 @@ package io.github.xxfast.cupboard.document
  * better than one that quietly changed the wrong thing.
  *
  * What is deliberately left out is the content ([TextElement.text],
- * [TextElement.link], [TextElement.linkTarget], [ShapeElement.link],
+ * [TextElement.link], [TextElement.linkTarget], [TextElement.links], [ShapeElement.link],
  * [ImageElement.link], [ImageElement.assetId], [ShapeElement.imageFill], [ImageElement.mask],
  * [ImageElement.caption], [ShapeElement.label], [CodeElement.code],
  * [CodeElement.language], [TerminalElement.text], [TerminalElement.title],
