@@ -92,7 +92,14 @@ extension EditorView {
                 if let terminal = ui.terminal { terminalSection(terminal) }
 
             case "Diagram":
-                if let diagram = ui.diagram { diagramSection(diagram) }
+                if let diagram = ui.diagram {
+                    diagramSection(diagram)
+                    // Only a lone diagram has steps to list, like code's.
+                    if diagram.stepsEditable {
+                        palette.divider.frame(height: 1)
+                        diagramStepsSection(diagram)
+                    }
+                }
 
             case "Equation":
                 if let equation = ui.equation { equationSection(equation) }

@@ -25,6 +25,31 @@ data class DiagramStep(
 )
 
 /**
+ * The node ids [text] names, as an inspector field writes them: `A, B, C`.
+ *
+ * [parseLineRanges]' twin, forgiving for the same reason: this parses every
+ * keystroke of a field someone is still typing into. Whitespace around an id is
+ * ignored, empty and repeated commas are dropped, and so is an id named twice,
+ * the first mention keeping its place. Empty text is an empty list, which is a
+ * [DiagramStep]'s "every node" and "no highlight".
+ *
+ * An id no node carries is kept rather than checked against the diagram: half of
+ * an id is exactly what a field holds mid-word, and [visibleNodes] and
+ * [highlightedNodes] already ignore what does not resolve when it is drawn.
+ */
+fun parseNodeIds(text: String): List<String> = text.split(',')
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .distinct()
+
+/**
+ * [parseNodeIds] the other way: what the field shows for these ids, `A, B, C`.
+ * Empty is the empty string, so a step that reveals everything shows an empty
+ * field.
+ */
+fun List<String>.formatNodeIds(): String = joinToString(", ")
+
+/**
  * The nodes of [graph] that [step] shows. Empty [DiagramStep.reveal] is every one
  * of them, and an id no node carries is dropped.
  */

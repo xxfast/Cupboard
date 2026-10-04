@@ -52,6 +52,7 @@ import io.github.xxfast.cupboard.document.DefaultCodeBoxHeight
 import io.github.xxfast.cupboard.document.DefaultCodeBoxWidth
 import io.github.xxfast.cupboard.document.DefaultDiagramHeight
 import io.github.xxfast.cupboard.document.DefaultDiagramWidth
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.DefaultEquationHeight
 import io.github.xxfast.cupboard.document.DefaultEquationWidth
 import io.github.xxfast.cupboard.document.DefaultTerminalHeight
@@ -250,6 +251,11 @@ fun EditorScreen(
             onRemoveCodeStep = viewModel::onRemoveCodeStep,
             onMoveCodeStep = viewModel::onMoveCodeStep,
             onUpdateCodeStep = viewModel::onUpdateCodeStep,
+            onSelectDiagramStep = viewModel::onSelectDiagramStep,
+            onAddDiagramStep = viewModel::onAddDiagramStep,
+            onRemoveDiagramStep = viewModel::onRemoveDiagramStep,
+            onMoveDiagramStep = viewModel::onMoveDiagramStep,
+            onUpdateDiagramStep = viewModel::onUpdateDiagramStep,
         )
     }
 }
@@ -391,6 +397,13 @@ fun EditorView(
     onRemoveCodeStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
     onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
     onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit = { _, _, _ -> },
+    /** The selected diagram's steps: pick the one the inspector edits, and add,
+     * remove, reorder or rewrite them. */
+    onSelectDiagramStep: (Int?) -> Unit = {},
+    onAddDiagramStep: (String) -> Unit = {},
+    onRemoveDiagramStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
+    onMoveDiagramStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
+    onUpdateDiagramStep: (elementId: String, index: Int, step: DiagramStep) -> Unit = { _, _, _ -> },
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -584,6 +597,7 @@ fun EditorView(
                                 onBeginTextEdit = onBeginTextEdit,
                                 onEndTextEdit = onEndTextEdit,
                                 shownCodeVersion = { element -> state.shownVersion(element) },
+                                shownDiagramStep = { element -> state.shownDiagramStep(element) },
                                 zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
                                 slideWidth = state.document.slideWidth,
                                 slideHeight = state.document.slideHeight,
@@ -708,6 +722,13 @@ fun EditorView(
                         onRemoveCodeStep = onRemoveCodeStep,
                         onMoveCodeStep = onMoveCodeStep,
                         onUpdateCodeStep = onUpdateCodeStep,
+                        diagramStep = state.diagramStep,
+                        diagramNodeIds = state.diagramNodeIds,
+                        onSelectDiagramStep = onSelectDiagramStep,
+                        onAddDiagramStep = onAddDiagramStep,
+                        onRemoveDiagramStep = onRemoveDiagramStep,
+                        onMoveDiagramStep = onMoveDiagramStep,
+                        onUpdateDiagramStep = onUpdateDiagramStep,
                     )
                 }
             }

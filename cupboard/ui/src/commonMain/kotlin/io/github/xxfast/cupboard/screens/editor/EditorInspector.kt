@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
@@ -175,6 +176,16 @@ fun EditorInspector(
     onRemoveCodeStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
     onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
     onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit = { _, _, _ -> },
+    /** The selected diagram's steps: which one the inspector is editing, the node
+     * ids its fields can name, and the five verbs of the Diagram segment's Steps
+     * list. All of it the core's. */
+    diagramStep: Int? = null,
+    diagramNodeIds: List<String> = emptyList(),
+    onSelectDiagramStep: (Int?) -> Unit = {},
+    onAddDiagramStep: (String) -> Unit = {},
+    onRemoveDiagramStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
+    onMoveDiagramStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
+    onUpdateDiagramStep: (elementId: String, index: Int, step: DiagramStep) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -259,6 +270,13 @@ fun EditorInspector(
                 onRemoveCodeStep = onRemoveCodeStep,
                 onMoveCodeStep = onMoveCodeStep,
                 onUpdateCodeStep = onUpdateCodeStep,
+                diagramStep = diagramStep,
+                diagramNodeIds = diagramNodeIds,
+                onSelectDiagramStep = onSelectDiagramStep,
+                onAddDiagramStep = onAddDiagramStep,
+                onRemoveDiagramStep = onRemoveDiagramStep,
+                onMoveDiagramStep = onMoveDiagramStep,
+                onUpdateDiagramStep = onUpdateDiagramStep,
                 slide = slide,
                 layouts = layouts,
                 isEditingLayouts = isEditingLayouts,

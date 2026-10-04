@@ -650,6 +650,20 @@ struct DiagramFormat {
     let nodeStroke: Int64
     let nodeText: Int64
     let edgeColor: Int64
+    /// Whether the Steps list has a diagram to speak for: exactly one selected.
+    let stepsEditable: Bool
+    /// The diagram's play steps, and which row the Steps list has picked, -1
+    /// when none is. 0 steps unless exactly one diagram is selected.
+    let stepCount: Int
+    let selectedStep: Int
+    /// The picked step's two node sets as the fields write them (`A, B, C`).
+    /// Empty text when no row is picked.
+    let stepReveal: String
+    let stepHighlight: String
+    /// One line per step, as the rows read it under their title.
+    let stepSummaries: [String]
+    /// The diagram's node ids, `A, B, C`, for the hint under the fields.
+    let nodeIds: String
 
     init(_ props: DiagramProps) {
         size = Double(props.fontSize)
@@ -657,6 +671,13 @@ struct DiagramFormat {
         nodeStroke = props.nodeStroke
         nodeText = props.nodeText
         edgeColor = props.edgeColor
+        stepsEditable = props.stepsEditable
+        stepCount = Int(props.stepCount)
+        selectedStep = Int(props.selectedStep)
+        stepReveal = props.stepReveal
+        stepHighlight = props.stepHighlight
+        stepSummaries = props.stepSummaries
+        nodeIds = props.nodeIds
     }
 }
 

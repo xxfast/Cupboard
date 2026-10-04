@@ -10,6 +10,8 @@ import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
@@ -26,6 +28,7 @@ import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.addElements
 import io.github.xxfast.cupboard.document.addLayout
 import io.github.xxfast.cupboard.document.addingCodeStep
+import io.github.xxfast.cupboard.document.addingDiagramStep
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingLayout
 import io.github.xxfast.cupboard.document.applyingObjectStyle
@@ -50,6 +53,7 @@ import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.moveLayout
 import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.movingCodeStep
+import io.github.xxfast.cupboard.document.movingDiagramStep
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.placeholderElement
 import io.github.xxfast.cupboard.document.putGuide
@@ -58,6 +62,7 @@ import io.github.xxfast.cupboard.document.removeGuide
 import io.github.xxfast.cupboard.document.removeLayout
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.removingCodeStep
+import io.github.xxfast.cupboard.document.removingDiagramStep
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.resized
 import io.github.xxfast.cupboard.document.setSlideSkipped
@@ -72,6 +77,7 @@ import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.updateElements
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.document.updatingCodeStep
+import io.github.xxfast.cupboard.document.updatingDiagramStep
 import io.github.xxfast.cupboard.document.versionsAfterMoving
 import io.github.xxfast.cupboard.document.versionsAfterRemoving
 import io.github.xxfast.cupboard.document.withNewIds
@@ -84,6 +90,7 @@ import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddElementSteps
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
@@ -129,6 +136,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -142,6 +150,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
@@ -153,6 +162,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAllSlides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeVersion
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectFormatSegment
@@ -181,6 +191,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UseAsDefaultShapeStyle
@@ -309,6 +320,15 @@ private fun EditorState.showingCodeStep(elementId: String, index: Int?): EditorS
         codeVersion = step?.version?.coerceIn(element.sources.indices) ?: codeVersion,
     )
 }
+
+/**
+ * This state editing step [index] of the diagram [elementId], or unchanged when
+ * [elementId] is not the selected diagram: [showingCodeStep]'s twin, minus the
+ * version. The canvas needs nothing more, since it reads the step off the picked
+ * row ([EditorState.shownDiagramStep]).
+ */
+private fun EditorState.showingDiagramStep(elementId: String, index: Int?): EditorState =
+    if (elementId == selectedDiagramElement?.id) copy(diagramStep = index) else this
 
 /** [withElements] for the slide whole, which the step edits need: they move builds too. */
 private fun EditorState.withSlide(slide: Slide): EditorState =
@@ -1515,6 +1535,86 @@ fun EditorPresenter(
                 }
                 ?: state
 
+            // The diagram twins of the five step reductions above, the same rules
+            // for the same reasons, less the version a code step also carries.
+            is SelectDiagramStep -> state.selectedDiagramElement
+                ?.let { element ->
+                    when {
+                        event.index == null -> state.copy(diagramStep = null)
+                        event.index !in element.steps.indices -> state
+                        else -> state.showingDiagramStep(element.id, event.index)
+                    }
+                }
+                ?: state
+
+            is AddDiagramStep -> (state.unlockedElement(event.elementId) as? DiagramElement)
+                ?.let { element ->
+                    val picked: Int? = state.diagramStep?.takeIf {
+                        element.id == state.selectedDiagramElement?.id && it in element.steps.indices
+                    }
+                    val after: Int = picked ?: element.steps.lastIndex
+                    val added: DiagramStep = picked?.let { element.steps[it] } ?: DiagramStep()
+
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withSlide(state.selectedSlide.addingDiagramStep(element.id, after, added))
+                        .showingDiagramStep(element.id, after + 1)
+                }
+                ?: state
+
+            is RemoveDiagramStep -> (state.unlockedElement(event.elementId) as? DiagramElement)
+                ?.takeIf { event.index in it.steps.indices }
+                ?.let { element ->
+                    val left: Int = element.steps.size - 1
+                    val picked: Int? = state.diagramStep
+                    val at: Int? = when {
+                        left == 0 || picked == null -> null
+                        picked < event.index -> picked
+                        picked > event.index -> picked - 1
+                        else -> picked.coerceAtMost(left - 1)
+                    }
+
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withSlide(state.selectedSlide.removingDiagramStep(element.id, event.index))
+                        .showingDiagramStep(element.id, at)
+                }
+                ?: state
+
+            is MoveDiagramStep -> (state.unlockedElement(event.elementId) as? DiagramElement)
+                ?.takeIf {
+                    event.from != event.to &&
+                        event.from in it.steps.indices &&
+                        event.to in it.steps.indices
+                }
+                ?.let { element ->
+                    val map: List<Int> =
+                        versionsAfterMoving(element.steps.size, event.from, event.to)
+                    val at: Int? = state.diagramStep?.let { map[it.coerceIn(map.indices)] }
+
+                    undone.push(state.document)
+                    redone.clear()
+                    state
+                        .withSlide(
+                            state.selectedSlide.movingDiagramStep(element.id, event.from, event.to),
+                        )
+                        .showingDiagramStep(element.id, at)
+                }
+                ?: state
+
+            // Nothing to follow on the canvas: it previews whatever the picked
+            // row now says, straight off the document.
+            is UpdateDiagramStep -> (state.unlockedElement(event.elementId) as? DiagramElement)
+                ?.takeIf { event.index in it.steps.indices && it.steps[event.index] != event.step }
+                ?.let { element ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withSlide(
+                        state.selectedSlide.updatingDiagramStep(element.id, event.index, event.step),
+                    )
+                }
+                ?: state
+
             // Disclosure is not an edit, so it makes no history entry, the
             // same way Keynote won't undo a twisty. The document still
             // changes: collapsed state is stored on the slide. Layouts never
@@ -1917,7 +2017,7 @@ fun EditorPresenter(
                     id != reduced.selectedSlideId && reduced.document.slides.any { it.id == id }
                 }
 
-            // The version showing and the step being edited follow the selection:
+            // The version showing and the steps being edited follow the selection:
             // point at another block, or at another slide, and the editor is back
             // on version 0 with no step picked, since either index only means
             // anything against the block it indexes. Here rather than in the
@@ -1931,6 +2031,7 @@ fun EditorPresenter(
                 alsoSelectedSlideIds = alsoSelected,
                 codeVersion = if (keepsCodeVersion) reduced.codeVersion else 0,
                 codeStep = if (keepsCodeVersion) reduced.codeStep else null,
+                diagramStep = if (keepsCodeVersion) reduced.diagramStep else null,
                 canUndo = undone.isNotEmpty(),
                 canRedo = redone.isNotEmpty(),
                 canPaste = clipboard != null,

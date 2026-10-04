@@ -6,6 +6,7 @@ import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.ElementDefaults
@@ -34,6 +35,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.isLayout
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.parseDiagram
 import io.github.xxfast.cupboard.document.presentationNumbers
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.slideById
@@ -153,6 +155,16 @@ data class EditorState(
      * the row has nothing to do with.
      */
     val codeStep: Int? = null,
+    /**
+     * Which of the selected diagram's steps the inspector is editing
+     * ([DiagramElement.steps]), null being none of them. [codeStep]'s twin, and
+     * dropped whenever the selection moves for the same reason.
+     *
+     * The canvas previews the step it names ([shownDiagramStep]), so the reveal
+     * and highlight being typed are on show while they are typed. Null is the
+     * whole diagram, which is what a fresh selection sees.
+     */
+    val diagramStep: Int? = null,
     /** Whether Edit > Undo / Redo are live. The history itself stays in the
      * presenter: shells only need to know what to grey out, and a state that
      * carried its own past would serialize every version of the document. */
@@ -382,6 +394,46 @@ data class EditorState(
 
     /** [shownVersion]'s text: what the canvas renders and what the caret types into. */
     fun shownSource(element: CodeElement): String = element.sourceAt(shownVersion(element))
+
+    /**
+     * The diagram [diagramStep] speaks for: the selection when it is exactly one
+     * diagram, null otherwise, the way [selectedCodeElement] is for code.
+     */
+    val selectedDiagramElement: DiagramElement? get() = selectedElementIds.singleOrNull()
+        ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+        as? DiagramElement
+
+    /**
+     * The step [diagramStep] names, null when no row is picked and when the one
+     * that was picked is no longer there, for [selectedCodeStep]'s reason.
+     */
+    val selectedDiagramStep: DiagramStep? get() {
+        val index: Int = diagramStep ?: return null
+        return selectedDiagramElement?.steps?.getOrNull(index)
+    }
+
+    /**
+     * The selected diagram's node ids in the order its source first mentions
+     * them, empty when no diagram is selected: what the step fields can name, for
+     * the inspector to offer as a hint beside them.
+     *
+     * Parsed on every read rather than kept, since the ids are a function of the
+     * source and a stored copy would go stale on the next keystroke into it.
+     */
+    val diagramNodeIds: List<String> get() =
+        selectedDiagramElement?.let { element -> parseDiagram(element.source).nodes.map { it.id } }
+            ?: emptyList()
+
+    /**
+     * Which step [element] draws in on the editor canvas: [selectedDiagramStep]
+     * for the selected diagram, and null, the whole diagram, for every other one
+     * and for the selected one with no row picked.
+     *
+     * [shownVersion]'s twin: the row being written is previewed where it will
+     * play, and the rest of the slide stays at rest.
+     */
+    fun shownDiagramStep(element: DiagramElement): DiagramStep? =
+        if (element.id == selectedDiagramElement?.id) selectedDiagramStep else null
 
     /**
      * Whether Use As Default has something to take the deck's text look off, and
@@ -1116,6 +1168,52 @@ sealed interface EditorEvent {
         val elementId: String,
         val index: Int,
         val step: CodeStep,
+    ) : EditorEvent
+    /**
+     * Picks step [index] of the selected diagram for the inspector to edit, null
+     * picking none: [SelectCodeStep]'s twin. No history entry, and an index the
+     * diagram has no step at changes nothing.
+     *
+     * The canvas previews the picked step's reveal and highlight
+     * ([EditorState.shownDiagramStep]); null puts the whole diagram back.
+     */
+    data class SelectDiagramStep(val index: Int?) : EditorEvent
+    /**
+     * Adds a step to the diagram [elementId], behind the one being edited (at the
+     * end when none is), and picks it: [AddCodeStep]'s twin.
+     *
+     * A copy of the picked step, so a new state starts from the one before it;
+     * with no step picked it is a plain step, which reveals every node and
+     * highlights none. One history entry, and the slide's builds follow their
+     * steps. A no-op when the id is not an unlocked diagram on the selected slide.
+     */
+    data class AddDiagramStep(val elementId: String) : EditorEvent
+    /**
+     * Takes step [index] off the diagram [elementId]. Builds behind it come back
+     * one and the build that played it goes, per `Slide.removingDiagramStep`.
+     *
+     * One history entry. A no-op when the id is stale or when [index] names no
+     * step the diagram has.
+     */
+    data class RemoveDiagramStep(val elementId: String, val index: Int) : EditorEvent
+    /**
+     * Moves step [from] of the diagram [elementId] to sit at [to], builds
+     * following the step they played. One history entry, and a move that lands
+     * where it started is a no-op.
+     */
+    data class MoveDiagramStep(val elementId: String, val from: Int, val to: Int) : EditorEvent
+    /**
+     * Replaces step [index] of the diagram [elementId] with [step]: what both of
+     * the step row's fields write, through `parseNodeIds`.
+     *
+     * Ids are taken as given, ones no node carries included, since a field mid-word
+     * holds exactly those. One history entry, and a step already exactly like this
+     * is a no-op.
+     */
+    data class UpdateDiagramStep(
+        val elementId: String,
+        val index: Int,
+        val step: DiagramStep,
     ) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     /**

@@ -1271,6 +1271,111 @@ extension EditorView {
         }
     }
 
+    /// The diagram's play steps, in play order: what each shows and what it
+    /// points at, one row each, over the code Steps list's strip of buttons.
+    /// The picked row opens the two fields under the list, which are the whole
+    /// of a diagram step, and the canvas previews it while they are typed.
+    ///
+    /// Clicking the picked row again lets go of it, which puts the whole
+    /// diagram back on the canvas.
+    func diagramStepsSection(_ diagram: DiagramFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Steps")
+
+            if diagram.stepCount == 0 {
+                Text("No steps yet")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(palette.faint)
+            } else {
+                VStack(spacing: 4) {
+                    ForEach(Array(0..<diagram.stepCount), id: \.self) { index in
+                        CodeStepRow(
+                            index: index,
+                            summary: index < diagram.stepSummaries.count
+                                ? diagram.stepSummaries[index]
+                                : "",
+                            picked: index == diagram.selectedStep,
+                            palette: palette
+                        ) {
+                            host.selectDiagramStep(
+                                index: Int32(index == diagram.selectedStep ? -1 : index)
+                            )
+                        }
+                    }
+                }
+            }
+
+            HStack(spacing: 6) {
+                galleryStep("plus", help: "Add Step") { host.addDiagramStep() }
+                galleryStep("minus", help: "Remove Step") {
+                    host.removeDiagramStep(index: Int32(diagram.selectedStep))
+                }
+                .disabled(diagram.selectedStep < 0)
+                galleryStep("chevron.up", help: "Move Up") {
+                    host.moveDiagramStep(
+                        from: Int32(diagram.selectedStep),
+                        to: Int32(diagram.selectedStep - 1)
+                    )
+                }
+                .disabled(diagram.selectedStep <= 0)
+                galleryStep("chevron.down", help: "Move Down") {
+                    host.moveDiagramStep(
+                        from: Int32(diagram.selectedStep),
+                        to: Int32(diagram.selectedStep + 1)
+                    )
+                }
+                .disabled(
+                    diagram.selectedStep < 0 || diagram.selectedStep >= diagram.stepCount - 1
+                )
+                Spacer(minLength: 0)
+            }
+
+            if diagram.selectedStep >= 0 { diagramStepFields(diagram) }
+
+            // The walk through the steps, written into the slide's build order.
+            // The core drops the ones it already wrote, so pressing this twice
+            // leaves one set.
+            panelButton("Add Step Builds", symbol: "list.number") { host.addElementSteps() }
+                .disabled(diagram.stepCount < 2)
+        }
+    }
+
+    /// The picked step itself: its two node sets, written the way the parser
+    /// reads them (`A, B, C`), over a hint naming the ids the diagram has. Both
+    /// fields commit on Enter or on losing focus, so a set typed in is one edit.
+    func diagramStepFields(_ diagram: DiagramFormat) -> some View {
+        let step = diagram.selectedStep
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                rowLabel("Shown Nodes")
+                Spacer(minLength: 0)
+                StringField(placeholder: "All", value: diagram.stepReveal, palette: palette) {
+                    host.setDiagramStepReveal(index: Int32(step), text: $0)
+                }
+                .frame(width: 120)
+            }
+
+            HStack(spacing: 8) {
+                rowLabel("Highlighted Nodes")
+                Spacer(minLength: 0)
+                StringField(placeholder: "None", value: diagram.stepHighlight, palette: palette) {
+                    host.setDiagramStepHighlight(index: Int32(step), text: $0)
+                }
+                .frame(width: 120)
+            }
+
+            // What the fields can name, read off the source, since the ids are
+            // typed on the canvas and are nowhere else in the panel.
+            if !diagram.nodeIds.isEmpty {
+                Text("Nodes: \(diagram.nodeIds)")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(palette.faint)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+            }
+        }
+    }
+
     /// The four colours a diagram is drawn in: its look, so Style rather than
     /// the Diagram segment, which holds the one thing left that is not a colour.
     func diagramColorsSection(_ diagram: DiagramFormat) -> some View {

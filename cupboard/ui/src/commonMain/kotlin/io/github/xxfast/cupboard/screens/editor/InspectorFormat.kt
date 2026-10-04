@@ -56,6 +56,7 @@ import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.CodeTheme
 import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
@@ -82,9 +83,11 @@ import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatLineRanges
+import io.github.xxfast.cupboard.document.formatNodeIds
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.parseLineRanges
+import io.github.xxfast.cupboard.document.parseNodeIds
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.toggleBold
@@ -160,6 +163,18 @@ internal fun ColumnScope.FormatPanel(
     onRemoveCodeStep: (elementId: String, index: Int) -> Unit,
     onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit,
     onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit,
+    /**
+     * The diagram's steps: which one the inspector is editing
+     * ([EditorState.diagramStep]), the node ids its fields can name
+     * ([EditorState.diagramNodeIds]) and the five verbs of the Steps list.
+     */
+    diagramStep: Int?,
+    diagramNodeIds: List<String>,
+    onSelectDiagramStep: (Int?) -> Unit,
+    onAddDiagramStep: (String) -> Unit,
+    onRemoveDiagramStep: (elementId: String, index: Int) -> Unit,
+    onMoveDiagramStep: (elementId: String, from: Int, to: Int) -> Unit,
+    onUpdateDiagramStep: (elementId: String, index: Int, step: DiagramStep) -> Unit,
     /** The slide fallback's own arguments: what Format shows with nothing selected. */
     slide: Slide,
     layouts: List<Slide>,
@@ -264,6 +279,13 @@ internal fun ColumnScope.FormatPanel(
                 onRemoveCodeStep = onRemoveCodeStep,
                 onMoveCodeStep = onMoveCodeStep,
                 onUpdateCodeStep = onUpdateCodeStep,
+                diagramStep = diagramStep,
+                diagramNodeIds = diagramNodeIds,
+                onSelectDiagramStep = onSelectDiagramStep,
+                onAddDiagramStep = onAddDiagramStep,
+                onRemoveDiagramStep = onRemoveDiagramStep,
+                onMoveDiagramStep = onMoveDiagramStep,
+                onUpdateDiagramStep = onUpdateDiagramStep,
             )
         }
     }
@@ -662,6 +684,13 @@ private fun KindBody(
     onRemoveCodeStep: (elementId: String, index: Int) -> Unit,
     onMoveCodeStep: (elementId: String, from: Int, to: Int) -> Unit,
     onUpdateCodeStep: (elementId: String, index: Int, step: CodeStep) -> Unit,
+    diagramStep: Int?,
+    diagramNodeIds: List<String>,
+    onSelectDiagramStep: (Int?) -> Unit,
+    onAddDiagramStep: (String) -> Unit,
+    onRemoveDiagramStep: (elementId: String, index: Int) -> Unit,
+    onMoveDiagramStep: (elementId: String, from: Int, to: Int) -> Unit,
+    onUpdateDiagramStep: (elementId: String, index: Int, step: DiagramStep) -> Unit,
 ) {
     when {
         segment == FormatSegment.Text && primary is TextElement -> TextBody(
@@ -704,16 +733,19 @@ private fun KindBody(
         segment == FormatSegment.Terminal && primary is TerminalElement ->
             TerminalBody(primary = primary, elements = elements, onUpdate = onUpdate)
 
-        segment == FormatSegment.Diagram && primary is DiagramElement ->
-            SizeOnlyBody(
-                value = primary.fontSize,
-                enabled = !primary.locked,
-                onCommit = { size ->
-                    elements.formatDiagrams { it.copy(fontSize = size) }
-                        .takeIf { it.isNotEmpty() }
-                        ?.let(onUpdate)
-                },
-            )
+        segment == FormatSegment.Diagram && primary is DiagramElement -> DiagramBody(
+            primary = primary,
+            elements = elements,
+            onUpdate = onUpdate,
+            step = diagramStep,
+            nodeIds = diagramNodeIds,
+            onSelectStep = onSelectDiagramStep,
+            onAddStep = onAddDiagramStep,
+            onRemoveStep = onRemoveDiagramStep,
+            onMoveStep = onMoveDiagramStep,
+            onUpdateStep = onUpdateDiagramStep,
+            onAddSteps = onAddElementSteps,
+        )
 
         segment == FormatSegment.Equation && primary is EquationElement ->
             SizeOnlyBody(
@@ -754,7 +786,7 @@ private fun KindBody(
     }
 }
 
-/** The one field a diagram and an equation have between them. */
+/** The one field an equation has, and the first of a diagram's. */
 @Composable
 private fun SizeOnlyBody(value: Float, enabled: Boolean, onCommit: (Float) -> Unit) {
     NumberField(
@@ -1093,48 +1125,15 @@ private fun CodeBody(
     val steps: List<CodeStep> = primary.steps
 
     PanelDivider()
-    SectionLabel("STEPS")
-
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        steps.forEachIndexed { index, item ->
-            StepRow(
-                label = "Step ${index + 1}",
-                summary = item.summary(),
-                selected = index == step,
-                enabled = enabled,
-                // A second click on the picked row unpicks it: the fields below
-                // belong to a row, so putting the row down is how they go away.
-                onClick = { onSelectStep(if (index == step) null else index) },
-            )
-        }
-    }
-
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        TonalButton(
-            label = "+",
-            enabled = enabled,
-            onClick = { onAddStep(primary.id) },
-            modifier = Modifier.weight(1f),
-        )
-        TonalButton(
-            label = "−",
-            enabled = enabled && step != null,
-            onClick = { step?.let { onRemoveStep(primary.id, it) } },
-            modifier = Modifier.weight(1f),
-        )
-        TonalButton(
-            label = "▲",
-            enabled = enabled && step != null && step > 0,
-            onClick = { step?.let { onMoveStep(primary.id, it, it - 1) } },
-            modifier = Modifier.weight(1f),
-        )
-        TonalButton(
-            label = "▼",
-            enabled = enabled && step != null && step < steps.size - 1,
-            onClick = { step?.let { onMoveStep(primary.id, it, it + 1) } },
-            modifier = Modifier.weight(1f),
-        )
-    }
+    StepList(
+        summaries = steps.map { it.summary() },
+        step = step,
+        enabled = enabled,
+        onSelect = onSelectStep,
+        onAdd = { onAddStep(primary.id) },
+        onRemove = { index -> onRemoveStep(primary.id, index) },
+        onMove = { from, to -> onMoveStep(primary.id, from, to) },
+    )
 
     // The state's step is free to be out of range for a moment, the way its
     // version is: an undo can take the row these fields were editing away.
@@ -1173,20 +1172,7 @@ private fun CodeBody(
         ) { text -> write { it.copy(highlight = parseLineRanges(text)) } }
     }
 
-    // Live on a locked block, like the gallery's: the builds belong to the
-    // slide's build order rather than to the element, so writing them is not
-    // editing it.
-    TonalButton(
-        label = "Add Step Builds",
-        enabled = steps.size > 1,
-        onClick = { onAddSteps(primary.id) },
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Text(
-        text = "One click per step, in the Animate order.",
-        color = tokens.subtle,
-        fontSize = 11.5.sp,
-    )
+    AddStepBuilds(enabled = steps.size > 1, onClick = { onAddSteps(primary.id) })
 }
 
 /**
@@ -1241,8 +1227,190 @@ private fun VersionRow(
 }
 
 /**
- * One step in the code block's list: which one it is, what it plays, and whether
- * it is the one the fields under the list are editing.
+ * A diagram's content settings: how big its labels are set, and the steps it is
+ * walked through.
+ *
+ * The source isn't edited here, the way a code block's code isn't: it is typed
+ * on the canvas. The steps name its nodes by id, so the ids the source declares
+ * sit under the fields as a hint, which is the only place they can be read off
+ * without reading the source.
+ */
+@Composable
+private fun DiagramBody(
+    primary: DiagramElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+    step: Int?,
+    nodeIds: List<String>,
+    onSelectStep: (Int?) -> Unit,
+    onAddStep: (String) -> Unit,
+    onRemoveStep: (elementId: String, index: Int) -> Unit,
+    onMoveStep: (elementId: String, from: Int, to: Int) -> Unit,
+    onUpdateStep: (elementId: String, index: Int, step: DiagramStep) -> Unit,
+    onAddSteps: (String) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val enabled: Boolean = !primary.locked
+    val steps: List<DiagramStep> = primary.steps
+
+    SizeOnlyBody(
+        value = primary.fontSize,
+        enabled = enabled,
+        onCommit = { size ->
+            elements.formatDiagrams { it.copy(fontSize = size) }
+                .takeIf { it.isNotEmpty() }
+                ?.let(onUpdate)
+        },
+    )
+
+    PanelDivider()
+    StepList(
+        summaries = steps.map { it.summary() },
+        step = step,
+        enabled = enabled,
+        onSelect = onSelectStep,
+        onAdd = { onAddStep(primary.id) },
+        onRemove = { index -> onRemoveStep(primary.id, index) },
+        onMove = { from, to -> onMoveStep(primary.id, from, to) },
+    )
+
+    // Out of range for a moment after an undo, the way the code block's is.
+    val editing: Int? = step?.takeIf { it in steps.indices }
+    if (editing != null) {
+        val picked: DiagramStep = steps[editing]
+
+        fun write(transform: (DiagramStep) -> DiagramStep): Boolean {
+            val written: DiagramStep = transform(picked)
+            if (written == picked) return false
+
+            onUpdateStep(primary.id, editing, written)
+            return true
+        }
+
+        // Committed on Enter and on focus loss, like the code block's ranges.
+        EntryField(
+            label = "Shown Nodes",
+            display = picked.reveal.formatNodeIds(),
+            enabled = enabled,
+            placeholder = "All",
+        ) { text -> write { it.copy(reveal = parseNodeIds(text)) } }
+        EntryField(
+            label = "Highlighted Nodes",
+            display = picked.highlight.formatNodeIds(),
+            enabled = enabled,
+            placeholder = "None",
+        ) { text -> write { it.copy(highlight = parseNodeIds(text)) } }
+
+        if (nodeIds.isNotEmpty()) Text(
+            text = "Nodes: ${nodeIds.formatNodeIds()}",
+            color = tokens.subtle,
+            fontSize = 11.5.sp,
+        )
+    }
+
+    AddStepBuilds(enabled = steps.size > 1, onClick = { onAddSteps(primary.id) })
+}
+
+/**
+ * What a diagram's step row reads under its name: the nodes it shows and the
+ * nodes it points at.
+ *
+ * The code block's rule, with one difference: a row has to say something, so an
+ * empty reveal reads "All nodes" rather than leaving the line blank.
+ */
+private fun DiagramStep.summary(): String = buildList {
+    add(if (reveal.isEmpty()) "All nodes" else "Nodes ${reveal.formatNodeIds()}")
+    if (highlight.isNotEmpty()) add("Highlight ${highlight.formatNodeIds()}")
+}.joinToString(" · ")
+
+/**
+ * The Steps section's list: a row per step, [summaries] being what each reads
+ * under its name, and the add, remove and reorder buttons under them.
+ *
+ * Shared by the kinds that are walked through in steps, code and diagrams, so
+ * both lists pick, add and move the same way. Remove and the arrows act on the
+ * picked row, so they are dead with none picked.
+ */
+@Composable
+private fun StepList(
+    summaries: List<String>,
+    step: Int?,
+    enabled: Boolean,
+    onSelect: (Int?) -> Unit,
+    onAdd: () -> Unit,
+    onRemove: (index: Int) -> Unit,
+    onMove: (from: Int, to: Int) -> Unit,
+) {
+    SectionLabel("STEPS")
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        summaries.forEachIndexed { index, summary ->
+            StepRow(
+                label = "Step ${index + 1}",
+                summary = summary,
+                selected = index == step,
+                enabled = enabled,
+                // A second click on the picked row unpicks it: the fields below
+                // belong to a row, so putting the row down is how they go away.
+                onClick = { onSelect(if (index == step) null else index) },
+            )
+        }
+    }
+
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        TonalButton(
+            label = "+",
+            enabled = enabled,
+            onClick = onAdd,
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "−",
+            enabled = enabled && step != null,
+            onClick = { step?.let(onRemove) },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▲",
+            enabled = enabled && step != null && step > 0,
+            onClick = { step?.let { onMove(it, it - 1) } },
+            modifier = Modifier.weight(1f),
+        )
+        TonalButton(
+            label = "▼",
+            enabled = enabled && step != null && step < summaries.size - 1,
+            onClick = { step?.let { onMove(it, it + 1) } },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
+ * Add Step Builds and the line under it, closing a Steps section.
+ *
+ * Live on a locked element, like the gallery's: the builds belong to the slide's
+ * build order rather than to the element, so writing them is not editing it.
+ */
+@Composable
+private fun AddStepBuilds(enabled: Boolean, onClick: () -> Unit) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    TonalButton(
+        label = "Add Step Builds",
+        enabled = enabled,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Text(
+        text = "One click per step, in the Animate order.",
+        color = tokens.subtle,
+        fontSize = 11.5.sp,
+    )
+}
+
+/**
+ * One step in a [StepList]: which one it is, what it plays, and whether it is
+ * the one the fields under the list are editing.
  *
  * [VersionRow] with a second line, since a step says more about itself than a
  * version does: the name alone would make every row read the same.

@@ -55,6 +55,7 @@ import io.github.xxfast.cupboard.document.DefaultTerminalWidth
 import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.Element
@@ -101,6 +102,7 @@ import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.fitted
 import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatLineRanges
+import io.github.xxfast.cupboard.document.formatNodeIds
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.galleryElement
 import io.github.xxfast.cupboard.document.imageElement
@@ -108,6 +110,7 @@ import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.parseLineRanges
+import io.github.xxfast.cupboard.document.parseNodeIds
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.slideById
@@ -737,7 +740,42 @@ class DiagramProps(
     val nodeStroke: Long,
     val nodeText: Long,
     val edgeColor: Long,
+    /**
+     * Whether the Steps list has a diagram to speak for: exactly one is
+     * selected. [CodeProps.versionCount]'s gate, which a diagram has no versions
+     * to carry, so it is spelled out.
+     */
+    val stepsEditable: Boolean,
+    /**
+     * The diagram's play steps, and which row the Steps list has picked, -1 when
+     * none is. 0 steps unless exactly one diagram is selected.
+     */
+    val stepCount: Int,
+    val selectedStep: Int,
+    /**
+     * The picked step, flattened: its two node sets spelled the way the fields
+     * write them (`A, B, C`). Empty when no row is picked.
+     */
+    val stepReveal: String,
+    val stepHighlight: String,
+    /** One line per step, as the rows read it: `Shows A, B · Highlights B`. */
+    val stepSummaries: List<String>,
+    /** The diagram's node ids, `A, B, C`, for the hint under the fields. Empty when it has none. */
+    val nodeIds: String,
 )
+
+/**
+ * The one line a diagram Steps row reads under its title. [CodeStep.summary]'s
+ * twin: the node sets only when the step names them, and a plain step, which
+ * shows the whole chart, says so.
+ */
+private fun DiagramStep.summary(): String {
+    val parts: List<String> = listOfNotNull(
+        reveal.formatNodeIds().takeIf { it.isNotEmpty() }?.let { "Shows $it" },
+        highlight.formatNodeIds().takeIf { it.isNotEmpty() }?.let { "Highlights $it" },
+    )
+    return parts.joinToString(" · ").ifEmpty { "All nodes" }
+}
 
 /**
  * The primary selected element's equation style, flattened for the native
@@ -1247,6 +1285,9 @@ class EditorHost(
                     // The version the inspector picked, so the canvas shows it
                     // and the caret types into it; every other block is at rest.
                     shownCodeVersion = { element -> state.shownVersion(element) },
+                    // Likewise the diagram step the inspector picked, previewed
+                    // where it will play.
+                    shownDiagramStep = { element -> state.shownDiagramStep(element) },
                     fieldMenuBridge = fieldMenu,
                     // Nothing to tell the loop: the caret has not moved and the
                     // document has not changed. Straight out to the shell, which
@@ -2549,6 +2590,13 @@ class EditorHost(
                 nodeStroke = diagram.nodeStroke,
                 nodeText = diagram.nodeText,
                 edgeColor = diagram.edgeColor,
+                stepsEditable = state.selectedDiagramElement != null,
+                stepCount = state.selectedDiagramElement?.steps?.size ?: 0,
+                selectedStep = state.diagramStep ?: -1,
+                stepReveal = state.selectedDiagramStep?.reveal?.formatNodeIds().orEmpty(),
+                stepHighlight = state.selectedDiagramStep?.highlight?.formatNodeIds().orEmpty(),
+                stepSummaries = state.selectedDiagramElement?.steps?.map { it.summary() }.orEmpty(),
+                nodeIds = state.diagramNodeIds.formatNodeIds(),
             )
         }
 
@@ -2579,6 +2627,49 @@ class EditorHost(
     /** The arrows between nodes, heads included. */
     fun setDiagramEdgeColor(argb: Long) {
         formatDiagrams { it.copy(edgeColor = argb) }
+    }
+
+    /**
+     * Picks step [index] of the selected diagram, -1 for none. The canvas
+     * previews the picked one, which the core does: [selectCodeStep]'s twin.
+     */
+    fun selectDiagramStep(index: Int) {
+        viewModel.onSelectDiagramStep(if (index < 0) null else index)
+    }
+
+    /** Adds a step to the selected diagram, a copy of the picked one. */
+    fun addDiagramStep() {
+        val id: String = state.selectedDiagramElement?.id ?: return
+        viewModel.onAddDiagramStep(id)
+    }
+
+    /** Takes step [index] off the selected diagram, with the build that played it. */
+    fun removeDiagramStep(index: Int) {
+        val id: String = state.selectedDiagramElement?.id ?: return
+        viewModel.onRemoveDiagramStep(id, index)
+    }
+
+    /** Moves step [from] to sit at [to], which is what the play order follows. */
+    fun moveDiagramStep(from: Int, to: Int) {
+        val id: String = state.selectedDiagramElement?.id ?: return
+        viewModel.onMoveDiagramStep(id, from, to)
+    }
+
+    /** The nodes step [index] shows, as the field writes them. Empty is all of them. */
+    fun setDiagramStepReveal(index: Int, text: String) {
+        updateDiagramStep(index) { it.copy(reveal = parseNodeIds(text)) }
+    }
+
+    /** The nodes step [index] spotlights. Empty dims nothing rather than everything. */
+    fun setDiagramStepHighlight(index: Int, text: String) {
+        updateDiagramStep(index) { it.copy(highlight = parseNodeIds(text)) }
+    }
+
+    /** The two setters above, over the step the list has picked. */
+    private inline fun updateDiagramStep(index: Int, edit: (DiagramStep) -> DiagramStep) {
+        val diagram: DiagramElement = state.selectedDiagramElement ?: return
+        val step: DiagramStep = diagram.steps.getOrNull(index) ?: return
+        viewModel.onUpdateDiagramStep(diagram.id, index, edit(step))
     }
 
     // The diagram setters' [formatSelection], the same shape [formatTerminals]

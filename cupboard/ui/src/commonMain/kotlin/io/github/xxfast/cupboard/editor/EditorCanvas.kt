@@ -96,6 +96,7 @@ import io.github.xxfast.cupboard.canvas.title
 import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.DiagramElement
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
@@ -275,6 +276,13 @@ fun EditorCanvas(
      */
     shownCodeVersion: (CodeElement) -> Int = { 0 },
     /**
+     * Which step a diagram draws in on this canvas: `EditorState.shownDiagramStep`,
+     * the inspector's picked step for the selected diagram and null, the whole
+     * diagram, for every other. [shownCodeVersion]'s twin, a lambda for the same
+     * reason, and defaulted to the whole diagram for a shell with no step list.
+     */
+    shownDiagramStep: (DiagramElement) -> DiagramStep? = { null },
+    /**
      * A shell's way into the caret's own Cut/Copy/Paste/Select All, and its cue
      * that it wants them: passed one, the fields hand it their verbs and a
      * right-click inside an edit session is caught here rather than opening the
@@ -389,7 +397,10 @@ fun EditorCanvas(
                 // block composed invisibly would still re-highlight on every
                 // keystroke the field streams through the loop.
                 if (element.id == editing?.id) continue
-                ElementView(element.atShownVersion(shownCodeVersion))
+                ElementView(
+                    element = element.atShownVersion(shownCodeVersion),
+                    diagramStep = (element as? DiagramElement)?.let(shownDiagramStep),
+                )
             }
             if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 

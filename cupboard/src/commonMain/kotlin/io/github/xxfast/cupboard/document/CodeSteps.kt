@@ -13,6 +13,10 @@ package io.github.xxfast.cupboard.document
  *
  * `CodeVersions.kt` is the same shape one layer down: versions are to steps what
  * steps are to builds.
+ *
+ * The build half of every slide-level edit is not about code at all, so it lives
+ * here once as the `Slide.followingStepXxx` helpers, and `DiagramSteps.kt` walks
+ * a diagram's steps through the very same ones.
  */
 
 /**
@@ -58,8 +62,19 @@ fun Slide.addingCodeStep(elementId: String, after: Int, step: CodeStep): Slide {
     val grown: CodeElement = element.withStepAdded(after, step)
     if (grown.steps.size == element.steps.size) return this
 
-    val at: Int = after + 1
-    val shifted: Slide = updateElement(grown).remappingStepBuilds(elementId) { index ->
+    return updateElement(grown).followingStepAdded(elementId, after + 1)
+}
+
+/**
+ * This slide's builds for [elementId] following a step that has just been put
+ * at [at]: builds at or behind it move up with the steps they play, and a walk
+ * already in the build order gets a click for the new step ([queueingStep]).
+ *
+ * The element itself is the caller's to have grown already. This is only the
+ * build half, which is the same for every kind that holds its own steps.
+ */
+internal fun Slide.followingStepAdded(elementId: String, at: Int): Slide {
+    val shifted: Slide = remappingStepBuilds(elementId) { index ->
         if (index >= at) index + 1 else index
     }
     return shifted.queueingStep(elementId, at)
@@ -94,14 +109,22 @@ fun Slide.removingCodeStep(elementId: String, index: Int): Slide {
     val element: CodeElement = elementById(elementId) as? CodeElement ?: return this
     if (index !in element.steps.indices) return this
 
-    return updateElement(element.withStepRemoved(index)).remappingStepBuilds(elementId) { at ->
+    return updateElement(element.withStepRemoved(index)).followingStepRemoved(elementId, index)
+}
+
+/**
+ * This slide's builds for [elementId] following step [index] going: builds
+ * behind it come back one, and the build that played it goes with it.
+ * [followingStepAdded]'s other half, and the element is the caller's the same way.
+ */
+internal fun Slide.followingStepRemoved(elementId: String, index: Int): Slide =
+    remappingStepBuilds(elementId) { at ->
         when {
             at == index -> null
             at > index -> at - 1
             else -> at
         }
     }
-}
 
 /**
  * This slide with step [from] of the code block [elementId] moved to sit at [to],
@@ -115,10 +138,18 @@ fun Slide.movingCodeStep(elementId: String, from: Int, to: Int): Slide {
     val element: CodeElement = elementById(elementId) as? CodeElement ?: return this
     if (from == to || from !in element.steps.indices || to !in element.steps.indices) return this
 
-    val map: List<Int> = versionsAfterMoving(element.steps.size, from, to)
-    return updateElement(element.withStepMoved(from, to)).remappingStepBuilds(elementId) { at ->
-        map[at.coerceIn(map.indices)]
-    }
+    return updateElement(element.withStepMoved(from, to))
+        .followingStepMoved(elementId, element.steps.size, from, to)
+}
+
+/**
+ * This slide's builds for [elementId] following step [from] of [count] moving to
+ * sit at [to], each build carried along with the step it played.
+ * [followingStepAdded]'s sibling, and the element is the caller's the same way.
+ */
+internal fun Slide.followingStepMoved(elementId: String, count: Int, from: Int, to: Int): Slide {
+    val map: List<Int> = versionsAfterMoving(count, from, to)
+    return remappingStepBuilds(elementId) { at -> map[at.coerceIn(map.indices)] }
 }
 
 /**

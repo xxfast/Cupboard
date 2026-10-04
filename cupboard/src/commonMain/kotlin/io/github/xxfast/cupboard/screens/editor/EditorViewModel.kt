@@ -5,6 +5,7 @@ import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
@@ -24,11 +25,16 @@ import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddElementSteps
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateCodeStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.UpdateDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
@@ -251,6 +257,11 @@ class EditorViewModel(
     fun onRemoveCodeStep(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeStep(elementId, index)) } }
     fun onMoveCodeStep(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveCodeStep(elementId, from, to)) } }
     fun onUpdateCodeStep(elementId: String, index: Int, step: CodeStep) { scope.launch { events.emit(UpdateCodeStep(elementId, index, step)) } }
+    fun onSelectDiagramStep(index: Int?) { scope.launch { events.emit(SelectDiagramStep(index)) } }
+    fun onAddDiagramStep(elementId: String) { scope.launch { events.emit(AddDiagramStep(elementId)) } }
+    fun onRemoveDiagramStep(elementId: String, index: Int) { scope.launch { events.emit(RemoveDiagramStep(elementId, index)) } }
+    fun onMoveDiagramStep(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveDiagramStep(elementId, from, to)) } }
+    fun onUpdateDiagramStep(elementId: String, index: Int, step: DiagramStep) { scope.launch { events.emit(UpdateDiagramStep(elementId, index, step)) } }
     fun onInsertElement(element: Element) { scope.launch { events.emit(InsertElement(element)) } }
     fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
     fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
