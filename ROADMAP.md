@@ -2,117 +2,101 @@
 
 What we're building and in what order. See `GOALS.md` for the why, `design/README.md` for the UI spec. Detail on finished work lives in git history; this file stays forward-looking. Parity target: Keynote 15.3 for Mac (feature surface audited 2026-08 from the app's menu tree + the user guide), minus everything listed under Not planned.
 
-## Phase 0: Scaffolding
+Organised as releases, not phases. Current version is 0.1.0. Each set below is one tagged release and has to be shippable on its own: shared core first, then its UI on each shell in parallel (the `/ship` flow). 1.0.0 is the first stable release; anything that doesn't gate it sits under After 1.0.
 
-- [x] CuP adopted as the presentation runtime behind our own interface (play mode, steps/builds; swappable). Forked as submodules `cup/` + `emoji-kt/` (branch `ir/macos-targets` in each, composite-built) to add `macosArm64`. Upstream drafts: KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19.
-- [x] Compose runs natively on macOS without a JVM; `ComposeNSView` embeds the shared canvas in SwiftUI via `NSViewRepresentable`. Known edge: no IME on native text input (picked up in Phase 2).
-- [x] Serializable document model: flat Keynote-style nesting (depth + collapse, absolute numbering), native 1920x1080 slide space, rendered by pure common composables. Editor canvas with selection, 8 resize handles, guides + snap, zoom (Fit / 25-200%), screen-space overlays; pure-render thumbnails; syntax-highlighted code elements (`dev.snipme:highlights`, every target, no JS bridge).
-- [x] Screen architecture per CLAUDE.md constraint 6: NYTimes-KMP-shaped MVI in `screens/<name>/`, thin shell adapters, navigation per platform. Gestures commit once on release. Undo/redo: bounded document history in the presenter, Cmd+Z in both shells' menus.
-- [x] Interim persistence: KStore autosaves `~/.cupboard/document.json` (debounced, both shells share the file) until the `.cupboard` bundle format exists.
-- [x] Template app modules removed; `:cupboard` keeps its android/ios/web targets because iPad, Android tablet, and web apps are planned later.
-- [x] macOS shell scaffolding: `macosApp/Cupboard.xcodeproj` (Gradle framework phase + compose-resources staging), `.app` packaging, IDE run config through the KMP plugin. Terminal launches show the window without a dock click: run.sh goes through LaunchServices with logs on the tty (`624e9e5`; the in-app activate alone, `6f8afba`, wasn't honored).
-- [x] Play mode wired in both shells. Needs a visual pass.
-- [x] Build CI via GitHub Actions: jobs mirroring the local verify battery (`:cupboard:jvmTest` + js/wasmJs compiles + `:desktopApp:compileKotlin` on ubuntu; `xcodebuild` + the 5s smoke run on macos). Recursive submodule checkout for the forks; no aggregate `./gradlew build` (known-broken by design). (`f051f70`, first run green incl. the smoke test on the CI VM)
-- [ ] Follow-through: promote the upstream fork PRs (KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19), coordinate on Kotlin Slack `#cup-presentations`.
+## 0.1.0 (current)
 
-## Phase 1: App shells (all desktop platforms, in parallel)
+Everything built so far, summarised. Commit refs point at the detail.
 
-macOS, Windows, and Linux are built side by side; there is no dedicated desktop client. Every later phase lands shared core first, then its UI on each shell in parallel (the `/ship` flow).
+- Foundations: CuP as the presentation runtime behind our own interface, forked as submodules `cup/` + `emoji-kt/` (branch `ir/macos-targets`, composite-built) for `macosArm64`; upstream drafts KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19. Compose runs natively on macOS via `ComposeNSView` (a real `NSTextInputClient`). Serializable document model, native 1920x1080 slide space, NYTimes-KMP-shaped MVI screens, bounded undo/redo, gestures committing once on release. CI mirrors the local verify battery on ubuntu, macos and windows (`f051f70`).
+- Shells: macOS SwiftUI chrome per design v3/v4/v5 (glass panels, navigator rows, inspector tabs, full-bleed canvas; `dc8f842`, `4b4bb12`, `f386691`, `ef200af`), Linux/fallback Compose chrome in M3 with `ChromeTheme` tokens for all three OSes, WinUI chrome over the `Cupboard.Kotlin` NuGet with a text-row navigator and Fluent inspector (`6cec865`, `30bb632`, `771656c`). The Windows canvas is not embedded yet.
+- Editing: element properties and rotation, multi-select, group/ungroup, align/distribute, app-internal clipboard, deletion, canvas + navigator context menus, slide management with Keynote-style nested drag, on-canvas text editing, text formatting, shape catalog, rulers/guides/snap, Keynote-parity inspectors (`docs/keynote/INSPECTOR.md`) and navigator (multi-select, keyboard, drag).
+- Developer content: code element with six themes, in-place editing, code steps with reveal/highlight and diffing, Magic Move for code, step authoring, terminal, diagram (mermaid subset), equations (LaTeX subset), export as a CuP project.
+- Layouts and themes: masters with placeholders, layout mode, eleven built-in themes plus Keynote's Basic/Classic masters, File > New theme chooser (`cb9a3a9`), slide size presets + custom, object styles, saved themes.
+- Animation: slide transitions incl. Magic Move, builds in/out with deliveries, action builds, build order panel, play-mode fidelity test.
+- Presenting: own presenter display, multi-display with swap, rehearse, playback types + links, in-show keyboard controls, Play menu.
+- Media and documents: images with masks/instant alpha/adjustments, galleries, video/audio core only (`90f06d1`), `.cupboard` folder bundle, full document lifecycle with recents, export to PDF/PNG/GIF/HTML/PPTX/Print.
 
-- [x] macOS chrome per design v3's layered window: full-bleed canvas with translucent glass panels floating over it (sidebar 212px with traffic lights in its header, inspector 282px, toolbar 52px spanning the gap); no status bar on macOS. Live zoom pill (Fit + 25-200%); insert clusters and inspector body are placeholders until their phases. (`dc8f842`, needs a visual pass)
-- [x] macOS navigator rows per the Keynote 26 spec (design v4): floating card, capsule selection hugging number + thumbnail (no ring), disclosure strip under the parent row, 16px/level indent. (`4b4bb12`, needs a visual pass)
-- [x] macOS full-bleed canvas embed via `ComposeNSView` (window content layer at origin 0,0; retires the skiko Metal-layer offset band). (`f386691`, needs a visual pass)
-- [x] Navigator rows per design v5's leading-gutter chevron: fixed gutter on every row (chevron vertically centred against the thumbnail, number tucked in the same gutter), 12px/level indent + 12px thumbnail step-down (clamped at three levels), stroked 9x9 chevron rotating 90deg over 140ms. macOS SwiftUI + Compose fallback; WinUI stays text rows until the canvas port. Collapse animates the rows too, via `fullOutline()`'s visible flag. (`ef200af`, `7975c58`, needs a visual pass)
-- [x] Inspector chrome on every shell: macOS landed per design v4 (Format/Animate/Document tabs live in the toolbar over the inspector glass, active tab closes the panel, Text/Build/Slide placeholder bodies incl. the static Document panel; `4b4bb12`, needs a visual pass). Compose already drew the M3 tabs; what it lacked was any way to put the panel away, so a `ToggleInspector` event and a Show Inspector item joined the View menu (close-on-reclick stays macOS-only, per the design). WinUI had no inspector at all and gets the Fluent one: tab strip with the 2.5px accent underline, Format/Animate/Slide placeholder bodies, View menu toggle, state through the `Cupboard.Kotlin` bridge. Panels fill in as their features land in later phases. (`771656c`, needs a visual pass; the XAML is unverified until CI's windows job runs it)
-- [x] Linux chrome in Material 3 per the design: navigator, toolbar, inspector, speaker notes strip, status bar; OS styling tokenized (`ChromeTheme` ports all of `design/platform-theme.js`, 3 OS x dark/light) so this shell doubles as the universal fallback. Zoom pill live like the mac shell's; insert buttons and inspector bodies are placeholders until their phases. (needs a visual pass)
-- [ ] Windows: embed the Compose canvas per `winuiApp/CANVAS.md` (child JVM process reparented via `SetParent`, JVM owns the one `EditorViewModel`, native lib becomes an IPC proxy; keyboard-focus risk timeboxed, Compose fallback on kill criteria). Chrome parity already landed (`6cec865`, `30bb632`): view models shared via the `Cupboard.Kotlin` NuGet, MenuBar/navigator/status bar in Fluent, CI's windows job blocking and green. Needs a visual pass on a Windows machine.
-- [ ] Fallback rule: if a native route stalls, that platform ships the tokenized Compose shell instead (mac or Fluent tokens) without blocking the others.
+Almost none of it has had a visual pass. That's 0.6.0.
 
-## Phase 2: Editing foundations (shared)
+## 0.2.0: Finish what's half in
 
-The parity core every later phase builds on. All of it is `screens/editor/` events + reductions first, shell surfaces second.
+Shipped cores whose surfaces never landed, mostly parked on the bundle format, which exists now.
 
-- [x] Element property events: position/size (numeric entry), opacity, z-order (forward/back/front/back), lock/unlock, flip/rotate. Rotated elements hit-test and resize where they're drawn (anchor-corner-fixed math in `Geometry.kt`); live Format panels in both shells, Arrange menu on desktop. (`2943c50`, needs a visual pass)
-- [x] Multi-select: marquee + shift-click (toggles at press time), group/ungroup (`GroupElement`, absolute-coordinate children, transforms baked on ungroup), align/distribute, batch property edits in both shells. (`13ffcc6`, needs a visual pass; known open bug: group resize misbehaves with rotated children, seen on visual review)
-- [x] Clipboard: cut/copy/paste/duplicate for elements and slides, paste style / copy style. App-internal (presenter-local like undo, not the OS pasteboard); cut+paste keeps position, repeat pastes cascade; collapsed slides travel with their hidden run. (`23ed292`) Edit-menu verbs follow keyboard focus per Keynote: `focusedPane` rides the loop, generic Cut/Copy/Duplicate/Delete re-dispatch to slide or elements, so Cmd+X/C/V works in the navigator too (`b02edd3`).
-- [x] Deletion: elements and slides, Clear All; undo/redo re-anchor the slide selection by index when the restored document loses it (the selection-dangle revisit). (`a3a482c`)
-- [x] Canvas context menu: cut/copy/paste/delete, then z-order, group/ungroup, lock, align/distribute. `ContextClick` through the loop (outside the selection selects, inside keeps it, empty space clears); canvas forwards point + hit only. `NSMenu` on macOS with enablement computed one step ahead of the roundtrip; Compose renders the shared menu specs natively via AWT on macOS/Windows (`ea62459`) and keeps an m3 dropdown at the pointer on Linux, where M3 is the designed chrome. Arrange items factored once per shell, shared by menu bar and context menu. WinUI waits for its canvas embed. (`def9f0c`; `9b28924` fixed the menu's eaten rightMouseUp sticking the scene's secondary button, caught and confirmed fixed on visual review)
-- [x] Navigator context menu: new/duplicate on the clicked row, then cut/copy/paste, then delete; every action carries the row's id (race-free by construction; on macOS the row is not pre-selected, `.contextMenu` has no click hook and the actions settle selection in the core). Pulled AddSlide forward from slide management; "after this slide" insertion (add/duplicate/paste) lands past the row's deeper run so a parent is never split from its children. Native per shell (SwiftUI `.contextMenu` on macOS rows, AWT popup on desktop macOS/Windows, m3 on Linux); slide verbs factored once per shell, shared with the menu-bar Slide menu, which gained New Slide. (`0a956eb`)
-- [x] Slide management: add/duplicate/delete/reorder (navigator drag), skip slide, slide numbers, per-slide background (color/gradient). Add landed early with the navigator context menu (`0a956eb`); the rest in `1d857d1`: `moveSlide` moves the slide with its whole nested run, collapsed or not, Keynote-style (the first cut moved an expanded parent alone and outdented its children, which tore the hierarchy apart); dropping onto a row's body nests under it, its edge quarters name the gaps; the drag is Keynote's: the row travels with the pointer and rows animate into place on drop (Compose navigator is a keyed `LazyColumn` + `animateItem`, SwiftUI offsets the row and wraps the drop in `withAnimation`), drag rides the loop on Compose (transient `slideDrag`, the marquee pattern) and native DragGesture on SwiftUI, skip renumbers presentation-style and play walks past skipped slides, inspector Slide panel gets the Slide Number checkbox + Default/Color/Gradient swatches. Image backgrounds wait for Phase 8's bundle format alongside ImageElement content. Needs a visual pass.
-- [x] On-canvas text editing: double-click puts the caret in a text element (legacy `BasicTextField` over the canvas overlay, one undo entry per edit session, Edit verbs grey out while editing), and `ComposeNSView` is a real `NSTextInputClient` so dead keys and CJK sources reach the field on native macOS. (`a2bcc59`, needs a visual pass)
-- [x] Text formatting: font family (generic Sans/Serif/Monospace until fonts ship with the bundle format), size/weight, bold/italic/underline/strikethrough, colour, alignment, line spacing, lists (bullet/numbered, nested by leading tabs, Tab/Shift+Tab in the field), links (whole-box for now, inline ranges later). Live Text section in both Format inspectors, Format menu with Cmd+B/I/U on both shells. (`9417d91`, needs a visual pass)
-- [x] Shape catalog: the basic dozen (rect, rounded, oval, triangle, arrow, diamond, star, hexagon, quote bubble, callout), lines with arrowheads, fills (solid/gradient; image fills wait for Phase 8's bundle format), borders, shadow, corner radius. Brought the first `InsertElement` event with it: toolbar Text/Shape buttons and an Insert menu are live on both shells, Shape section in both Format inspectors. (`2b4bba0`, needs a visual pass)
-- [x] Rulers + user guides (draggable out of the rulers, dragged off the slide to remove; document-owned, shared across slides), layout guides (center, edges, 5% margins, shown only while snapping), snap settings (center/edges/objects/guides). Snapping generalised to `snapFrame`, guide draws at the snapped line. All in the shared canvas; View menu on both shells. (`5067320`, needs a visual pass)
-- [x] Inspector parity with Keynote (survey in `docs/keynote/INSPECTOR.md`): Format segments (Style / kind / Arrange) remembered by name with a Style fallback, collapsible Fill/Border/Shadow/Spacing/Lists with header summaries, unit + stepper on every numeric field, Align/Distribute and always-present Lock/Group pairs in Arrange, slide formatting when nothing is selected, Animate split into Build In / Action / Build Out with Build Order pinned to the foot. macOS restyled to Keynote's metrics and colours on the system accent; Compose keeps M3. Not yet: mixed-value display on multi-selections, vertical text align, paragraph spacing, shadow offset/angle/opacity, Keynote-style colour wells. (`d970371`, needs a visual pass)
-- [x] Navigator parity with Keynote (surveyed live): several slides selected at once (`alsoSelectedSlideIds` alongside the slide on the canvas; shift-click ranges from it, command-click toggles, Cmd+A), the slide verbs (delete/cut/copy/duplicate/skip/move) take the whole selection as one history entry when they land on a selected row, arrows walk visible rows with shift extending, Left/Right fold and open, Tab/Shift+Tab indent with the run beneath (`Document.indentSlide`), Return adds a slide. `MoveSlide` takes an asked-for `depth` that the gap clamps. macOS look: full-width row selection (solid accent for the canvas's slide, tint merged across neighbours for the rest, one grey when the canvas or another window has focus), no hover, drag lifts the rows out, a thumbnail with a count rides the pointer, a gap with an accent bar at the landing level marks the drop and sideways travel picks the level. Core is shared; the Compose and WinUI navigators still drive single selection. (needs a visual pass)
+- [ ] Video/audio surfaces: Insert menu + toolbar, Video/Audio inspector sections on both shells, the macOS AVPlayer overlay in play, a JVM playback answer (no codec on the classpath: poster + open-in-OS-player is the fallback).
+- [ ] Image fills on shapes and image slide backgrounds.
+- [ ] Real fonts: family picker over the fonts the OS has, embedded in the bundle so a deck renders the same on another machine; generic Sans/Serif/Monospace stay as the fallbacks.
+- [ ] Diagram step authoring: the Steps section the Code inspector got (`8e6ddd7`), for `DiagramStep`.
+- [ ] Inline links: link ranges inside a text box, not just whole-box.
 
-## Phase 3: Developer content (the differentiator)
+## 0.3.0: Editing debts
 
-Where we beat Keynote for our audience; worth shipping before broad parity.
+Every "not yet" the parity items left behind.
 
-- [x] Code element parity+: language picker (curated `CodeLanguages`, free-form on the model), six syntax themes (always dark, per-theme block chrome), line numbers gutter, font size + wrap controls. Code section in both Format inspectors, Insert > Code menu + toolbar button on both shells, style paste carries the new looks. (`1573fe4`)
-- [x] On-canvas code editing: double-click carets a code block like a text box (one undo per session, Escape leaves, Tab indents four spaces), field wears the block's theme chrome with live highlighting and gutter renumbering. Known edges: the field soft-wraps while editing regardless of the wrap setting, and entry selects the whole snippet. (`4bd5259`)
-- [x] Clipboard while editing: Cmd+X/C/V act on the field's text mid-edit in both shells (text boxes and code blocks). Shared `FieldClipboard` over Compose's ClipboardManager (real `NSPasteboard` on native macOS), `performKeyEquivalent` on `ComposeNSView` beats the greyed menu items to the chord, desktop's Paste accelerator comes off while editing (it was pasting elements into the session). Menu items stay greyed mid-edit by design; enabling them Keynote-style is a possible later polish. (`fe092b1`)
-- [x] Native field context menu on macOS: right-click inside an edit session pops an `NSMenu` (Cut/Copy/Paste, Select All) driving the field through `FieldMenuBridge` + `FieldClipboard`, one code path with the Cmd chords. Compose shells keep the built-in menu. (`324e604`)
-- [x] Code steps: per-build line/range highlighting and progressive reveal, document-owned and native-safe. `CodeStep` (reveal + highlight line ranges) on the element, `Build.codeStep` advances it through the existing Animate order and triggers; play collapses hidden lines (original gutter numbers kept) and dims outside a highlight. Sample deck demos it. Authoring UI lands with Phase 5's build order panel. (`bf47918`, needs a visual pass)
-- [x] Code diffing between steps: matched lines (by original line number) slide between rows, revealed lines fade/slide in, hidden ones out, dim changes crossfade; per-line `Layout` on the play path only, which also keeps the gutter aligned under wrap. (`63eef71`, needs a visual pass)
-- [x] Terminal/output element: `TerminalElement` (prompt lines are commands, the rest output, mac-style title bar), `BuildEffect.Typewriter` types the commands out over the build's duration in play. In-place editing via `Element.takesCaret`, Terminal inspector sections, Insert menu + toolbar on both shells; sample deck's Native Interop slide demos it. (`8757bd8`, needs a visual pass)
-- [x] Diagram element: `DiagramElement` holds mermaid-flowchart-subset source, parsed and laid out in `:cupboard` (layered layout, pure Kotlin), drawn on the shared canvas. `DiagramStep` reveals/highlights nodes (edges follow), advanced by `Build.elementStep` (the generalised `codeStep`, same tag on disk). Source edited in place over the live drawing, Diagram inspector sections, Insert + toolbar on both shells; sample deck's Scene Graph slide demos it. (`b6b6335`, needs a visual pass)
-- [x] Equations: `EquationElement` with a LaTeX subset parsed in `:cupboard` (never throws, unknown commands render verbatim) and a KaTeX-class box layout over `TextMeasurer` in `:cupboard:ui`; fractions, roots, scripts, big operators with limits, delimiters, accents, greek. Source edited in place, Equation inspector sections, Insert + toolbar on both shells; sample deck's Frame Budget slide demos it. `RenderSnapshotTest` now writes every sample slide to `cupboard/ui/build/snapshots/`. (`5e41b04`, needs a visual pass)
-- [x] Magic Move for code: a code block holds several versions of its source and morphs between them in play, token by token (matched tokens glide, removed ones fade out together, added ones fade in), so a refactor reads as one. Keynote's Magic Move only knows glyphs and scrambles code. Tokens from our own language-agnostic lexer in `:cupboard`, matched with Heckel's 1978 diff (CACM 21(4)) ported from Rahul Ravikumar's Apache-2.0 `storyboard-warp` ([post](https://rahulrav.com/blog/magic_move.html)); a `CodeStep` picks its version, versions are authored in the Code inspector on both shells. (`9712452`, needs a visual pass; step authoring is the next item)
-- [x] Code step authoring: a Steps section in the Code inspector on both shells (add, remove, reorder; each step picks a version, its shown lines and its highlighted lines as `1-3, 7` ranges), Add Step Builds writes one build per step the way galleries do, and builds follow steps when they move or go. Until now steps only came from decks built in code. Diagram steps are the same shape and get the same treatment after. (`8e6ddd7`, needs a visual pass)
-- [x] Export a deck as a CuP Kotlin project: `Document.toCupProject()` emits a standalone Gradle project (CuP Beta-17, desktop + web), one `Slide(stepCount)` per slide, builds and code steps honoured; diagram/equation layouts export as source with a TODO. File > Export as CuP Project... on both shells; the sample export compiles against the CuP fork. (`ee0b108`)
+- [ ] Inspector gaps: mixed-value display on multi-selections, vertical text align, paragraph spacing, shadow offset/angle/opacity, Keynote-style colour wells.
+- [ ] Per-slide Title/Body appearance checkboxes do something.
+- [ ] Compose navigator catches up with the core's multi-select (ranges, toggles, batch verbs). WinUI's follows once its canvas lands.
+- [ ] Code field honours the wrap setting while editing and places the caret at the click instead of selecting the whole snippet.
+- [ ] Group resize with rotated children (open bug from `13ffcc6`).
+- [ ] Speaker notes editable in the strip (closes the old open question; the presenter display already edits them mid-show).
+- [ ] Edit menu items stay live mid-edit, Keynote-style, instead of greying while the field owns the chords.
+- [ ] Single-file `.cupboard` (zip) for Linux and Windows, where a folder-as-document doesn't fly. macOS keeps the package.
 
-## Phase 4: Layouts and themes
+## 0.4.0: Windows
 
-- [x] Slide layouts (masters): a layout is a `Slide` in `Document.layouts` (ids resolve across both lists, so element reductions work unchanged in layout mode), placeholders are elements with a `PlaceholderRole` (Title/Body/Media/Code), static layout objects render behind slides and never hit-test. Apply/reapply map by role and keep content, new slides instantiate their anchor's placeholders, layout edits propagate live. Layout mode in the navigator (Done strip, New/Duplicate/Rename/Delete), layout picker + Reapply + placeholder buttons in the Slide/Document panels, View menu toggle, on both shells. Not yet: per-slide Title/Body appearance checkboxes stay inert. (`cf82632`, needs a visual pass)
-- [x] Themes: `Theme` = deck background + `ElementDefaults` + layouts; eleven built-ins (Cupboard; vivid Aurora, Sunset, Ocean, Candy; light Paper, Mint; muted Graphite, Nord, Solarized, Terminal). Change theme remaps layouts by title and reapplies them; Save Theme persists to `~/.cupboard/themes.json` (loaded on start, debounced writes); every insert factory dresses new elements from `document.defaults`. Theme picker, Save/Delete Theme and deck background in both shells' Slide/Document panels. (`05895fb`, needs a visual pass)
-- [x] Document setup: `SlideSizePreset` (16:9, 4:3) + custom, `Document.resized` scales content per axis (type by the smaller ratio) across slides, layouts and guides; every renderer, ruler, thumbnail, the CuP player and the export read the document's size. Slide Size picker in both shells' Document panels. (`64a81e5`, needs a visual pass)
-- [x] Object styles: `ObjectStyle` (fill/gradient/border/shadow/radius) in `Document.objectStyles`, six generated per theme, apply/save/rename/delete; `ElementDefaults` grew text size/weight/align/line height and Use as Default Text Box Appearance / Shape Style write the primary element's look into it. Style strip in both Shape inspectors, Format menu items on both shells. (`a84515b`, needs a visual pass)
+The one platform without a canvas. Timeboxed.
 
-## Phase 5: Animation
+- [ ] Embed the Compose canvas per `winuiApp/CANVAS.md` (child JVM process reparented via `SetParent`, JVM owns the one `EditorViewModel`, native lib becomes an IPC proxy). Keyboard focus is the known risk.
+- [ ] If the embed hits its kill criteria: Windows ships 1.0 on the tokenized Compose shell with Fluent tokens and the WinUI chrome moves to After 1.0. Either way the Windows build gets a visual pass on a real Windows machine.
+- [ ] Whichever shell ships: canvas + navigator context menus and navigator multi-select on it.
 
-- [x] Transition catalog per slide: `SlideTransition` (Dissolve/Push/Move In/Wipe on CuP `SlideSpecs`, Magic Move by matching elements on type + content and animating them on the arriving slide), duration, on-click or automatic with delay (player auto-advances). Transition section in both Animate inspectors, export emits the nearest CuP set. (`5145b12`, needs a visual pass)
-- [x] Builds in/out per element: `Build` has a kind, effect (Appear/Fade Up/Pop/Dissolve/Move In/Scale/Wipe/Typewriter), delivery (all/paragraph/word/character/line, each piece a click), delay and After Previous; `Slide.buildTimeline` is the step model, play renders through `AnimatedVisibility`. Add/Update/Remove/Move build events. Authoring UI is the build order panel below. (`008754d`, needs a visual pass)
-- [x] Action builds: `BuildKind.Action` + `BuildAction` (move, opacity, rotate, scale), chained through `Slide.actionStateAt`, animated in play with the build's duration and delay. Move is a straight line for now; paths wait on demand. (`1804c1a`, needs a visual pass)
-- [x] Build order panel: the Animate inspector on both shells lists every build (drag to reorder, click selects row + element), adds In/Out/Action builds, and edits effect, delivery, action parameters, duration, trigger (on click / with / after previous), delay and element step; canvas badges per the design while the tab is up. (`f0cb3a2`, needs a visual pass)
-- [x] Play-mode fidelity: transition and build settings live in the document model and the CuP adapter honours them; `PlayFidelityTest` renders every sample slide at every step. `previewOf` + Preview buttons on both shells, player start step + position plumbing for the presenter display, export maps effects/timings. (`2c17f79`)
+## 0.5.0: Release plumbing
 
-## Phase 6: Presenting
+First downloadable build. Everything after this is a public beta.
 
-- [x] Presenter display: our own `PresenterDisplay` (not CuP's JVM-only speaker window): current + next, notes editable mid-show, elapsed timer with reset, clock, four layouts. Second window on both shells sharing the show's `PlayerController`, View menu toggle. (`2cfd01e`, needs a visual pass)
-- [x] Multi-display: show full-screen on the secondary display, presenter on the primary, X / View > Swap Displays swaps live, on both shells. Untested on real dual-display hardware. (`ac00c03`, needs a visual pass)
-- [x] Rehearse mode: Slide > Rehearse Slideshow shows the presenter display alone over a hidden player, both shells. (`260aa68`, needs a visual pass)
-- [x] Playback types: `PlaybackSettings` (Normal / Self-Playing / Links Only, loop, restart after idle) honoured by the player; `LinkTarget` on text/shape/image (slide, next/previous/first/last, URL, exit) acted on in play, clicks advance a normal show. Playback + Link sections on both shells. (`fafef13`; part of the core sits in `0395660` by a staging slip, needs a visual pass)
-- [x] In-show controls: keyboard navigation incl. Home/End, number+Enter jump, S/Tab slide switcher, "?" shortcut sheet, P laser dot (OS cursor hiding is not reachable from shared code), Escape closes overlays first. (`5ee49f1`, needs a visual pass)
+- [ ] One version source feeding `packageVersion`, `MARKETING_VERSION` and the NuGet (today `1.0.0` and `0.1.0` disagree).
+- [ ] macOS: Developer ID signing + notarization in `package.sh`, Dmg.
+- [ ] Linux Deb (AppImage or Flatpak if cheap), Windows Msi. `packageDistributionForCurrentOS` already does the packaging.
+- [ ] Tag-triggered CI release job attaching the three artifacts to a GitHub release. `CHANGELOG.md` kept per release.
+- [ ] Upstream hygiene: promote the fork PRs (KodeinKoders/CuP#12, kosi-libs/Emoji.kt#19) on Kotlin Slack `#cup-presentations`; file the minimal Compose Multiplatform repro for the drag-freeze (local snapshot write from a `pointerInput` handler on an idle window, see `9bc97ce`).
+- [ ] README with a screenshot, install steps per OS, and the Keynote-vs-Cupboard pitch.
 
-## Phase 7: Media and data
+## 0.6.0: Hardening
 
-- [x] Images: asset-backed `ImageElement` (insert from file/drag/paste on both shells), non-destructive mask window with any catalog shape, instant alpha (pure flood fill, re-encoded as a new asset), draw-time exposure/saturation/contrast, captions; Image section in both inspectors. (`a377ffa`, needs a visual pass)
-- [x] Image galleries: `GalleryElement` (asset images + captions), cycled in play through `elementStep` builds (Add Slide Steps), crossfade + dots; multi-select insert, multi-drop, Gallery inspector section on both shells. (`2be0f9d`, needs a visual pass)
-- [ ] Video/audio: core landed (`90f06d1`): `VideoElement`/`AudioElement` with asset or web URL, poster, trim, loop, volume, autoplay, a `MediaPlayerHost` hook the player calls in play. Still owed: Insert/inspector surfaces on both shells, the macOS AVPlayer overlay, and a JVM answer for playback (no codec on the classpath; poster + open-in-OS-player is the fallback).
-- [ ] Tables: rows/columns/headers/footers, merged cells, cell styling, sort; cell formats (number/currency/date/percent); conditional highlighting. Formula engine only if demand proves out (it's Numbers-in-Keynote; developers mostly paste results).
-- [ ] Charts: 2D set (column/bar/line/area/pie/donut/scatter) with a data editor; interactive/animated data sets later; 3D never.
+The visual pass the 0.1.0 items never got, area by area, on each shell (macOS SwiftUI, Compose, Windows). Each one is: run it, compare against the design and against Keynote, fix what's wrong, tick it.
 
-## Phase 8: Documents and interop
+- [ ] Chrome: panels, toolbar, zoom pill, status bar, inspector tabs.
+- [ ] Navigator: rows, nesting, drag, multi-select, context menu.
+- [ ] Canvas editing: selection, handles, rotation, guides, snap, rulers, context menu, text/code in-place editing.
+- [ ] Inspectors: every Format/Animate/Document section against `docs/keynote/INSPECTOR.md`.
+- [ ] Developer elements: code steps, diffing, Magic Move, terminal, diagram, equation.
+- [ ] Layouts and themes: layout mode, theme switch, theme chooser, slide size.
+- [ ] Animation: transitions, builds, action builds, build order panel, canvas badges.
+- [ ] Presenting: play, presenter display, multi-display on real dual-display hardware, rehearse, in-show controls, laser cursor hiding per shell (not reachable from shared code).
+- [ ] Documents: lifecycle, recents, autosave, every export format opened in its target app.
+- [ ] Sample deck and Feature Showcase deck look right end to end.
+- [ ] Beta feedback triage: whatever 0.5.0 users report.
 
-- [x] `.cupboard` bundle format: a folder bundle (`document.json` + `assets/`) via `CupboardBundle`/`FileAssetStore` in a jvm+native `fileMain` source set; `formatVersion` + `decodeDocument` (Loaded/TooNew/Corrupt); the interim autosave migrates into `~/.cupboard/Untitled.cupboard/`. Zip packaging can come with export. Done ahead of Phase 7 because images need somewhere to keep bytes. (`9def82d`)
-- [x] Real document lifecycle: New/Open/Open Recent/Save As/Rename/Close over bundles, one window per deck, `savePending` = Edited in the title, recents in `~/.cupboard/recents.json`, `.cupboard` package association on macOS. Both shells. (`7fe60e7`, needs a visual pass)
-- [x] Export: pure-Kotlin PDF (every-build pages, 1/2/4/6-up handouts, notes), PNG per slide, animated GIF, HTML player, best-effort PPTX (raster + editable text), Print via a handout PDF; rasters from `SlideRasterizer` on every skiko target. File > Export submenu on both shells. Not done: JPEG (no pure encoder) and movie export (needs a codec). (`e028f33`, needs a visual pass)
-- [ ] Import: PPTX and Keynote best-effort (shapes/text/images land editable; unsupported effects degrade gracefully).
-- [ ] Password-protected documents.
+## 1.0.0
 
-## Phase 9: More form factors
+Ships when 0.2 to 0.6 are ticked and:
 
-- [ ] iPad app (SwiftUI shell over the same canvas and view models) and Android tablet app.
-- [ ] Web app (wasmJs shell; possibly the CuP web export doubling as a share/view surface first).
+- [ ] A full talk can be authored, saved, reopened and presented on each OS without a workaround.
+- [ ] No known data-loss or crash bugs; undo and autosave hold up under a feel-test session.
+- [ ] Decks saved on one OS open on the other two.
 
-## Open questions
+## After 1.0
 
-- ~~The drag-freeze bug~~ Resolved: bisected to `9bc97ce`, and the vsync suspicion was wrong. Snapshot writes to canvas-local state from pointer handlers intermittently never reach the recomposer (input, frame clock and draw all traced healthy while frozen); state that roundtrips through the view model always renders. Fixed by streaming transient `PreviewSlide` events through the loop, one `UpdateSlide` on release (undo/autosave boundary), canvas trusts the roundtrip again and `6ea6a03`'s write-behind is gone. Still owed: a minimal repro for an upstream Compose Multiplatform issue (local snapshot write from a `pointerInput` handler on an idle window).
-
-- Collaboration/sync (`● synced` in the design status bar): real-time co-editing implies a backend and CRDT-shaped document work; comments/highlights ride the same infrastructure. Out of scope until the editor core is done.
-- Speaker-notes authoring UX: read-only strips shipped in both shells per the design (`4b4bb12` mac, `86d6a74` desktop); still open whether notes are *edited* in the strip or a panel, and whether editing lands with Phase 6's presenter display or earlier.
+- Tables: rows/columns/headers/footers, merged cells, cell styling, sort, cell formats (number/currency/date/percent), conditional highlighting. Formula engine only if demand proves out (it's Numbers-in-Keynote; developers mostly paste results).
+- Charts: 2D set (column/bar/line/area/pie/donut/scatter) with a data editor; interactive/animated data sets later; 3D never.
+- Import: PPTX and Keynote best-effort (shapes/text/images land editable; unsupported effects degrade gracefully).
+- Password-protected documents.
+- JPEG and movie export (need an encoder / a codec).
+- Action build motion paths (move is a straight line today).
+- WinUI chrome, if 0.4.0 took the fallback.
+- iPad app and Android tablet app (SwiftUI/Compose shells over the same canvas and view models).
+- Web app (wasmJs shell; possibly the CuP web export doubling as a share/view surface first).
+- Collaboration/sync (`● synced` in the design status bar): a backend and CRDT-shaped document work; comments/highlights ride the same infrastructure.
 
 ## Not planned
 
