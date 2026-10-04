@@ -107,6 +107,12 @@ extension EditorView {
             case "Gallery":
                 if let gallery = ui.gallery { gallerySection(gallery) }
 
+            case "Movie":
+                if let video = ui.video { mediaSection(video, movie: true) }
+
+            case "Audio":
+                if let audio = ui.audio { mediaSection(audio, movie: false) }
+
             default:
                 EmptyView()
             }

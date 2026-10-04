@@ -36,6 +36,7 @@ import io.github.xxfast.cupboard.document.applyingStyle
 import io.github.xxfast.cupboard.document.applyingTheme
 import io.github.xxfast.cupboard.document.asObjectStyle
 import io.github.xxfast.cupboard.document.asTheme
+import io.github.xxfast.cupboard.document.clampedMedia
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
@@ -291,9 +292,15 @@ private fun Element.linkedTo(target: LinkTarget?): Element? {
     return linked.takeIf { it != this }
 }
 
-/** Folds [elements] back into the document through their slide. */
+/**
+ * Folds [elements] back into the document through their slide.
+ *
+ * Media is clamped on the way in (see [clampedMedia]), so a field that sent a
+ * volume of 2 or a trim that ends before it starts lands as the nearest thing a
+ * player can do rather than as a document no host can play.
+ */
 private fun EditorState.withElements(elements: List<Element>): EditorState =
-    copy(document = document.updateSlide(selectedSlide.updateElements(elements)))
+    copy(document = document.updateSlide(selectedSlide.updateElements(elements.map { it.clampedMedia() })))
 
 /**
  * This state showing [version] of [element], or unchanged when [element] is not
@@ -839,7 +846,7 @@ fun EditorPresenter(
                 redone.clear()
                 state.copy(
                     document = state.document.updateSlide(
-                        state.selectedSlide.addElements(listOf(event.element)),
+                        state.selectedSlide.addElements(listOf(event.element.clampedMedia())),
                     ),
                     selectedElementIds = listOf(event.element.id),
                 )

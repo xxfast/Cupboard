@@ -53,12 +53,15 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
+import io.github.xxfast.cupboard.canvas.LocalMediaPlayer
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
@@ -75,6 +78,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorMenuSection
 import io.github.xxfast.cupboard.screens.editor.EditorScreen
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
+import io.github.xxfast.cupboard.screens.editor.MediaKind
+import io.github.xxfast.cupboard.screens.editor.WebVideoDialog
 import io.github.xxfast.cupboard.screens.editor.arrangeSections
 import io.github.xxfast.cupboard.screens.editor.canvasMenuSections
 import io.github.xxfast.cupboard.screens.editor.formatSections
@@ -82,7 +87,9 @@ import io.github.xxfast.cupboard.screens.editor.addGalleryImages
 import io.github.xxfast.cupboard.screens.editor.insertGallery
 import io.github.xxfast.cupboard.screens.editor.insertImage
 import io.github.xxfast.cupboard.screens.editor.insertSections
+import io.github.xxfast.cupboard.screens.editor.insertWebVideo
 import io.github.xxfast.cupboard.screens.editor.replaceImage
+import io.github.xxfast.cupboard.screens.editor.setPoster
 import io.github.xxfast.cupboard.screens.editor.layoutSections
 import io.github.xxfast.cupboard.screens.editor.slideSections
 import java.awt.BasicStroke
@@ -98,6 +105,7 @@ import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
+import java.io.File
 import java.net.URI
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -537,6 +545,34 @@ private fun EditorWindow(
         if (images.size > 1) insertGallery(images) else insertImages(images)
     }
 
+    // Where every lot of files that arrives is sorted by what each one is, the
+    // way a drop and a paste of files both need: the pictures among them go
+    // where pictures always have, and each movie and sound is an insert of its
+    // own. False is a lot with nothing in it any insert takes.
+    fun insertFiles(files: List<File>): Boolean {
+        val images: List<PickedImage> = files.mapNotNull(::readImage)
+        val media: List<File> = files.filter { file ->
+            file.mediaKind() == MediaKind.Movie || file.mediaKind() == MediaKind.Sound
+        }
+
+        insertPictures(images)
+        if (media.isNotEmpty()) scope.launch {
+            for (file in media) viewModel.insertMediaFile(file)
+        }
+        return images.isNotEmpty() || media.isNotEmpty()
+    }
+
+    // Insert > Web Video's prompt, up while this is. The shell's rather than the
+    // editor view's, since the menu bar asks for it as well as the toolbar.
+    var askingWebVideo: Boolean by remember { mutableStateOf(false) }
+
+    // What plays the show's movies and sounds, one per window: a show is this
+    // deck's, and its sounds are too. Whatever a show started stops when it
+    // ends, and the player goes with the window.
+    val mediaPlayer: DesktopMediaPlayer = remember(viewModel) { DesktopMediaPlayer(viewModel.assets) }
+    DisposableEffect(mediaPlayer) { onDispose { mediaPlayer.close() } }
+    DisposableEffect(mediaPlayer, playing != null) { onDispose { mediaPlayer.stopAll() } }
+
     // Swapping the displays is the show's index flipping: both windows are
     // placed off it, so the show takes the other screen and the presenter
     // display takes the one it left. Remembered, so the next show starts
@@ -646,15 +682,21 @@ private fun EditorWindow(
                     true
                 }
 
-                // Paste with nothing on the editor's own clipboard: a picture on
-                // the system one is what this shell can still paste, which is
-                // how a screenshot gets onto a slide. Edit > Paste is greyed
-                // then, and a greyed item lets its accelerator through to here.
+                // Paste with nothing on the editor's own clipboard: files or a
+                // picture on the system one is what this shell can still paste,
+                // which is how a copied movie or a screenshot gets onto a slide.
+                // Files first, since a copied file can carry its icon as a
+                // picture too. Edit > Paste is greyed then, and a greyed item
+                // lets its accelerator through to here.
                 down && event.key == Key.V && event.hasPasteModifier() &&
                     !state.canPaste && !state.isEditingText -> {
-                    val image: PickedImage? = clipboardImage()
-                    if (image != null) insertImages(listOf(image))
-                    image != null
+                    if (insertFiles(clipboardFiles())) {
+                        true
+                    } else {
+                        val image: PickedImage? = clipboardImage()
+                        if (image != null) insertImages(listOf(image))
+                        image != null
+                    }
                 }
 
                 else -> false
@@ -682,6 +724,29 @@ private fun EditorWindow(
         val replaceImage: (ImageElement) -> Unit = { element ->
             chooseImage(window)?.let { picked ->
                 scope.launch { viewModel.replaceImage(element, picked.bytes, picked.extension) }
+            }
+        }
+
+        // The media verbs: the same panel filtered to movies or to sounds, and
+        // the image one again for a poster. A web video asks for an address
+        // instead, which is a prompt rather than a panel.
+        val insertMovie: () -> Unit = {
+            chooseMedia(window, MediaKind.Movie, "Insert Movie")?.let { insertFiles(listOf(it)) }
+        }
+        val insertAudio: () -> Unit = {
+            chooseMedia(window, MediaKind.Sound, "Insert Audio")?.let { insertFiles(listOf(it)) }
+        }
+        val insertWebVideo: () -> Unit = { askingWebVideo = true }
+        val replaceMedia: (Element) -> Unit = { element ->
+            val kind: MediaKind = if (element is AudioElement) MediaKind.Sound else MediaKind.Movie
+            val title: String = if (kind == MediaKind.Sound) "Replace Audio" else "Replace Movie"
+            chooseMedia(window, kind, title)?.let { file ->
+                scope.launch { viewModel.replaceMediaFile(element, file) }
+            }
+        }
+        val choosePoster: (VideoElement) -> Unit = { element ->
+            chooseImage(window)?.let { picked ->
+                scope.launch { viewModel.setPoster(element, picked.bytes, picked.extension) }
             }
         }
 
@@ -904,7 +969,17 @@ private fun EditorWindow(
             // verb the user reaches for mid-gesture, and the toolbar's
             // Text and Shape buttons render the same catalog.
             Menu("Insert", mnemonic = 'I') {
-                MenuItems(insertSections(state, viewModel, insertImage, insertGalleryFiles))
+                MenuItems(
+                    insertSections(
+                        state = state,
+                        viewModel = viewModel,
+                        onInsertImage = insertImage,
+                        onInsertGallery = insertGalleryFiles,
+                        onInsertMovie = insertMovie,
+                        onInsertAudio = insertAudio,
+                        onInsertWebVideo = insertWebVideo,
+                    ),
+                )
             }
 
             // The slide verbs take no accelerators: Cmd+X/C/V/D belong to the
@@ -1124,23 +1199,27 @@ private fun EditorWindow(
             }
             val density: Float = LocalDensity.current.density
 
-            // Images dragged in from Finder or a file manager. Only a file drag
-            // is taken, so dropped text still falls through to whatever else
-            // might want it, and anything in the drag that isn't a picture we
-            // read is skipped rather than failing the drop.
-            val dropImages: DragAndDropTarget = remember(viewModel) {
+            // Pictures, movies and sounds dragged in from Finder or a file
+            // manager. Only a file drag is taken, so dropped text still falls
+            // through to whatever else might want it, and anything in the drag
+            // no insert takes is skipped rather than failing the drop.
+            val dropFiles: DragAndDropTarget = remember(viewModel) {
                 object : DragAndDropTarget {
                     override fun onDrop(event: DragAndDropEvent): Boolean {
-                        val files: List<String> =
+                        val uris: List<String> =
                             (event.dragData() as? DragData.FilesList)?.readFiles().orEmpty()
-                        val images: List<PickedImage> = droppedImages(files)
-                        if (images.isEmpty()) return false
-
-                        insertPictures(images)
-                        return true
+                        return insertFiles(droppedFiles(uris))
                     }
                 }
             }
+
+            if (askingWebVideo) WebVideoDialog(
+                onDismiss = { askingWebVideo = false },
+                onInsert = { url ->
+                    askingWebVideo = false
+                    viewModel.insertWebVideo(url)
+                },
+            )
 
             // The export options and the progress modal: windows of their own,
             // so they sit in the tree rather than in the menu callback that
@@ -1174,7 +1253,10 @@ private fun EditorWindow(
             if (playingHere != null) {
                 // Same store as a show window: the player here is a second
                 // composition over the deck, like it is there.
-                CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+                CompositionLocalProvider(
+                    LocalAssetStore provides viewModel.assets,
+                    LocalMediaPlayer provides mediaPlayer,
+                ) {
                     PresentationPlayer(
                         document = playingHere.document,
                         startIndex = playingHere.slideIndex,
@@ -1189,7 +1271,7 @@ private fun EditorWindow(
                     .fillMaxSize()
                     .dragAndDropTarget(
                         shouldStartDragAndDrop = { it.dragData() is DragData.FilesList },
-                        target = dropImages,
+                        target = dropFiles,
                     ),
             ) {
                 EditorScreen(
@@ -1237,6 +1319,11 @@ private fun EditorWindow(
                     onReplaceImage = replaceImage,
                     onInsertGallery = insertGalleryFiles,
                     onAddGalleryImages = addGalleryImages,
+                    onInsertMovie = insertMovie,
+                    onInsertAudio = insertAudio,
+                    onInsertWebVideo = insertWebVideo,
+                    onReplaceMedia = replaceMedia,
+                    onChoosePoster = choosePoster,
                 )
             }
         }
@@ -1315,8 +1402,12 @@ private fun EditorWindow(
 
             // The show is a second composition over the same deck, so it needs
             // the same bytes: an image on a slide draws from the editor's store
-            // here as much as it does on the canvas.
-            CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+            // here as much as it does on the canvas. And the player, which is
+            // where a movie or a sound on the slide asks to be played.
+            CompositionLocalProvider(
+                LocalAssetStore provides viewModel.assets,
+                LocalMediaPlayer provides mediaPlayer,
+            ) {
                 PresentationPlayer(
                     document = request.document,
                     startIndex = request.slideIndex,
@@ -1350,14 +1441,20 @@ private fun EditorWindow(
                 // controller, and a controller has nothing to say until a
                 // player is composed against it. Behind the display and out of
                 // the way, so the current and next previews are the rehearsal.
-                if (request.rehearse) PresentationPlayer(
-                    document = request.document,
-                    startIndex = request.slideIndex,
-                    modifier = Modifier.size(1.dp),
-                    onExit = close,
-                    controller = controller,
-                    onOpenUrl = ::openInBrowser,
-                )
+                //
+                // The media player is this one's alone: the previews draw their
+                // slides as the show does, and handed a player they would start
+                // the next slide's sound a slide early.
+                if (request.rehearse) CompositionLocalProvider(LocalMediaPlayer provides mediaPlayer) {
+                    PresentationPlayer(
+                        document = request.document,
+                        startIndex = request.slideIndex,
+                        modifier = Modifier.size(1.dp),
+                        onExit = close,
+                        controller = controller,
+                        onOpenUrl = ::openInBrowser,
+                    )
+                }
 
                 PresenterView(
                     // The live document rather than the show's snapshot: notes
@@ -1387,7 +1484,7 @@ private fun EditorWindow(
  * browser, and a URL typed into the inspector may not parse: none of the three
  * is worth taking the presentation down for.
  */
-private fun openInBrowser(url: String) {
+internal fun openInBrowser(url: String) {
     try {
         if (!Desktop.isDesktopSupported()) return
 

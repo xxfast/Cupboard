@@ -71,6 +71,7 @@ import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
@@ -146,6 +147,24 @@ fun EditorScreen(
     /** The same multi-select picker, appending to a gallery already on the slide:
      * the inspector's Add Images. */
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
+    /**
+     * Pick a movie or a sound file and put it on the slide: the toolbar's media
+     * menu and Insert > Movie and Audio. The shell's picker again, filtered to
+     * the kind, and what it does with the bytes is `EditorViewModel.insertMovie`
+     * or `insertSound`. Null greys the entry, on a shell with no file dialog.
+     */
+    onInsertMovie: (() -> Unit)? = null,
+    onInsertAudio: (() -> Unit)? = null,
+    /**
+     * Ask for a page address and put it on the slide as a movie: Insert > Web
+     * Video. The shell owns the prompt (see [WebVideoDialog]) because its menu
+     * bar asks for it as well as the toolbar. Null greys the entry.
+     */
+    onInsertWebVideo: (() -> Unit)? = null,
+    /** The movie or sound picker over one already on the slide: Replace. */
+    onReplaceMedia: ((Element) -> Unit)? = null,
+    /** The image picker, for a movie's poster frame: the Movie segment's Choose. */
+    onChoosePoster: ((VideoElement) -> Unit)? = null,
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -241,6 +260,11 @@ fun EditorScreen(
             onReplaceImage = onReplaceImage,
             onInsertGallery = onInsertGallery,
             onAddGalleryImages = onAddGalleryImages,
+            onInsertMovie = onInsertMovie,
+            onInsertAudio = onInsertAudio,
+            onInsertWebVideo = onInsertWebVideo,
+            onReplaceMedia = onReplaceMedia,
+            onChoosePoster = onChoosePoster,
             onAddElementSteps = viewModel::onAddElementSteps,
             onSelectCodeVersion = viewModel::onSelectCodeVersion,
             onAddCodeVersion = viewModel::onAddCodeVersion,
@@ -382,6 +406,16 @@ fun EditorView(
     /** The same multi-select picker over a gallery already on the slide: the
      * inspector's Add Images. */
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
+    /** Pick a movie or a sound file and put it on the slide. Null greys the
+     * entry in the toolbar's media menu, on the shells with no file dialog. */
+    onInsertMovie: (() -> Unit)? = null,
+    onInsertAudio: (() -> Unit)? = null,
+    /** Ask the shell for a page address to put on the slide as a movie. */
+    onInsertWebVideo: (() -> Unit)? = null,
+    /** The movie or sound picker over one already on the slide: Replace. */
+    onReplaceMedia: ((Element) -> Unit)? = null,
+    /** The image picker, for a movie's poster frame. */
+    onChoosePoster: ((VideoElement) -> Unit)? = null,
     /** Write a gallery's step builds onto the slide, one per image. */
     onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: pick the one the canvas draws and
@@ -489,9 +523,13 @@ fun EditorView(
                             ),
                         )
                     },
-                    // Unlike every other insert this one leaves the app for a
-                    // file, so the shell owns it end to end.
+                    // Unlike every other insert these leave the app for a file
+                    // (or, for a web video, ask for an address), so the shell
+                    // owns them end to end.
                     onInsertImage = onInsertImage,
+                    onInsertMovie = onInsertMovie,
+                    onInsertAudio = onInsertAudio,
+                    onInsertWebVideo = onInsertWebVideo,
                 )
 
                 Row(Modifier.weight(1f).fillMaxWidth()) {
@@ -710,6 +748,8 @@ fun EditorView(
                         canSendBackward = state.canSendBackward,
                         onReplaceImage = onReplaceImage,
                         onAddGalleryImages = onAddGalleryImages,
+                        onReplaceMedia = onReplaceMedia,
+                        onChoosePoster = onChoosePoster,
                         onAddElementSteps = onAddElementSteps,
                         codeVersion = state.codeVersion,
                         onSelectCodeVersion = onSelectCodeVersion,

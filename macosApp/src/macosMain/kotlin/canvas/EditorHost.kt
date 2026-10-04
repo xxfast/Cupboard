@@ -90,6 +90,16 @@ import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.VideoElement
+import io.github.xxfast.cupboard.document.DefaultAudioHeight
+import io.github.xxfast.cupboard.document.DefaultAudioWidth
+import io.github.xxfast.cupboard.document.DefaultVideoHeight
+import io.github.xxfast.cupboard.document.DefaultVideoWidth
+import io.github.xxfast.cupboard.document.audioElement
+import io.github.xxfast.cupboard.document.replacingMedia
+import io.github.xxfast.cupboard.document.videoElement
+import io.github.xxfast.cupboard.screens.editor.MovieExtensions
+import io.github.xxfast.cupboard.screens.editor.SoundExtensions
+import io.github.xxfast.cupboard.screens.editor.mediaKind
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.action
 import io.github.xxfast.cupboard.document.allSlides
@@ -845,6 +855,27 @@ class GalleryProps(
 )
 
 /**
+ * The primary selected movie or sound, flattened for the Movie and Audio
+ * sections of the Format panel. [ImageProps]'s neighbour: a snapshot, never a
+ * handle, and one class for both kinds because a sound is a movie with no
+ * picture. [webUrl] and [hasPoster] are always empty and false for a sound.
+ *
+ * The trims travel in the model's own milliseconds, 0 for an end that plays to
+ * the end; the panel shows seconds.
+ */
+class MediaProps(
+    val hasAsset: Boolean,
+    val title: String,
+    val webUrl: String,
+    val hasPoster: Boolean,
+    val trimStartMs: Int,
+    val trimEndMs: Int,
+    val volume: Float,
+    val loop: Boolean,
+    val autoplay: Boolean,
+)
+
+/**
  * Where the primary selected element points when it is clicked in a show, and
  * null unless that element is one of the three kinds that hold a link at all.
  * [TextProps]'s family again: what the panel shows, never a handle onto the
@@ -1055,13 +1086,26 @@ class PlaySession internal constructor(
      */
     private var controller: PlayerController? by mutableStateOf(null)
 
+    /**
+     * What plays the deck's movies and sounds, over [view]. None for a
+     * rehearsal: its show is composed but hidden, so a movie would play where
+     * nobody can see it, and a soundtrack nobody asked for would play over the
+     * practice. The presenter display never gets one either, which is what
+     * keeps it from playing a second copy of what the audience is watching.
+     */
+    private val media: AVMediaPlayer? =
+        if (isRehearsal) null else AVMediaPlayer(assets, document.slideWidth, document.slideHeight)
+
     private val composeView = ComposeNSView {
         val player: PlayerController = rememberPlayerController()
         DisposableEffect(player) {
             controller = player
             onDispose { if (controller === player) controller = null }
         }
-        CompositionLocalProvider(LocalAssetStore provides assets) {
+        CompositionLocalProvider(
+            LocalAssetStore provides assets,
+            LocalMediaPlayer provides (media ?: NoMediaPlayer),
+        ) {
             PresentationPlayer(
                 document = document,
                 startIndex = startIndex,
@@ -1081,6 +1125,10 @@ class PlaySession internal constructor(
     private var presenterCompose: ComposeNSView? = null
 
     val view: NSView = composeView
+
+    init {
+        media?.attach(composeView)
+    }
 
     /** Whether this session has a presenter display to show at all. */
     val hasPresenter: Boolean = live != null && notes != null
@@ -1137,6 +1185,9 @@ class PlaySession internal constructor(
 
     fun dispose() {
         disposePresenter()
+        // Before the scene closes: every movie's layer comes off the show's view
+        // and every player stops, whichever slide the show ended on.
+        media?.stopAll()
         composeView.dispose()
     }
 }
@@ -2065,6 +2116,263 @@ class EditorHost(
      * click that lands after the selection moved edits nothing rather than the
      * wrong elements.
      */
+    // MARK: Movies and sounds
+
+    /** The file extensions a movie insert offers, for the shell's panel filter. */
+    fun movieExtensions(): List<String> = MovieExtensions
+
+    /** The file extensions a sound insert offers, [movieExtensions]' twin. */
+    fun soundExtensions(): List<String> = SoundExtensions
+
+    /**
+     * What a file with [extension] inserts as, by [MediaKind] name, "" for a
+     * file no insert takes. What a drop or a paste is sifted by: the rule is the
+     * core's, so every shell sorts the same Finder selection the same way.
+     */
+    fun mediaKindOf(extension: String): String = mediaKind(extension)?.name ?: ""
+
+    /**
+     * A movie's bytes on the slide, named [title]: [insertImage]'s route, written
+     * under a fresh id off the main thread and inserted back on it.
+     *
+     * [poster] is a still the shell grabbed from the movie (AppKit can decode
+     * one, the shared code cannot), stored as an asset of its own; null, or bytes
+     * that will not decode, is a movie that draws the dark box instead.
+     * [naturalWidth] x [naturalHeight] is the picture's size as it plays, which
+     * the box is fitted to; 0 is a movie nobody could measure, which fills it.
+     */
+    fun insertMovie(
+        bytes: NSData,
+        extension: String,
+        title: String,
+        poster: NSData?,
+        naturalWidth: Int,
+        naturalHeight: Int,
+    ) {
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        val still: ByteArray? = poster?.toByteArray()
+        scope.launch {
+            val assetId: String = writeMedia(data, extension)
+            val posterId: String? = still?.let { writeAsset(it, "png")?.assetId }
+            viewModel.onInsertElement(
+                videoElement(
+                    frame = state.insertionFrame(DefaultVideoWidth, DefaultVideoHeight),
+                    assetId = assetId,
+                    posterAssetId = posterId,
+                    title = title,
+                    naturalWidth = naturalWidth,
+                    naturalHeight = naturalHeight,
+                    defaults = state.defaults,
+                ),
+            )
+        }
+    }
+
+    /** A sound's bytes on the slide, as the pill named [title]. */
+    fun insertAudio(bytes: NSData, extension: String, title: String) {
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val assetId: String = writeMedia(data, extension)
+            viewModel.onInsertElement(
+                audioElement(
+                    frame = state.insertionFrame(DefaultAudioWidth, DefaultAudioHeight),
+                    assetId = assetId,
+                    title = title,
+                    defaults = state.defaults,
+                ),
+            )
+        }
+    }
+
+    /**
+     * A movie that lives on the web: no bytes, a box that opens [url] when it is
+     * clicked in the show. An address typed without a scheme gets https, since
+     * one that opens nothing is no use to anyone; a blank one inserts nothing.
+     */
+    fun insertWebVideo(url: String) {
+        val address: String = webAddress(url) ?: return
+        viewModel.onInsertElement(
+            videoElement(
+                frame = state.insertionFrame(DefaultVideoWidth, DefaultVideoHeight),
+                webUrl = address,
+                defaults = state.defaults,
+            ),
+        )
+    }
+
+    /**
+     * New bytes behind the primary movie or sound: what Replace does. The core's
+     * `replacingMedia` says what goes with the old bytes (trims, poster, url);
+     * a movie then wears the [poster] grabbed from the new one, if any.
+     */
+    fun replaceMedia(bytes: NSData, extension: String, poster: NSData?) {
+        val target: Element = state.primaryElement ?: return
+        if (target.locked || (target !is VideoElement && target !is AudioElement)) return
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        val still: ByteArray? = poster?.toByteArray()
+        scope.launch {
+            val assetId: String = writeMedia(data, extension)
+            val posterId: String? = still?.let { writeAsset(it, "png")?.assetId }
+            // Re-read, for replaceImage's reason: the write took a moment.
+            val replaced: Element = when (val live: Element? = liveMedia(target.id)) {
+                is VideoElement -> live.replacingMedia(assetId).copy(posterAssetId = posterId)
+                is AudioElement -> live.replacingMedia(assetId)
+                else -> return@launch
+            }
+            viewModel.onUpdateElements(listOf(replaced))
+        }
+    }
+
+    /** A picture of the user's choosing as the primary movie's poster. */
+    fun setMoviePoster(bytes: NSData, extension: String) {
+        val target: VideoElement = state.primaryElement as? VideoElement ?: return
+        if (target.locked) return
+        val data: ByteArray = bytes.toByteArray()
+        if (data.isEmpty()) return
+        scope.launch {
+            val size: NaturalSize = writeAsset(data, extension) ?: return@launch
+            val live: VideoElement = liveMedia(target.id) as? VideoElement ?: return@launch
+            viewModel.onUpdateElements(listOf(live.copy(posterAssetId = size.assetId)))
+        }
+    }
+
+    /** The primary movie back to the dark box. */
+    fun clearMoviePoster() {
+        val video: VideoElement = state.primaryElement as? VideoElement ?: return
+        if (video.locked || video.posterAssetId == null) return
+        viewModel.onUpdateElements(listOf(video.copy(posterAssetId = null)))
+    }
+
+    /** The Movie section's snapshot, null unless the primary is a movie. */
+    fun selectedVideo(): MediaProps? = (state.primaryElement as? VideoElement)?.let { video ->
+        MediaProps(
+            hasAsset = video.assetId != null,
+            title = video.title,
+            webUrl = video.webUrl.orEmpty(),
+            hasPoster = video.posterAssetId != null,
+            trimStartMs = video.trimStartMs,
+            trimEndMs = video.trimEndMs,
+            volume = video.volume,
+            loop = video.loop,
+            autoplay = video.autoplay,
+        )
+    }
+
+    /** The Audio section's snapshot, null unless the primary is a sound. */
+    fun selectedAudio(): MediaProps? = (state.primaryElement as? AudioElement)?.let { audio ->
+        MediaProps(
+            hasAsset = audio.assetId != null,
+            title = audio.title,
+            webUrl = "",
+            hasPoster = false,
+            trimStartMs = audio.trimStartMs,
+            trimEndMs = audio.trimEndMs,
+            volume = audio.volume,
+            loop = audio.loop,
+            autoplay = audio.autoplay,
+        )
+    }
+
+    /** What the movie or the pill says it is. The primary alone, like a caption. */
+    fun setMediaTitle(text: String) {
+        val edited: Element = when (val primary: Element? = state.primaryElement) {
+            is VideoElement -> primary.copy(title = text)
+            is AudioElement -> primary.copy(title = text)
+            else -> return
+        }
+        if (edited.locked || edited == state.primaryElement) return
+        viewModel.onUpdateElements(listOf(edited))
+    }
+
+    /** Where the primary web movie points. Blank clears it to an empty box. */
+    fun setVideoWebUrl(url: String) {
+        val video: VideoElement = state.primaryElement as? VideoElement ?: return
+        val address: String? = webAddress(url)
+        if (video.locked || video.webUrl == address) return
+        viewModel.onUpdateElements(listOf(video.copy(webUrl = address)))
+    }
+
+    /**
+     * Where the selection's movies and sounds start playing, in milliseconds.
+     * Each keeps its own end; the core clamps a start past it.
+     */
+    fun setMediaTrimStart(ms: Int) {
+        formatMedia({ it.copy(trimStartMs = ms) }, { it.copy(trimStartMs = ms) })
+    }
+
+    /** Where they stop, in milliseconds. 0 plays to the end. */
+    fun setMediaTrimEnd(ms: Int) {
+        formatMedia({ it.copy(trimEndMs = ms) }, { it.copy(trimEndMs = ms) })
+    }
+
+    /** 0 to 1. [commit] false is the slider still under the thumb. */
+    fun setMediaVolume(volume: Float, commit: Boolean) {
+        val edits: List<Element> = mediaEdits({ it.copy(volume = volume) }, { it.copy(volume = volume) })
+        if (edits.isEmpty()) return
+        if (commit) viewModel.onUpdateElements(edits) else viewModel.onPreviewElements(edits)
+    }
+
+    fun setMediaLoop(on: Boolean) {
+        formatMedia({ it.copy(loop = on) }, { it.copy(loop = on) })
+    }
+
+    /** Start on Reveal: plays as soon as the build order shows the element. */
+    fun setMediaAutoplay(on: Boolean) {
+        formatMedia({ it.copy(autoplay = on) }, { it.copy(autoplay = on) })
+    }
+
+    // [imageEdits] for media: every unlocked movie and sound in the selection,
+    // minus the ones the change left alone.
+    private fun mediaEdits(
+        video: (VideoElement) -> VideoElement,
+        audio: (AudioElement) -> AudioElement,
+    ): List<Element> = state.selectedElements
+        .filter { !it.locked }
+        .mapNotNull { element ->
+            val edited: Element = when (element) {
+                is VideoElement -> video(element)
+                is AudioElement -> audio(element)
+                else -> return@mapNotNull null
+            }
+            edited.takeIf { it != element }
+        }
+
+    private fun formatMedia(
+        video: (VideoElement) -> VideoElement,
+        audio: (AudioElement) -> AudioElement,
+    ) {
+        val edits: List<Element> = mediaEdits(video, audio)
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /** The movie or sound with [id] as the slide holds it now, if still there and unlocked. */
+    private fun liveMedia(id: String): Element? =
+        state.selectedSlide.elementById(id)
+            ?.takeIf { (it is VideoElement || it is AudioElement) && !it.locked }
+
+    /**
+     * [data] written to the deck's assets under a fresh id, as it is. Unlike
+     * [writeAsset] nothing decodes it first: whether this machine can play a
+     * movie is the player's question, and the deck keeps the bytes either way.
+     */
+    private suspend fun writeMedia(data: ByteArray, extension: String): String =
+        withContext(Dispatchers.Default) {
+            val id = "${newId()}.${assetExtension(extension)}"
+            viewModel.assets.write(id, data)
+            id
+        }
+
+    /** [url] trimmed, with https where it has no scheme; null for a blank one. */
+    private fun webAddress(url: String): String? {
+        val trimmed: String = url.trim()
+        if (trimmed.isEmpty()) return null
+        return if ("://" in trimmed) trimmed else "https://$trimmed"
+    }
+
     fun selectedElement(): ElementProps? = state.primaryElement?.let { element ->
         ElementProps(
             x = element.frame.x,

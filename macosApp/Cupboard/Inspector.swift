@@ -1943,6 +1943,9 @@ extension EditorView {
         /// core would clamp to anyway.
         var minimum: Double? = nil
         var maximum: Double? = nil
+        /// Set, 0 reads as an empty field wearing this, and emptying the field
+        /// commits 0: a movie's trim end, where 0 is no end at all.
+        var placeholder: String? = nil
         let onCommit: (Double) -> Void
 
         @State private var text: String = ""
@@ -1975,7 +1978,7 @@ extension EditorView {
                 // The value and its unit share the field, hard against its
                 // right edge: "5 pt", "100%", "270\u{00B0}".
                 HStack(spacing: Self.unitGap(unit)) {
-                    TextField("", text: $text)
+                    TextField(placeholder ?? "", text: $text)
                         .textFieldStyle(.plain)
                         .font(.system(size: Inspect.text))
                         .foregroundStyle(palette.text)
@@ -1984,7 +1987,7 @@ extension EditorView {
                         .onSubmit { commit() }
                         .onChange(of: focused) { _, now in if !now { commit() } }
 
-                    if let unit {
+                    if let unit, placeholder == nil || !text.isEmpty {
                         Text(unit)
                             .font(.system(size: Inspect.text))
                             .foregroundStyle(palette.text)
@@ -2042,7 +2045,12 @@ extension EditorView {
         }
 
         private func commit() {
-            guard let typed = Double(text.trimmingCharacters(in: .whitespaces)) else {
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if placeholder != nil, trimmed.isEmpty {
+                onCommit(0)
+                return
+            }
+            guard let typed = Double(trimmed) else {
                 text = formatted(value)
                 return
             }
@@ -2051,6 +2059,7 @@ extension EditorView {
         }
 
         private func formatted(_ value: Double) -> String {
+            if placeholder != nil, value == 0 { return "" }
             if decimals == 0 { return String(Int(value.rounded())) }
             return String(format: "%.\(decimals)f", value)
         }

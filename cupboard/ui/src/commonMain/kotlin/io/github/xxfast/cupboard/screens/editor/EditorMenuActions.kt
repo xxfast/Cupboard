@@ -258,8 +258,8 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
  * The Insert verbs: a text box, a code block, a terminal, a diagram, an
  * equation, then the shape catalog as one submenu.
  *
- * Nothing is ever greyed but the two picture verbs, which need somewhere to pick
- * a file from:
+ * Nothing is ever greyed but the picture and media verbs, which need somewhere
+ * to pick a file (or, for a web video, ask for an address) from:
  * an insertion asks nothing of the selection, and a locked element on the slide
  * is no reason not to add another one next to it.
  *
@@ -271,13 +271,17 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
  * own: the bytes come from a file dialog, which is platform hosting rather than
  * anything the document knows about. Null is a shell with no picker, and greys
  * the entry. The gallery's is the same dialog in its multi-select mode, so a
- * shell that has one has both.
+ * shell that has one has both. [onInsertMovie], [onInsertAudio] and
+ * [onInsertWebVideo] are the same bargain for movies and sounds.
  */
 fun insertSections(
     state: EditorState,
     viewModel: EditorViewModel,
     onInsertImage: (() -> Unit)? = null,
     onInsertGallery: (() -> Unit)? = null,
+    onInsertMovie: (() -> Unit)? = null,
+    onInsertAudio: (() -> Unit)? = null,
+    onInsertWebVideo: (() -> Unit)? = null,
 ): List<EditorMenuSection> {
     fun insert(entry: ShapeCatalogEntry): EditorMenuItem =
         EditorMenuItem(entry.title, enabled = true) {
@@ -318,6 +322,15 @@ fun insertSections(
                 },
                 EditorMenuItem("Image Gallery...", enabled = onInsertGallery != null) {
                     onInsertGallery?.invoke()
+                },
+                EditorMenuItem("Movie...", enabled = onInsertMovie != null) {
+                    onInsertMovie?.invoke()
+                },
+                EditorMenuItem("Audio...", enabled = onInsertAudio != null) {
+                    onInsertAudio?.invoke()
+                },
+                EditorMenuItem("Web Video...", enabled = onInsertWebVideo != null) {
+                    onInsertWebVideo?.invoke()
                 },
                 EditorMenuItem(
                     label = "Shape",

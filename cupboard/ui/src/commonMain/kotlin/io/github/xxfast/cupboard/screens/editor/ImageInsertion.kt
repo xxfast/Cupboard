@@ -16,12 +16,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
 
-/**
- * The image files an insert accepts, lowercase and without the dot: what a file
- * dialog filters on and what a drop is sifted for.
- */
-val ImageExtensions: List<String> = listOf("png", "jpg", "jpeg", "gif", "webp")
-
 /** How much of the slide a freshly inserted image is allowed to take. */
 private const val InsertedImageFraction: Float = 0.6f
 
@@ -171,6 +165,6 @@ private suspend fun EditorViewModel.writeGalleryImages(
 }
 
 /** Off the caller's thread: a full-slide photo is megabytes even to size. */
-private suspend fun decodeImage(bytes: ByteArray): ImageBitmap? = withContext(Dispatchers.Default) {
+internal suspend fun decodeImage(bytes: ByteArray): ImageBitmap? = withContext(Dispatchers.Default) {
     runCatching { bytes.decodeToImageBitmap() }.getOrNull()
 }

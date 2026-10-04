@@ -53,9 +53,11 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  *
  * Text inserts a box, Code a code block, Terminal a shell window, Diagram a
  * chart, Equation a formula, Shape drops the catalog down, Image opens the
- * shell's file picker; Add slide and media stay placeholders until the document
- * gains those operations. [onPlay] null (android/web shells) hides Play
- * entirely, and [onInsertImage] null leaves the image button inert the same way.
+ * shell's file picker, and Media drops Movie, Audio and Web Video down; Add slide
+ * stays a placeholder until the document gains that operation. [onPlay] null
+ * (android/web shells) hides Play entirely, and [onInsertImage] null leaves the
+ * image button inert the same way. A null media verb greys its menu entry, and
+ * all three null leave the media button inert.
  */
 @Composable
 fun EditorToolbar(
@@ -69,6 +71,9 @@ fun EditorToolbar(
     onInsertEquation: () -> Unit,
     onInsertShape: (ShapeCatalogEntry) -> Unit,
     onInsertImage: (() -> Unit)? = null,
+    onInsertMovie: (() -> Unit)? = null,
+    onInsertAudio: (() -> Unit)? = null,
+    onInsertWebVideo: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -139,7 +144,11 @@ fun EditorToolbar(
                 InsertButton(onClick = onInsertEquation) { EquationGlyph(color = tokens.icon) }
                 ShapeInsertButton(onPick = onInsertShape)
                 InsertButton(onClick = onInsertImage) { ImageGlyph(color = tokens.icon) }
-                InsertButton { MediaGlyph(color = tokens.icon) }
+                MediaInsertButton(
+                    onInsertMovie = onInsertMovie,
+                    onInsertAudio = onInsertAudio,
+                    onInsertWebVideo = onInsertWebVideo,
+                )
             }
 
             Box(Modifier.weight(1f))
@@ -186,6 +195,46 @@ private fun ShapeInsertButton(onPick: (ShapeCatalogEntry) -> Unit) {
                     onClick = {
                         menuOpen = false
                         onPick(entry)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The media button: Movie, Audio and Web Video under it, the way the shape button
+ * offers its catalog. Each entry is the shell's, so a shell that can't do one
+ * greys it, and a shell that can do none leaves the button inert.
+ */
+@Composable
+private fun MediaInsertButton(
+    onInsertMovie: (() -> Unit)?,
+    onInsertAudio: (() -> Unit)?,
+    onInsertWebVideo: (() -> Unit)?,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var menuOpen: Boolean by remember { mutableStateOf(false) }
+    val entries: List<Pair<String, (() -> Unit)?>> = listOf(
+        "Movie..." to onInsertMovie,
+        "Audio..." to onInsertAudio,
+        "Web Video..." to onInsertWebVideo,
+    )
+    val open: (() -> Unit)? =
+        if (entries.all { (_, onPick) -> onPick == null }) null
+        else ({ menuOpen = true })
+
+    Box {
+        InsertButton(onClick = open) { MediaGlyph(color = tokens.icon) }
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            for ((title, onPick) in entries) {
+                DropdownMenuItem(
+                    text = { Text(title, fontSize = 13.sp) },
+                    enabled = onPick != null,
+                    onClick = {
+                        menuOpen = false
+                        onPick?.invoke()
                     },
                 )
             }

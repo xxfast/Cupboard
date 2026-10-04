@@ -61,6 +61,10 @@ struct Chrome {
     let image: ImageFormat?
     /// The primary's gallery, nil unless the primary is one.
     let gallery: GalleryFormat?
+    /// The primary's movie, nil unless the primary is a video.
+    let video: MediaFormat?
+    /// The primary's sound, nil unless the primary is an audio pill.
+    let audio: MediaFormat?
     /// The outlines an image may be cut to, in Kotlin's order. A position is
     /// what goes back, the way a transition kind's is; -1 is no mask at all.
     let maskKinds: [String]
@@ -161,6 +165,8 @@ struct Chrome {
         equation = host.selectedEquation().map(EquationFormat.init)
         image = host.selectedImage().map(ImageFormat.init)
         gallery = host.selectedGallery().map(GalleryFormat.init)
+        video = host.selectedVideo().map(MediaFormat.init)
+        audio = host.selectedAudio().map(MediaFormat.init)
         maskKinds = host.maskKindTitles()
         link = host.selectedLink().map(LinkFormat.init)
         linkKinds = host.linkKindTitles()
@@ -692,6 +698,37 @@ struct EquationFormat {
     init(_ props: EquationProps) {
         size = Double(props.fontSize)
         color = props.color
+    }
+}
+
+/// The primary selected movie or sound as a Swift value: what the Movie and
+/// Audio sections of the Format panel show. Read off the primary like
+/// `ImageFormat`; the title, the url and the bytes go to the primary alone, the
+/// playing settings to every movie and sound in the selection.
+///
+/// The trims are seconds here and milliseconds in the model, and an end of 0
+/// plays to the end. `webUrl` and `hasPoster` are always empty for a sound.
+struct MediaFormat {
+    let hasAsset: Bool
+    let title: String
+    let webUrl: String
+    let hasPoster: Bool
+    let trimStart: Double
+    let trimEnd: Double
+    let volume: Double
+    let loop: Bool
+    let autoplay: Bool
+
+    init(_ props: MediaProps) {
+        hasAsset = props.hasAsset
+        title = props.title
+        webUrl = props.webUrl
+        hasPoster = props.hasPoster
+        trimStart = Double(props.trimStartMs) / 1000
+        trimEnd = Double(props.trimEndMs) / 1000
+        volume = Double(props.volume)
+        loop = props.loop
+        autoplay = props.autoplay
     }
 }
 

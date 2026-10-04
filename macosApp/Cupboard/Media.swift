@@ -1,10 +1,12 @@
-// Pictures on a slide: where the bytes come from, and nothing about what
-// happens to them after. Three ways in, one way out: an Open panel, a drop on
-// the window, and the pasteboard all end at `insertImage`, which takes bytes
-// and an extension. Everything AppKit knows about images stops in this file;
-// Kotlin has never heard of NSImage or a pasteboard type.
+// Pictures, movies and sounds on a slide: where the bytes come from, and
+// nothing about what happens to them after. Three ways in: an Open panel, a
+// drop on the window, and the pasteboard, all sorted by the core's `mediaKind`
+// and ending at `insertImage`, `insertMovie` or `insertAudio`, which take bytes
+// and an extension. Everything AppKit and AVFoundation know about media stops
+// in this file; Kotlin has never heard of NSImage, AVAsset or a pasteboard type.
 import SwiftUI
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 import CupboardCanvas
 
@@ -41,6 +43,108 @@ enum Media {
         pickMany(prompt: "Add") { files, extensions in
             host.addGalleryImages(files: files, extensions: extensions)
         }
+    }
+
+    /// The movie the user picks, on the slide, with a poster grabbed from it.
+    static func insertMovie(into host: EditorHost) {
+        guard let url = pickFile(prompt: "Insert", types: types(host.movieExtensions())) else { return }
+        insertMovie(url, into: host)
+    }
+
+    /// The sound the user picks, on the slide as a pill named after the file.
+    static func insertAudio(into host: EditorHost) {
+        guard let url = pickFile(prompt: "Insert", types: types(host.soundExtensions())) else { return }
+        insertAudio(url, into: host)
+    }
+
+    /// A movie that lives on the web: an address in a small alert, and a box on
+    /// the slide that opens it when clicked in the show.
+    static func insertWebVideo(into host: EditorHost) {
+        let alert = NSAlert()
+        alert.messageText = "Insert Web Video"
+        alert.informativeText = "The address of a video online. It opens in the browser when clicked during the show."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 22))
+        field.placeholderString = "https://"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Insert")
+        alert.addButton(withTitle: "Cancel")
+        alert.window.initialFirstResponder = field
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        host.insertWebVideo(url: field.stringValue)
+    }
+
+    /// New bytes behind the selected movie or sound, its box left where it is.
+    /// A movie gets a fresh poster off the new file, since the old still was a
+    /// picture of something else.
+    static func replaceMedia(in host: EditorHost, movie: Bool) {
+        let extensions = movie ? host.movieExtensions() : host.soundExtensions()
+        guard
+            let url = pickFile(prompt: "Replace", types: types(extensions)),
+            let bytes = try? Data(contentsOf: url, options: .mappedIfSafe)
+        else { return }
+        guard movie else {
+            host.replaceMedia(bytes: bytes, extension: url.pathExtension, poster: nil)
+            return
+        }
+        Task { @MainActor in
+            let peek = await MoviePeek.of(url)
+            host.replaceMedia(bytes: bytes, extension: url.pathExtension, poster: peek.poster)
+        }
+    }
+
+    /// A picture of the user's choosing as the selected movie's poster.
+    static func choosePoster(in host: EditorHost) {
+        pick(prompt: "Choose") { bytes, extension_ in
+            host.setMoviePoster(bytes: bytes, extension: extension_)
+        }
+    }
+
+    /// [url]'s movie on the slide. The poster and the size come off the file
+    /// first, which takes AVFoundation a moment, so the insert lands after.
+    /// A file AVFoundation cannot read still inserts, as the dark box.
+    private static func insertMovie(_ url: URL, into host: EditorHost) {
+        guard let bytes = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+        let extension_ = url.pathExtension
+        let title = url.deletingPathExtension().lastPathComponent
+        Task { @MainActor in
+            let peek = await MoviePeek.of(url)
+            host.insertMovie(
+                bytes: bytes,
+                extension: extension_,
+                title: title,
+                poster: peek.poster,
+                naturalWidth: Int32(peek.width),
+                naturalHeight: Int32(peek.height)
+            )
+        }
+    }
+
+    private static func insertAudio(_ url: URL, into host: EditorHost) {
+        guard let bytes = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
+        host.insertAudio(
+            bytes: bytes,
+            extension: url.pathExtension,
+            title: url.deletingPathExtension().lastPathComponent
+        )
+    }
+
+    /// One file of [types], or nil if the panel was cancelled.
+    private static func pickFile(prompt: String, types: [UTType]) -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = types
+        panel.prompt = prompt
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
+    }
+
+    /// The core's extension list as content types. An extension the system has
+    /// never heard of still gets a dynamic type, so the panel still offers it.
+    private static func types(_ extensions: [String]) -> [UTType] {
+        extensions.compactMap { UTType(filenameExtension: $0) }
     }
 
     /// Anything the system calls an image, which is what both panels filter on
@@ -82,9 +186,13 @@ enum Media {
 
     // MARK: Drops
 
-    /// Images dropped on the editor. A file lands as its own bytes, so a PNG
-    /// dragged from Finder keeps its compression; a picture dragged out of
-    /// another app arrives as an NSImage and becomes a PNG on the way in.
+    /// Files and images dropped on the editor. A file lands as its own bytes,
+    /// so a PNG dragged from Finder keeps its compression; a picture dragged out
+    /// of another app arrives as an NSImage and becomes a PNG on the way in.
+    ///
+    /// Movies and sounds are sorted out by `mediaKind` and land one element
+    /// each, as they finish loading: a movie and a voice memo dropped together
+    /// are two things on the slide, not a gallery.
     ///
     /// One picture is an image, two or more at once are a gallery: dropping a
     /// folder of frame captures means one box you click through, not a dozen
@@ -108,10 +216,13 @@ enum Media {
                     defer { group.leave() }
                     guard
                         let raw = item as? Data,
-                        let url = URL(dataRepresentation: raw, relativeTo: nil),
-                        isImage(url),
-                        let bytes = try? Data(contentsOf: url)
+                        let url = URL(dataRepresentation: raw, relativeTo: nil)
                     else { return }
+                    if isMovieOrSound(url, host) {
+                        DispatchQueue.main.async { insertMovieOrSound(url, into: host) }
+                        return
+                    }
+                    guard isImage(url), let bytes = try? Data(contentsOf: url) else { return }
                     basket.put(index, bytes, url.pathExtension)
                 }
                 continue
@@ -182,21 +293,32 @@ enum Media {
     /// Only ever consulted when the editor's own clipboard is empty. Copying an
     /// element inside Cupboard puts nothing on the system pasteboard, so the two
     /// never both have something and there is nothing to choose between.
-    static func pasteboardHasImage() -> Bool {
+    ///
+    /// A movie or a sound copied in Finder counts too: it pastes the way it
+    /// drops.
+    static func pasteboardHasMedia(_ host: EditorHost) -> Bool {
         let pasteboard = NSPasteboard.general
         let types = [UTType.png.identifier, UTType.tiff.identifier]
         if pasteboard.canReadItem(withDataConformingToTypes: types) { return true }
         guard let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL] else {
             return false
         }
-        return urls.contains(where: isImage)
+        return urls.contains { isImage($0) || isMovieOrSound($0, host) }
     }
 
-    /// The pasteboard's picture on the slide, and whether there was one. A file
-    /// copied in Finder keeps its own bytes; a screenshot arrives as TIFF and
-    /// becomes a PNG, which is a third of the size and keeps its alpha.
+    /// The pasteboard's picture, movie or sound on the slide, and whether there
+    /// was one. A file copied in Finder keeps its own bytes; a screenshot
+    /// arrives as TIFF and becomes a PNG, which is a third of the size and
+    /// keeps its alpha.
     @discardableResult
     static func paste(into host: EditorHost) -> Bool {
+        if
+            let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self]) as? [URL],
+            let url = urls.first(where: { isMovieOrSound($0, host) })
+        {
+            insertMovieOrSound(url, into: host)
+            return true
+        }
         guard let (bytes, extension_) = pasteboardImage() else { return false }
         host.insertImage(bytes: bytes, extension: extension_)
         return true
@@ -220,6 +342,21 @@ enum Media {
 
     // MARK: Bytes
 
+    /// Whether [url] is a file the core inserts as a movie or a sound.
+    private static func isMovieOrSound(_ url: URL, _ host: EditorHost) -> Bool {
+        let kind = host.mediaKindOf(extension: url.pathExtension)
+        return kind == "Movie" || kind == "Sound"
+    }
+
+    /// [url] on the slide as whichever of the two it is.
+    private static func insertMovieOrSound(_ url: URL, into host: EditorHost) {
+        switch host.mediaKindOf(extension: url.pathExtension) {
+        case "Movie": insertMovie(url, into: host)
+        case "Sound": insertAudio(url, into: host)
+        default: break
+        }
+    }
+
     private static func isImage(_ url: URL) -> Bool {
         UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false
     }
@@ -230,5 +367,43 @@ enum Media {
 
     private static func png(of tiff: Data) -> Data? {
         NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+    }
+}
+
+/// What a movie file says about itself before it is on a slide: a still from
+/// near its start, PNG encoded, and the size its picture plays at. Either may be
+/// missing (a format AVFoundation cannot open, a file with no video track), and
+/// the insert goes ahead without it.
+struct MoviePeek {
+    var poster: Data? = nil
+    var width = 0
+    var height = 0
+
+    static func of(_ url: URL) async -> MoviePeek {
+        let asset = AVURLAsset(url: url)
+        guard
+            let track = try? await asset.loadTracks(withMediaType: .video).first,
+            let (size, transform) = try? await track.load(.naturalSize, .preferredTransform)
+        else { return MoviePeek() }
+
+        // A phone's portrait movie is stored landscape and turned on playback,
+        // so the size it plays at is its natural size through that turn.
+        let turned = CGRect(origin: .zero, size: size).applying(transform)
+        var peek = MoviePeek(
+            width: Int(abs(turned.width).rounded()),
+            height: Int(abs(turned.height).rounded())
+        )
+
+        // A second in, or a tenth of the way through a short clip: frame zero
+        // is so often black from a fade that it makes a poor poster.
+        let duration = (try? await asset.load(.duration)).map(CMTimeGetSeconds) ?? 0
+        let seconds = duration.isFinite && duration > 0 ? min(1, duration * 0.1) : 0
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 1920, height: 1920)
+        if let (image, _) = try? await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)) {
+            peek.poster = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+        }
+        return peek
     }
 }

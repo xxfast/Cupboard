@@ -37,6 +37,7 @@ import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.Theme
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
@@ -159,6 +160,11 @@ fun EditorInspector(
     /** Pick more image files and append them to the selected gallery: the gallery
      * segment's Add Images. Null on a shell with no file picker, which greys it. */
     onAddGalleryImages: ((GalleryElement) -> Unit)? = null,
+    /** Point the selected movie or sound at other bytes: the Movie and Audio
+     * segments' Replace. Null on a shell with no file picker, which greys it. */
+    onReplaceMedia: ((Element) -> Unit)? = null,
+    /** Pick an image file as the selected movie's poster frame. Null greys it. */
+    onChoosePoster: ((VideoElement) -> Unit)? = null,
     /** Write the selected gallery's step builds onto the slide, one per image. */
     onAddElementSteps: (String) -> Unit = {},
     /** The selected code block's versions: which one the canvas shows, and the
@@ -258,6 +264,8 @@ fun EditorInspector(
                 onDeleteObjectStyle = onDeleteObjectStyle,
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
+                onReplaceMedia = onReplaceMedia,
+                onChoosePoster = onChoosePoster,
                 onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,

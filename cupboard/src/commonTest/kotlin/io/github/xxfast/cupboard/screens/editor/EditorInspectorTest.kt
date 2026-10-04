@@ -16,11 +16,13 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Arrange
+import io.github.xxfast.cupboard.screens.editor.FormatSegment.Audio
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Code
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Diagram
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Equation
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Gallery
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Image
+import io.github.xxfast.cupboard.screens.editor.FormatSegment.Movie
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Style
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Terminal
 import io.github.xxfast.cupboard.screens.editor.FormatSegment.Text
@@ -89,8 +91,8 @@ class EditorInspectorTest {
             "equation" to listOf(Style, Equation, Arrange),
             "gallery" to listOf(Style, Gallery, Arrange),
             "group" to listOf(Style, Arrange),
-            "video" to listOf(Style, Arrange),
-            "audio" to listOf(Style, Arrange),
+            "video" to listOf(Style, Movie, Arrange),
+            "audio" to listOf(Style, Audio, Arrange),
         )
 
         for ((id, segments) in expected) {

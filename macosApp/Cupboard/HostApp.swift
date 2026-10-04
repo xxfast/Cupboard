@@ -124,7 +124,7 @@ struct CupboardHostApp: App {
                     if host.canPaste() { host.paste() } else { Media.paste(into: host) }
                 }
                 .keyboardShortcut("v", modifiers: .command)
-                .disabled(!host.canPaste() && !Media.pasteboardHasImage())
+                .disabled(!host.canPaste() && !Media.pasteboardHasMedia(host))
                 Button("Duplicate") { host.duplicateSelection() }
                     .keyboardShortcut("d", modifiers: .command)
                     .disabled(!host.canDuplicate())

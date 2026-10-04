@@ -51,6 +51,7 @@ import io.github.xxfast.cupboard.canvas.gradientStop
 import io.github.xxfast.cupboard.canvas.rememberAssetImage
 import io.github.xxfast.cupboard.canvas.removeBackground
 import io.github.xxfast.cupboard.document.AssetStore
+import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeLanguages
 import io.github.xxfast.cupboard.document.CodeStep
@@ -79,6 +80,7 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.formatCode
@@ -143,6 +145,8 @@ internal fun ColumnScope.FormatPanel(
     onDeleteObjectStyle: (styleId: String) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
+    onReplaceMedia: ((Element) -> Unit)?,
+    onChoosePoster: ((VideoElement) -> Unit)?,
     onAddElementSteps: (String) -> Unit,
     /**
      * The code block's versions: which one the canvas is showing
@@ -267,6 +271,8 @@ internal fun ColumnScope.FormatPanel(
                 onSetLinks = onSetElementLinks,
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
+                onReplaceMedia = onReplaceMedia,
+                onChoosePoster = onChoosePoster,
                 onAddElementSteps = onAddElementSteps,
                 codeVersion = codeVersion,
                 onSelectCodeVersion = onSelectCodeVersion,
@@ -672,6 +678,8 @@ private fun KindBody(
     onSetLinks: (List<String>, LinkTarget?) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
+    onReplaceMedia: ((Element) -> Unit)?,
+    onChoosePoster: ((VideoElement) -> Unit)?,
     onAddElementSteps: (String) -> Unit,
     codeVersion: Int,
     onSelectCodeVersion: (Int) -> Unit,
@@ -765,6 +773,24 @@ private fun KindBody(
             onPreview = onPreview,
             onAddImages = onAddGalleryImages,
             onAddSteps = onAddElementSteps,
+        )
+
+        segment == FormatSegment.Movie && primary is VideoElement -> MediaBody(
+            primary = primary,
+            elements = elements,
+            onUpdate = onUpdate,
+            onPreview = onPreview,
+            onReplaceMedia = onReplaceMedia,
+            onChoosePoster = onChoosePoster,
+        )
+
+        segment == FormatSegment.Audio && primary is AudioElement -> MediaBody(
+            primary = primary,
+            elements = elements,
+            onUpdate = onUpdate,
+            onPreview = onPreview,
+            onReplaceMedia = onReplaceMedia,
+            onChoosePoster = null,
         )
 
         else -> Unit

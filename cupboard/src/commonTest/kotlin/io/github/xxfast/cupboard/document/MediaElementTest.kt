@@ -224,6 +224,118 @@ class MediaElementTest {
     }
 
     @Test
+    fun aMovieWithANaturalSizeKeepsItsAspectInsideTheBoxItIsGiven() {
+        // A phone recording: portrait, offered the widescreen box.
+        val portrait: VideoElement = videoElement(
+            frame = Frame(480f, 270f, DefaultVideoWidth, DefaultVideoHeight),
+            assetId = "clip.mov",
+            posterAssetId = "clip.png",
+            title = "clip.mov",
+            naturalWidth = 1080,
+            naturalHeight = 1920,
+        )
+
+        assertEquals(540f, portrait.frame.height)
+        assertEquals(303.75f, portrait.frame.width)
+        // Centred in the box it was offered, which was centred on the slide.
+        assertEquals(960f, portrait.frame.centerX)
+        assertEquals(540f, portrait.frame.centerY)
+        assertEquals("clip.png", portrait.posterAssetId)
+        assertEquals("clip.mov", portrait.title)
+
+        // No natural size is the box as it is: 16:9, which most movies already are.
+        val unprobed: VideoElement = videoElement(box, assetId = "talk.mp4")
+        assertEquals(box, unprobed.frame)
+    }
+
+    @Test
+    fun clampingKeepsVolumeInRangeAndTrimsAtOrAfterTheStart() {
+        val loud = VideoElement(frame = box, volume = 1.5f, trimStartMs = -200, trimEndMs = 3_000).clamped()
+        assertEquals(1f, loud.volume)
+        assertEquals(0, loud.trimStartMs)
+        assertEquals(3_000, loud.trimEndMs)
+
+        val silent = AudioElement(frame = pill, volume = -0.5f, trimEndMs = -1).clamped()
+        assertEquals(0f, silent.volume)
+        assertEquals(0, silent.trimEndMs)
+
+        // Already playable is left exactly as it is.
+        val fine = VideoElement(frame = box, volume = 0.3f, trimStartMs = 1_000, trimEndMs = 2_000)
+        assertEquals(fine, fine.clamped())
+    }
+
+    @Test
+    fun anEndAtOrBeforeTheStartPlaysToTheEnd() {
+        val backwards = VideoElement(frame = box, trimStartMs = 5_000, trimEndMs = 2_000).clamped()
+        assertEquals(5_000, backwards.trimStartMs)
+        assertEquals(0, backwards.trimEndMs)
+
+        val empty = AudioElement(frame = pill, trimStartMs = 4_000, trimEndMs = 4_000).clamped()
+        assertEquals(0, empty.trimEndMs)
+
+        // 0 is "to the end", not "before the start": it stays.
+        val open = AudioElement(frame = pill, trimStartMs = 4_000, trimEndMs = 0).clamped()
+        assertEquals(0, open.trimEndMs)
+    }
+
+    @Test
+    fun onlyMediaIsClamped() {
+        val image = ImageElement(frame = box, opacity = 1f)
+        assertEquals(image, image.clampedMedia())
+        assertEquals(1f, (VideoElement(frame = box, volume = 3f).clampedMedia() as VideoElement).volume)
+        assertEquals(1f, (AudioElement(frame = pill, volume = 3f).clampedMedia() as AudioElement).volume)
+    }
+
+    @Test
+    fun replacingAMovieKeepsTheFrameAndSettingsAndDropsTheTrims() {
+        val video = VideoElement(
+            id = "v",
+            frame = Frame(10f, 20f, 480f, 270f),
+            assetId = "old.mp4",
+            webUrl = "https://example.com/old",
+            posterAssetId = "old.png",
+            trimStartMs = 1_000,
+            trimEndMs = 5_000,
+            loop = true,
+            volume = 0.4f,
+            autoplay = true,
+            title = "Demo",
+        )
+
+        val replaced: VideoElement = video.replacingMedia("new.mov")
+
+        assertEquals(
+            video.copy(
+                assetId = "new.mov",
+                webUrl = null,
+                posterAssetId = null,
+                trimStartMs = 0,
+                trimEndMs = 0,
+            ),
+            replaced,
+        )
+    }
+
+    @Test
+    fun replacingASoundKeepsThePillAndSettingsAndDropsTheTrims() {
+        val audio = AudioElement(
+            id = "a",
+            frame = pill,
+            assetId = "old.m4a",
+            trimStartMs = 250,
+            trimEndMs = 4_000,
+            loop = true,
+            volume = 0.2f,
+            title = "Theme",
+        )
+
+        assertEquals(
+            audio.copy(assetId = "new.wav", trimStartMs = 0, trimEndMs = 0),
+            audio.replacingMedia("new.wav"),
+        )
+    }
+
+    @Test
     fun neitherKindTakesACaret() {
         assertTrue(!VideoElement(frame = box).takesCaret)
         assertTrue(!AudioElement(frame = pill).takesCaret)

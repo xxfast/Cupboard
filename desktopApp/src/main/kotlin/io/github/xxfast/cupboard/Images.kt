@@ -10,7 +10,6 @@ import java.awt.datatransfer.DataFlavor
 import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.URI
 import javax.imageio.ImageIO
 
 /**
@@ -72,17 +71,6 @@ internal fun chooseImages(owner: Frame): List<PickedImage> {
     dialog.isVisible = true
 
     return dialog.files.orEmpty().mapNotNull(::readImage)
-}
-
-/**
- * The images among [uris], which is what a drop hands over: file URIs, in the
- * order they were dragged, and anything that isn't an image we take drops out.
- *
- * A URI that doesn't parse is one file skipped rather than a failed drop: a
- * selection dragged out of a browser can carry all sorts.
- */
-internal fun droppedImages(uris: List<String>): List<PickedImage> = uris.mapNotNull { uri ->
-    runCatching { File(URI(uri)) }.getOrNull()?.let(::readImage)
 }
 
 /**

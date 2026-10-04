@@ -262,20 +262,28 @@ private fun fitInside(frame: Frame, width: Float, height: Float): Frame {
  * The box a fresh movie inserts into: 16:9 at half of a widescreen slide, which
  * is the shape all but a handful of movies already are.
  *
- * Not fitted to the movie's own aspect the way an image is, because nothing here
- * has decoded it: the natural size of a movie is a platform player's to report,
- * and the box is resized once it does rather than guessed at now.
+ * Nothing here decodes a movie, so its own aspect is only known when the shell
+ * that picked the file asked its platform player and passed the answer on (see
+ * [videoElement]). Without one, this is the shape it lands as.
  */
 const val DefaultVideoWidth: Float = 960f
 const val DefaultVideoHeight: Float = 540f
 
 /**
- * A fresh movie filling [frame], playing [assetId]'s bytes or standing for the
- * page at [webUrl].
+ * A fresh movie in [frame], playing [assetId]'s bytes or standing for the page at
+ * [webUrl].
  *
  * Both are nullable and both may be given: the bytes are what plays and the url
  * is then only where they came from. Neither is a media frame with nothing behind
  * it yet, which is what an insert leaves when its file goes missing.
+ *
+ * [naturalWidth] x [naturalHeight] is the movie's own size where the shell's
+ * player could tell it, and the box is then fitted inside [frame] and centred
+ * there the way [imageElement]'s is. Zero, the web route and a movie no player
+ * has probed, fills [frame] as it is.
+ *
+ * [title] is the file it came from, so the movie is named from the moment it
+ * lands, for [audioElement]'s reason.
  *
  * [defaults] is taken and not read, the way [imageElement] takes it: a movie has
  * no colours to inherit, and one signature across the insert factories is worth
@@ -286,8 +294,18 @@ fun videoElement(
     frame: Frame,
     assetId: String? = null,
     webUrl: String? = null,
+    posterAssetId: String? = null,
+    title: String = "",
+    naturalWidth: Int = 0,
+    naturalHeight: Int = 0,
     defaults: ElementDefaults = ElementDefaults(),
-): VideoElement = VideoElement(frame = frame, assetId = assetId, webUrl = webUrl)
+): VideoElement = VideoElement(
+    frame = fitInside(frame, naturalWidth.toFloat(), naturalHeight.toFloat()),
+    assetId = assetId,
+    webUrl = webUrl,
+    posterAssetId = posterAssetId,
+    title = title,
+)
 
 /** The pill a fresh sound inserts as: wide enough for a name, one line high. */
 const val DefaultAudioWidth: Float = 320f

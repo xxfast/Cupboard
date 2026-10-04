@@ -711,9 +711,14 @@ enum class InspectorTab { Format, Animate, Document }
 /**
  * A segment of the Format tab's segmented control. Style and Arrange are on
  * every selection; the middle one is the selected kind's own.
+ *
+ * [Movie] and [Audio] are Keynote's names for the video and audio segments, which
+ * is what the user reads on them.
  */
 @Serializable
-enum class FormatSegment { Style, Text, Image, Code, Terminal, Diagram, Equation, Gallery, Arrange }
+enum class FormatSegment {
+    Style, Text, Image, Code, Terminal, Diagram, Equation, Gallery, Movie, Audio, Arrange,
+}
 
 /** A segment of the Animate tab's segmented control, shown whenever an element
  * is selected. Nothing selected is Transitions, which is no segment at all. */
@@ -726,8 +731,8 @@ enum class InspectorSection { Fill, Border, Shadow, Spacing, Lists }
 
 /**
  * The Format segments this element alone would offer. A line is a shape with no
- * inside and no label, so it offers neither Style's fill nor Text; groups, video
- * and audio have nothing of their own to format yet.
+ * inside and no label, so it offers neither Style's fill nor Text; a group has
+ * nothing of its own to format.
  */
 private fun Element.formatSegments(): List<FormatSegment> = when (this) {
     is ShapeElement ->
@@ -741,8 +746,9 @@ private fun Element.formatSegments(): List<FormatSegment> = when (this) {
     is DiagramElement -> listOf(FormatSegment.Style, FormatSegment.Diagram, FormatSegment.Arrange)
     is EquationElement -> listOf(FormatSegment.Style, FormatSegment.Equation, FormatSegment.Arrange)
     is GalleryElement -> listOf(FormatSegment.Style, FormatSegment.Gallery, FormatSegment.Arrange)
-    is GroupElement, is VideoElement, is AudioElement ->
-        listOf(FormatSegment.Style, FormatSegment.Arrange)
+    is VideoElement -> listOf(FormatSegment.Style, FormatSegment.Movie, FormatSegment.Arrange)
+    is AudioElement -> listOf(FormatSegment.Style, FormatSegment.Audio, FormatSegment.Arrange)
+    is GroupElement -> listOf(FormatSegment.Style, FormatSegment.Arrange)
 }
 
 /**

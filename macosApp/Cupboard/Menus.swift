@@ -219,12 +219,21 @@ func insertEntries(_ host: EditorHost) -> [MenuEntry] {
         MenuEntry(title: "Diagram", action: { host.insertDiagram() }),
         MenuEntry(title: "Equation", action: { host.insertEquation() }),
         MenuEntry(title: "Shape", children: shapeEntries(host)),
-        // The one row that opens a panel: an image is bytes, and there is
-        // nothing to insert until the user has said which.
+    ] + mediaEntries(host)
+}
+
+/// The inserts that open a panel first: media is bytes (or an address), and
+/// there is nothing to insert until the user has said which. The tail of the
+/// Insert menu, and the whole of the toolbar's media popup.
+func mediaEntries(_ host: EditorHost) -> [MenuEntry] {
+    [
         MenuEntry(title: "Image...", action: { Media.insert(into: host) }),
         // Its plural: several pictures in one box, shown one at a time. Same
         // panel with multiple selection on.
         MenuEntry(title: "Image Gallery...", action: { Media.insertGallery(into: host) }),
+        MenuEntry(title: "Movie...", action: { Media.insertMovie(into: host) }),
+        MenuEntry(title: "Audio...", action: { Media.insertAudio(into: host) }),
+        MenuEntry(title: "Web Video...", action: { Media.insertWebVideo(into: host) }),
     ]
 }
 
