@@ -3683,6 +3683,11 @@ class EditorHost(
         addSlideAfter(state.selectedSlide.id)
     }
 
+    /** The toolbar's add, which picks the layout the new slide is built on. */
+    fun addSlideAfterSelection(layoutId: String) {
+        viewModel.onAddSlide(state.selectedSlide.id, layoutId)
+    }
+
     fun cutSelectedSlide() {
         cutSlide(state.selectedSlide.id)
     }

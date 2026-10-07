@@ -87,7 +87,9 @@ extension EditorView {
             .disabled(ui.editingLayouts)
             .help("Play from the selected slide")
 
-            placeholderPill("plus.rectangle", help: "Add slide")
+            AddSlideButton(host: host, ui: ui, palette: palette, bars: layoutPreviewBars) {
+                pill { Image(systemName: "plus.rectangle").font(.system(size: 13)) }
+            }
 
             insertCapsule
 
