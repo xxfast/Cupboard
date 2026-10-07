@@ -37,12 +37,22 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.canvas.SlideThumbnail
+import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.ShapeCatalog
 import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+
+private const val LAYOUT_COLUMNS: Int = 3
+private val LAYOUT_CELL_WIDTH: Dp = 94.dp
+
+/** Three cells and the gaps between them, plus the menu's 12dp padding each side. */
+private val LAYOUT_GRID_WIDTH: Dp = LAYOUT_CELL_WIDTH * LAYOUT_COLUMNS + 10.dp * 2 + 24.dp
 
 /** Zoom menu steps; 0 is Fit, the rest are percents of the 1920-wide native slide. */
 private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
@@ -54,13 +64,18 @@ private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
  * Text inserts a box, Code a code block, Terminal a shell window, Diagram a
  * chart, Equation a formula, Shape drops the catalog down, Image opens the
  * shell's file picker, and Media drops Movie, Audio and Web Video down; Add slide
- * stays a placeholder until the document gains that operation. [onPlay] null
+ * opens the deck's layouts to build a slide on (or adds a layout, while layouts are
+ * edited). [onPlay] null
  * (android/web shells) hides Play entirely, and [onInsertImage] null leaves the
  * image button inert the same way. A null media verb greys its menu entry, and
  * all three null leave the media button inert.
  */
 @Composable
 fun EditorToolbar(
+    document: Document,
+    editingLayouts: Boolean,
+    onAddSlide: (layoutId: String) -> Unit,
+    onAddLayout: () -> Unit,
     zoomPercent: Int,
     onZoomPercentChange: (Int) -> Unit,
     onPlay: (() -> Unit)?,
@@ -109,24 +124,12 @@ fun EditorToolbar(
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .height(40.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(tokens.tonal)
-                    .clickable {} // Placeholder until Phase 2 adds slide insertion.
-                    .padding(horizontal = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PlusGlyph(color = tokens.tonalText)
-                Text(
-                    text = "Add slide",
-                    color = tokens.tonalText,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
+            AddSlideButton(
+                document = document,
+                editingLayouts = editingLayouts,
+                onAddSlide = onAddSlide,
+                onAddLayout = onAddLayout,
+            )
 
             Box(
                 Modifier
@@ -157,6 +160,96 @@ fun EditorToolbar(
         }
 
         HorizontalDivider(thickness = 1.dp, color = tokens.div)
+    }
+}
+
+/**
+ * The Add slide pill: the deck's layouts in a three column grid under it, one
+ * slide on the picked layout per click, the way Keynote's "+" does. While layouts
+ * are edited it reads Add layout and adds one directly, with no menu.
+ */
+@Composable
+private fun AddSlideButton(
+    document: Document,
+    editingLayouts: Boolean,
+    onAddSlide: (layoutId: String) -> Unit,
+    onAddLayout: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var menuOpen: Boolean by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            modifier = Modifier
+                .height(40.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(tokens.tonal)
+                .clickable { if (editingLayouts) onAddLayout() else menuOpen = true }
+                .padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PlusGlyph(color = tokens.tonalText)
+            Text(
+                text = if (editingLayouts) "Add layout" else "Add slide",
+                color = tokens.tonalText,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+
+        DropdownMenu(
+            expanded = menuOpen && !editingLayouts,
+            onDismissRequest = { menuOpen = false },
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(LAYOUT_GRID_WIDTH)
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Add a Slide",
+                    color = tokens.dim,
+                    fontSize = 11.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                for (row in document.layouts.chunked(LAYOUT_COLUMNS)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (layout in row) Column(
+                            modifier = Modifier
+                                .width(LAYOUT_CELL_WIDTH)
+                                .clickable {
+                                    menuOpen = false
+                                    onAddSlide(layout.id)
+                                },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            SlideThumbnail(
+                                slide = layout,
+                                width = LAYOUT_CELL_WIDTH,
+                                cornerRadius = 4.dp,
+                                background = document.background,
+                                slideWidth = document.slideWidth,
+                                slideHeight = document.slideHeight,
+                            )
+                            // Two lines tall whatever the name, so the rows align.
+                            Text(
+                                text = layout.title,
+                                color = tokens.dim,
+                                fontSize = 11.sp,
+                                maxLines = 2,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.height(30.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

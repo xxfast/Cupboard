@@ -239,6 +239,8 @@ fun EditorScreen(
             onUpdateElements = viewModel::onUpdateElements,
             onPreviewElements = viewModel::onPreviewElements,
             onInsertElement = viewModel::onInsertElement,
+            onAddSlide = { layoutId -> viewModel.onAddSlide(state.selectedSlide.id, layoutId) },
+            onAddLayout = viewModel::onAddLayout,
             onBeginTextEdit = viewModel::onBeginTextEdit,
             onEndTextEdit = viewModel::onEndTextEdit,
             onEditSelectionChanged = viewModel::onEditSelectionChanged,
@@ -339,6 +341,10 @@ fun EditorView(
     /** A toolbar insertion, already sized and placed: the element goes on the
      * selected slide and takes the selection. */
     onInsertElement: (Element) -> Unit,
+    /** The toolbar's layout picker: a new slide on that layout, after the selected one. */
+    onAddSlide: (layoutId: String) -> Unit,
+    /** Add layout, which is what the toolbar's pill reads while layouts are edited. */
+    onAddLayout: () -> Unit,
     /** A double click on a text element on the canvas, and what ends that edit. */
     onBeginTextEdit: (String) -> Unit,
     onEndTextEdit: () -> Unit,
@@ -501,6 +507,10 @@ fun EditorView(
 
             Column(modifier.fillMaxSize().background(tokens.chrome)) {
                 EditorToolbar(
+                    document = state.document,
+                    editingLayouts = state.isEditingLayouts,
+                    onAddSlide = onAddSlide,
+                    onAddLayout = onAddLayout,
                     zoomPercent = zoomPercent,
                     onZoomPercentChange = { zoomPercent = it },
                     onPlay = if (onPlay == null) null else {
