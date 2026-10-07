@@ -35,6 +35,7 @@ Every "not yet" the parity items left behind.
 
 - [ ] Inspector gaps: mixed-value display on multi-selections, vertical text align, paragraph spacing, shadow offset/angle/opacity, Keynote-style colour wells.
 - [ ] Per-slide Title/Body appearance checkboxes do something.
+- [x] Add a Slide picker: the toolbar "+" opens Keynote's grid of the deck's layouts (thumbnail + name, three across); picking one adds a slide on that layout after the selected one. In layout mode it adds a layout. `AddSlide` takes an optional layout id.
 - [ ] Compose navigator catches up with the core's multi-select (ranges, toggles, batch verbs). WinUI's follows once its canvas lands.
 - [ ] Code field honours the wrap setting while editing and places the caret at the click instead of selecting the whole snippet.
 - [ ] Group resize with rotated children (open bug from `13ffcc6`).
