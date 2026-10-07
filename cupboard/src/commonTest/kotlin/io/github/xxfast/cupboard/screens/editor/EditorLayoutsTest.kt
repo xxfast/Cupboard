@@ -128,6 +128,31 @@ class EditorLayoutsTest {
     }
 
     @Test
+    fun newSlideOnAChosenLayoutIsBuiltOnThatLayout() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onAddSlide("two", "tall")
+        val added = viewModel.await { it.document.slides.size == 3 }
+        val fresh: Slide = added.document.slides.last()
+
+        assertEquals("tall", fresh.layoutId)
+        assertEquals(fresh.id, added.selectedSlideId)
+        assertEquals(listOf(PlaceholderRole.Title), fresh.elements.map { it.placeholderRole })
+        // Its own copy of the placeholder, not the layout's element.
+        assertNotEquals("tall-title", fresh.elements.single().id)
+    }
+
+    @Test
+    fun newSlideOnAnUnknownLayoutFallsBackToTheAnchorsLayout() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onAddSlide("two", "missing")
+        val added = viewModel.await { it.document.slides.size == 3 }
+
+        assertEquals("wide", added.document.slides.last().layoutId)
+    }
+
+    @Test
     fun applyingALayoutRedressesTheSlideInOneHistoryEntry() = runTest {
         val viewModel = editor(document())
 

@@ -278,7 +278,7 @@ class EditorViewModel(
     fun onDeleteElements(ids: List<String>) { scope.launch { events.emit(DeleteElements(ids)) } }
     fun onClearAll() { scope.launch { events.emit(ClearAll) } }
     fun onDeleteSlide(id: String) { scope.launch { events.emit(DeleteSlide(id)) } }
-    fun onAddSlide(afterId: String) { scope.launch { events.emit(AddSlide(afterId)) } }
+    fun onAddSlide(afterId: String, layoutId: String? = null) { scope.launch { events.emit(AddSlide(afterId, layoutId)) } }
     fun onMoveSlideTo(id: String, afterId: String?, depth: Int) { scope.launch { events.emit(MoveSlide(id, afterId, depth = depth)) } }
     fun onMoveSlide(id: String, afterId: String?, nest: Boolean = false) { scope.launch { events.emit(MoveSlide(id, afterId, nest)) } }
     fun onPreviewSlideDrag(slideId: String, afterId: String?, nest: Boolean = false, translationY: Float = 0f) { scope.launch { events.emit(PreviewSlideDrag(slideId, afterId, nest, translationY)) } }

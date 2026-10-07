@@ -1226,8 +1226,10 @@ fun EditorPresenter(
             else state.document.slides.firstOrNull { it.id == event.afterId }
                 ?.let { anchor ->
                     val at: Int = state.document.insertionIndexAfter(anchor.id)
-                    val fresh: Slide = Slide(depth = anchor.depth)
-                        .instantiating(state.document.layoutOf(anchor))
+                    val layout: Slide? = event.layoutId
+                        ?.let { id -> state.document.layouts.firstOrNull { it.id == id } }
+                        ?: state.document.layoutOf(anchor)
+                    val fresh: Slide = Slide(depth = anchor.depth).instantiating(layout)
                     undone.push(state.document)
                     redone.clear()
                     state.copy(

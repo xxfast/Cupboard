@@ -999,8 +999,12 @@ sealed interface EditorEvent {
      * A fresh blank slide after the one with [afterId], at its depth, past its
      * deeper run so a parent keeps its children, and selected: what New Slide
      * means everywhere it appears. An id that doesn't resolve adds nothing.
+     *
+     * A null [layoutId] builds it on the anchor's layout; a set one builds it on
+     * that layout instead, the way Keynote's "Add a Slide" picker does. An id
+     * that resolves to no layout falls back to the anchor's.
      */
-    data class AddSlide(val afterId: String) : EditorEvent
+    data class AddSlide(val afterId: String, val layoutId: String? = null) : EditorEvent
     /**
      * A dropped slide drag: the row [id] names lands in the gap under [afterId],
      * null being the gap above the first row.
