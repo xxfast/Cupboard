@@ -109,6 +109,7 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
+import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
@@ -117,11 +118,13 @@ import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextLink
+import io.github.xxfast.cupboard.document.ancestorIds
 import io.github.xxfast.cupboard.document.backgroundCascade
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
 import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.inheritedElements
+import io.github.xxfast.cupboard.document.isLocked
 import io.github.xxfast.cupboard.document.lineIndexOf
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
@@ -343,11 +346,11 @@ fun EditorCanvas(
     // Read from the pointer handlers, which are set up once: a press outside the
     // field has to know whether there is a caret to take away.
     val currentEditingId by rememberUpdatedState(editingElementId)
-    // Whatever the id resolves to right now, and only when there is text or code
-    // to edit. Which of the two it is picks the field below.
-    val editing: Element? = slide.elements
-        .firstOrNull { it.id == editingElementId }
-        ?.takeIf { it.takesCaret }
+    // Whatever the id resolves to right now, at any depth, and only when there is
+    // text or code to edit. Which of the two it is picks the field below.
+    val editing: Element? = editingElementId
+        ?.let { slide.elementById(it) }
+        ?.takeIf { it.takesCaret && !it.hidden }
     val currentGuides by rememberUpdatedState(guides)
     val currentShowGuides by rememberUpdatedState(showGuides)
     val currentSnapTargets by rememberUpdatedState(snapTargets)
@@ -403,7 +406,9 @@ fun EditorCanvas(
         ) {
             // Behind everything the slide owns, and out of every hit test below:
             // the gesture code only ever looks at `slide.elements`.
-            for (element in slide.inheritedElements(layout)) ElementView(element)
+            for (element in slide.inheritedElements(layout)) {
+                if (!element.hidden) ElementView(element)
+            }
 
             // The element under the caret keeps its place in the layout but paints
             // nothing: the text field below draws it, and two copies of the same
@@ -414,8 +419,12 @@ fun EditorCanvas(
                 // block composed invisibly would still re-highlight on every
                 // keystroke the field streams through the loop.
                 if (element.id == editing?.id) continue
+                // Hidden stays in the document and in the Object List, but not on
+                // the canvas. Its selection ring below still draws, to show where it sits.
+                if (element.hidden) continue
                 ElementView(
-                    element = element.atShownVersion(shownCodeVersion),
+                    // A grouped element under the caret is left out of its group.
+                    element = element.without(editing?.id).atShownVersion(shownCodeVersion),
                     diagramStep = (element as? DiagramElement)?.let(shownDiagramStep),
                 )
             }
@@ -427,8 +436,41 @@ fun EditorCanvas(
             val docDensity = LocalDensity.current.density
             fun toDoc(position: Offset) = Offset(position.x / docDensity, position.y / docDensity)
 
-            fun elementAt(p: Offset): Element? =
-                currentSlide.elements.lastOrNull { it.contains(p.x, p.y) }
+            // The topmost visible child of [group] under [p]. A group's rotation is
+            // layered over its children's absolute frames, so [p] goes back through
+            // the rotation of the group and of every group holding it first.
+            fun childAt(group: GroupElement, p: Offset): Element? {
+                var x: Float = p.x
+                var y: Float = p.y
+                for (id in currentSlide.ancestorIds(group.id) + group.id) {
+                    val holder: Element = currentSlide.elementById(id) ?: continue
+                    if (holder.rotation == 0f) continue
+                    val (localX: Float, localY: Float) = holder.toLocal(x, y)
+                    x = localX
+                    y = localY
+                }
+                return group.children.lastOrNull { !it.hidden && it.contains(x, y) }
+            }
+
+            // Keynote's rule: a click picks among the top-level elements, unless
+            // the selection is already inside the group under the pointer. Then it
+            // picks among that group's children, and the group itself where no
+            // child is under the pointer.
+            fun elementAt(p: Offset): Element? {
+                var hit: Element = currentSlide.elements
+                    .lastOrNull { !it.hidden && it.contains(p.x, p.y) }
+                    ?: return null
+
+                while (hit is GroupElement) {
+                    val group: GroupElement = hit
+                    val entered: Boolean = currentSelection
+                        .any { id -> group.id in currentSlide.ancestorIds(id) }
+                    if (!entered) break
+                    hit = childAt(group, p) ?: break
+                }
+
+                return hit
+            }
 
             // A pointer position, which arrives in the input overlay's space (the
             // slide rectangle), moved into the canvas composable's own. Untranslated
@@ -439,16 +481,13 @@ fun EditorCanvas(
                 return canvas.localPositionOf(slideRect, position)
             }
 
-            fun selectedElements(): List<Element> = currentSelection.mapNotNull { id ->
-                currentSlide.elements.firstOrNull { it.id == id }
-            }
+            fun selectedElements(): List<Element> =
+                currentSelection.mapNotNull { id -> currentSlide.elementById(id) }
 
             // Handles belong to a lone selection: with two or more selected there is
             // no one frame to resize, so every drag there is a move.
             fun soleSelected(): Element? =
-                currentSelection.singleOrNull()?.let { id ->
-                    currentSlide.elements.firstOrNull { it.id == id }
-                }
+                currentSelection.singleOrNull()?.let { id -> currentSlide.elementById(id) }
 
             // A locked element has no handles to hit: it neither resizes nor moves.
             // Selection still happens either way, so the inspector can reach it to
@@ -458,7 +497,9 @@ fun EditorCanvas(
             // [tolerance] is in screen dp: hovering is the more forgiving of the two,
             // so the cursor hints just before the grab starts working, never after.
             fun handleAt(position: Offset, tolerance: Float = 8f): Handle? {
-                val element = soleSelected()?.takeIf { !it.locked } ?: return null
+                val element = soleSelected()
+                    ?.takeIf { !currentSlide.isLocked(it.id) }
+                    ?: return null
                 val p = toDoc(position)
                 val (localX, localY) = element.toLocal(p.x, p.y)
                 return hitTestHandle(element.frame, localX, localY, tolerance / canvasScale)
@@ -578,8 +619,10 @@ fun EditorCanvas(
                                             val hit: Element? = elementAt(toDoc(start))
                                             val now: Long =
                                                 event.changes.firstOrNull()?.uptimeMillis ?: 0L
-                                            // A second click on anything that takes
-                                            // a caret opens it for typing, the way
+                                            // A second click on a group goes into
+                                            // it, picking the child under the
+                                            // pointer. On anything that takes a
+                                            // caret it opens it for typing, the way
                                             // every editor's does. Anything else
                                             // selects, first click or not.
                                             val again: Boolean = hit != null &&
@@ -589,7 +632,14 @@ fun EditorCanvas(
                                             clickedAt = now
                                             when {
                                                 hit == null -> onSelectElement(null)
-                                                again && hit.takesCaret && !hit.locked ->
+                                                again && hit is GroupElement -> {
+                                                    val child: Element? =
+                                                        childAt(hit, toDoc(start))
+                                                    onSelectElement((child ?: hit).id)
+                                                }
+
+                                                again && hit.takesCaret &&
+                                                    !currentSlide.isLocked(hit.id) ->
                                                     onBeginTextEdit(hit.id)
 
                                                 else -> onSelectElement(hit.id)
@@ -646,12 +696,10 @@ fun EditorCanvas(
                             snappedY = snapped.snappedY
                             val dx: Float = snapped.frame.x - start.x
                             val dy: Float = snapped.frame.y - start.y
-                            return currentSlide.elements
-                                .filter { it.id in startFrames }
-                                .map { element ->
-                                    val from: Frame = startFrames.getValue(element.id)
-                                    element.update(frame = from.translate(dx, dy))
-                                }
+                            return startFrames.mapNotNull { (id, from) ->
+                                currentSlide.elementById(id)
+                                    ?.update(frame = from.translate(dx, dy))
+                            }
                         }
 
                         // Where the guide drag has got to, in doc units, and whether
@@ -672,8 +720,7 @@ fun EditorCanvas(
 
                         fun resized(t: DragTarget.Resize): List<Element> {
                             val start: Frame = startFrame ?: return emptyList()
-                            val element: Element = currentSlide.elements
-                                .firstOrNull { it.id == t.elementId }
+                            val element: Element = currentSlide.elementById(t.elementId)
                                 ?: return emptyList()
                             val frame: Frame =
                                 resizeFrame(start, startRotation, t.handle, totalDx, totalDy)
@@ -719,10 +766,13 @@ fun EditorCanvas(
                                         if (!selected) onSelectElement(hit.id)
                                         val movers: List<Element> =
                                             if (selected) selectedElements() else listOf(hit)
+                                        // Locked where it sits, a group's lock
+                                        // included: selected, but not moved.
                                         startFrames = movers
-                                            .filter { !it.locked }
+                                            .filter { !currentSlide.isLocked(it.id) }
                                             .associate { it.id to it.frame }
-                                        if (hit.locked) null else DragTarget.Move(hit.id)
+                                        if (currentSlide.isLocked(hit.id)) null
+                                        else DragTarget.Move(hit.id)
                                     }
                                 }
                                 resizing = (target as? DragTarget.Resize)
@@ -799,8 +849,9 @@ fun EditorCanvas(
                 }
             }
 
-            // Selection rings, one per selected element; handles only for a lone one.
-            val selected: List<Element> = slide.elements.filter { it.id in selectedElementIds }
+            // Selection rings, one per selected element at any depth; handles only
+            // for a lone one.
+            val selected: List<Element> = selectedElementIds.mapNotNull { slide.elementById(it) }
             for (element in selected) {
                 // The ring stays while the caret is in the element, the handles go:
                 // the field covers them, so a handle there would be a target you
@@ -1257,6 +1308,16 @@ private const val CodeIndent: String = "    "
  * element, so every renderer under here keeps drawing a block the one way it
  * always has. The copy is the canvas's alone and never reaches the document.
  */
+/**
+ * This element with [id] left out wherever it sits among its children, and this
+ * same instance when [id] is null or this is no group: the caret's field draws
+ * that one, and a group would draw it a second time under the field.
+ */
+private fun Element.without(id: String?): Element {
+    if (id == null || this !is GroupElement) return this
+    return copy(children = children.filter { it.id != id }.map { it.without(id) })
+}
+
 private fun Element.atShownVersion(version: (CodeElement) -> Int): Element =
     if (this !is CodeElement) this else copy(code = sourceAt(version(this)))
 

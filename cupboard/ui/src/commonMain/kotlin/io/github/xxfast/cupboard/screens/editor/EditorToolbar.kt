@@ -404,7 +404,7 @@ private fun ZoomItem(label: String, checked: Boolean, onClick: () -> Unit) {
 // assets exist and material-icons isn't on the classpath, so they are stroked
 // by hand like the navigator's DisclosureChevron.
 
-private fun DrawScope.glyphStroke(): Stroke = Stroke(
+internal fun DrawScope.glyphStroke(): Stroke = Stroke(
     width = 1.4.dp.toPx(),
     cap = StrokeCap.Round,
     join = StrokeJoin.Round,
@@ -433,7 +433,7 @@ private fun PlusGlyph(color: Color) {
 }
 
 @Composable
-private fun TextGlyph(color: Color) {
+internal fun TextGlyph(color: Color) {
     Canvas(Modifier.size(14.dp)) {
         val s: Float = size.width / 13f
         val glyph: Path = Path().apply {
@@ -452,7 +452,7 @@ private fun TextGlyph(color: Color) {
 
 /** Angle brackets around a slash, the way an editor marks a code block. */
 @Composable
-private fun CodeGlyph(color: Color) {
+internal fun CodeGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         val glyph: Path = Path().apply {
@@ -471,7 +471,7 @@ private fun CodeGlyph(color: Color) {
 
 /** A prompt and its caret, ">_", which is what a terminal looks like from afar. */
 @Composable
-private fun TerminalGlyph(color: Color) {
+internal fun TerminalGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         val glyph: Path = Path().apply {
@@ -487,7 +487,7 @@ private fun TerminalGlyph(color: Color) {
 
 /** Two nodes and the arrow between them, which is what every chart is made of. */
 @Composable
-private fun DiagramGlyph(color: Color) {
+internal fun DiagramGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         val stroke: Stroke = glyphStroke()
@@ -519,7 +519,7 @@ private fun DiagramGlyph(color: Color) {
 
 /** A radical sign, which is the one piece of math notation nothing else uses. */
 @Composable
-private fun EquationGlyph(color: Color) {
+internal fun EquationGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         val glyph: Path = Path().apply {
@@ -534,7 +534,7 @@ private fun EquationGlyph(color: Color) {
 }
 
 @Composable
-private fun ShapeGlyph(color: Color) {
+internal fun ShapeGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         val stroke: Stroke = glyphStroke()
@@ -550,7 +550,7 @@ private fun ShapeGlyph(color: Color) {
 }
 
 @Composable
-private fun ImageGlyph(color: Color) {
+internal fun ImageGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         val stroke: Stroke = glyphStroke()
@@ -574,7 +574,7 @@ private fun ImageGlyph(color: Color) {
 }
 
 @Composable
-private fun MediaGlyph(color: Color) {
+internal fun MediaGlyph(color: Color) {
     Canvas(Modifier.size(15.dp)) {
         val s: Float = size.width / 14f
         drawRoundRect(

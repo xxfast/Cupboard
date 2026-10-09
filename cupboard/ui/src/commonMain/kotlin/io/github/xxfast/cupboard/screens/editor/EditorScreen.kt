@@ -246,6 +246,13 @@ fun EditorScreen(
             onEditSelectionChanged = viewModel::onEditSelectionChanged,
             onReorderElements = viewModel::onReorderElements,
             onSetElementsLocked = viewModel::onSetElementsLocked,
+            onSetElementsHidden = viewModel::onSetElementsHidden,
+            onRenameElement = viewModel::onRenameElement,
+            onSetObjectListFilter = viewModel::onSetObjectListFilter,
+            onToggleObjectExpanded = viewModel::onToggleObjectExpanded,
+            onPreviewObjectDrag = viewModel::onPreviewObjectDrag,
+            onMoveElement = viewModel::onMoveElement,
+            onEndObjectDrag = viewModel::onEndObjectDrag,
             onFlipElements = viewModel::onFlipElements,
             onGroupElements = viewModel::onGroupElements,
             onUngroupElements = viewModel::onUngroupElements,
@@ -478,6 +485,19 @@ fun EditorView(
     onRemoveDiagramStep: (elementId: String, index: Int) -> Unit = { _, _ -> },
     onMoveDiagramStep: (elementId: String, from: Int, to: Int) -> Unit = { _, _, _ -> },
     onUpdateDiagramStep: (elementId: String, index: Int, step: DiagramStep) -> Unit = { _, _, _ -> },
+    /** The Object List's rows: hide or show an object, name it (null resets the
+     * name), narrow the list, and fold a group open or shut. Locking and
+     * selecting go through [onSetElementsLocked] and [onSelectElement]. */
+    onSetElementsHidden: (ids: List<String>, hidden: Boolean) -> Unit = { _, _ -> },
+    onRenameElement: (id: String, name: String?) -> Unit = { _, _ -> },
+    onSetObjectListFilter: (String) -> Unit = {},
+    onToggleObjectExpanded: (String) -> Unit = {},
+    /** An Object List drag reporting the gap it is over, its drop, and its cancel.
+     * What the drag draws is [EditorState.objectDrag], which these three feed. */
+    onPreviewObjectDrag: (id: String, beforeId: String?, translationY: Float) -> Unit =
+        { _, _, _ -> },
+    onMoveElement: (id: String, beforeId: String?) -> Unit = { _, _ -> },
+    onEndObjectDrag: () -> Unit = {},
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -504,6 +524,9 @@ fun EditorView(
             // The row a Rename verb was picked on, null when no dialog is open.
             // View-local like the menus: the name only reaches the loop on OK.
             var renamingId: String? by remember { mutableStateOf(null) }
+            // The Object List's menu anchor, the canvas pair's counterpart: where
+            // it is open, null when it isn't. The verbs are the canvas menu's.
+            var objectMenuAt: Offset? by remember { mutableStateOf(null) }
 
             Column(modifier.fillMaxSize().background(tokens.chrome)) {
                 EditorToolbar(
@@ -624,6 +647,51 @@ fun EditorView(
                             sections = rowSections,
                             position = slideMenuAt,
                             onDismiss = { slideMenuAt = null; slideMenuFor = null },
+                            modifier = Modifier.align(Alignment.TopStart),
+                        )
+                    }
+
+                    // Beside the navigator rather than inside it: the list is the
+                    // slide's own, so it has its own anchor for the same menu the
+                    // canvas opens.
+                    if (state.objectListOpen) Box {
+                        var objectListCoords: LayoutCoordinates? by remember {
+                            mutableStateOf(null)
+                        }
+
+                        EditorObjectList(
+                            rows = state.objectRows(),
+                            filter = state.objectListFilter,
+                            onFilterChange = onSetObjectListFilter,
+                            onSelect = onSelectElement,
+                            onToggleSelection = onToggleElementSelection,
+                            onToggleExpanded = onToggleObjectExpanded,
+                            onSetHidden = { id, hidden -> onSetElementsHidden(listOf(id), hidden) },
+                            onSetLocked = { id, locked -> onSetElementsLocked(listOf(id), locked) },
+                            onRename = onRenameElement,
+                            onContextClick = { id, positionInWindow ->
+                                // Settles the selection first, exactly as a canvas click.
+                                onContextClick(id, positionInWindow)
+                                val native = onShowContextMenu
+                                if (native == null) {
+                                    objectMenuAt = objectListCoords
+                                        ?.windowToLocal(positionInWindow)
+                                        ?: positionInWindow
+                                } else {
+                                    native(id, positionInWindow)
+                                }
+                            },
+                            objectDrag = state.objectDrag,
+                            onPreviewObjectDrag = onPreviewObjectDrag,
+                            onMoveElement = onMoveElement,
+                            onEndObjectDrag = onEndObjectDrag,
+                            modifier = Modifier.onGloballyPositioned { objectListCoords = it },
+                        )
+
+                        if (menuSections.isNotEmpty()) ContextMenu(
+                            sections = menuSections,
+                            position = objectMenuAt,
+                            onDismiss = { objectMenuAt = null },
                             modifier = Modifier.align(Alignment.TopStart),
                         )
                     }

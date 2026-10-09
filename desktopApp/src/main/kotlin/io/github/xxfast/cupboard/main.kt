@@ -1072,6 +1072,11 @@ private fun EditorWindow(
                     checked = state.sidebarOpen,
                     onCheckedChange = { viewModel.onToggleSidebar() },
                 )
+                CheckboxItem(
+                    text = "Show Object List",
+                    checked = state.objectListOpen,
+                    onCheckedChange = { viewModel.onToggleObjectList() },
+                )
                 // The only way to put the inspector away on this shell: the
                 // tabs switch panels but never close one, which is the mac
                 // shell's behaviour and stays there (design/README.md).

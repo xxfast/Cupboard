@@ -211,6 +211,7 @@ fun ElementView(
             // hang off, and its children draw inside it. A nested group recurses
             // through here and re-bases its own children the same way.
             is GroupElement -> for (child in element.children) {
+                if (child.hidden) continue
                 ElementView(child, originX = element.frame.x, originY = element.frame.y)
             }
         }

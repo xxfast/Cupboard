@@ -526,7 +526,7 @@ private fun DrawScope.drawDropLine(color: Color, y: Float, stroke: Float) {
  * pointing right when collapsed and rotating down when the children show.
  */
 @Composable
-private fun DisclosureChevron(collapsed: Boolean) {
+internal fun DisclosureChevron(collapsed: Boolean) {
     val tokens: ChromeTokens = LocalChromeTokens.current
     val rotation: Float by animateFloatAsState(
         targetValue = if (collapsed) 0f else 90f,

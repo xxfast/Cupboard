@@ -140,7 +140,9 @@ fun SlideView(
         slideWidth = slideWidth,
         slideHeight = slideHeight,
     ) {
-        for (element in slide.inheritedElements(layout)) ElementView(element)
+        for (element in slide.inheritedElements(layout)) {
+            if (!element.hidden) ElementView(element)
+        }
 
         // What the leaving slide is letting go of, fading out where it stood. At
         // the step it was on when left: the last one going forward, the first
@@ -151,6 +153,7 @@ fun SlideView(
             val fromStep: Int = if (arrival.forward) from.stepCount() - 1 else 0
 
             for (element in from.elements) {
+                if (element.hidden) continue
                 if (travelling.any { (origin, _) -> origin.id == element.id }) continue
                 if (!from.isVisibleAt(element.id, fromStep)) continue
 
@@ -159,6 +162,8 @@ fun SlideView(
         }
 
         for (element in slide.elements) {
+            if (element.hidden) continue
+
             val origin: Element? =
                 if (arriving) travelling.firstOrNull { (_, to) -> to.id == element.id }?.first
                 else null
