@@ -72,7 +72,7 @@ extension Palette {
     /// coincide between them.
     var isDark: Bool { panel == Palette.dark.panel }
 
-    /// #F2F4F6, flat: Keynote's inspector is a panel, not a glass.
+    /// #F2F4F6, the tint over the panel's material.
     var inspectorPanel: Color { isDark ? Color(rgb: 0x2A2A2E) : Color(rgb: 0xF2F4F6) }
 
     /// #E3E5E7: popups, buttons, the segmented track, the dial, the joined
@@ -144,10 +144,12 @@ extension EditorView {
         }
         .frame(width: Layout.inspector)
         .frame(maxHeight: .infinity)
-        // Flat and opaque, the way Keynote's panel is: the glass this used to
-        // wear took its colour off whatever the canvas was showing, which is
-        // what made every control fill disappear into it.
-        .background(palette.inspectorPanel)
+        // Keynote's panel is a material: the canvas shows through it, muted,
+        // when the slide runs under it. The tint sits over the blur and is
+        // heavy on purpose: the app's lighter glass fill took its colour off
+        // whatever the canvas showed and the control fills disappeared into it.
+        .background(palette.inspectorPanel.opacity(0.6))
+        .background(GlassBackdrop(material: .hudWindow))
         .overlay(alignment: .leading) { palette.divider.frame(width: 1) }
     }
 
