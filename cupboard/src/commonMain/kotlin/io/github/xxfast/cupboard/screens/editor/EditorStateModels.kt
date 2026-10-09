@@ -36,8 +36,12 @@ import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.displayName
 import io.github.xxfast.cupboard.document.hasChildren
+import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.isLayout
+import io.github.xxfast.cupboard.document.isLocked
+import io.github.xxfast.cupboard.document.kindName
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.parseDiagram
 import io.github.xxfast.cupboard.document.presentationNumbers
@@ -77,6 +81,43 @@ data class OutlineEntry(
     val skipped: Boolean = false,
     /** False for a slide hidden inside a collapsed group. Always true in [EditorState.outline]. */
     val visible: Boolean = true,
+)
+
+/** One Object List row, already resolved for the shell that renders it. */
+data class ObjectRow(
+    val id: String,
+    /** [Element.displayName]. */
+    val name: String,
+    /** [Element.kindName], for the row icon. */
+    val kind: String,
+    /** 0 top-level, 1 inside a group; always 0 while filtering. */
+    val depth: Int,
+    val isGroup: Boolean,
+    /** Only meaningful when [isGroup] and not filtering. */
+    val expanded: Boolean,
+    val hidden: Boolean,
+    val locked: Boolean,
+    /** [id] itself is selected. A selected group's children aren't, and read as not. */
+    val selected: Boolean,
+)
+
+/**
+ * An Object List row on the move, and where it would land: immediately before
+ * [beforeId]'s row in the list's front-to-back order, which is directly in front
+ * of that element in the z-order. Null is after the last row, the very back.
+ *
+ * [SlideDrag]'s rule at element granularity: what a drag shows comes back
+ * through the loop, never out of the list's own snapshot state.
+ */
+data class ObjectDrag(
+    val id: String,
+    val beforeId: String?,
+    /**
+     * How far the pointer has carried the row from where it was picked up, in
+     * the list's pixels: the row draws displaced by this, so it travels with the
+     * cursor.
+     */
+    val translationY: Float = 0f,
 )
 
 /**
@@ -218,6 +259,15 @@ data class EditorState(
      * is the editor's view state: every shell has the same three panels, and a
      * shell that kept its own copy would lose it on the next window it opens. */
     val sidebarOpen: Boolean = true,
+    /** Whether the Object List is showing. Serialized for [sidebarOpen]'s reason. */
+    val objectListOpen: Boolean = false,
+    /**
+     * What the Object List's search field holds. Non-blank flattens the list to
+     * the matching elements, see [objectRows]. Transient: a search is for now.
+     */
+    @Transient val objectListFilter: String = "",
+    /** The groups the Object List has open, by id. Transient like the filter. */
+    @Transient val expandedGroupIds: Set<String> = emptySet(),
     val inspectorOpen: Boolean = true,
     val inspectorTab: InspectorTab = InspectorTab.Format,
     /**
@@ -285,6 +335,13 @@ data class EditorState(
      * Transient for the same reason as [marquee].
      */
     @Transient val slideDrag: SlideDrag? = null,
+    /**
+     * The Object List row being dragged and where it would land, null when none
+     * is. [slideDrag]'s twin for elements.
+     *
+     * Transient for the same reason as [marquee].
+     */
+    @Transient val objectDrag: ObjectDrag? = null,
     /**
      * The guide being dragged out of a ruler or along the slide, null when none
      * is. [marquee]'s rule again: the line the pointer is carrying is drawn from
@@ -405,14 +462,14 @@ data class EditorState(
     val selectedLayout: Slide? get() = document.layoutOf(selectedSlide)
 
     /**
-     * The selected elements, in selection order. Ids that no longer resolve are
-     * dropped rather than carried: an undo can take a group away underneath its
-     * own selection, and a selection of ghosts is worse than a short one.
+     * The selected elements, in selection order, at whatever depth each sits: an
+     * id selects exactly what it names, a group's child included. Ids that no
+     * longer resolve are dropped rather than carried: an undo can take a group
+     * away underneath its own selection, and a selection of ghosts is worse than
+     * a short one.
      */
     val selectedElements: List<Element>
-        get() = selectedElementIds.mapNotNull { id ->
-            selectedSlide.elements.firstOrNull { it.id == id }
-        }
+        get() = selectedElementIds.mapNotNull { id -> selectedSlide.elementById(id) }
 
     /**
      * The one element a single-element control speaks for: the first of the
@@ -427,7 +484,7 @@ data class EditorState(
      * until a single block is selected.
      */
     val selectedCodeElement: CodeElement? get() = selectedElementIds.singleOrNull()
-        ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+        ?.let { id -> selectedSlide.elementById(id) }
         as? CodeElement
 
     /** How many versions the version picker offers, 0 when no code block is selected. */
@@ -465,7 +522,7 @@ data class EditorState(
      * diagram, null otherwise, the way [selectedCodeElement] is for code.
      */
     val selectedDiagramElement: DiagramElement? get() = selectedElementIds.singleOrNull()
-        ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+        ?.let { id -> selectedSlide.elementById(id) }
         as? DiagramElement
 
     /**
@@ -547,7 +604,8 @@ data class EditorState(
      *
      * Asked of `Slide.reorderElements` rather than worked out here, so the
      * enablement can't drift from the move: it returns the slide it was given
-     * when the move changes nothing, locked members included.
+     * when the move changes nothing, locked members included. Locked counts the
+     * way every edit counts it, inherited from a locked group (`Slide.isLocked`).
      */
     val canBringForward: Boolean get() = canReorder(ZOrderMove.Forward)
 
@@ -555,7 +613,9 @@ data class EditorState(
 
     private fun canReorder(move: ZOrderMove): Boolean {
         val slide: Slide = selectedSlide
-        val movable: List<String> = selectedElements.filter { !it.locked }.map { it.id }
+        val movable: List<String> = selectedElements
+            .filter { !slide.isLocked(it.id) }
+            .map { it.id }
         if (movable.isEmpty()) return false
         return slide.reorderElements(movable, move) !== slide
     }
@@ -571,7 +631,7 @@ data class EditorState(
      */
     val editingElement: Element?
         get() = editingElementId
-            ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+            ?.let { id -> selectedSlide.elementById(id) }
             ?.takeIf { it.takesCaret }
 
     /** Whether the caret is in an element, and so whether keys are text rather than commands. */
@@ -579,7 +639,7 @@ data class EditorState(
 
     /** The selection when it is exactly one text box, null otherwise: what range links are read off. */
     val selectedTextElement: TextElement? get() = selectedElementIds.singleOrNull()
-        ?.let { id -> selectedSlide.elements.firstOrNull { it.id == id } }
+        ?.let { id -> selectedSlide.elementById(id) }
         as? TextElement
 
     /** [selectedTextElement]'s range links as an inspector lists them, empty with none selected. */
@@ -600,7 +660,8 @@ data class EditorState(
      * unlocked. What an inspector's Link Selection control greys out behind.
      */
     val canLinkSelection: Boolean get() {
-        val element: TextElement = selectedTextElement?.takeIf { !it.locked } ?: return false
+        val element: TextElement =
+            selectedTextElement?.takeIf { !selectedSlide.isLocked(it.id) } ?: return false
         val selection: TextSelection = linkSelection?.takeIf { it.elementId == element.id } ?: return false
         return selection.start < selection.end && selection.end <= element.text.length
     }
@@ -643,7 +704,8 @@ data class EditorState(
     val canCut: Boolean
         get() = when (focusedPane) {
             EditorPane.Navigator -> true
-            EditorPane.Canvas -> !isEditingText && selectedElements.any { !it.locked }
+            EditorPane.Canvas ->
+                !isEditingText && selectedElements.any { !selectedSlide.isLocked(it.id) }
         }
 
     /** [canCut]'s rule verbatim: what may be taken away may also be copied in place. */
@@ -759,6 +821,61 @@ data class EditorState(
      * index, so collapsing shuffles no row's place in the deck.
      */
     fun outline(): List<OutlineEntry> = fullOutline().filter { entry -> entry.visible }
+
+    /**
+     * The selected slide's elements as Object List rows, front to back: the
+     * topmost first, which is the reverse of [Slide.elements]. An expanded group
+     * lists its children beneath it, one level deep; a group inside a group is a
+     * row of its own with nothing under it.
+     *
+     * A non-blank [objectListFilter] lists every element at any depth whose
+     * display name holds it, flat and in the same order, and ignores expansion.
+     */
+    fun objectRows(): List<ObjectRow> {
+        val slide: Slide = selectedSlide
+        val selected: Set<String> = selectedElementIds.toSet()
+
+        fun row(element: Element, depth: Int, expanded: Boolean): ObjectRow = ObjectRow(
+            id = element.id,
+            name = element.displayName,
+            kind = element.kindName,
+            depth = depth,
+            isGroup = element is GroupElement,
+            expanded = expanded,
+            hidden = element.hidden,
+            locked = element.locked,
+            selected = element.id in selected,
+        )
+
+        if (objectListFilter.isNotBlank()) {
+            fun matches(elements: List<Element>): List<ObjectRow> = elements
+                .asReversed()
+                .flatMap { element ->
+                    val children: List<Element> = (element as? GroupElement)?.children.orEmpty()
+                    val self: List<ObjectRow> =
+                        if (element.displayName.contains(objectListFilter, ignoreCase = true)) {
+                            listOf(row(element, depth = 0, expanded = false))
+                        } else {
+                            emptyList()
+                        }
+
+                    return@flatMap self + matches(children)
+                }
+
+            return matches(slide.elements)
+        }
+
+        return slide.elements
+            .asReversed()
+            .flatMap { element ->
+                val expanded: Boolean = element is GroupElement && element.id in expandedGroupIds
+                val top: ObjectRow = row(element, depth = 0, expanded = expanded)
+                if (!expanded) return@flatMap listOf(top)
+
+                val children: List<Element> = (element as GroupElement).children.asReversed()
+                return@flatMap listOf(top) + children.map { row(it, depth = 1, expanded = false) }
+            }
+    }
 
     /**
      * Every slide as a navigator row, hidden ones included: [OutlineEntry.visible]
@@ -961,9 +1078,23 @@ sealed interface EditorEvent {
      */
     data class InsertElement(val element: Element) : EditorEvent
     data class ReorderElements(val ids: List<String>, val move: ZOrderMove) : EditorEvent
-    /** The only event a locked element answers to. Undoable, like Keynote's.
-     * The shell decides what the toggle means for a mixed selection. */
+    /** The only event that unlocks, and with [SetElementsHidden] and [RenameElement] the only
+     * ones a locked element answers to. Undoable, like Keynote's. The shell decides what the
+     * toggle means for a mixed selection. */
     data class SetElementsLocked(val ids: List<String>, val locked: Boolean) : EditorEvent
+    /**
+     * Hides or shows elements at any depth: a hidden one stays in the document
+     * and in the Object List, and still selects from there. Applies to locked
+     * elements like [SetElementsLocked] does. One history entry, none when
+     * nothing changes.
+     */
+    data class SetElementsHidden(val ids: List<String>, val hidden: Boolean) : EditorEvent
+    /**
+     * Names the element [id] names, at any depth, locked or not. A blank or null
+     * [name] goes back to the default one read off the content. One history
+     * entry, none when nothing changes.
+     */
+    data class RenameElement(val id: String, val name: String?) : EditorEvent
     data class FlipElements(val ids: List<String>, val axis: FlipAxis) : EditorEvent
     /** Wraps the selection into one group and selects it. Needs two unlocked members. */
     data class GroupElements(val ids: List<String>) : EditorEvent
@@ -1036,6 +1167,28 @@ sealed interface EditorEvent {
     ) : EditorEvent
     /** The drag is over without a drop, cancelled or let go outside: the gap goes. */
     data object EndSlideDrag : EditorEvent
+    /**
+     * A dropped Object List drag: the element [id] names lands directly in front
+     * of [beforeId] in the z-order, immediately before its row, or at the very
+     * back of its siblings when null. Siblings only, per `Slide.moveElement`, so
+     * a drop never takes an element in or out of a group.
+     *
+     * One history entry, the dropped element selected, and the drag cleared
+     * either way: a drop that changes nothing is still a drop, the way
+     * [MoveSlide]'s is, it just costs no history entry.
+     */
+    data class MoveElement(val id: String, val beforeId: String?) : EditorEvent
+    /**
+     * An in-flight Object List drag sample: where the row would land and how far
+     * it has been carried. [PreviewSlideDrag]'s kind: no document, no history.
+     */
+    data class PreviewObjectDrag(
+        val id: String,
+        val beforeId: String?,
+        val translationY: Float = 0f,
+    ) : EditorEvent
+    /** The Object List drag is over without a drop: the marker goes. */
+    data object EndObjectDrag : EditorEvent
     /**
      * Takes the slide in or out of the presentation. Per slide, not per row: a
      * collapsed parent's hidden run keeps its own answer. One history entry, and
@@ -1537,6 +1690,12 @@ sealed interface EditorEvent {
     data object Undo : EditorEvent
     data object Redo : EditorEvent
     data object ToggleSidebar : EditorEvent
+    /** Shows or hides the Object List. [ToggleSidebar]'s kind: chrome, no history entry. */
+    data object ToggleObjectList : EditorEvent
+    /** What the Object List's search field holds. Chrome, no history entry. */
+    data class SetObjectListFilter(val text: String) : EditorEvent
+    /** Opens or closes a group's row in the Object List. Chrome, no history entry. */
+    data class ToggleObjectExpanded(val id: String) : EditorEvent
     data object ToggleNotes : EditorEvent
     /** View toggles, [ToggleNotes]' kind: no document, no history entry. */
     data object ToggleRulers : EditorEvent

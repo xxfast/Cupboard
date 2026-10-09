@@ -77,8 +77,21 @@ sealed interface Element {
     val rotation: Float
     val flippedHorizontally: Boolean
     val flippedVertically: Boolean
-    /** A locked element still selects and still renders, but nothing edits it until it unlocks. */
+    /**
+     * A locked element still selects and still renders, but nothing moves or
+     * restyles it until it unlocks. Locking, hiding and renaming still apply.
+     */
     val locked: Boolean
+    /**
+     * The user's name for the row in the Object List; null means the default,
+     * derived from the content (see `displayName`).
+     */
+    val name: String?
+    /**
+     * A hidden element stays in the document and in the Object List but does
+     * not render, hit-test, play or export.
+     */
+    val hidden: Boolean
 
     /**
      * The one mutator every element implements: copies with whichever of the
@@ -92,6 +105,8 @@ sealed interface Element {
         flippedHorizontally: Boolean = this.flippedHorizontally,
         flippedVertically: Boolean = this.flippedVertically,
         locked: Boolean = this.locked,
+        name: String? = this.name,
+        hidden: Boolean = this.hidden,
     ): Element
 }
 
@@ -196,6 +211,8 @@ data class TextElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val text: String = "",
     val fontSize: Float = 15f,
     /** Bold is a point on this scale rather than a flag of its own; see `isBold`. */
@@ -254,6 +271,8 @@ data class TextElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -261,6 +280,8 @@ data class TextElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -340,6 +361,8 @@ data class ShapeElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val kind: ShapeKind = ShapeKind.Rectangle,
     /** Only [ShapeKind.Rectangle] rounds by this; every other kind ignores it. */
     val cornerRadius: Float = 10f,
@@ -375,6 +398,8 @@ data class ShapeElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -382,6 +407,8 @@ data class ShapeElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -448,6 +475,8 @@ data class ImageElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val placeholder: String = "Drop frame capture here",
     /** What the asset store resolves to this image's bytes. Null draws [placeholder]. */
     val assetId: String? = null,
@@ -471,6 +500,8 @@ data class ImageElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -478,6 +509,8 @@ data class ImageElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -527,6 +560,8 @@ data class GalleryElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val images: List<GalleryImage> = emptyList(),
     /** The image the editor canvas shows. Out of range draws the nearest one there is. */
     val current: Int = 0,
@@ -540,6 +575,8 @@ data class GalleryElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -547,6 +584,8 @@ data class GalleryElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -572,6 +611,8 @@ data class GroupElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val children: List<Element> = emptyList(),
 ) : Element {
     /**
@@ -589,6 +630,8 @@ data class GroupElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element {
         // `frame` is the new one, `this.frame` the one the children were laid out in.
         val moved: List<Element> = if (frame == this.frame) children else {
@@ -613,6 +656,8 @@ data class GroupElement(
             flippedHorizontally = flippedHorizontally,
             flippedVertically = flippedVertically,
             locked = locked,
+            name = name,
+            hidden = hidden,
             children = moved,
         )
     }
@@ -653,6 +698,8 @@ data class TerminalElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val text: String = "",
     val prompt: String = "$",
     val title: String = "zsh",
@@ -666,6 +713,8 @@ data class TerminalElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -673,6 +722,8 @@ data class TerminalElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -691,6 +742,8 @@ data class CodeElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val code: String = "",
     /**
      * The later versions of the same block, for a code morph: [code] is version
@@ -737,6 +790,8 @@ data class CodeElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -744,6 +799,8 @@ data class CodeElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -772,6 +829,8 @@ data class DiagramElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val source: String = "",
     val fontSize: Float = 16f,
     val nodeFill: Long = 0x387F52FF,
@@ -792,6 +851,8 @@ data class DiagramElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -799,6 +860,8 @@ data class DiagramElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -830,6 +893,8 @@ data class EquationElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     val latex: String = "",
     val fontSize: Float = 40f,
     val color: Long = 0xFFFFFFFF,
@@ -841,6 +906,8 @@ data class EquationElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -848,6 +915,8 @@ data class EquationElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -886,6 +955,8 @@ data class VideoElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     /** What the asset store resolves to this movie's bytes. Null is a web or empty video. */
     val assetId: String? = null,
     /** A video hosted elsewhere, opened rather than played. Ignored when [assetId] is set. */
@@ -909,6 +980,8 @@ data class VideoElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -916,6 +989,8 @@ data class VideoElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }
 
@@ -942,6 +1017,8 @@ data class AudioElement(
     override val flippedHorizontally: Boolean = false,
     override val flippedVertically: Boolean = false,
     override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
     /** What the asset store resolves to this sound's bytes. Null is an empty pill. */
     val assetId: String? = null,
     val trimStartMs: Int = 0,
@@ -959,6 +1036,8 @@ data class AudioElement(
         flippedHorizontally: Boolean,
         flippedVertically: Boolean,
         locked: Boolean,
+        name: String?,
+        hidden: Boolean,
     ): Element = copy(
         frame = frame,
         opacity = opacity,
@@ -966,5 +1045,7 @@ data class AudioElement(
         flippedHorizontally = flippedHorizontally,
         flippedVertically = flippedVertically,
         locked = locked,
+        name = name,
+        hidden = hidden,
     )
 }

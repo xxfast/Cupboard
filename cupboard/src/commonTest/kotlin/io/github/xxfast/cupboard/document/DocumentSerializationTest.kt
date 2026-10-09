@@ -2,7 +2,9 @@ package io.github.xxfast.cupboard.document
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -29,6 +31,35 @@ class DocumentSerializationTest {
         val loaded = assertIs<DocumentLoad.Loaded>(decodeDocument(json))
         assertEquals(1, loaded.document.formatVersion)
         assertEquals("Old", loaded.document.name)
+    }
+
+    @Test
+    fun readsAnElementWrittenBeforeNamesAndHidingAsUnnamedAndShowing() {
+        val json = """
+            {
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "text",
+                      "id": "text",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "text": "Hello"
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val loaded = assertIs<DocumentLoad.Loaded>(decodeDocument(json))
+        val element: Element = loaded.document.slides.single().elements.single()
+        assertNull(element.name)
+        assertFalse(element.hidden)
+        assertEquals("Hello", element.displayName)
     }
 
     @Test

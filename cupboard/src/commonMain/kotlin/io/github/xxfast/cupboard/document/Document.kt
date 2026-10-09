@@ -260,23 +260,57 @@ fun Document.updateSlide(updated: Slide): Document = when {
     else -> this
 }
 
-/** Replaces the element with the same id. An id this slide doesn't hold changes nothing. */
-fun Slide.updateElement(updated: Element): Slide =
-    copy(elements = elements.map { if (it.id == updated.id) updated else it })
+/** [updateElements] for one element. */
+fun Slide.updateElement(updated: Element): Slide = updateElements(listOf(updated))
 
-/** [updateElement] for a batch: every element in [updated] replaces its id, in one pass. */
+/**
+ * Replaces every element that shares an id with one of [updated], wherever it
+ * sits: at the top level or inside a group, at any depth, in one pass. Ids this
+ * slide doesn't hold change nothing, and nothing matching returns this same
+ * instance.
+ *
+ * A group whose children's drawn bounds moved refits around them, and so on
+ * outwards, so the box a group is selected and hit by stays the box its children
+ * draw in. A replacement that leaves every footprint where it was (a rename, a
+ * restyle, a lock) leaves the groups around it where they were.
+ */
 fun Slide.updateElements(updated: List<Element>): Slide {
     if (updated.isEmpty()) return this
-    val byId: Map<String, Element> = updated.associateBy { it.id }
-    return copy(elements = elements.map { byId[it.id] ?: it })
+    val replaced: List<Element> = elements.replacing(updated.associateBy { it.id })
+    return if (replaced === elements) this else copy(elements = replaced)
 }
+
+private fun List<Element>.replacing(byId: Map<String, Element>): List<Element> {
+    val replaced: List<Element> = map { it.replacing(byId) }
+    return if (replaced.indices.all { replaced[it] === this[it] }) this else replaced
+}
+
+private fun Element.replacing(byId: Map<String, Element>): Element {
+    byId[id]?.let { return it }
+    if (this !is GroupElement) return this
+    val replaced: List<Element> = children.replacing(byId)
+    if (replaced === children) return this
+    val moved: Boolean = replaced.indices.any { index ->
+        replaced[index].drawnBounds() != children[index].drawnBounds()
+    }
+    return if (moved) refitted(replaced) else copy(children = replaced)
+}
+
+/**
+ * This group holding [children], its frame their drawn bounds the way
+ * [groupElements] fits a new one. A plain copy, not [GroupElement.update]: that
+ * one carries the children along with a new frame, and here the frame is what
+ * follows the children.
+ */
+private fun GroupElement.refitted(children: List<Element>): GroupElement =
+    copy(children = children, frame = boundingFrame(children.map { it.drawnBounds() }))
 
 /**
  * Every id this element answers for: its own, plus its children's all the way
  * down when it is a group. Builds key off element ids at any depth, so removing
  * a group has to know the whole subtree that goes with it.
  */
-private fun Element.subtreeIds(): List<String> =
+internal fun Element.subtreeIds(): List<String> =
     listOf(id) + ((this as? GroupElement)?.children?.flatMap { it.subtreeIds() } ?: emptyList())
 
 /**
@@ -289,6 +323,93 @@ fun Slide.elementById(id: String): Element? = elements.firstNotNullOfOrNull { it
 private fun Element.subtreeElement(id: String): Element? {
     if (this.id == id) return this
     return (this as? GroupElement)?.children?.firstNotNullOfOrNull { it.subtreeElement(id) }
+}
+
+/**
+ * The id of the top-level element that is or holds [id], null when the slide
+ * holds no such element.
+ */
+fun Slide.topLevelAncestorId(id: String): String? =
+    elements.firstOrNull { it.subtreeElement(id) != null }?.id
+
+/**
+ * The ids of the groups that hold [id], outermost first. Empty for a top-level
+ * element and for an id this slide doesn't hold.
+ */
+fun Slide.ancestorIds(id: String): List<String> =
+    elements.pathTo(id)?.dropLast(1)?.map { it.id }.orEmpty()
+
+/**
+ * Whether [id] is locked where it sits: locked itself, or inside a group that is.
+ * A group carries its children with it, so a lock on the group holds them too.
+ * False for an id this slide doesn't hold.
+ */
+fun Slide.isLocked(id: String): Boolean = elements.pathTo(id)?.any { it.locked } == true
+
+// The elements from the top level down to [id], both ends included.
+private fun List<Element>.pathTo(id: String): List<Element>? {
+    for (element in this) {
+        if (element.id == id) return listOf(element)
+        val below: List<Element> = (element as? GroupElement)?.children?.pathTo(id) ?: continue
+        return listOf(element) + below
+    }
+    return null
+}
+
+/**
+ * The slide with the list [parentId] holds run through [transform]: the
+ * top-level elements for null, that group's children otherwise. This same
+ * instance comes back when [transform] hands back the list it was given, and
+ * when [parentId] names no group.
+ *
+ * The group keeps its frame: what goes through here (z-order, ungrouping in
+ * place) moves nothing on the slide.
+ */
+private fun Slide.mapSiblings(
+    parentId: String?,
+    transform: (List<Element>) -> List<Element>,
+): Slide {
+    if (parentId == null) {
+        val mapped: List<Element> = transform(elements)
+        return if (mapped === elements) this else copy(elements = mapped)
+    }
+
+    return mapElement(parentId) { parent ->
+        if (parent !is GroupElement) return@mapElement parent
+        val mapped: List<Element> = transform(parent.children)
+        return@mapElement if (mapped === parent.children) parent else parent.copy(children = mapped)
+    }
+}
+
+/**
+ * Replaces the element [id] names, at any depth, with what [transform] makes of
+ * it: what lock, hide and rename go through, since they read the element as it
+ * is stored rather than taking a copy from a shell.
+ *
+ * The group around a replaced child is copied with its new children and nothing
+ * else, unlike [updateElements], which refits it: a transform that moves the
+ * child leaves the group's frame where it was. This same instance comes back
+ * when nothing matched or nothing changed.
+ */
+fun Slide.mapElement(id: String, transform: (Element) -> Element): Slide {
+    val mapped: List<Element> = elements.mapSubtree(id, transform)
+    return if (mapped === elements) this else copy(elements = mapped)
+}
+
+// Ids are unique on a slide, so the first replacement is the only one.
+private fun List<Element>.mapSubtree(id: String, transform: (Element) -> Element): List<Element> {
+    for ((index, element) in withIndex()) {
+        val mapped: Element = element.mapSubtree(id, transform)
+        if (mapped !== element) return toMutableList().also { it[index] = mapped }
+    }
+    return this
+}
+
+private fun Element.mapSubtree(id: String, transform: (Element) -> Element): Element {
+    if (this.id == id) return transform(this)
+    if (this !is GroupElement) return this
+    val mapped: List<Element> = children.mapSubtree(id, transform)
+    return if (mapped === children) this else copy(children = mapped)
 }
 
 /**
@@ -340,23 +461,50 @@ fun Slide.duplicated(): Slide {
 fun Slide.addElements(added: List<Element>): Slide = copy(elements = elements + added)
 
 /**
- * Drops the top-level elements [ids] resolves to, and with them every build that
+ * Drops the elements [ids] names, at any depth, and with them every build that
  * pointed at one or at anything nested inside one: a build left behind would
  * hold a step open for an element that is no longer there to reveal.
+ *
+ * A group that loses children refits around the ones it keeps. One left with a
+ * single child is no group any more and gives way to it, with the group's
+ * transforms baked in the way [ungroupElement] bakes them; one left with none
+ * goes altogether. Either way the group's own builds go with it.
  *
  * Ids this slide doesn't hold change nothing and return this same instance, so a
  * caller can tell a real deletion from a no-op by identity and skip the history
  * entry, the same way [reorderElements] does.
  */
 fun Slide.removeElements(ids: Set<String>): Slide {
-    val removed: List<Element> = elements.filter { it.id in ids }
-    if (removed.isEmpty()) return this
+    val kept: List<Element> = elements.without(ids)
+    if (kept === elements) return this
 
-    val gone: Set<String> = removed.flatMapTo(mutableSetOf()) { it.subtreeIds() }
-    return copy(
-        elements = elements.filter { it.id !in gone },
-        builds = builds.filter { it.elementId !in gone },
-    )
+    val before: Set<String> = elements.flatMapTo(mutableSetOf()) { it.subtreeIds() }
+    val after: Set<String> = kept.flatMapTo(mutableSetOf()) { it.subtreeIds() }
+    val gone: Set<String> = before - after
+    return copy(elements = kept, builds = builds.filter { it.elementId !in gone })
+}
+
+private fun List<Element>.without(ids: Set<String>): List<Element> {
+    var changed = false
+    val kept: List<Element> = flatMap { element ->
+        if (element.id in ids) {
+            changed = true
+            return@flatMap emptyList()
+        }
+
+        if (element !is GroupElement) return@flatMap listOf(element)
+        val children: List<Element> = element.children.without(ids)
+        if (children === element.children) return@flatMap listOf(element)
+
+        changed = true
+        return@flatMap when (children.size) {
+            0 -> emptyList()
+            1 -> element.copy(children = children).freedChildren()
+            else -> listOf(element.refitted(children))
+        }
+    }
+
+    return if (changed) kept else this
 }
 
 /**
@@ -393,24 +541,33 @@ fun Slide.groupElements(ids: List<String>, groupId: String = newId()): Slide {
 
 /**
  * Splices the group's children back where the group sat, in their stored order,
- * with the transforms the group carried baked into each of them: its rotation
- * turns the child around the group's center and adds to the child's own, each of
- * its flips mirrors the child across that center and toggles the child's flag,
- * and its opacity multiplies through.
- *
- * A group flip does not negate a child's own rotation, so a rotated child in a
- * flipped group comes out mirrored about the wrong diagonal. Known
- * simplification, the same class as the group's unscaled text.
+ * with the transforms the group carried baked into each of them (see
+ * [freedChildren]). A group inside a group comes apart within its parent, which
+ * keeps its frame.
  *
  * An id that is not a group's, or not here at all, returns this same instance.
  */
 fun Slide.ungroupElement(id: String): Slide {
-    val index: Int = elements.indexOfFirst { it.id == id }
-    if (index == -1) return this
-    val group = elements[index] as? GroupElement ?: return this
+    val group: GroupElement = elementById(id) as? GroupElement ?: return this
+    return mapSiblings(ancestorIds(id).lastOrNull()) { siblings ->
+        siblings.flatMap { if (it.id == id) group.freedChildren() else listOf(it) }
+    }
+}
 
+/**
+ * The children, with the transforms this group carried baked into each of them:
+ * its rotation turns the child around the group's center and adds to the
+ * child's own, each of its flips mirrors the child across that center and
+ * toggles the child's flag, and its opacity multiplies through.
+ *
+ * A group flip does not negate a child's own rotation, so a rotated child in a
+ * flipped group comes out mirrored about the wrong diagonal. Known
+ * simplification, the same class as the group's unscaled text.
+ */
+private fun GroupElement.freedChildren(): List<Element> {
+    val group: GroupElement = this
     val bounds: Frame = group.frame
-    val freed: List<Element> = group.children.map { child ->
+    return group.children.map { child ->
         val mirroredX: Float =
             if (group.flippedHorizontally) 2 * bounds.centerX - child.frame.centerX
             else child.frame.centerX
@@ -434,8 +591,6 @@ fun Slide.ungroupElement(id: String): Slide {
             flippedVertically = child.flippedVertically != group.flippedVertically,
         )
     }
-
-    return copy(elements = elements.take(index) + freed + elements.drop(index + 1))
 }
 
 /** Where a z-order move sends an element. [Slide.elements] is the z-order, last on top. */
@@ -452,13 +607,25 @@ fun Slide.reorderElement(id: String, move: ZOrderMove): Slide = reorderElements(
 /**
  * [reorderElement] for a batch, clamped at both ends the same way.
  *
+ * Each id moves among its own siblings: the top-level elements, or the children
+ * of the group it sits in. Ids under different parents are each moved within
+ * their own, so a child never leaves its group by way of the z-order.
+ *
  * [ZOrderMove.ToFront] and [ZOrderMove.ToBack] move the members as a block, with
  * their relative order intact. [ZOrderMove.Forward] and [ZOrderMove.Backward]
  * step each member one slot, worked from the edge the move heads for so members
  * pile up against the end rather than leapfrogging each other.
  */
-fun Slide.reorderElements(ids: List<String>, move: ZOrderMove): Slide {
-    val wanted: Set<String> = ids.toSet()
+fun Slide.reorderElements(ids: List<String>, move: ZOrderMove): Slide = ids
+    .distinct()
+    .groupBy { id -> ancestorIds(id).lastOrNull() }
+    .entries
+    .fold(this) { slide, (parentId, siblingIds) ->
+        slide.mapSiblings(parentId) { siblings -> siblings.reordered(siblingIds.toSet(), move) }
+    }
+
+private fun List<Element>.reordered(wanted: Set<String>, move: ZOrderMove): List<Element> {
+    val elements: List<Element> = this
     val members: List<Element> = elements.filter { it.id in wanted }
     if (members.isEmpty()) return this
 
@@ -495,8 +662,35 @@ fun Slide.reorderElements(ids: List<String>, move: ZOrderMove): Slide {
         }
     }
 
-    if (reordered == elements) return this
-    return copy(elements = reordered)
+    return if (reordered == elements) this else reordered
+}
+
+/**
+ * Moves the element [id] directly in front of [beforeId] in the z-order, which
+ * is immediately before it in the Object List's front-to-back rows, or to the
+ * very back of its siblings when [beforeId] is null. What a dropped Object List
+ * drag lands as.
+ *
+ * Only among siblings: [beforeId] has to sit in the same list as [id], the top
+ * level or the same group, so a drag never takes an element in or out of a
+ * group. This same instance comes back when it doesn't, when [id] is locked
+ * where it sits (see [isLocked]), when [beforeId] is [id], and when the order
+ * comes out as it was.
+ */
+fun Slide.moveElement(id: String, beforeId: String?): Slide {
+    if (id == beforeId || elementById(id) == null || isLocked(id)) return this
+    val parentId: String? = ancestorIds(id).lastOrNull()
+    val strayed: Boolean = beforeId != null &&
+        (elementById(beforeId) == null || ancestorIds(beforeId).lastOrNull() != parentId)
+    if (strayed) return this
+
+    return mapSiblings(parentId) { siblings ->
+        val moving: Element = siblings.first { it.id == id }
+        val rest: List<Element> = siblings.filter { it.id != id }
+        val at: Int = if (beforeId == null) 0 else rest.indexOfFirst { it.id == beforeId } + 1
+        val moved: List<Element> = rest.take(at) + moving + rest.drop(at)
+        return@mapSiblings if (moved.map { it.id } == siblings.map { it.id }) siblings else moved
+    }
 }
 
 /** True when the next slide exists and sits deeper, i.e. this slide owns children. */

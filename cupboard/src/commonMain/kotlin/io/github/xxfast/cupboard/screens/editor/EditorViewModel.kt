@@ -71,6 +71,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExitSlideLayouts
@@ -79,6 +80,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.FocusPane
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.GroupElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -86,6 +88,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
@@ -110,7 +113,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExtendSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsHidden
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetObjectListFilter
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDeckFont
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDeckFont
@@ -128,6 +134,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspectorSection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleObjectExpanded
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleObjectList
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.UngroupElements
@@ -270,6 +278,8 @@ class EditorViewModel(
     fun onInsertElement(element: Element) { scope.launch { events.emit(InsertElement(element)) } }
     fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
     fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
+    fun onSetElementsHidden(ids: List<String>, hidden: Boolean) { scope.launch { events.emit(SetElementsHidden(ids, hidden)) } }
+    fun onRenameElement(id: String, name: String?) { scope.launch { events.emit(RenameElement(id, name)) } }
     fun onFlipElements(ids: List<String>, axis: FlipAxis) { scope.launch { events.emit(FlipElements(ids, axis)) } }
     fun onGroupElements(ids: List<String>) { scope.launch { events.emit(GroupElements(ids)) } }
     fun onUngroupElements(id: String) { scope.launch { events.emit(UngroupElements(id)) } }
@@ -283,6 +293,9 @@ class EditorViewModel(
     fun onMoveSlide(id: String, afterId: String?, nest: Boolean = false) { scope.launch { events.emit(MoveSlide(id, afterId, nest)) } }
     fun onPreviewSlideDrag(slideId: String, afterId: String?, nest: Boolean = false, translationY: Float = 0f) { scope.launch { events.emit(PreviewSlideDrag(slideId, afterId, nest, translationY)) } }
     fun onEndSlideDrag() { scope.launch { events.emit(EndSlideDrag) } }
+    fun onPreviewObjectDrag(id: String, beforeId: String?, translationY: Float = 0f) { scope.launch { events.emit(PreviewObjectDrag(id, beforeId, translationY)) } }
+    fun onEndObjectDrag() { scope.launch { events.emit(EndObjectDrag) } }
+    fun onMoveElement(id: String, beforeId: String?) { scope.launch { events.emit(MoveElement(id, beforeId)) } }
     fun onSetSlideSkipped(id: String, skipped: Boolean) { scope.launch { events.emit(SetSlideSkipped(id, skipped)) } }
     fun onSetSlideTransition(slideId: String, transition: SlideTransition?) { scope.launch { events.emit(SetSlideTransition(slideId, transition)) } }
     fun onSetPlayback(settings: PlaybackSettings) { scope.launch { events.emit(SetPlayback(settings)) } }
@@ -332,6 +345,9 @@ class EditorViewModel(
     fun onUndo() { scope.launch { events.emit(Undo) } }
     fun onRedo() { scope.launch { events.emit(Redo) } }
     fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }
+    fun onToggleObjectList() { scope.launch { events.emit(ToggleObjectList) } }
+    fun onSetObjectListFilter(text: String) { scope.launch { events.emit(SetObjectListFilter(text)) } }
+    fun onToggleObjectExpanded(id: String) { scope.launch { events.emit(ToggleObjectExpanded(id)) } }
     fun onToggleNotes() { scope.launch { events.emit(ToggleNotes) } }
     fun onToggleRulers() { scope.launch { events.emit(ToggleRulers) } }
     fun onToggleGuides() { scope.launch { events.emit(ToggleGuides) } }

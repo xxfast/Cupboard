@@ -242,7 +242,7 @@ private fun slideXml(slide: Slide, step: Int, width: Long, height: Long): String
 
     var id = 3
     for (element in slide.elements) {
-        if (!slide.isVisibleAt(element.id, step)) continue
+        if (element.hidden || !slide.isVisibleAt(element.id, step)) continue
         val shape: String? = when (element) {
             is TextElement -> textBox(element, id)
             is ShapeElement -> shapeBox(element, id)

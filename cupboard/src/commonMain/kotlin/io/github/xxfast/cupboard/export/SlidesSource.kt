@@ -76,7 +76,10 @@ internal fun slidesSource(document: Document, packageName: String): String {
                 out.line("// TODO(cupboard): builds arrive whole, not piece by piece, yet")
             }
             out.block("Board {") {
-                for (element in slide.elements) out.element(slide, timeline, element, 1f, null)
+                for (element in slide.elements) {
+                    if (element.hidden) continue
+                    out.element(slide, timeline, element, 1f, null)
+                }
             }
         }
     }

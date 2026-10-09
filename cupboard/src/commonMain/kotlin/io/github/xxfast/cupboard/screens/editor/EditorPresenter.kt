@@ -45,7 +45,10 @@ import io.github.xxfast.cupboard.document.clampedMedia
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
+import io.github.xxfast.cupboard.document.ancestorIds
 import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.document.isLocked
+import io.github.xxfast.cupboard.document.subtreeIds
 import io.github.xxfast.cupboard.document.elementSteps
 import io.github.xxfast.cupboard.document.fromShape
 import io.github.xxfast.cupboard.document.fromText
@@ -56,6 +59,8 @@ import io.github.xxfast.cupboard.document.instantiating
 import io.github.xxfast.cupboard.document.isLayout
 import io.github.xxfast.cupboard.document.layoutAt
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.mapElement
+import io.github.xxfast.cupboard.document.moveElement
 import io.github.xxfast.cupboard.document.moveLayout
 import io.github.xxfast.cupboard.document.moveSlide
 import io.github.xxfast.cupboard.document.movingCodeStep
@@ -130,6 +135,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ExitSlideLayouts
@@ -143,6 +149,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveDiagramStep
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
@@ -150,6 +157,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewMarquee
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
@@ -179,7 +187,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackgroun
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetTextLink
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameElement
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsHidden
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsLocked
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetObjectListFilter
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSize
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDeckFont
@@ -198,6 +209,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspectorSection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleRulers
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleObjectExpanded
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleObjectList
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSidebar
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Undo
@@ -250,31 +263,70 @@ private fun ArrayDeque<Document>.push(document: Document) {
 }
 
 /**
- * The selected slide's element with [id], null when the id no longer resolves.
+ * The selected slide's element with [id], at any depth, null when the id no
+ * longer resolves.
  *
  * Element events always resolve against the stored copy rather than trusting the
  * one they carry: whether an element is locked is the document's answer, and a
  * shell holding a stale copy must not be able to edit its way around the lock.
  */
-private fun EditorState.element(id: String): Element? =
-    selectedSlide.elements.firstOrNull { it.id == id }
+private fun EditorState.element(id: String): Element? = selectedSlide.elementById(id)
 
-/** [element], but only when it is unlocked, i.e. when an edit may touch it. */
-private fun EditorState.unlockedElement(id: String): Element? = element(id)?.takeIf { !it.locked }
+/**
+ * [selection] with [id] added at the end, and every group holding [id] and
+ * everything [id] holds taken out: a selection never holds an element together
+ * with its ancestors or descendants, since an edit to both would land twice.
+ */
+private fun EditorState.selecting(selection: List<String>, id: String): List<String> {
+    val related: Set<String> = selectedSlide.ancestorIds(id).toSet() +
+        element(id)?.subtreeIds().orEmpty()
+    return selection.filter { it !in related } + id
+}
+
+/**
+ * The selected slide with each of [ids] run through [transform], at any depth
+ * and locked or not, or null when nothing changed: an id that doesn't resolve
+ * and a transform that hands back the same element both change nothing, and a
+ * caller that gets null skips the history entry.
+ */
+private fun EditorState.mappingElements(
+    ids: List<String>,
+    transform: (Element) -> Element,
+): Slide? {
+    val mapped: Slide = ids.fold(selectedSlide) { slide, id -> slide.mapElement(id, transform) }
+    return mapped.takeIf { it !== selectedSlide }
+}
+
+/**
+ * [element], but only when an edit may touch it: neither it nor any group it
+ * sits in is locked (see `Slide.isLocked`).
+ */
+private fun EditorState.unlockedElement(id: String): Element? =
+    element(id)?.takeIf { !selectedSlide.isLocked(id) }
+
+/** Whether an edit may touch [element], [unlockedElement]'s rule for one already in hand. */
+private fun EditorState.isUnlocked(element: Element): Boolean = !selectedSlide.isLocked(element.id)
 
 /** The stored, unlocked elements of [ids], in the order asked for. */
 private fun EditorState.unlockedElements(ids: List<String>): List<Element> =
     ids.mapNotNull { id -> unlockedElement(id) }
 
 /**
- * The stored elements of [ids] in z-order rather than in the order asked for.
+ * The stored elements of [ids] in z-order rather than in the order asked for, at
+ * any depth: a group's children stack where the group does, in their own order.
  *
  * What the clipboard stores in: a selection has an order of its own, made click
  * by click, and pasting in that order would shuffle what draws over what.
  */
 private fun EditorState.stackedElements(ids: List<String>): List<Element> {
     val wanted: Set<String> = ids.toSet()
-    return selectedSlide.elements.filter { it.id in wanted }
+
+    fun stacked(elements: List<Element>): List<Element> = elements.flatMap { element ->
+        if (element.id in wanted) return@flatMap listOf(element)
+        return@flatMap stacked((element as? GroupElement)?.children.orEmpty())
+    }
+
+    return stacked(selectedSlide.elements)
 }
 
 /**
@@ -305,7 +357,9 @@ private fun Element.linkedTo(target: LinkTarget?): Element? {
 }
 
 /**
- * Folds [elements] back into the document through their slide.
+ * Folds [elements] back into the document through their slide, each where it
+ * sits: a group's child is replaced inside its group, which refits around it
+ * (see `Slide.updateElements`).
  *
  * Media is clamped on the way in (see [clampedMedia]), so a field that sent a
  * volume of 2 or a trim that ends before it starts lands as the nearest thing a
@@ -408,9 +462,11 @@ private fun EditorState.withoutElements(ids: Set<String>): EditorState? {
     val trimmed: Slide = slide.removeElements(ids)
     if (trimmed === slide) return null
 
+    // Filtered against what is left rather than against [ids]: a group that
+    // came apart around its last child goes too.
     return copy(
         document = document.updateSlide(trimmed),
-        selectedElementIds = selectedElementIds.filter { it !in ids },
+        selectedElementIds = selectedElementIds.filter { trimmed.elementById(it) != null },
     )
 }
 
@@ -619,7 +675,7 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
         -> EditorPane.Navigator
 
     is SelectElement, is SelectElements, is ToggleElementSelection, is ContextClick,
-    is PreviewMarquee, is InsertElement, is AddPlaceholder,
+    is PreviewMarquee, is InsertElement, is AddPlaceholder, is MoveElement,
         -> EditorPane.Canvas
 
     else -> null
@@ -636,6 +692,8 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview, is EditSelectionChanged,
     ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
+    ToggleObjectList, is SetObjectListFilter, is ToggleObjectExpanded,
+    is PreviewObjectDrag, EndObjectDrag,
     is SelectInspectorTab, CloseInspector, ToggleInspector,
     is SelectFormatSegment, is SelectAnimateSegment, is ToggleInspectorSection,
         -> true
@@ -768,14 +826,21 @@ fun EditorPresenter(
                 }
             }
 
+            // An id selects what it names, a group's child included. Adding
+            // one takes out its ancestors and descendants, so a later id wins
+            // over an earlier one it is related to.
             is SelectElement -> state.copy(selectedElementIds = listOfNotNull(event.id))
 
-            is SelectElements -> state.copy(selectedElementIds = event.ids)
+            is SelectElements -> state.copy(
+                selectedElementIds = event.ids.fold(emptyList<String>()) { selection, id ->
+                    state.selecting(selection, id)
+                },
+            )
 
             is ToggleElementSelection -> state.copy(
                 selectedElementIds =
                     if (event.id in state.selectedElementIds) state.selectedElementIds - event.id
-                    else state.selectedElementIds + event.id,
+                    else state.selecting(state.selectedElementIds, event.id),
             )
 
             // A right-click on something already selected must not shrink the
@@ -796,7 +861,7 @@ fun EditorPresenter(
             is PreviewMarquee -> state.copy(
                 marquee = event.rect,
                 selectedElementIds = state.selectedSlide.elements
-                    .filter { it.drawnBounds().overlaps(event.rect) }
+                    .filter { !it.hidden && it.drawnBounds().overlaps(event.rect) }
                     .map { it.id },
             )
 
@@ -835,7 +900,8 @@ fun EditorPresenter(
             // however many elements it moves. All of them skip locked
             // elements individually, and an edit left with nothing to do is
             // a no-op rather than an empty history entry.
-            // SetElementsLocked is the only way back into a locked element.
+            // SetElementsLocked is the only way back into a locked element
+            // (hiding and renaming reach it too, but neither edits it).
             is PreviewElements -> state.editable(event.elements)
                 .takeIf { it.isNotEmpty() }
                 ?.let { elements ->
@@ -872,19 +938,47 @@ fun EditorPresenter(
                 }
                 ?: state
 
-            // Locks are the exception that reads the locked elements too,
-            // and locking what is already locked is not an edit.
-            is SetElementsLocked -> event.ids
-                .mapNotNull { id -> state.element(id) }
-                .filter { it.locked != event.locked }
-                .map { it.update(locked = event.locked) }
-                .takeIf { it.isNotEmpty() }
+            // Lock, hide and rename are the exceptions that read the locked
+            // elements too, at any depth so a grouped element's row can reach
+            // it. Setting what is already set is not an edit.
+            is SetElementsLocked -> state
+                .mappingElements(event.ids) { element ->
+                    if (element.locked == event.locked) element
+                    else element.update(locked = event.locked)
+                }
                 ?.let { relocked ->
                     undone.push(state.document)
                     redone.clear()
-                    state.withElements(relocked)
+                    state.withSlide(relocked)
                 }
                 ?: state
+
+            is SetElementsHidden -> state
+                .mappingElements(event.ids) { element ->
+                    if (element.hidden == event.hidden) element
+                    else element.update(hidden = event.hidden)
+                }
+                ?.let { rehidden ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withSlide(rehidden)
+                }
+                ?: state
+
+            // Blank is no name at all, so the row goes back to the default.
+            is RenameElement -> {
+                val name: String? = event.name?.takeIf { it.isNotBlank() }
+                state
+                    .mappingElements(listOf(event.id)) { element ->
+                        if (element.name == name) element else element.update(name = name)
+                    }
+                    ?.let { renamed ->
+                        undone.push(state.document)
+                        redone.clear()
+                        state.withSlide(renamed)
+                    }
+                    ?: state
+            }
 
             // Clamped at the ends, so a move that changes nothing comes back
             // as the same slide and costs no history entry.
@@ -955,7 +1049,7 @@ fun EditorPresenter(
             // Both come back with only the elements that actually moved, so
             // an align that was already aligned makes no history entry.
             is AlignElements -> alignFrames(
-                elements = state.selectedElements.filter { !it.locked },
+                elements = state.selectedElements.filter { state.isUnlocked(it) },
                 edge = event.edge,
                 slideWidth = state.document.slideWidth,
                 slideHeight = state.document.slideHeight,
@@ -969,7 +1063,7 @@ fun EditorPresenter(
                 ?: state
 
             is DistributeElements ->
-                distributeFrames(state.selectedElements.filter { !it.locked }, event.axis)
+                distributeFrames(state.selectedElements.filter { state.isUnlocked(it) }, event.axis)
                     .takeIf { it.isNotEmpty() }
                     ?.let { spread ->
                         undone.push(state.document)
@@ -1113,7 +1207,7 @@ fun EditorPresenter(
                 ?: state
 
             is CutElements -> {
-                val cut: List<Element> = state.stackedElements(event.ids).filterNot { it.locked }
+                val cut: List<Element> = state.stackedElements(event.ids).filter { state.isUnlocked(it) }
                 state.withoutElements(cut.mapTo(mutableSetOf()) { it.id })
                     ?.let { removed ->
                         undone.push(state.document)
@@ -1172,7 +1266,7 @@ fun EditorPresenter(
             // Duplicating is a copy and a paste that never touch the
             // clipboard, so whatever you were carrying survives it.
             is DuplicateElements -> state.stackedElements(event.ids)
-                .filterNot { it.locked }
+                .filter { state.isUnlocked(it) }
                 .takeIf { it.isNotEmpty() }
                 ?.let { originals ->
                     undone.push(state.document)
@@ -1250,6 +1344,32 @@ fun EditorPresenter(
                 state.copy(slideDrag = SlideDrag(event.slideId, event.afterId, event.nest, event.translationY))
 
             EndSlideDrag -> state.copy(slideDrag = null)
+
+            is PreviewObjectDrag ->
+                state.copy(objectDrag = ObjectDrag(event.id, event.beforeId, event.translationY))
+
+            EndObjectDrag -> state.copy(objectDrag = null)
+
+            // MoveSlide's rules: the drop ends the drag whether or not it moved
+            // anything, and selects what was dropped either way.
+            is MoveElement -> {
+                val slide: Slide = state.selectedSlide
+                val moved: Slide = slide.moveElement(event.id, event.beforeId)
+                val selection: List<String> =
+                    if (slide.elementById(event.id) == null) state.selectedElementIds
+                    else listOf(event.id)
+                if (moved === slide) {
+                    state.copy(selectedElementIds = selection, objectDrag = null)
+                } else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = state.document.updateSlide(moved),
+                        selectedElementIds = selection,
+                        objectDrag = null,
+                    )
+                }
+            }
 
             // The drop always ends the drag, whether or not it moved anything:
             // a row put back where it came from is a finished gesture too, it
@@ -1741,6 +1861,16 @@ fun EditorPresenter(
                 ?: state
 
             ToggleSidebar -> state.copy(sidebarOpen = !state.sidebarOpen)
+
+            ToggleObjectList -> state.copy(objectListOpen = !state.objectListOpen)
+
+            is SetObjectListFilter -> state.copy(objectListFilter = event.text)
+
+            is ToggleObjectExpanded -> state.copy(
+                expandedGroupIds =
+                    if (event.id in state.expandedGroupIds) state.expandedGroupIds - event.id
+                    else state.expandedGroupIds + event.id,
+            )
 
             ToggleNotes -> state.copy(showNotes = !state.showNotes)
 
