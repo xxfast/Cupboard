@@ -36,6 +36,8 @@ import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.boundingFrame
+import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.displayName
 import io.github.xxfast.cupboard.document.hasChildren
 import io.github.xxfast.cupboard.document.elementById
@@ -294,6 +296,15 @@ data class EditorState(
      * reason: they belong to the editor, not to whichever shell is drawing. */
     val showRulers: Boolean = false,
     val showGuides: Boolean = true,
+    /**
+     * The canvas's zoom and scroll. View state like [showRulers], and through the
+     * loop like [marquee]: the canvas reports its size and its scrolls, and draws
+     * from [canvasViewport] rather than from anything it kept itself.
+     *
+     * Serialized, bar the view size: a restored session comes back at the zoom
+     * it was left at, and measures its window again.
+     */
+    val viewport: CanvasViewport = CanvasViewport(),
     /** What a dragged element settles onto, one switch per [SnapKind]. All four
      * on by default, which is where Keynote leaves them. */
     val snapToCenter: Boolean = true,
@@ -477,6 +488,33 @@ data class EditorState(
      * aligns the rest to in every editor that has an opinion.
      */
     val primaryElement: Element? get() = selectedElements.firstOrNull()
+
+    /** The viewport the canvas draws from: [viewport] with its pan kept on the slide. */
+    val canvasViewport: CanvasViewport
+        get() = viewport.clamped(document.slideWidth, document.slideHeight)
+
+    /** Screen dp per document unit, null for a Fit the canvas hasn't measured yet. */
+    val canvasScale: Float? get() = viewport.scale(document.slideWidth, document.slideHeight)
+
+    /** The zoom pill's percent, Fit included, null until Fit has a view to fit. */
+    val effectiveZoomPercent: Int?
+        get() = viewport.effectivePercent(document.slideWidth, document.slideHeight)
+
+    /** Zoom to Selection needs something to zoom to. */
+    val canZoomToSelection: Boolean get() = selectedElements.isNotEmpty()
+
+    /**
+     * What Zoom to Fit Content fits: the slide and every visible element on it,
+     * ones hanging off its edges included. Top-level elements are enough, since a
+     * group's frame already bounds its children.
+     */
+    val contentFrame: Frame
+        get() = boundingFrame(
+            listOf(Frame(0f, 0f, document.slideWidth, document.slideHeight)) +
+                selectedSlide.elements
+                    .filter { !it.hidden }
+                    .map { it.drawnBounds() },
+        )
 
     /**
      * The code block [codeVersion] speaks for: the selection when it is exactly
@@ -1700,6 +1738,20 @@ sealed interface EditorEvent {
     /** View toggles, [ToggleNotes]' kind: no document, no history entry. */
     data object ToggleRulers : EditorEvent
     data object ToggleGuides : EditorEvent
+    /**
+     * The canvas's zoom and scroll, view state like [ToggleRulers]: no document,
+     * no history entry. [SetZoom]'s 0 is Fit Slide, which also recentres;
+     * [ZoomBy] is a pinch, anchored on a document point relative to the slide
+     * centre; [PanCanvas] is in document units and [CanvasResized] in dp.
+     */
+    data class SetZoom(val percent: Int) : EditorEvent
+    data object ZoomIn : EditorEvent
+    data object ZoomOut : EditorEvent
+    data object ZoomToSelection : EditorEvent
+    data object ZoomToFitContent : EditorEvent
+    data class ZoomBy(val factor: Float, val anchorX: Float, val anchorY: Float) : EditorEvent
+    data class PanCanvas(val dx: Float, val dy: Float) : EditorEvent
+    data class CanvasResized(val width: Float, val height: Float) : EditorEvent
     /** Turns one snap rule on or off. What it changes is what [EditorState.snapTargets]
      * offers the next drag; nothing already placed moves. */
     data class SetSnap(val kind: SnapKind, val enabled: Boolean) : EditorEvent

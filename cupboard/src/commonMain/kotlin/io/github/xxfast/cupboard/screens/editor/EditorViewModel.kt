@@ -47,6 +47,14 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CanvasResized
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PanCanvas
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetZoom
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomBy
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomIn
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomOut
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomToFitContent
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomToSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
@@ -150,7 +158,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -232,136 +241,149 @@ class EditorViewModel(
     // Unconfined stays as the default for tests, which pump the loop themselves.
     private val scope: CoroutineScope = CoroutineScope(dispatcher + SupervisorJob())
 
-    // Bigger than a screen that only refreshes: an editor emits bursts (a slide
-    // select that clears a selection, keystrokes) and none of them may be lost.
-    private val events: MutableSharedFlow<EditorEvent> = MutableSharedFlow(extraBufferCapacity = 64)
+    // A channel, not a shared flow: a shared flow drops what is emitted before its
+    // first subscriber, and the presenter only subscribes once something collects
+    // `states`. A canvas reports its size as it lays out, which can be before that,
+    // and losing it would leave Fit with no number until the window is resized.
+    // Unbounded for the same reason the old buffer was big: an editor emits bursts
+    // (a slide select that clears a selection, keystrokes) and none may be lost.
+    private val events: Channel<EditorEvent> = Channel(Channel.UNLIMITED)
 
     val states: StateFlow<EditorState> =
-        moleculeFlow(Immediate) { EditorPresenter(initialState, events, documentStore, themeStore, assets) }
-            .stateIn(scope, SharingStarted.Lazily, initialState)
+        moleculeFlow(Immediate) {
+            EditorPresenter(initialState, events.receiveAsFlow(), documentStore, themeStore, assets)
+        }.stateIn(scope, SharingStarted.Lazily, initialState)
 
-    fun onSelectSlide(id: String) { scope.launch { events.emit(SelectSlide(id)) } }
-    fun onSelectSlideAt(index: Int) { scope.launch { events.emit(SelectSlideAt(index)) } }
-    fun onExtendSlideSelection(id: String) { scope.launch { events.emit(ExtendSlideSelection(id)) } }
-    fun onToggleSlideSelection(id: String) { scope.launch { events.emit(ToggleSlideSelection(id)) } }
-    fun onSelectAllSlides() { scope.launch { events.emit(SelectAllSlides) } }
-    fun onStepSlideSelection(delta: Int, extend: Boolean) { scope.launch { events.emit(StepSlideSelection(delta, extend)) } }
-    fun onIndentSlides(delta: Int) { scope.launch { events.emit(IndentSlides(delta)) } }
-    fun onSelectElement(id: String?) { scope.launch { events.emit(SelectElement(id)) } }
-    fun onSelectElements(ids: List<String>) { scope.launch { events.emit(SelectElements(ids)) } }
-    fun onToggleElementSelection(id: String) { scope.launch { events.emit(ToggleElementSelection(id)) } }
-    fun onContextClick(id: String?) { scope.launch { events.emit(ContextClick(id)) } }
-    fun onPreviewMarquee(rect: Frame) { scope.launch { events.emit(PreviewMarquee(rect)) } }
-    fun onEndMarquee() { scope.launch { events.emit(EndMarquee) } }
-    fun onUpdateSlide(slide: Slide) { scope.launch { events.emit(UpdateSlide(slide)) } }
-    fun onPreviewSlide(slide: Slide) { scope.launch { events.emit(PreviewSlide(slide)) } }
-    fun onCancelPreview() { scope.launch { events.emit(CancelPreview) } }
-    fun onUpdateElements(elements: List<Element>) { scope.launch { events.emit(UpdateElements(elements)) } }
-    fun onPreviewElements(elements: List<Element>) { scope.launch { events.emit(PreviewElements(elements)) } }
-    fun onBeginTextEdit(id: String) { scope.launch { events.emit(BeginTextEdit(id)) } }
-    fun onEndTextEdit() { scope.launch { events.emit(EndTextEdit) } }
-    fun onEditSelectionChanged(elementId: String, start: Int, end: Int) { scope.launch { events.emit(EditSelectionChanged(elementId, start, end)) } }
-    fun onSelectCodeVersion(index: Int) { scope.launch { events.emit(SelectCodeVersion(index)) } }
-    fun onAddCodeVersion(elementId: String) { scope.launch { events.emit(AddCodeVersion(elementId)) } }
-    fun onRemoveCodeVersion(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeVersion(elementId, index)) } }
-    fun onMoveCodeVersion(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveCodeVersion(elementId, from, to)) } }
-    fun onSelectCodeStep(index: Int?) { scope.launch { events.emit(SelectCodeStep(index)) } }
-    fun onAddCodeStep(elementId: String) { scope.launch { events.emit(AddCodeStep(elementId)) } }
-    fun onRemoveCodeStep(elementId: String, index: Int) { scope.launch { events.emit(RemoveCodeStep(elementId, index)) } }
-    fun onMoveCodeStep(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveCodeStep(elementId, from, to)) } }
-    fun onUpdateCodeStep(elementId: String, index: Int, step: CodeStep) { scope.launch { events.emit(UpdateCodeStep(elementId, index, step)) } }
-    fun onSelectDiagramStep(index: Int?) { scope.launch { events.emit(SelectDiagramStep(index)) } }
-    fun onAddDiagramStep(elementId: String) { scope.launch { events.emit(AddDiagramStep(elementId)) } }
-    fun onRemoveDiagramStep(elementId: String, index: Int) { scope.launch { events.emit(RemoveDiagramStep(elementId, index)) } }
-    fun onMoveDiagramStep(elementId: String, from: Int, to: Int) { scope.launch { events.emit(MoveDiagramStep(elementId, from, to)) } }
-    fun onUpdateDiagramStep(elementId: String, index: Int, step: DiagramStep) { scope.launch { events.emit(UpdateDiagramStep(elementId, index, step)) } }
-    fun onInsertElement(element: Element) { scope.launch { events.emit(InsertElement(element)) } }
-    fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.emit(ReorderElements(ids, move)) } }
-    fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.emit(SetElementsLocked(ids, locked)) } }
-    fun onSetElementsHidden(ids: List<String>, hidden: Boolean) { scope.launch { events.emit(SetElementsHidden(ids, hidden)) } }
-    fun onRenameElement(id: String, name: String?) { scope.launch { events.emit(RenameElement(id, name)) } }
-    fun onFlipElements(ids: List<String>, axis: FlipAxis) { scope.launch { events.emit(FlipElements(ids, axis)) } }
-    fun onGroupElements(ids: List<String>) { scope.launch { events.emit(GroupElements(ids)) } }
-    fun onUngroupElements(id: String) { scope.launch { events.emit(UngroupElements(id)) } }
-    fun onAlignElements(edge: AlignEdge) { scope.launch { events.emit(AlignElements(edge)) } }
-    fun onDistributeElements(axis: Axis) { scope.launch { events.emit(DistributeElements(axis)) } }
-    fun onDeleteElements(ids: List<String>) { scope.launch { events.emit(DeleteElements(ids)) } }
-    fun onClearAll() { scope.launch { events.emit(ClearAll) } }
-    fun onDeleteSlide(id: String) { scope.launch { events.emit(DeleteSlide(id)) } }
-    fun onAddSlide(afterId: String, layoutId: String? = null) { scope.launch { events.emit(AddSlide(afterId, layoutId)) } }
-    fun onMoveSlideTo(id: String, afterId: String?, depth: Int) { scope.launch { events.emit(MoveSlide(id, afterId, depth = depth)) } }
-    fun onMoveSlide(id: String, afterId: String?, nest: Boolean = false) { scope.launch { events.emit(MoveSlide(id, afterId, nest)) } }
-    fun onPreviewSlideDrag(slideId: String, afterId: String?, nest: Boolean = false, translationY: Float = 0f) { scope.launch { events.emit(PreviewSlideDrag(slideId, afterId, nest, translationY)) } }
-    fun onEndSlideDrag() { scope.launch { events.emit(EndSlideDrag) } }
-    fun onPreviewObjectDrag(id: String, beforeId: String?, translationY: Float = 0f) { scope.launch { events.emit(PreviewObjectDrag(id, beforeId, translationY)) } }
-    fun onEndObjectDrag() { scope.launch { events.emit(EndObjectDrag) } }
-    fun onMoveElement(id: String, beforeId: String?) { scope.launch { events.emit(MoveElement(id, beforeId)) } }
-    fun onSetSlideSkipped(id: String, skipped: Boolean) { scope.launch { events.emit(SetSlideSkipped(id, skipped)) } }
-    fun onSetSlideTransition(slideId: String, transition: SlideTransition?) { scope.launch { events.emit(SetSlideTransition(slideId, transition)) } }
-    fun onSetPlayback(settings: PlaybackSettings) { scope.launch { events.emit(SetPlayback(settings)) } }
-    fun onSetElementLinks(ids: List<String>, target: LinkTarget?) { scope.launch { events.emit(SetElementLinks(ids, target)) } }
-    fun onSetTextLink(elementId: String, start: Int, end: Int, target: LinkTarget?) { scope.launch { events.emit(SetTextLink(elementId, start, end, target)) } }
-    fun onAddBuild(build: Build) { scope.launch { events.emit(AddBuild(build)) } }
-    fun onAddElementSteps(elementId: String) { scope.launch { events.emit(AddElementSteps(elementId)) } }
-    fun onUpdateBuild(index: Int, build: Build) { scope.launch { events.emit(UpdateBuild(index, build)) } }
-    fun onRemoveBuild(index: Int) { scope.launch { events.emit(RemoveBuild(index)) } }
-    fun onMoveBuild(from: Int, to: Int) { scope.launch { events.emit(MoveBuild(from, to)) } }
-    fun onCopyElements(ids: List<String>) { scope.launch { events.emit(CopyElements(ids)) } }
-    fun onCutElements(ids: List<String>) { scope.launch { events.emit(CutElements(ids)) } }
-    fun onCopySlide(id: String) { scope.launch { events.emit(CopySlide(id)) } }
-    fun onCutSlide(id: String) { scope.launch { events.emit(CutSlide(id)) } }
-    fun onPaste() { scope.launch { events.emit(Paste) } }
-    fun onDuplicateElements(ids: List<String>) { scope.launch { events.emit(DuplicateElements(ids)) } }
-    fun onDuplicateSlide(id: String) { scope.launch { events.emit(DuplicateSlide(id)) } }
-    fun onFocusPane(pane: EditorPane) { scope.launch { events.emit(FocusPane(pane)) } }
-    fun onCut() { scope.launch { events.emit(Cut) } }
-    fun onCopy() { scope.launch { events.emit(Copy) } }
-    fun onDuplicate() { scope.launch { events.emit(Duplicate) } }
-    fun onDelete() { scope.launch { events.emit(Delete) } }
-    fun onCopyStyle(id: String) { scope.launch { events.emit(CopyStyle(id)) } }
-    fun onPasteStyle(ids: List<String>) { scope.launch { events.emit(PasteStyle(ids)) } }
-    fun onToggleCollapsed(slideId: String) { scope.launch { events.emit(ToggleCollapsed(slideId)) } }
-    fun onEditSlideLayouts() { scope.launch { events.emit(EditSlideLayouts) } }
-    fun onExitSlideLayouts() { scope.launch { events.emit(ExitSlideLayouts) } }
-    fun onApplyLayout(slideId: String, layoutId: String?) { scope.launch { events.emit(ApplyLayout(slideId, layoutId)) } }
-    fun onReapplyLayout(slideId: String) { scope.launch { events.emit(ReapplyLayout(slideId)) } }
-    fun onAddLayout() { scope.launch { events.emit(AddLayout) } }
-    fun onRenameSlide(id: String, title: String) { scope.launch { events.emit(RenameSlide(id, title)) } }
-    fun onAddPlaceholder(role: PlaceholderRole) { scope.launch { events.emit(AddPlaceholder(role)) } }
-    fun onChangeTheme(name: String) { scope.launch { events.emit(ChangeTheme(name)) } }
-    fun onSaveAsTheme(name: String) { scope.launch { events.emit(SaveAsTheme(name)) } }
-    fun onDeleteUserTheme(name: String) { scope.launch { events.emit(DeleteUserTheme(name)) } }
-    fun onApplyObjectStyle(ids: List<String>, styleId: String) { scope.launch { events.emit(ApplyObjectStyle(ids, styleId)) } }
-    fun onSaveObjectStyle(shapeId: String, name: String) { scope.launch { events.emit(SaveObjectStyle(shapeId, name)) } }
-    fun onDeleteObjectStyle(styleId: String) { scope.launch { events.emit(DeleteObjectStyle(styleId)) } }
-    fun onRenameObjectStyle(styleId: String, name: String) { scope.launch { events.emit(RenameObjectStyle(styleId, name)) } }
-    fun onUseAsDefaultTextStyle(id: String) { scope.launch { events.emit(UseAsDefaultTextStyle(id)) } }
-    fun onUseAsDefaultShapeStyle(id: String) { scope.launch { events.emit(UseAsDefaultShapeStyle(id)) } }
-    fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.emit(SetDocumentBackground(background)) } }
-    fun onRenameDocument(name: String) { scope.launch { events.emit(RenameDocument(name)) } }
-    fun onSetSlideSize(width: Float, height: Float, scaleContent: Boolean) { scope.launch { events.emit(SetSlideSize(width, height, scaleContent)) } }
-    fun onAddDeckFont(assetId: String, family: String, weight: Int, italic: Boolean) { scope.launch { events.emit(AddDeckFont(assetId, family, weight, italic)) } }
-    fun onRemoveDeckFont(assetId: String) { scope.launch { events.emit(RemoveDeckFont(assetId)) } }
-    fun onUndo() { scope.launch { events.emit(Undo) } }
-    fun onRedo() { scope.launch { events.emit(Redo) } }
-    fun onToggleSidebar() { scope.launch { events.emit(ToggleSidebar) } }
-    fun onToggleObjectList() { scope.launch { events.emit(ToggleObjectList) } }
-    fun onSetObjectListFilter(text: String) { scope.launch { events.emit(SetObjectListFilter(text)) } }
-    fun onToggleObjectExpanded(id: String) { scope.launch { events.emit(ToggleObjectExpanded(id)) } }
-    fun onToggleNotes() { scope.launch { events.emit(ToggleNotes) } }
-    fun onToggleRulers() { scope.launch { events.emit(ToggleRulers) } }
-    fun onToggleGuides() { scope.launch { events.emit(ToggleGuides) } }
-    fun onSetSnap(kind: SnapKind, enabled: Boolean) { scope.launch { events.emit(SetSnap(kind, enabled)) } }
-    fun onPreviewGuide(id: String?, axis: GuideAxis, position: Float) { scope.launch { events.emit(PreviewGuide(id, axis, position)) } }
-    fun onCommitGuide(id: String?, axis: GuideAxis, position: Float) { scope.launch { events.emit(CommitGuide(id, axis, position)) } }
-    fun onRemoveGuide(id: String) { scope.launch { events.emit(RemoveGuide(id)) } }
-    fun onEndGuideDrag() { scope.launch { events.emit(EndGuideDrag) } }
-    fun onSelectInspectorTab(tab: InspectorTab) { scope.launch { events.emit(SelectInspectorTab(tab)) } }
-    fun onCloseInspector() { scope.launch { events.emit(CloseInspector) } }
-    fun onToggleInspector() { scope.launch { events.emit(ToggleInspector) } }
-    fun onSelectFormatSegment(segment: FormatSegment) { scope.launch { events.emit(SelectFormatSegment(segment)) } }
-    fun onSelectAnimateSegment(segment: AnimateSegment) { scope.launch { events.emit(SelectAnimateSegment(segment)) } }
-    fun onToggleInspectorSection(section: InspectorSection) { scope.launch { events.emit(ToggleInspectorSection(section)) } }
+    fun onSelectSlide(id: String) { scope.launch { events.send(SelectSlide(id)) } }
+    fun onSelectSlideAt(index: Int) { scope.launch { events.send(SelectSlideAt(index)) } }
+    fun onExtendSlideSelection(id: String) { scope.launch { events.send(ExtendSlideSelection(id)) } }
+    fun onToggleSlideSelection(id: String) { scope.launch { events.send(ToggleSlideSelection(id)) } }
+    fun onSelectAllSlides() { scope.launch { events.send(SelectAllSlides) } }
+    fun onStepSlideSelection(delta: Int, extend: Boolean) { scope.launch { events.send(StepSlideSelection(delta, extend)) } }
+    fun onIndentSlides(delta: Int) { scope.launch { events.send(IndentSlides(delta)) } }
+    fun onSelectElement(id: String?) { scope.launch { events.send(SelectElement(id)) } }
+    fun onSelectElements(ids: List<String>) { scope.launch { events.send(SelectElements(ids)) } }
+    fun onToggleElementSelection(id: String) { scope.launch { events.send(ToggleElementSelection(id)) } }
+    fun onContextClick(id: String?) { scope.launch { events.send(ContextClick(id)) } }
+    fun onPreviewMarquee(rect: Frame) { scope.launch { events.send(PreviewMarquee(rect)) } }
+    fun onEndMarquee() { scope.launch { events.send(EndMarquee) } }
+    fun onUpdateSlide(slide: Slide) { scope.launch { events.send(UpdateSlide(slide)) } }
+    fun onPreviewSlide(slide: Slide) { scope.launch { events.send(PreviewSlide(slide)) } }
+    fun onCancelPreview() { scope.launch { events.send(CancelPreview) } }
+    fun onUpdateElements(elements: List<Element>) { scope.launch { events.send(UpdateElements(elements)) } }
+    fun onPreviewElements(elements: List<Element>) { scope.launch { events.send(PreviewElements(elements)) } }
+    fun onBeginTextEdit(id: String) { scope.launch { events.send(BeginTextEdit(id)) } }
+    fun onEndTextEdit() { scope.launch { events.send(EndTextEdit) } }
+    fun onEditSelectionChanged(elementId: String, start: Int, end: Int) { scope.launch { events.send(EditSelectionChanged(elementId, start, end)) } }
+    fun onSelectCodeVersion(index: Int) { scope.launch { events.send(SelectCodeVersion(index)) } }
+    fun onAddCodeVersion(elementId: String) { scope.launch { events.send(AddCodeVersion(elementId)) } }
+    fun onRemoveCodeVersion(elementId: String, index: Int) { scope.launch { events.send(RemoveCodeVersion(elementId, index)) } }
+    fun onMoveCodeVersion(elementId: String, from: Int, to: Int) { scope.launch { events.send(MoveCodeVersion(elementId, from, to)) } }
+    fun onSelectCodeStep(index: Int?) { scope.launch { events.send(SelectCodeStep(index)) } }
+    fun onAddCodeStep(elementId: String) { scope.launch { events.send(AddCodeStep(elementId)) } }
+    fun onRemoveCodeStep(elementId: String, index: Int) { scope.launch { events.send(RemoveCodeStep(elementId, index)) } }
+    fun onMoveCodeStep(elementId: String, from: Int, to: Int) { scope.launch { events.send(MoveCodeStep(elementId, from, to)) } }
+    fun onUpdateCodeStep(elementId: String, index: Int, step: CodeStep) { scope.launch { events.send(UpdateCodeStep(elementId, index, step)) } }
+    fun onSelectDiagramStep(index: Int?) { scope.launch { events.send(SelectDiagramStep(index)) } }
+    fun onAddDiagramStep(elementId: String) { scope.launch { events.send(AddDiagramStep(elementId)) } }
+    fun onRemoveDiagramStep(elementId: String, index: Int) { scope.launch { events.send(RemoveDiagramStep(elementId, index)) } }
+    fun onMoveDiagramStep(elementId: String, from: Int, to: Int) { scope.launch { events.send(MoveDiagramStep(elementId, from, to)) } }
+    fun onUpdateDiagramStep(elementId: String, index: Int, step: DiagramStep) { scope.launch { events.send(UpdateDiagramStep(elementId, index, step)) } }
+    fun onInsertElement(element: Element) { scope.launch { events.send(InsertElement(element)) } }
+    fun onReorderElements(ids: List<String>, move: ZOrderMove) { scope.launch { events.send(ReorderElements(ids, move)) } }
+    fun onSetElementsLocked(ids: List<String>, locked: Boolean) { scope.launch { events.send(SetElementsLocked(ids, locked)) } }
+    fun onSetElementsHidden(ids: List<String>, hidden: Boolean) { scope.launch { events.send(SetElementsHidden(ids, hidden)) } }
+    fun onRenameElement(id: String, name: String?) { scope.launch { events.send(RenameElement(id, name)) } }
+    fun onFlipElements(ids: List<String>, axis: FlipAxis) { scope.launch { events.send(FlipElements(ids, axis)) } }
+    fun onGroupElements(ids: List<String>) { scope.launch { events.send(GroupElements(ids)) } }
+    fun onUngroupElements(id: String) { scope.launch { events.send(UngroupElements(id)) } }
+    fun onAlignElements(edge: AlignEdge) { scope.launch { events.send(AlignElements(edge)) } }
+    fun onDistributeElements(axis: Axis) { scope.launch { events.send(DistributeElements(axis)) } }
+    fun onDeleteElements(ids: List<String>) { scope.launch { events.send(DeleteElements(ids)) } }
+    fun onClearAll() { scope.launch { events.send(ClearAll) } }
+    fun onDeleteSlide(id: String) { scope.launch { events.send(DeleteSlide(id)) } }
+    fun onAddSlide(afterId: String, layoutId: String? = null) { scope.launch { events.send(AddSlide(afterId, layoutId)) } }
+    fun onMoveSlideTo(id: String, afterId: String?, depth: Int) { scope.launch { events.send(MoveSlide(id, afterId, depth = depth)) } }
+    fun onMoveSlide(id: String, afterId: String?, nest: Boolean = false) { scope.launch { events.send(MoveSlide(id, afterId, nest)) } }
+    fun onPreviewSlideDrag(slideId: String, afterId: String?, nest: Boolean = false, translationY: Float = 0f) { scope.launch { events.send(PreviewSlideDrag(slideId, afterId, nest, translationY)) } }
+    fun onEndSlideDrag() { scope.launch { events.send(EndSlideDrag) } }
+    fun onPreviewObjectDrag(id: String, beforeId: String?, translationY: Float = 0f) { scope.launch { events.send(PreviewObjectDrag(id, beforeId, translationY)) } }
+    fun onEndObjectDrag() { scope.launch { events.send(EndObjectDrag) } }
+    fun onMoveElement(id: String, beforeId: String?) { scope.launch { events.send(MoveElement(id, beforeId)) } }
+    fun onSetSlideSkipped(id: String, skipped: Boolean) { scope.launch { events.send(SetSlideSkipped(id, skipped)) } }
+    fun onSetSlideTransition(slideId: String, transition: SlideTransition?) { scope.launch { events.send(SetSlideTransition(slideId, transition)) } }
+    fun onSetPlayback(settings: PlaybackSettings) { scope.launch { events.send(SetPlayback(settings)) } }
+    fun onSetElementLinks(ids: List<String>, target: LinkTarget?) { scope.launch { events.send(SetElementLinks(ids, target)) } }
+    fun onSetTextLink(elementId: String, start: Int, end: Int, target: LinkTarget?) { scope.launch { events.send(SetTextLink(elementId, start, end, target)) } }
+    fun onAddBuild(build: Build) { scope.launch { events.send(AddBuild(build)) } }
+    fun onAddElementSteps(elementId: String) { scope.launch { events.send(AddElementSteps(elementId)) } }
+    fun onUpdateBuild(index: Int, build: Build) { scope.launch { events.send(UpdateBuild(index, build)) } }
+    fun onRemoveBuild(index: Int) { scope.launch { events.send(RemoveBuild(index)) } }
+    fun onMoveBuild(from: Int, to: Int) { scope.launch { events.send(MoveBuild(from, to)) } }
+    fun onCopyElements(ids: List<String>) { scope.launch { events.send(CopyElements(ids)) } }
+    fun onCutElements(ids: List<String>) { scope.launch { events.send(CutElements(ids)) } }
+    fun onCopySlide(id: String) { scope.launch { events.send(CopySlide(id)) } }
+    fun onCutSlide(id: String) { scope.launch { events.send(CutSlide(id)) } }
+    fun onPaste() { scope.launch { events.send(Paste) } }
+    fun onDuplicateElements(ids: List<String>) { scope.launch { events.send(DuplicateElements(ids)) } }
+    fun onDuplicateSlide(id: String) { scope.launch { events.send(DuplicateSlide(id)) } }
+    fun onFocusPane(pane: EditorPane) { scope.launch { events.send(FocusPane(pane)) } }
+    fun onCut() { scope.launch { events.send(Cut) } }
+    fun onCopy() { scope.launch { events.send(Copy) } }
+    fun onDuplicate() { scope.launch { events.send(Duplicate) } }
+    fun onDelete() { scope.launch { events.send(Delete) } }
+    fun onCopyStyle(id: String) { scope.launch { events.send(CopyStyle(id)) } }
+    fun onPasteStyle(ids: List<String>) { scope.launch { events.send(PasteStyle(ids)) } }
+    fun onToggleCollapsed(slideId: String) { scope.launch { events.send(ToggleCollapsed(slideId)) } }
+    fun onEditSlideLayouts() { scope.launch { events.send(EditSlideLayouts) } }
+    fun onExitSlideLayouts() { scope.launch { events.send(ExitSlideLayouts) } }
+    fun onApplyLayout(slideId: String, layoutId: String?) { scope.launch { events.send(ApplyLayout(slideId, layoutId)) } }
+    fun onReapplyLayout(slideId: String) { scope.launch { events.send(ReapplyLayout(slideId)) } }
+    fun onAddLayout() { scope.launch { events.send(AddLayout) } }
+    fun onRenameSlide(id: String, title: String) { scope.launch { events.send(RenameSlide(id, title)) } }
+    fun onAddPlaceholder(role: PlaceholderRole) { scope.launch { events.send(AddPlaceholder(role)) } }
+    fun onChangeTheme(name: String) { scope.launch { events.send(ChangeTheme(name)) } }
+    fun onSaveAsTheme(name: String) { scope.launch { events.send(SaveAsTheme(name)) } }
+    fun onDeleteUserTheme(name: String) { scope.launch { events.send(DeleteUserTheme(name)) } }
+    fun onApplyObjectStyle(ids: List<String>, styleId: String) { scope.launch { events.send(ApplyObjectStyle(ids, styleId)) } }
+    fun onSaveObjectStyle(shapeId: String, name: String) { scope.launch { events.send(SaveObjectStyle(shapeId, name)) } }
+    fun onDeleteObjectStyle(styleId: String) { scope.launch { events.send(DeleteObjectStyle(styleId)) } }
+    fun onRenameObjectStyle(styleId: String, name: String) { scope.launch { events.send(RenameObjectStyle(styleId, name)) } }
+    fun onUseAsDefaultTextStyle(id: String) { scope.launch { events.send(UseAsDefaultTextStyle(id)) } }
+    fun onUseAsDefaultShapeStyle(id: String) { scope.launch { events.send(UseAsDefaultShapeStyle(id)) } }
+    fun onSetDocumentBackground(background: SlideBackground?) { scope.launch { events.send(SetDocumentBackground(background)) } }
+    fun onRenameDocument(name: String) { scope.launch { events.send(RenameDocument(name)) } }
+    fun onSetSlideSize(width: Float, height: Float, scaleContent: Boolean) { scope.launch { events.send(SetSlideSize(width, height, scaleContent)) } }
+    fun onAddDeckFont(assetId: String, family: String, weight: Int, italic: Boolean) { scope.launch { events.send(AddDeckFont(assetId, family, weight, italic)) } }
+    fun onRemoveDeckFont(assetId: String) { scope.launch { events.send(RemoveDeckFont(assetId)) } }
+    fun onUndo() { scope.launch { events.send(Undo) } }
+    fun onRedo() { scope.launch { events.send(Redo) } }
+    fun onToggleSidebar() { scope.launch { events.send(ToggleSidebar) } }
+    fun onToggleObjectList() { scope.launch { events.send(ToggleObjectList) } }
+    fun onSetObjectListFilter(text: String) { scope.launch { events.send(SetObjectListFilter(text)) } }
+    fun onToggleObjectExpanded(id: String) { scope.launch { events.send(ToggleObjectExpanded(id)) } }
+    fun onToggleNotes() { scope.launch { events.send(ToggleNotes) } }
+    fun onToggleRulers() { scope.launch { events.send(ToggleRulers) } }
+    fun onToggleGuides() { scope.launch { events.send(ToggleGuides) } }
+    fun onSetSnap(kind: SnapKind, enabled: Boolean) { scope.launch { events.send(SetSnap(kind, enabled)) } }
+    fun onSetZoom(percent: Int) { scope.launch { events.send(SetZoom(percent)) } }
+    fun onZoomIn() { scope.launch { events.send(ZoomIn) } }
+    fun onZoomOut() { scope.launch { events.send(ZoomOut) } }
+    fun onZoomToSelection() { scope.launch { events.send(ZoomToSelection) } }
+    fun onZoomToFitContent() { scope.launch { events.send(ZoomToFitContent) } }
+    fun onZoomBy(factor: Float, anchorX: Float, anchorY: Float) { scope.launch { events.send(ZoomBy(factor, anchorX, anchorY)) } }
+    fun onPanCanvas(dx: Float, dy: Float) { scope.launch { events.send(PanCanvas(dx, dy)) } }
+    fun onCanvasResized(width: Float, height: Float) { scope.launch { events.send(CanvasResized(width, height)) } }
+    fun onPreviewGuide(id: String?, axis: GuideAxis, position: Float) { scope.launch { events.send(PreviewGuide(id, axis, position)) } }
+    fun onCommitGuide(id: String?, axis: GuideAxis, position: Float) { scope.launch { events.send(CommitGuide(id, axis, position)) } }
+    fun onRemoveGuide(id: String) { scope.launch { events.send(RemoveGuide(id)) } }
+    fun onEndGuideDrag() { scope.launch { events.send(EndGuideDrag) } }
+    fun onSelectInspectorTab(tab: InspectorTab) { scope.launch { events.send(SelectInspectorTab(tab)) } }
+    fun onCloseInspector() { scope.launch { events.send(CloseInspector) } }
+    fun onToggleInspector() { scope.launch { events.send(ToggleInspector) } }
+    fun onSelectFormatSegment(segment: FormatSegment) { scope.launch { events.send(SelectFormatSegment(segment)) } }
+    fun onSelectAnimateSegment(segment: AnimateSegment) { scope.launch { events.send(SelectAnimateSegment(segment)) } }
+    fun onToggleInspectorSection(section: InspectorSection) { scope.launch { events.send(ToggleInspectorSection(section)) } }
 
     fun close() {
         scope.cancel()

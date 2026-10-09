@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.screens.editor
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.inMemoryDocumentStore
 import io.github.xxfast.cupboard.document.sampleDocument
 import kotlinx.coroutines.CoroutineStart.UNDISPATCHED
 import kotlinx.coroutines.Dispatchers
@@ -203,5 +204,25 @@ class EditorViewModelTest {
         assertEquals(listOf(3, 4, 5, 6), state.fullOutline().filter { !it.visible }.map { it.slideIndex })
         // The filtered view is exactly what the collapse-applied outline shows.
         assertEquals(state.outline(), state.fullOutline().filter { it.visible })
+    }
+
+    @Test
+    fun anEventSentBeforeAnythingCollectsStillLands() = runTest {
+        // A canvas reports its size as it lays out, which can be before the
+        // shell collects `states` and the presenter starts listening. The
+        // event has to wait for it rather than be dropped.
+        val document = sampleDocument()
+        val viewModel = EditorViewModel(document, inMemoryDocumentStore(document))
+        viewModel.onCanvasResized(800f, 450f)
+
+        backgroundScope.launch(Dispatchers.Unconfined, start = UNDISPATCHED) {
+            try {
+                viewModel.states.collect { }
+            } finally {
+                viewModel.close()
+            }
+        }
+        val state = viewModel.await { it.viewport.viewWidth == 800f }
+        assertEquals(450f, state.viewport.viewHeight)
     }
 }

@@ -14,6 +14,7 @@ import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
@@ -42,6 +43,7 @@ import io.github.xxfast.cupboard.document.applyingTheme
 import io.github.xxfast.cupboard.document.asObjectStyle
 import io.github.xxfast.cupboard.document.asTheme
 import io.github.xxfast.cupboard.document.clampedMedia
+import io.github.xxfast.cupboard.document.boundingFrame
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.duplicateLayout
 import io.github.xxfast.cupboard.document.duplicated
@@ -111,6 +113,14 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CanvasResized
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.PanCanvas
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetZoom
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomBy
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomIn
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomOut
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomToFitContent
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ZoomToSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
@@ -271,6 +281,11 @@ private fun ArrayDeque<Document>.push(document: Document) {
  * shell holding a stale copy must not be able to edit its way around the lock.
  */
 private fun EditorState.element(id: String): Element? = selectedSlide.elementById(id)
+
+/** [viewport] through [transform], measured against this deck's slide size. */
+private fun EditorState.withViewport(
+    transform: CanvasViewport.(slideWidth: Float, slideHeight: Float) -> CanvasViewport,
+): EditorState = copy(viewport = viewport.transform(document.slideWidth, document.slideHeight))
 
 /**
  * [selection] with [id] added at the end, and every group holding [id] and
@@ -692,6 +707,8 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview, is EditSelectionChanged,
     ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
+    is SetZoom, ZoomIn, ZoomOut, ZoomToSelection, ZoomToFitContent, is ZoomBy,
+    is PanCanvas, is CanvasResized,
     ToggleObjectList, is SetObjectListFilter, is ToggleObjectExpanded,
     is PreviewObjectDrag, EndObjectDrag,
     is SelectInspectorTab, CloseInspector, ToggleInspector,
@@ -1877,6 +1894,41 @@ fun EditorPresenter(
             ToggleRulers -> state.copy(showRulers = !state.showRulers)
 
             ToggleGuides -> state.copy(showGuides = !state.showGuides)
+
+            // The viewport events: view state like the toggles above, so no
+            // document and no history entry. The arithmetic is CanvasViewport's.
+            is SetZoom -> state.withViewport { width, height ->
+                zoomedTo(event.percent, width, height)
+            }
+
+            ZoomIn -> state.withViewport { width, height -> zoomedIn(width, height) }
+
+            ZoomOut -> state.withViewport { width, height -> zoomedOut(width, height) }
+
+            ZoomToSelection ->
+                if (!state.canZoomToSelection) state
+                else {
+                    val selection: Frame = boundingFrame(state.selectedElements.map { it.drawnBounds() })
+                    state.withViewport { width, height -> zoomedTo(selection, width, height) }
+                }
+
+            ZoomToFitContent -> state.withViewport { width, height ->
+                zoomedTo(state.contentFrame, width, height)
+            }
+
+            is ZoomBy -> state.withViewport { width, height ->
+                zoomedBy(event.factor, event.anchorX, event.anchorY, width, height)
+            }
+
+            is PanCanvas -> state.withViewport { width, height ->
+                panned(event.dx, event.dy, width, height)
+            }
+
+            is CanvasResized ->
+                if (event.width == state.viewport.viewWidth && event.height == state.viewport.viewHeight) state
+                else state.copy(
+                    viewport = state.viewport.copy(viewWidth = event.width, viewHeight = event.height),
+                )
 
             is SetSnap -> when (event.kind) {
                 SnapKind.Center -> state.copy(snapToCenter = event.enabled)
