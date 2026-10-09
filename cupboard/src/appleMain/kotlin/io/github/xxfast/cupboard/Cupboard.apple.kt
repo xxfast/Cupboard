@@ -12,9 +12,11 @@ import platform.Foundation.NSHomeDirectory
  *
  * Deliberately the same bundle the Compose Desktop shell opens: the two shells
  * are front ends onto one deck on this machine. Apple hosts have a real main
- * loop, so [dispatcher] defaults to it.
+ * loop, so [dispatcher] defaults to it, the immediate flavour: a call already on
+ * the main thread runs the loop through to `states` without queueing, which on
+ * macOS otherwise costs a frame per hop (the renderer's blocks sit between).
  */
-fun Cupboard.editor(dispatcher: CoroutineDispatcher = Dispatchers.Main): EditorViewModel =
+fun Cupboard.editor(dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate): EditorViewModel =
     editor(CupboardBundle.default(Path(NSHomeDirectory(), ".cupboard")), dispatcher)
 
 /**
@@ -22,8 +24,8 @@ fun Cupboard.editor(dispatcher: CoroutineDispatcher = Dispatchers.Main): EditorV
  * has. The dispatcher-taking version is there for the hosts with no main loop of
  * their own; Swift cannot name a `CoroutineDispatcher` anyway.
  */
-fun Cupboard.openDocument(path: String): OpenResult = openDocument(path, Dispatchers.Main)
+fun Cupboard.openDocument(path: String): OpenResult = openDocument(path, Dispatchers.Main.immediate)
 
 /** [saveAs] on the main dispatcher. [openDocument]'s reasoning. */
 fun Cupboard.saveAs(viewModel: EditorViewModel, path: String): EditorViewModel =
-    saveAs(viewModel, path, Dispatchers.Main)
+    saveAs(viewModel, path, Dispatchers.Main.immediate)
