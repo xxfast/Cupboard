@@ -1062,7 +1062,7 @@ private fun EditorWindow(
 
             // Written here rather than as a shared spec: every entry is a
             // switch showing its own state, and [EditorMenuItem] has no
-            // checkmark to carry. Nothing is ever greyed, a view toggle
+            // checkmark to carry. No toggle is ever greyed, a view toggle
             // asks nothing of the selection. The state these read is the
             // editor's, not this window's, so a reopened window comes back
             // the way it was left.
@@ -1104,6 +1104,49 @@ private fun EditorWindow(
                     checked = state.showGuides,
                     onCheckedChange = { viewModel.onToggleGuides() },
                 )
+
+                // Keynote's View > Zoom, entries, order and shortcuts. Zoom to
+                // Selection is the one greyed entry in this menu: it is the
+                // one that asks something of the selection.
+                Menu("Zoom") {
+                    Item(
+                        text = "Zoom In",
+                        shortcut = editShortcut(Key.Period, shift = true),
+                        onClick = { viewModel.onZoomIn() },
+                    )
+                    Item(
+                        text = "Zoom Out",
+                        shortcut = editShortcut(Key.Comma, shift = true),
+                        onClick = { viewModel.onZoomOut() },
+                    )
+                    Item(
+                        text = "Actual Size",
+                        shortcut = editShortcut(Key.Zero),
+                        onClick = { viewModel.onSetZoom(100) },
+                    )
+
+                    Separator()
+
+                    Item(
+                        text = "Fit Slide",
+                        shortcut = editShortcut(Key.Zero, alt = true),
+                        onClick = { viewModel.onSetZoom(0) },
+                    )
+
+                    Separator()
+
+                    Item(
+                        text = "Zoom to Selection",
+                        enabled = state.canZoomToSelection,
+                        shortcut = editShortcut(Key.Zero, shift = true),
+                        onClick = { viewModel.onZoomToSelection() },
+                    )
+                    Item(
+                        text = "Zoom to Fit Content",
+                        shortcut = editShortcut(Key.Zero, shift = true, alt = true),
+                        onClick = { viewModel.onZoomToFitContent() },
+                    )
+                }
 
                 Separator()
 

@@ -284,6 +284,9 @@ fun EditorScreen(
             onCommitGuide = viewModel::onCommitGuide,
             onRemoveGuide = viewModel::onRemoveGuide,
             onEndGuideDrag = viewModel::onEndGuideDrag,
+            onSetZoom = viewModel::onSetZoom,
+            onCanvasResized = viewModel::onCanvasResized,
+            onPanCanvas = viewModel::onPanCanvas,
             onPlay = onPlay,
             onPlayPreview = onPlayPreview,
             onInsertImage = onInsertImage,
@@ -412,6 +415,12 @@ fun EditorView(
     onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
     onRemoveGuide: (id: String) -> Unit = {},
     onEndGuideDrag: () -> Unit = {},
+    /** The zoom pill's pick, a percent of native size, 0 for Fit Slide. */
+    onSetZoom: (percent: Int) -> Unit = {},
+    /** The canvas's viewport size in dp, and a scroll's pan in document units:
+     * what [EditorState.canvasViewport] is worked out from. */
+    onCanvasResized: (width: Float, height: Float) -> Unit = { _, _ -> },
+    onPanCanvas: (dx: Float, dy: Float) -> Unit = { _, _ -> },
     /** What the canvas context menu shows, sections in order. Empty hides it. */
     menuSections: List<EditorMenuSection> = emptyList(),
     /** Takes over from [menuSections]: the shell draws the menu, this view only
@@ -510,10 +519,8 @@ fun EditorView(
     ) {
         MaterialTheme(colorScheme = tokens.toColorScheme(dark)) {
             val selectedSlide: Slide = state.selectedSlide
-            // Zoom is view-local, like the macOS shell: 0 means Fit.
-            var zoomPercent: Int by remember { mutableStateOf(0) }
-            // Where the context menu is open, null when it isn't. View-local like
-            // zoom: what the click does to the selection rides the loop, where the
+            // Where the context menu is open, null when it isn't. View-local:
+            // what the click does to the selection rides the loop, where the
             // menu it opens sits is this shell's business alone. A second
             // right-click while one is open just moves it.
             var menuAt: Offset? by remember { mutableStateOf(null) }
@@ -534,8 +541,9 @@ fun EditorView(
                     editingLayouts = state.isEditingLayouts,
                     onAddSlide = onAddSlide,
                     onAddLayout = onAddLayout,
-                    zoomPercent = zoomPercent,
-                    onZoomPercentChange = { zoomPercent = it },
+                    zoomPercent = state.viewport.zoomPercent,
+                    effectiveZoomPercent = state.effectiveZoomPercent,
+                    onSetZoom = onSetZoom,
                     onPlay = if (onPlay == null) null else {
                         { onPlay(state.document, state.selectedSlideIndex().coerceAtLeast(0)) }
                     },
@@ -749,7 +757,11 @@ fun EditorView(
                                 onEditSelectionChanged = onEditSelectionChanged,
                                 shownCodeVersion = { element -> state.shownVersion(element) },
                                 shownDiagramStep = { element -> state.shownDiagramStep(element) },
-                                zoom = if (zoomPercent == 0) null else zoomPercent / 100f,
+                                zoom = state.canvasScale,
+                                panX = state.canvasViewport.panX,
+                                panY = state.canvasViewport.panY,
+                                onCanvasResized = onCanvasResized,
+                                onPan = onPanCanvas,
                                 slideWidth = state.document.slideWidth,
                                 slideHeight = state.document.slideHeight,
                                 number = state.slideNumber(selectedSlide.id),

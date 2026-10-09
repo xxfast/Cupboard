@@ -54,8 +54,8 @@ private val LAYOUT_CELL_WIDTH: Dp = 94.dp
 /** Three cells and the gaps between them, plus the menu's 12dp padding each side. */
 private val LAYOUT_GRID_WIDTH: Dp = LAYOUT_CELL_WIDTH * LAYOUT_COLUMNS + 10.dp * 2 + 24.dp
 
-/** Zoom menu steps; 0 is Fit, the rest are percents of the 1920-wide native slide. */
-private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200)
+/** Keynote's zoom pill list, in percents of native slide size. Fit Slide sits under it. */
+private val ZOOM_STEPS: List<Int> = listOf(25, 50, 75, 100, 125, 150, 200, 300, 400)
 
 /**
  * The stacked layout's 60dp M3 toolbar, per the design's Linux variant: filled
@@ -76,8 +76,11 @@ fun EditorToolbar(
     editingLayouts: Boolean,
     onAddSlide: (layoutId: String) -> Unit,
     onAddLayout: () -> Unit,
+    /** `CanvasViewport.zoomPercent`: what the menu ticks, 0 for Fit Slide. */
     zoomPercent: Int,
-    onZoomPercentChange: (Int) -> Unit,
+    /** `EditorState.effectiveZoomPercent`: what the pill reads, Fit included. */
+    effectiveZoomPercent: Int?,
+    onSetZoom: (Int) -> Unit,
     onPlay: (() -> Unit)?,
     onInsertText: () -> Unit,
     onInsertCode: () -> Unit,
@@ -156,7 +159,11 @@ fun EditorToolbar(
 
             Box(Modifier.weight(1f))
 
-            ZoomPill(zoomPercent = zoomPercent, onZoomPercentChange = onZoomPercentChange)
+            ZoomPill(
+                zoomPercent = zoomPercent,
+                effectiveZoomPercent = effectiveZoomPercent,
+                onSetZoom = onSetZoom,
+            )
         }
 
         HorizontalDivider(thickness = 1.dp, color = tokens.div)
@@ -336,11 +343,13 @@ private fun MediaInsertButton(
 }
 
 /**
- * The outlined zoom dropdown. Zoom is view-local (mirroring the macOS shell):
- * an Int percent where 0 means Fit.
+ * The outlined zoom dropdown, Keynote's: the steps, then Fit Slide. [zoomPercent]
+ * is the viewport's, 0 for Fit, and picks the tick; the label is
+ * [effectiveZoomPercent], so Fit reads as the percent it works out to and "Fit"
+ * only before the canvas has a size to fit.
  */
 @Composable
-private fun ZoomPill(zoomPercent: Int, onZoomPercentChange: (Int) -> Unit) {
+private fun ZoomPill(zoomPercent: Int, effectiveZoomPercent: Int?, onSetZoom: (Int) -> Unit) {
     val tokens: ChromeTokens = LocalChromeTokens.current
     var menuOpen: Boolean by remember { mutableStateOf(false) }
 
@@ -356,7 +365,7 @@ private fun ZoomPill(zoomPercent: Int, onZoomPercentChange: (Int) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = if (zoomPercent == 0) "Fit" else "$zoomPercent%",
+                text = effectiveZoomPercent?.let { "$it%" } ?: "Fit",
                 color = tokens.text,
                 fontSize = 13.sp,
             )
@@ -364,21 +373,23 @@ private fun ZoomPill(zoomPercent: Int, onZoomPercentChange: (Int) -> Unit) {
         }
 
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            ZoomItem(
-                label = "Fit in window",
-                checked = zoomPercent == 0,
-                onClick = {
-                    menuOpen = false
-                    onZoomPercentChange(0)
-                },
-            )
-
             for (step in ZOOM_STEPS) ZoomItem(
                 label = "$step%",
                 checked = zoomPercent == step,
                 onClick = {
                     menuOpen = false
-                    onZoomPercentChange(step)
+                    onSetZoom(step)
+                },
+            )
+
+            HorizontalDivider(thickness = 1.dp, color = tokens.div)
+
+            ZoomItem(
+                label = "Fit Slide",
+                checked = zoomPercent == 0,
+                onClick = {
+                    menuOpen = false
+                    onSetZoom(0)
                 },
             )
         }

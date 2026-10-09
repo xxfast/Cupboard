@@ -193,7 +193,7 @@ The only sizing input is `width` (px); the component derives its own height (16:
 In Compose terms this is the natural split: one `Slide` composable taking a size and a read-only flag, called from both the canvas and the thumbnail list; the 944×531 authored space becomes the layout's design coordinate system.
 
 ### Canvas zoom
-The zoom control is live, not decorative. Slides are **1920×1080 natively** and zoom is a percentage of that native size, as in Keynote — so the number in the toolbar means the same thing it does there. Clicking the zoom pill opens a menu: *Fit in window*, then 25 / 50 / 75 / 100 / 125 / 150 / 200%, with a check mark on the current choice. All three platforms share the menu; each renders it with its own radius, fill, and hairline, anchored under its own zoom control.
+The zoom control is live, not decorative. Slides are **1920×1080 natively** and zoom is a percentage of that native size, as in Keynote, so the number in the toolbar means the same thing it does there. Clicking the zoom pill opens a menu: 25 / 50 / 75 / 100 / 125 / 150 / 200 / 300 / 400%, a divider, then *Fit Slide*, with a check mark on the current choice; at Fit the pill shows the percent Fit works out to. All three platforms share the menu; each renders it with its own radius, fill, and hairline, anchored under its own zoom control.
 
 "Fit" is **measured, not a constant.** It is the smaller of the two axis fits against the space the slide may actually occupy:
 

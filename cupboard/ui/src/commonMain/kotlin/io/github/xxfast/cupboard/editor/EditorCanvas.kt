@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -57,6 +59,7 @@ import androidx.compose.ui.input.pointer.isShiftPressed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -71,6 +74,7 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
@@ -137,8 +141,10 @@ import io.github.xxfast.cupboard.document.withSource
 import io.github.xxfast.cupboard.screens.editor.GuideDrag
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlinx.coroutines.channels.Channel
 import kotlin.math.abs
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 private val Accent = Color(0xFF7F52FF)
 private val GuideYellow = Color(0xFFF5C518)
@@ -183,6 +189,25 @@ private const val SpacesPerLevel: Int = 4
 
 /** How wide the ruler strips are, in screen dp: constant size at every zoom. */
 private val RulerThickness: Dp = 18.dp
+
+/**
+ * How far one wheel unit of `scrollDelta` pans, in screen dp. No sign flip:
+ * desktop compose hands over AWT's rotation as is, so positive y is the view
+ * moving down the slide (Finder's way, natural scrolling applied by the OS),
+ * and shift+wheel already arrives as x. Compose's own lists use 10dp per unit
+ * on macOS, so this runs faster than native there.
+ */
+private val ScrollStep: Dp = 24.dp
+
+/**
+ * The scroll the canvas hasn't reported yet, in doc units. Plain fields, not
+ * snapshot state: nothing draws from it, the pan still comes back as `panX`
+ * and `panY`.
+ */
+private class PanAccumulator {
+    var dx: Float = 0f
+    var dy: Float = 0f
+}
 
 /** Doc units between ruler ticks; every second one is drawn long and labelled. */
 private const val RulerMinorStep: Float = 50f
@@ -319,6 +344,22 @@ fun EditorCanvas(
     modifier: Modifier = Modifier,
     zoom: Float? = null,
     /**
+     * Where the view's centre sits relative to the slide's centre, in document
+     * units: `EditorState.canvasViewport.panX` and `panY`, already clamped.
+     */
+    panX: Float = 0f,
+    panY: Float = 0f,
+    /**
+     * The part of this composable that is the viewport: the slide fits and
+     * centres in the box inside it, and pan clamps against it. Drawing is not
+     * clipped to it. The macOS shell passes its panel gutters.
+     */
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    /** The viewport's size in dp whenever it changes: `EditorViewModel.onCanvasResized`. */
+    onCanvasResized: (width: Float, height: Float) -> Unit = { _, _ -> },
+    /** A scroll's pan, in document units: `EditorViewModel.onPanCanvas`. */
+    onPan: (dx: Float, dy: Float) -> Unit = { _, _ -> },
+    /**
      * The deck's slide size, `Document.slideWidth` and `Document.slideHeight`:
      * what the surface lays out at, what the rulers graduate in, and what tells a
      * dragged guide whether it is still over the slide.
@@ -391,13 +432,73 @@ fun EditorCanvas(
             Rect(canvas.localPositionOf(slideRect, Offset.Zero), slideRect.size.toSize())
     }
 
+    // Read from the scroll handler, which is set up once. It only ever reports:
+    // the pan it asks for comes back as [panX] and [panY].
+    val currentZoom by rememberUpdatedState(zoom)
+    val currentOnPan by rememberUpdatedState(onPan)
+    val density: Density = LocalDensity.current
+    // Screen px per doc unit. Null zoom is a Fit that hasn't been measured, and
+    // the core holds the pan at 0 until it has, so there is nothing to offset.
+    val scalePx: Float = (zoom ?: 0f) * density.density
+
+    // Wheels and trackpads deliver faster than frames, and every pan is a whole
+    // turn of the loop. So the handler only adds up, and this reports what added
+    // up at most once a frame. It waits on the first signal of a burst rather
+    // than on every frame, so an idle canvas asks for none. Doc units, converted
+    // at each event's own zoom, so a zoom mid-burst can't mix scales.
+    val pending: PanAccumulator = remember { PanAccumulator() }
+    val panned: Channel<Unit> = remember { Channel(Channel.CONFLATED) }
+    LaunchedEffect(Unit) {
+        for (signal in panned) {
+            val dx: Float = pending.dx
+            val dy: Float = pending.dy
+            pending.dx = 0f
+            pending.dy = 0f
+            if (dx != 0f || dy != 0f) currentOnPan(dx, dy)
+        }
+    }
+
     // A wrapper, so the rulers have somewhere to sit that is not the slide: the
     // surface below is the slide rectangle itself, and clips to it.
-    Box(modifier.onGloballyPositioned { canvasBounds = it; measured() }) {
+    Box(
+        modifier
+            .onGloballyPositioned { canvasBounds = it; measured() }
+            .pointerInput(Unit) {
+                // Not Modifier.scrollable, which would fight the drags below for
+                // the pointer. Nothing below consumes a scroll, so it lands here.
+                awaitPointerEventScope {
+                    while (true) {
+                        val event: PointerEvent = awaitPointerEvent()
+                        if (event.type != PointerEventType.Scroll) continue
+                        val scale: Float = currentZoom ?: continue
+                        val delta: Offset = event.changes
+                            .fold(Offset.Zero) { sum, change -> sum + change.scrollDelta }
+
+                        val step: Float = ScrollStep.value / scale
+                        pending.dx += delta.x * step
+                        pending.dy += delta.y * step
+                        panned.trySend(Unit)
+                        event.changes.forEach { it.consume() }
+                    }
+                }
+            },
+    ) {
         val rulerInset: Dp = if (showRulers) RulerThickness else 0.dp
 
         SlideSurface(
-            modifier = Modifier.fillMaxSize().padding(start = rulerInset, top = rulerInset),
+            // The viewport is the box inside both paddings: it is what Fit fits
+            // and what the pan centres in. The pan moves the slide, not the box,
+            // so the size reported stays the view's.
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding)
+                .padding(start = rulerInset, top = rulerInset)
+                .onSizeChanged { size ->
+                    onCanvasResized(size.width / density.density, size.height / density.density)
+                }
+                .offset {
+                    IntOffset((-panX * scalePx).roundToInt(), (-panY * scalePx).roundToInt())
+                },
             slideBackground = slide.effectiveBackground(layout, background),
             fallbackBackgrounds = slide.backgroundCascade(layout, background).drop(1),
             zoom = zoom,
