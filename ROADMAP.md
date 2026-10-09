@@ -38,6 +38,7 @@ Every "not yet" the parity items left behind.
 - [x] Add a Slide picker: the toolbar "+" opens Keynote's grid of the deck's layouts (thumbnail + name, three across); picking one adds a slide on that layout after the selected one. In layout mode it adds a layout. `AddSlide` takes an optional layout id.
 - [ ] Compose navigator catches up with the core's multi-select (ranges, toggles, batch verbs). WinUI's follows once its canvas lands.
 - [x] Object List: Keynote's per-slide object panel (`View > Show Object List`). Front-to-back rows with group disclosure, select and multi-select, inline rename, lock, hide (ours, Keynote has no hide), search filter, the canvas context menu on rows, drag-to-reorder, and a group's child selectable on its own (`572eb86`, `5db5e83`, `20c5a16`).
+- [x] Canvas zoom and pan, Keynote's: the 10 to 400% ladder behind `View > Zoom` and the pill (Zoom In/Out, Actual Size, Fit Slide, Zoom to Selection, Zoom to Fit Content, Keynote's shortcuts), scroll pans clamped to the slide with any fitting axis centred, menu zoom anchored on the view centre, pinch anchored on the pointer (macOS), the pill reading the computed percent at Fit. Rides the loop as `EditorState.viewport`.
 - [ ] Code field honours the wrap setting while editing and places the caret at the click instead of selecting the whole snippet.
 - [ ] Group resize with rotated children (open bug from `13ffcc6`).
 - [ ] Speaker notes editable in the strip (closes the old open question; the presenter display already edits them mid-show).
