@@ -50,6 +50,10 @@ import platform.AppKit.NSEventModifierFlagCommand
 import platform.AppKit.NSEventModifierFlagControl
 import platform.AppKit.NSEventModifierFlagOption
 import platform.AppKit.NSEventModifierFlagShift
+import platform.AppKit.NSEventPhaseBegan
+import platform.AppKit.NSEventPhaseCancelled
+import platform.AppKit.NSEventPhaseEnded
+import platform.AppKit.NSEventPhaseNone
 import platform.AppKit.NSKeyDown
 import platform.AppKit.NSKeyUp
 import platform.AppKit.NSTextInputClientProtocol
@@ -295,6 +299,31 @@ class ComposeNSView(
     override fun mouseDragged(event: NSEvent) = onMouseEvent(event, PointerEventType.Move)
     override fun scrollWheel(event: NSEvent) = onMouseEvent(event, PointerEventType.Scroll)
 
+    /**
+     * A trackpad pinch, as a scale factor and where it is, in this view's points
+     * with a top-left origin, and whether this is the gesture's first event and
+     * its last. A magnify with no gesture around it (a Magic Mouse, say) is both
+     * at once. Compose has no pointer event for it, so it goes round the scene to
+     * whoever is listening.
+     */
+    var onMagnify: ((factor: Double, x: Double, y: Double, began: Boolean, ended: Boolean) -> Unit)? =
+        null
+
+    override fun magnifyWithEvent(event: NSEvent) {
+        if (isDisposed) return
+        val handler: (Double, Double, Double, Boolean, Boolean) -> Unit =
+            onMagnify ?: return super.magnifyWithEvent(event)
+
+        val local = convertPoint(event.locationInWindow, fromView = null)
+        val (x, y) = local.useContents { x to y }
+        val height = bounds.useContents { size.height }
+        val phaseless: Boolean = event.phase == NSEventPhaseNone
+        val began: Boolean = phaseless || event.phase == NSEventPhaseBegan
+        val ended: Boolean =
+            phaseless || event.phase == NSEventPhaseEnded || event.phase == NSEventPhaseCancelled
+        handler(1.0 + event.magnification, x, height - y, began, ended)
+    }
+
     override fun keyDown(event: NSEvent) {
         if (isDisposed) return
         // Already offered to the scene as a key equivalent and turned down, so
@@ -477,7 +506,9 @@ class ComposeNSView(
         scene.sendPointerEvent(
             eventType = eventType,
             position = Offset((x * density).toFloat(), ((height - y) * density).toFloat()),
-            scrollDelta = Offset(event.deltaX.toFloat(), event.deltaY.toFloat()),
+            // AppKit's deltas are positive towards the top-left, compose's towards
+            // the bottom-right (what AWT hands desktop), so they flip on the way in.
+            scrollDelta = Offset(-event.deltaX.toFloat(), -event.deltaY.toFloat()),
             // Key events carry these themselves, but pointer events only know what
             // the sender passes: without this, shift-click reaches the canvas as a
             // plain click.

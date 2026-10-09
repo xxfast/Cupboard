@@ -27,7 +27,7 @@ extension EditorView {
             Spacer(minLength: 0).layoutPriority(-1)
             toolbarCluster(ui)
             Spacer(minLength: 0).layoutPriority(-1)
-            zoomPill
+            ZoomPill(model: model, palette: palette)
             if ui.inspectorOpen {
                 // Fixed 254pt region over the inspector, laid out space-between:
                 // Share 14 inside the panel's left edge, tabs 14 from the window.
@@ -259,19 +259,36 @@ extension EditorView {
         let hidden = active == before || active == after
         return (hidden ? Color.clear : palette.tabDivider).frame(width: 1, height: 16)
     }
+}
 
-    // MARK: Zoom
+// MARK: - Zoom
 
-    private static let zoomSteps = [25, 50, 75, 100, 125, 150, 200]
+/// The zoom pill. A view of its own rather than an `EditorView` helper: what it
+/// reads is the viewport, which changes on every wheel tick and pinch, and only
+/// a separate body keeps that from re-running the editor's (and rebuilding the
+/// whole `Chrome` snapshot) each time.
+struct ZoomPill: View {
+    let model: EditorModel
+    let palette: Palette
 
-    var zoomPill: some View {
-        Menu {
-            zoomOption("Fit in Window", percent: 0)
+    /// Keynote's ladder, in its order: the steps, then Fit Slide below them.
+    private static let steps = [25, 50, 75, 100, 125, 150, 200, 300, 400]
+
+    var body: some View {
+        // The viewport for zoom and pan, and the chrome's too: Fit's percent
+        // also moves with the slide size, which is a document change.
+        let _ = model.viewportGeneration
+        let _ = model.generation
+        let host = model.host
+        let zoom = Int(host.zoomPercent())
+        let effective = Int(host.effectiveZoomPercent())
+        return Menu {
+            ForEach(Self.steps, id: \.self) { option("\($0)%", percent: $0, current: zoom) }
             Divider()
-            ForEach(Self.zoomSteps, id: \.self) { zoomOption("\($0)%", percent: $0) }
+            option("Fit Slide", percent: 0, current: zoom)
         } label: {
             HStack(spacing: 5) {
-                Text(zoomPercent == 0 ? "Fit" : "\(zoomPercent)%")
+                Text(effective == 0 ? "Fit" : "\(effective)%")
                     .font(.system(size: 12.5))
                     .foregroundStyle(palette.ctrlText)
                 Image(systemName: "chevron.down")
@@ -287,12 +304,11 @@ extension EditorView {
         .fixedSize()
     }
 
-    func zoomOption(_ label: String, percent: Int) -> some View {
+    private func option(_ label: String, percent: Int, current: Int) -> some View {
         Button {
-            zoomPercent = percent
-            host.setZoomPercent(percent: Int32(percent))
+            model.host.setZoom(percent: Int32(percent))
         } label: {
-            if zoomPercent == percent {
+            if current == percent {
                 Label(label, systemImage: "checkmark")
             } else {
                 Text(label)

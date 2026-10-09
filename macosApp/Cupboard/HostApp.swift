@@ -168,6 +168,24 @@ struct CupboardHostApp: App {
                 Menu("Snap to") {
                     SnapToggles(host: host, snap: ui.snap)
                 }
+                // Keynote's order and shortcuts. The pill reads the same zoom.
+                Menu("Zoom") {
+                    Button("Zoom In") { host.zoomIn() }
+                        .keyboardShortcut(".", modifiers: [.command, .shift])
+                    Button("Zoom Out") { host.zoomOut() }
+                        .keyboardShortcut(",", modifiers: [.command, .shift])
+                    Button("Actual Size") { host.setZoom(percent: 100) }
+                        .keyboardShortcut("0", modifiers: .command)
+                    Divider()
+                    Button("Fit Slide") { host.setZoom(percent: 0) }
+                        .keyboardShortcut("0", modifiers: [.command, .option])
+                    Divider()
+                    Button("Zoom to Selection") { host.zoomToSelection() }
+                        .keyboardShortcut("0", modifiers: [.command, .shift])
+                        .disabled(!ui.canZoomToSelection)
+                    Button("Zoom to Fit Content") { host.zoomToFitContent() }
+                        .keyboardShortcut("0", modifiers: [.command, .option, .shift])
+                }
 
                 Divider()
 
@@ -414,9 +432,6 @@ struct EditorView: View {
     @Binding var show: Show?
 
     @Environment(\.colorScheme) var colorScheme
-    /// Zoom is view-local in the Kotlin host, outside `states`, so the label
-    /// reads from this mirror rather than waiting on a generation bump.
-    @State var zoomPercent: Int = 0
     /// The row being dragged, and where each row sits for the gap maths.
     @State var slideDrag: SlideDrag?
     @State var rowFrames: [String: CGRect] = [:]

@@ -6,9 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,7 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.renderComposeScene
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.OpenResult
@@ -161,6 +164,7 @@ import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorPane
 import io.github.xxfast.cupboard.screens.editor.AnimateSegment
+import io.github.xxfast.cupboard.screens.editor.CanvasViewport
 import io.github.xxfast.cupboard.screens.editor.EditorState
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.FlipAxis
@@ -175,6 +179,7 @@ import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -182,11 +187,14 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Rect as SkiaRect
 import org.jetbrains.skia.Surface as SkiaSurface
@@ -219,6 +227,18 @@ private val OBJECT_LIST = 210.dp
 private val INSPECTOR = 282.dp
 private val TOOLBAR = 52.dp
 private val NOTES = 122.dp
+
+/**
+ * The panels that are open right now, as the canvas's content padding: the
+ * gutter-inset box is the viewport Fit measures against and pan centres in.
+ */
+private val EditorState.gutters: PaddingValues
+    get() = PaddingValues(
+        start = (if (sidebarOpen) SIDEBAR else 0.dp) + (if (objectListOpen) OBJECT_LIST else 0.dp),
+        top = TOOLBAR,
+        end = if (inspectorOpen) INSPECTOR else 0.dp,
+        bottom = if (showNotes) NOTES else 0.dp,
+    )
 
 /**
  * What a background control commits when the slide is not wearing that kind of
@@ -1382,11 +1402,29 @@ class EditorHost(
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    /** View-local, not document state: null is Fit, otherwise a scale factor. */
-    private val zoom = MutableStateFlow<Float?>(null)
-
     /** The well follows the host's appearance; slide content never does. */
     private val darkChrome = MutableStateFlow(true)
+
+    /**
+     * What a pinch in progress shows: the canvas layer scaled by the running
+     * [scale] about the pointer, as fractions of the view, over the viewport it
+     * was [against]. The same preview/commit split the element drags use: the
+     * samples only move a layer, and the release is one `ZoomBy`, so a pinch is
+     * one relayout at the new density instead of one per sample.
+     *
+     * Host-local and not the loop's, because the loop only ever sees the commit.
+     * A [MutableStateFlow] the canvas collects with `collectAsState`, not
+     * snapshot state written from the event handler: that is the drag-freeze
+     * rule, a write from input that can silently skip the repaint.
+     */
+    private data class PinchPreview(
+        val scale: Float = 1f,
+        val pivotX: Float = 0.5f,
+        val pivotY: Float = 0.5f,
+        val against: CanvasViewport? = null,
+    )
+
+    private val pinchPreview = MutableStateFlow(PinchPreview())
 
     /** Where a right-click on the canvas goes once the loop has been told. */
     private var contextClick: ((String?) -> Unit)? = null
@@ -1404,23 +1442,20 @@ class EditorHost(
     /** The full-bleed content layer: the shell floats its glass panels over this. */
     val view: NSView = ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
-        val scale: Float? by zoom.collectAsState()
         val dark: Boolean by darkChrome.collectAsState()
+        // Not delegated: it is read in the layer block below, not here, so a pinch
+        // sample invalidates the layer and nothing else.
+        val pinch: State<PinchPreview> = pinchPreview.collectAsState()
 
         // Paint the canvas well ourselves: unpainted scene regions are undefined
         // (white) instead of showing the SwiftUI background through.
         val well = if (dark) Color(0xFF17181C) else Color(0xFFDCDCDA)
-        // Fit measures against the space the slide may actually occupy, so the
-        // gutters are the panels that are open right now, not a constant. The
-        // canvas layer is still the whole window: at any fixed zoom the slide is
-        // window-centred and runs under the glass, which is what sells it.
-        val gutters = PaddingValues(
-            start = (if (state.sidebarOpen) SIDEBAR else 0.dp) +
-                (if (state.objectListOpen) OBJECT_LIST else 0.dp),
-            top = TOOLBAR,
-            end = if (state.inspectorOpen) INSPECTOR else 0.dp,
-            bottom = if (state.showNotes) NOTES else 0.dp,
-        )
+        // The viewport is the gutter-inset box: Fit measures against the space
+        // the slide may actually occupy, the panels open right now, not a
+        // constant. The canvas layer is still the whole window and doesn't clip
+        // to that box, so at any fixed zoom the slide runs under the glass,
+        // which is what sells it.
+        val gutters: PaddingValues = state.gutters
         CompositionLocalProvider(
             LocalResizeCursors provides AppKitResizeCursors,
             // Where the slide's images come from. The deck's own store, so the
@@ -1468,9 +1503,25 @@ class EditorHost(
                     onFieldContextClick = { position ->
                         fieldMenuClick?.invoke(position.x.toDouble(), position.y.toDouble())
                     },
-                    modifier = if (scale == null) Modifier.fillMaxSize().padding(gutters)
-                    else Modifier.fillMaxSize(),
-                    zoom = scale,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            // Only while the viewport it was taken against is the one
+                            // drawn: the committed zoom lands a few dispatches after the
+                            // release, and the same pass that sees it drops the layer,
+                            // so the slide never shows the new zoom scaled again.
+                            val preview: PinchPreview = pinch.value
+                            val shown: Float = if (preview.against == state.viewport) preview.scale else 1f
+                            scaleX = shown
+                            scaleY = shown
+                            transformOrigin = TransformOrigin(preview.pivotX, preview.pivotY)
+                        },
+                    zoom = state.canvasScale,
+                    panX = state.canvasViewport.panX,
+                    panY = state.canvasViewport.panY,
+                    contentPadding = gutters,
+                    onCanvasResized = viewModel::onCanvasResized,
+                    onPan = viewModel::onPanCanvas,
                     slideWidth = state.document.slideWidth,
                     slideHeight = state.document.slideHeight,
                     // What the slide draws on itself, when it asks to: its place
@@ -1480,13 +1531,9 @@ class EditorHost(
                 )
             }
         }
-    }
-
-    /** Zoom as a whole percentage, 0 meaning Fit. Kept ObjC-friendly on purpose. */
-    fun zoomPercent(): Int = zoom.value?.let { (it * 100).roundToInt() } ?: 0
-
-    fun setZoomPercent(percent: Int) {
-        zoom.value = if (percent <= 0) null else percent / 100f
+    }.apply {
+        // A pinch isn't a pointer event the scene knows, so it comes straight here.
+        onMagnify = { factor, x, y, began, ended -> zoomBy(factor, x, y, began, ended) }
     }
 
     /** Follows the host's appearance. Chrome only: slide content stays dark. */
@@ -1719,6 +1766,113 @@ class EditorHost(
 
     fun toggleGuides() {
         viewModel.onToggleGuides()
+    }
+
+    /** The zoom the pill ticks: a percent, 0 being Fit Slide. */
+    fun zoomPercent(): Int = state.viewport.zoomPercent
+
+    /** What the pill reads: the percent Fit works out to, 0 until the canvas is measured. */
+    fun effectiveZoomPercent(): Int = state.effectiveZoomPercent ?: 0
+
+    fun canZoomToSelection(): Boolean = state.canZoomToSelection
+
+    /** A fixed percent about the view centre, 0 for Fit Slide. */
+    fun setZoom(percent: Int) {
+        viewModel.onSetZoom(percent)
+    }
+
+    fun zoomIn() {
+        viewModel.onZoomIn()
+    }
+
+    fun zoomOut() {
+        viewModel.onZoomOut()
+    }
+
+    fun zoomToSelection() {
+        viewModel.onZoomToSelection()
+    }
+
+    fun zoomToFitContent() {
+        viewModel.onZoomToFitContent()
+    }
+
+    /**
+     * The document point the pinch in progress holds under the pointer, relative
+     * to the slide centre. Worked out once per gesture: the events outrun the
+     * loop, so one read from a state that hasn't caught up with the last zoom
+     * would grab a different point, and the slide would slide out from under it.
+     */
+    private var pinchAnchor: Pair<Float, Float>? = null
+
+    /** The pinch in progress, as the product of every sample so far. 1 at rest. */
+    private var pinchFactor: Float = 1f
+
+    /** Puts the preview back at rest once a commit has landed. See [zoomBy]. */
+    private var pinchSettle: Job? = null
+
+    /**
+     * A pinch by [factor] about ([x], [y]), in [view]'s points with a top-left
+     * origin, [began] on the gesture's first event and [ended] on its last. A
+     * magnify with no gesture around it is both, and commits straight away.
+     *
+     * The anchor goes to the loop in document units relative to the slide
+     * centre, the same space as the pan: the pointer's offset from the
+     * viewport's centre, scaled down, plus where that centre already is. The
+     * core clamps the committed zoom, so a pinch past either end snaps back on
+     * release.
+     */
+    fun zoomBy(factor: Double, x: Double, y: Double, began: Boolean, ended: Boolean) {
+        if (began) {
+            pinchAnchor = null
+            pinchFactor = 1f
+            pinchSettle?.cancel()
+        }
+
+        val (anchorX, anchorY) = pinchAnchor ?: run {
+            val scale: Float = state.canvasScale ?: return
+            val gutters: PaddingValues = state.gutters
+            val start: Float = gutters.calculateLeftPadding(LayoutDirection.Ltr).value
+            val end: Float = gutters.calculateRightPadding(LayoutDirection.Ltr).value
+            val top: Float = gutters.calculateTopPadding().value
+            val bottom: Float = gutters.calculateBottomPadding().value
+            val (width, height) = view.bounds.useContents { size.width.toFloat() to size.height.toFloat() }
+            val centreX: Float = start + (width - start - end) / 2
+            val centreY: Float = top + (height - top - bottom) / 2
+            val pan: CanvasViewport = state.canvasViewport
+            val anchor: Pair<Float, Float> = Pair(
+                (x.toFloat() - centreX) / scale + pan.panX,
+                (y.toFloat() - centreY) / scale + pan.panY,
+            )
+            pinchAnchor = anchor
+            return@run anchor
+        }
+
+        pinchFactor *= factor.toFloat()
+        val viewport: CanvasViewport = state.viewport
+        if (!ended) {
+            val (width, height) = view.bounds.useContents { size.width to size.height }
+            pinchPreview.value = PinchPreview(
+                scale = pinchFactor,
+                pivotX = (x / width).toFloat(),
+                pivotY = (y / height).toFloat(),
+                against = viewport,
+            )
+            return
+        }
+
+        viewModel.onZoomBy(pinchFactor, anchorX, anchorY)
+        pinchAnchor = null
+        pinchFactor = 1f
+        // The canvas already ignores the preview once the new viewport is drawn,
+        // so this reset is invisible then. A commit the core clamped to nothing
+        // never lands, hence the timeout: that is the snap back.
+        pinchSettle = scope.launch {
+            withTimeoutOrNull(500.milliseconds) {
+                viewModel.states.first { latest -> latest.viewport != viewport }
+            }
+            pinchPreview.value = PinchPreview()
+        }
     }
 
     /**
@@ -4414,11 +4568,22 @@ class EditorHost(
      * host to call when it goes away. Swift can't observe a Kotlin StateFlow, so
      * this is how the sidebar learns to re-pull its outline and thumbnails.
      *
+     * The viewport is left out. Every wheel tick and pinch is a new viewport,
+     * and each callback here is a whole chrome snapshot and every menu re-read,
+     * for a change only the zoom pill shows. That goes through [onViewportChange]
+     * instead. Unchanged parts of the state are the same instances, so the
+     * comparison is cheap.
+     *
      * Collecting is also what starts the presenter: the state flow is lazily
      * shared, so the host subscribing at launch is what gets the editor running.
      */
     fun onChange(callback: () -> Unit): () -> Unit {
-        val job = scope.launch { viewModel.states.collect { callback() } }
+        val job = scope.launch {
+            viewModel.states
+                .map { state -> state.copy(viewport = CanvasViewport()) }
+                .distinctUntilChanged()
+                .collect { callback() }
+        }
         // An inspector thumbnail lands after the pass that asked for it, and no
         // state changed to say so. Dropping the first skips the value the flow
         // is already holding, so subscribing is not itself a change.
@@ -4439,6 +4604,22 @@ class EditorHost(
             thumbs.cancel()
             fonts.cancel()
         }
+    }
+
+    /**
+     * Registers [callback], fired when the viewport (zoom, pan, view size) alone
+     * changes, the half [onChange] leaves out. Dropping the first skips the value
+     * the flow is already holding, so subscribing is not itself a change.
+     */
+    fun onViewportChange(callback: () -> Unit): () -> Unit {
+        val job = scope.launch {
+            viewModel.states
+                .map { state -> state.viewport }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { callback() }
+        }
+        return { job.cancel() }
     }
 
     /**

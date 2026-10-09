@@ -37,6 +37,10 @@ struct Chrome {
     /// at all. View toggles like `showNotes`, and read the same way.
     let showRulers: Bool
     let showGuides: Bool
+    /// The zoom itself isn't here: it is the viewport, which `generation`
+    /// leaves out, so `ZoomPill` pulls it on `viewportGeneration` instead.
+    /// Whether there is a selection to zoom to is a chrome fact, so that stays.
+    let canZoomToSelection: Bool
     /// One switch per `SnapKind`, in the order `snapTitles` names them. An array
     /// rather than four fields: the submenu renders it as one loop.
     let snap: [Bool]
@@ -163,6 +167,7 @@ struct Chrome {
         notes = host.slideNotes()
         showRulers = host.showRulers()
         showGuides = host.showGuides()
+        canZoomToSelection = host.canZoomToSelection()
         snap = snapTitles.indices.map { host.snapEnabled(kind: Int32($0)) }
         element = host.selectedElement().map(Selection.init)
         text = host.selectedText().map(TextFormat.init)

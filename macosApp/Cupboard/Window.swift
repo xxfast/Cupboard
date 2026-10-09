@@ -286,6 +286,10 @@ final class EditorModel {
     /// pointing at this model follows, without the window being rebuilt.
     private(set) var host: EditorHost
     private(set) var generation: Int = 0
+    /// The viewport's half of the same bridge: zoom, pan and view size, which
+    /// `generation` leaves out so a wheel tick doesn't rebuild the chrome. Only
+    /// the zoom pill reads it.
+    private(set) var viewportGeneration: Int = 0
     /// File > Rename's alert. The command is in the menu bar and the alert is in
     /// the window, so the flag has to live where both can see it.
     var renaming = false
@@ -299,6 +303,7 @@ final class EditorModel {
     /// starts; the Play menu's Swap Displays drives this window's.
     @ObservationIgnored let displays = ShowDisplays()
     @ObservationIgnored private var unsubscribe: (() -> Void)?
+    @ObservationIgnored private var unsubscribeViewport: (() -> Void)?
 
     init(host: EditorHost = EditorHost()) {
         self.host = host
@@ -311,9 +316,11 @@ final class EditorModel {
     func adopt(_ host: EditorHost) {
         let previous = self.host
         unsubscribe?()
+        unsubscribeViewport?()
         self.host = host
         listen()
         generation += 1
+        viewportGeneration += 1
         previous.close()
     }
 
@@ -321,6 +328,8 @@ final class EditorModel {
     func close() {
         unsubscribe?()
         unsubscribe = nil
+        unsubscribeViewport?()
+        unsubscribeViewport = nil
         host.close()
     }
 
@@ -328,6 +337,7 @@ final class EditorModel {
         // Kotlin notifies synchronously on whichever thread mutated, which is
         // always the main thread here (SwiftUI calls, or Compose input).
         unsubscribe = host.onChange { [weak self] in self?.generation += 1 }
+        unsubscribeViewport = host.onViewportChange { [weak self] in self?.viewportGeneration += 1 }
         // A right-click on the canvas. The event is already away by the time
         // this fires, so the menu is all that is left to do.
         host.setContextClickCallback { [weak self] elementId in
