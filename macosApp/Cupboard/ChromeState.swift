@@ -13,6 +13,7 @@ struct Chrome {
     let documentTitle: String
     let edited: Bool
     let sidebarOpen: Bool
+    let objectListOpen: Bool
     let inspectorOpen: Bool
     let tab: InspectorTab
     /// The Format segments this selection offers, by name, in the order the
@@ -149,6 +150,7 @@ struct Chrome {
         documentTitle = host.title()
         edited = host.isEdited()
         sidebarOpen = host.sidebarOpen()
+        objectListOpen = host.isObjectListOpen()
         inspectorOpen = host.inspectorOpen()
         tab = host.inspectorTab()
         formatSegments = host.formatSegments()

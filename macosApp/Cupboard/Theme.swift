@@ -147,6 +147,8 @@ struct Palette {
 
 enum Layout {
     static let sidebar: CGFloat = 212
+    /// The Object List card, beside the navigator's.
+    static let objectList: CGFloat = 200
     static let inspector: CGFloat = 282
     static let header: CGFloat = 52
     /// The navigator is a floating card, so it is inset from the window edges.
@@ -169,6 +171,9 @@ enum Layout {
     static let notesLeading: CGFloat = 256
     static let notesTrailing: CGFloat = 314
     static let notesInset: CGFloat = 48
+    /// What the Object List card adds to the left-hand chrome: itself and the
+    /// gap before it.
+    static let objectListRun: CGFloat = objectList + cardLeading
     static let thumbnail: CGFloat = 150
     /// Share and the tab group ride over the inspector glass in a fixed region.
     static let tabRegion: CGFloat = 254

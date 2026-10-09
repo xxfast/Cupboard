@@ -149,6 +149,10 @@ struct CupboardHostApp: App {
                     get: { ui.showNotes },
                     set: { _ in host.toggleNotes() }
                 ))
+                Toggle("Show Object List", isOn: Binding(
+                    get: { ui.objectListOpen },
+                    set: { _ in host.toggleObjectList() }
+                ))
 
                 Divider()
 
@@ -416,6 +420,9 @@ struct EditorView: View {
     /// The row being dragged, and where each row sits for the gap maths.
     @State var slideDrag: SlideDrag?
     @State var rowFrames: [String: CGRect] = [:]
+    /// Where each Object List row sits, for its drag's gap maths. The drag
+    /// itself is the core's (`host.objectDrag()`), so only the geometry is here.
+    @State var objectRowFrames: [String: CGRect] = [:]
     /// Which build the Animate panel's editor is about, by its place in the
     /// slide's order, and the row being dragged with where each one sits. All
     /// panel state: a build is not something the document can be "on".
@@ -497,6 +504,7 @@ struct EditorView: View {
                 .frame(width: 0, height: 0)
         }
         .animation(.easeInOut(duration: 0.2), value: ui.sidebarOpen)
+        .animation(.easeInOut(duration: 0.2), value: ui.objectListOpen)
         .animation(.easeInOut(duration: 0.2), value: ui.inspectorOpen)
         .animation(.easeInOut(duration: 0.2), value: ui.showNotes)
         // The well is painted Kotlin-side, so the appearance has to be pushed in.
@@ -513,6 +521,17 @@ struct EditorView: View {
                     .padding(.top, Layout.cardTop)
                     .padding(.bottom, Layout.cardBottom)
                     .transition(.move(edge: .leading))
+            }
+            if ui.objectListOpen {
+                // Below the toolbar row rather than beside the traffic lights,
+                // Keynote's place for it: the toolbar keeps its leading edge,
+                // and with the navigator hidden it clears the collapsed chrome.
+                objectListCard
+                    .frame(width: Layout.objectList)
+                    .padding(.leading, Layout.cardLeading)
+                    .padding(.top, Layout.header)
+                    .padding(.bottom, Layout.cardBottom)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
             Spacer(minLength: 0)
             if ui.inspectorOpen {
@@ -541,7 +560,8 @@ struct EditorView: View {
         }
         .padding(.top, 18)
         .padding(.bottom, 20)
-        .padding(.leading, ui.sidebarOpen ? Layout.notesLeading : Layout.notesInset)
+        .padding(.leading, (ui.sidebarOpen ? Layout.notesLeading : Layout.notesInset)
+            + (ui.objectListOpen ? Layout.objectListRun : 0))
         .padding(.trailing, ui.inspectorOpen ? Layout.notesTrailing : Layout.notesInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: Layout.notes)

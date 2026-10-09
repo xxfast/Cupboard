@@ -109,6 +109,7 @@ import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.document.isLocked
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.fillKind
 import io.github.xxfast.cupboard.document.fitted
@@ -119,6 +120,7 @@ import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.galleryElement
 import io.github.xxfast.cupboard.document.imageElement
 import io.github.xxfast.cupboard.document.isBold
+import io.github.xxfast.cupboard.document.kindName
 import io.github.xxfast.cupboard.document.DeckFont
 import io.github.xxfast.cupboard.document.fontDisplayName
 import io.github.xxfast.cupboard.document.withFont
@@ -212,6 +214,8 @@ import platform.posix.memcpy
  * agree with the shell about them, so they are stated once, here.
  */
 private val SIDEBAR = 212.dp
+/** The Object List card and the gap between it and the navigator's. */
+private val OBJECT_LIST = 210.dp
 private val INSPECTOR = 282.dp
 private val TOOLBAR = 52.dp
 private val NOTES = 122.dp
@@ -414,21 +418,6 @@ private fun hasSteps(element: Element?): Boolean = when (element) {
     else -> false
 }
 
-/** What the inspector calls this kind of element, one word. */
-private fun Element.kindName(): String = when (this) {
-    is TextElement -> "Text"
-    is ShapeElement -> "Shape"
-    is ImageElement -> "Image"
-    is GalleryElement -> "Gallery"
-    is VideoElement -> "Video"
-    is AudioElement -> "Audio"
-    is CodeElement -> "Code"
-    is TerminalElement -> "Terminal"
-    is DiagramElement -> "Diagram"
-    is EquationElement -> "Equation"
-    is GroupElement -> "Group"
-}
-
 /**
  * What a build row calls the element it plays: its kind, and as much of its
  * content as fits ("Text: Rendering Pipeline"). The first line that says
@@ -450,11 +439,11 @@ private fun Element.rowTitle(): String {
         is GroupElement -> "${children.size} elements"
     }
     val hint: String = content.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
-    if (hint.isEmpty()) return kindName()
+    if (hint.isEmpty()) return kindName
     val short: String =
         if (hint.length <= HINT_LENGTH) hint
         else hint.take(HINT_LENGTH).trimEnd() + "…"
-    return "${kindName()}: $short"
+    return "$kindName: $short"
 }
 
 /** The line under a row's title: what plays, how long it takes, what starts it. */
@@ -595,6 +584,30 @@ class OutlineRow(
      * the two is [EditorHost.selectedSlideIndex]'s to say.
      */
     val selected: Boolean,
+)
+
+/** One row of the Object List, for the native (SwiftUI) panel. */
+class ObjectListRow(
+    val id: String,
+    val name: String,
+    /** What the row's icon keys off: "Text", "Shape", "Group" and so on. */
+    val kind: String,
+    /** 0 top-level, 1 inside an expanded group; always 0 while filtering. */
+    val depth: Int,
+    val isGroup: Boolean,
+    val expanded: Boolean,
+    val hidden: Boolean,
+    val locked: Boolean,
+    val selected: Boolean,
+)
+
+/** [io.github.xxfast.cupboard.screens.editor.ObjectDrag], for the native panel. */
+class ObjectDragState(
+    val id: String,
+    /** The row the drop lands before, null for after the last row. */
+    val beforeId: String?,
+    /** How far the row has travelled from where it was picked up, in the list's points. */
+    val translationY: Float,
 )
 
 /**
@@ -1402,7 +1415,8 @@ class EditorHost(
         // canvas layer is still the whole window: at any fixed zoom the slide is
         // window-centred and runs under the glass, which is what sells it.
         val gutters = PaddingValues(
-            start = if (state.sidebarOpen) SIDEBAR else 0.dp,
+            start = (if (state.sidebarOpen) SIDEBAR else 0.dp) +
+                (if (state.objectListOpen) OBJECT_LIST else 0.dp),
             top = TOOLBAR,
             end = if (state.inspectorOpen) INSPECTOR else 0.dp,
             bottom = if (state.showNotes) NOTES else 0.dp,
@@ -1596,6 +1610,102 @@ class EditorHost(
 
     fun toggleNotes() {
         viewModel.onToggleNotes()
+    }
+
+    /**
+     * The Object List: the selected slide's elements front to back, an expanded
+     * group's children under it, and a search that narrows them. Read the same
+     * way the outline is, so a canvas edit renames or reorders a row too.
+     */
+    fun objectRows(): List<ObjectListRow> = state.objectRows().map { row ->
+        ObjectListRow(
+            id = row.id,
+            name = row.name,
+            kind = row.kind,
+            depth = row.depth,
+            isGroup = row.isGroup,
+            expanded = row.expanded,
+            hidden = row.hidden,
+            locked = row.locked,
+            selected = row.selected,
+        )
+    }
+
+    fun isObjectListOpen(): Boolean = state.objectListOpen
+
+    fun objectListFilter(): String = state.objectListFilter
+
+    fun toggleObjectList() {
+        viewModel.onToggleObjectList()
+    }
+
+    fun setObjectListFilter(text: String) {
+        viewModel.onSetObjectListFilter(text)
+    }
+
+    fun toggleObjectExpanded(id: String) {
+        viewModel.onToggleObjectExpanded(id)
+    }
+
+    /** A plain click on a row: that element becomes the selection. */
+    fun selectObject(id: String) {
+        viewModel.onSelectElement(id)
+    }
+
+    /** A command-click on a row: in or out of the selection. */
+    fun toggleObjectSelection(id: String) {
+        viewModel.onToggleElementSelection(id)
+    }
+
+    /**
+     * A right-click on a row, told to the loop the way the canvas tells it, so
+     * the menu [contextFacts] builds acts on the same selection.
+     */
+    fun contextClickObject(id: String) {
+        viewModel.onContextClick(id)
+    }
+
+    /** The row's eye. Just this element, whatever else is selected. */
+    fun setObjectHidden(id: String, hidden: Boolean) {
+        viewModel.onSetElementsHidden(listOf(id), hidden)
+    }
+
+    /** The row's lock. Just this element, whatever else is selected. */
+    fun setObjectLocked(id: String, locked: Boolean) {
+        viewModel.onSetElementsLocked(listOf(id), locked)
+    }
+
+    /** Null or blank goes back to the name read off the content. */
+    fun renameObject(id: String, name: String?) {
+        viewModel.onRenameElement(id, name)
+    }
+
+    /** The row on the move and the gap it would land in, null with no drag on. */
+    fun objectDrag(): ObjectDragState? = state.objectDrag?.let { drag ->
+        ObjectDragState(id = drag.id, beforeId = drag.beforeId, translationY = drag.translationY)
+    }
+
+    /**
+     * A row drag in flight: [id] carried [translationY] from where it was picked
+     * up, over the gap before [beforeId]'s row (null, after the last). What the
+     * list draws comes back through [objectDrag], so the drag is the loop's.
+     */
+    fun previewObjectDrag(id: String, beforeId: String?, translationY: Float) {
+        viewModel.onPreviewObjectDrag(id, beforeId, translationY)
+    }
+
+    /** A drag let go of without a drop. */
+    fun endObjectDrag() {
+        viewModel.onEndObjectDrag()
+    }
+
+    /**
+     * The drop: [id] lands immediately before [beforeId]'s row, null being the
+     * back of its siblings. Ends the drag too, and a drop that changes nothing
+     * costs no history entry, so the shell may send every drop.
+     */
+    fun moveObject(id: String, beforeId: String?) {
+        viewModel.onMoveElement(id, beforeId)
     }
 
     /** Canvas overlays, read the same way the panel toggles are: one owner. */
@@ -2500,7 +2610,7 @@ class EditorHost(
             flippedHorizontally = element.flippedHorizontally,
             flippedVertically = element.flippedVertically,
             locked = element.locked,
-            kind = element.kindName(),
+            kind = element.kindName,
         )
     }
 
@@ -3382,12 +3492,19 @@ class EditorHost(
 
     // Every can-fact takes the selection it judges, so the same rule serves both
     // the live selection and the one a right-click is about to settle on.
-    private fun canGroup(elements: List<Element>): Boolean =
-        elements.size >= 2 && elements.count { !it.locked } >= 2
+    // Grouping is top-level only, as `Slide.groupElements` is: a child in the
+    // selection is left out of the group, so it doesn't count towards one.
+    private fun canGroup(elements: List<Element>): Boolean {
+        val slide: Slide = state.selectedSlide
+        val members: Int = elements.count { element ->
+            !element.locked && slide.elements.any { it.id == element.id }
+        }
+        return members >= 2
+    }
 
     private fun canUngroup(elements: List<Element>): Boolean {
         val group: Element = elements.singleOrNull() ?: return false
-        return group is GroupElement && !group.locked
+        return group is GroupElement && !isLocked(group)
     }
 
     // The selection an edit may touch. A locked element answers to nothing but
@@ -3395,7 +3512,11 @@ class EditorHost(
     // sending edits it knows will be dropped.
     private fun editable(): List<Element> = editable(state.selectedElements)
 
-    private fun editable(elements: List<Element>): List<Element> = elements.filter { !it.locked }
+    private fun editable(elements: List<Element>): List<Element> = elements.filter { !isLocked(it) }
+
+    // Locked the way the presenter counts it: its own lock, or a locked group
+    // it sits in.
+    private fun isLocked(element: Element): Boolean = state.selectedSlide.isLocked(element.id)
 
     /**
      * What a menu opened by a right-click on [elementId] may offer, [elementId]
@@ -3414,7 +3535,7 @@ class EditorHost(
         val primary: Element? = elements.firstOrNull()
         // The same rule the Arrange menu greys itself out by: one unlocked
         // primary is enough to reorder, flip, or line up against the slide.
-        val arrangeable: Boolean = primary != null && !primary.locked
+        val arrangeable: Boolean = primary != null && !isLocked(primary)
         return ContextFacts(
             canCut = unlocked.isNotEmpty(),
             canCopy = elements.isNotEmpty(),
@@ -3434,7 +3555,8 @@ class EditorHost(
         if (elementId == null) return emptyList()
         val selection: List<Element> = state.selectedElements
         if (selection.any { it.id == elementId }) return selection
-        return listOfNotNull(state.selectedSlide.elements.firstOrNull { it.id == elementId })
+        // At any depth: a right-click on a child's row settles on the child.
+        return listOfNotNull(state.selectedSlide.elementById(elementId))
     }
 
     /**
