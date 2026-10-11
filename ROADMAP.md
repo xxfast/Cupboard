@@ -48,6 +48,7 @@ Every "not yet" the parity items left behind.
 - [ ] Edit menu items stay live mid-edit, Keynote-style, instead of greying while the field owns the chords.
 - [ ] Single-file `.cupboard` (zip) for Linux and Windows, where a folder-as-document doesn't fly. macOS keeps the package.
 - [x] Launch like Keynote on every shell: a `.cupboard` opened from the OS (Finder, `open`, argv) opens that deck alone, and a bare launch shows the theme chooser and nothing else. No more `~/.cupboard/Untitled.cupboard` opening on its own. (`18d7c52`, needs a visual pass. WinUI still opens its default bundle, it has no chooser yet.)
+- [x] Watch the open bundle and reload when it changes on disk (#17): `document.json` edited by another tool, a `git checkout` or an agent regenerating the deck shows up without a reopen. Platform watcher behind `watchBundle` (`WatchService` on JVM, `DispatchSource` on Apple, `ReadDirectoryChangesW` on Windows), changes ride the loop as `EditorEvent.Reload` / `RefreshAssets`, own autosaves are ignored, external writes win over unsaved edits, undo history resets like a fresh open. (`0623e1c`, needs a visual pass. Windows watcher is compile-verified only. After an assets change the macOS navigator rows show placeholders until the canvas has decoded the new bytes, same as rows always did for undecoded images. Fonts swapped on disk are not re-read.)
 
 ## 0.4.0: Windows
 
