@@ -41,7 +41,9 @@ Every "not yet" the parity items left behind.
 - [x] Canvas zoom and pan, Keynote's: the 10 to 400% ladder behind `View > Zoom` and the pill (Zoom In/Out, Actual Size, Fit Slide, Zoom to Selection, Zoom to Fit Content, Keynote's shortcuts), scroll pans clamped to the slide with any fitting axis centred, menu zoom anchored on the view centre, pinch anchored on the pointer (macOS), the pill reading the computed percent at Fit. Rides the loop as `EditorState.viewport`.
 - [ ] Code field honours the wrap setting while editing and places the caret at the click instead of selecting the whole snippet.
 - [ ] Group resize with rotated children (open bug from `13ffcc6`).
-- [ ] Speaker notes editable in the strip (closes the old open question; the presenter display already edits them mid-show).
+- [x] Speaker notes editable in the strip, Keynote's way: click for a caret, Return for a new line, Escape to leave, long notes scroll, and the top edge drags to resize (99pt up to 45% of the window) or, let go at the bottom, to hide. One visit of the caret is one undo entry (`BeginNotesEdit`/`EditNotes`/`EndNotesEdit`), and the Edit verbs grey while it is there. Ours keeps the "SPEAKER NOTES" label and the strip's type; Keynote's notes are rich text, ours stay plain. (`6b1a07a`)
+- [x] Document title popover, the title bar's: a click on the deck's name in the macOS toolbar opens Name, Tags and Where, and a right-click lists the folders it is in. Rename and Move To move the bundle itself (`Cupboard.move`), on both shells' File menus too. (`6b1a07a`, needs a visual pass. The move is a new editor, so undo history does not survive it. Where's Favourites are the stock folders, the Finder sidebar is not readable. Compose has the menu items only, its title is the OS's.)
+- [ ] Lock a deck from the title popover: the padlock beside Where. Needs a read-only editor first, with Keynote's Unlock / Duplicate prompt on the first edit.
 - [ ] Edit menu items stay live mid-edit, Keynote-style, instead of greying while the field owns the chords.
 - [ ] Single-file `.cupboard` (zip) for Linux and Windows, where a folder-as-document doesn't fly. macOS keeps the package.
 
