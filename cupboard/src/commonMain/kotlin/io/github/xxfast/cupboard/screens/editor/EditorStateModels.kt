@@ -165,6 +165,15 @@ data class TextLinkRow(val start: Int, val end: Int, val excerpt: String, val ta
 /** How much of a linked run's words a [TextLinkRow] shows before it trails off. */
 const val TextLinkExcerptLength: Int = 30
 
+/** The speaker-notes strip's height until the user drags its top edge, in points. */
+const val NotesDefaultHeight: Float = 122f
+
+/** The shortest the strip drags to, Keynote's: past it the drag hides the strip. */
+const val NotesMinHeight: Float = 99f
+
+/** The tallest the strip drags to, as a fraction of the editor's height. Near Keynote's. */
+const val NotesMaxFraction: Float = 0.45f
+
 /**
  * A user guide on the move and where it currently sits, in doc units: an x for a
  * vertical guide, a y for a horizontal one. [id] is null while a fresh guide is
@@ -291,6 +300,13 @@ data class EditorState(
      */
     val expandedSections: Set<InspectorSection> = emptySet(),
     val showNotes: Boolean = true,
+    /**
+     * How tall the speaker-notes strip is, in points. View state like
+     * [showNotes], and kept while the strip is hidden so it comes back the
+     * height it was left at. Never under [NotesMinHeight]; how tall it may get
+     * depends on the window, so the shells cap that end.
+     */
+    val notesHeight: Float = NotesDefaultHeight,
     /** Whether the canvas draws its rulers, and whether the user's guides show
      * at all. View toggles like [showNotes], and stored next to it for the same
      * reason: they belong to the editor, not to whichever shell is drawing. */
@@ -329,6 +345,13 @@ data class EditorState(
      * Transient: a state restored from disk is by definition not mid-gesture.
      */
     @Transient val isPreviewing: Boolean = false,
+    /**
+     * True while the caret is in the speaker notes, from [BeginNotesEdit] to the
+     * [EndNotesEdit] that settles what was typed. The notes' [editingElementId].
+     *
+     * Transient for the same reason as [isPreviewing].
+     */
+    @Transient val isEditingNotes: Boolean = false,
     /**
      * The marquee rectangle being dragged out, null when none is. View state,
      * but it rides through the loop like every other gesture: a canvas that kept
@@ -675,6 +698,9 @@ data class EditorState(
     /** Whether the caret is in an element, and so whether keys are text rather than commands. */
     val isEditingText: Boolean get() = editingElement != null
 
+    /** Whether there is a caret anywhere, in an element or in the speaker notes. */
+    val isTyping: Boolean get() = isEditingText || isEditingNotes
+
     /** The selection when it is exactly one text box, null otherwise: what range links are read off. */
     val selectedTextElement: TextElement? get() = selectedElementIds.singleOrNull()
         ?.let { id -> selectedSlide.elementById(id) }
@@ -737,10 +763,11 @@ data class EditorState(
      * A caret in an element greys it, and greys [canCopy], [canDuplicate] and
      * [canDelete] with it: mid-edit those verbs belong to the text, so the menu
      * item and the Delete key fall through to the field instead of taking the
-     * element out from under it.
+     * element out from under it. A caret in the speaker notes does the same in
+     * either pane: there the verbs would take a slide.
      */
     val canCut: Boolean
-        get() = when (focusedPane) {
+        get() = !isEditingNotes && when (focusedPane) {
             EditorPane.Navigator -> true
             EditorPane.Canvas ->
                 !isEditingText && selectedElements.any { !selectedSlide.isLocked(it.id) }
@@ -758,7 +785,7 @@ data class EditorState(
      * empty selection greys it.
      */
     val canCopy: Boolean
-        get() = when (focusedPane) {
+        get() = !isEditingNotes && when (focusedPane) {
             EditorPane.Navigator -> true
             EditorPane.Canvas -> !isEditingText && selectedElements.isNotEmpty()
         }
@@ -1735,6 +1762,22 @@ sealed interface EditorEvent {
     /** Opens or closes a group's row in the Object List. Chrome, no history entry. */
     data class ToggleObjectExpanded(val id: String) : EditorEvent
     data object ToggleNotes : EditorEvent
+    /** The strip's top edge, dragged. [ToggleNotes]' kind, and never under [NotesMinHeight]. */
+    data class ResizeNotes(val height: Float) : EditorEvent
+    /** The caret arrived in the strip. [BeginTextEdit]'s kind: a caret is not an edit. */
+    data object BeginNotesEdit : EditorEvent
+    /**
+     * The selected slide's notes as they stand after a keystroke in the strip.
+     * [PreviewSlide]'s semantics: it folds into the document and makes no
+     * history entry, [EndNotesEdit] does that.
+     */
+    data class EditNotes(val notes: String) : EditorEvent
+    /**
+     * The caret left the notes: everything typed since it arrived becomes one
+     * history entry, or none when the notes came back the way they started.
+     * Nothing at all when the caret was not there, so a late blur costs nothing.
+     */
+    data object EndNotesEdit : EditorEvent
     /** View toggles, [ToggleNotes]' kind: no document, no history entry. */
     data object ToggleRulers : EditorEvent
     data object ToggleGuides : EditorEvent

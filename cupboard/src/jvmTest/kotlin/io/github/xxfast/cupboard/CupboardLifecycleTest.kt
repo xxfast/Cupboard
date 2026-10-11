@@ -14,6 +14,7 @@ import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.encodeToString
 import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
+import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.io.buffered
@@ -24,6 +25,7 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -145,6 +147,91 @@ class CupboardLifecycleTest {
 
         opened.viewModel.close()
         saved.close()
+    }
+
+    @Test
+    fun renamesTheBundleAndTheDeckWithIt() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Origin")
+        val opened = assertIs<OpenResult.Opened>(
+            Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
+        )
+        val hero = byteArrayOf(7, 7, 7)
+        runBlocking { opened.viewModel.assets.write("hero.png", hero) }
+
+        // No extension, as the name field hands it over.
+        val result: MoveResult =
+            Cupboard.move(opened.viewModel, Path(directory, "Talk"), Dispatchers.Unconfined, directory)
+
+        val renamed = Path(directory, "Talk.cupboard")
+        val moved: EditorViewModel = assertIs<MoveResult.Moved>(result).viewModel
+        assertEquals(renamed.toString(), moved.location)
+        // A move, not a copy: nothing is left where it was.
+        assertFalse(SystemFileSystem.exists(bundle))
+        assertEquals("Talk", moved.states.value.document.name)
+        assertEquals("Talk", deckIn(renamed).name)
+        assertContentEquals(hero, runBlocking { moved.assets.read("hero.png") })
+        // The list follows the deck rather than keeping a row for a path that is gone.
+        assertEquals(listOf(renamed.toString()), Cupboard.recentDocuments(directory))
+
+        moved.close()
+    }
+
+    @Test
+    fun movesToAnotherFolderUnderTheSameName() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Talk")
+        // A deck whose name has drifted from its file keeps it across a move
+        // that is only about the folder.
+        write(Path(bundle, "document.json"), deckIn(bundle).copy(name = "Better Talk").encodeToString())
+        val opened = assertIs<OpenResult.Opened>(
+            Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
+        )
+
+        val elsewhere: Path = tempDirectory()
+        val result: MoveResult = Cupboard.move(
+            opened.viewModel,
+            Path(elsewhere, bundle.name),
+            Dispatchers.Unconfined,
+            directory,
+        )
+
+        val moved: EditorViewModel = assertIs<MoveResult.Moved>(result).viewModel
+        assertEquals(Path(elsewhere, "Talk.cupboard").toString(), moved.location)
+        assertFalse(SystemFileSystem.exists(bundle))
+        assertEquals("Better Talk", deckIn(Path(elsewhere, "Talk.cupboard")).name)
+
+        moved.close()
+    }
+
+    @Test
+    fun aMoveOntoAnotherDeckOrNowhereChangesNothing() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Origin")
+        val taken: Path = Cupboard.newDocument(directory, "Taken")
+        val opened = assertIs<OpenResult.Opened>(
+            Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
+        )
+
+        val onto: MoveResult =
+            Cupboard.move(opened.viewModel, taken, Dispatchers.Unconfined, directory)
+        val nowhere: MoveResult = Cupboard.move(
+            opened.viewModel,
+            Path(Path(directory, "Missing"), "Origin"),
+            Dispatchers.Unconfined,
+            directory,
+        )
+        val same: MoveResult =
+            Cupboard.move(opened.viewModel, Path(directory, "Origin"), Dispatchers.Unconfined, directory)
+
+        assertIs<MoveResult.Failed>(onto)
+        assertIs<MoveResult.Failed>(nowhere)
+        // Where it already is: the same editor back, still the one running.
+        assertTrue(assertIs<MoveResult.Moved>(same).viewModel === opened.viewModel)
+        assertEquals("Origin", deckIn(bundle).name)
+        assertEquals("Taken", deckIn(taken).name)
+
+        opened.viewModel.close()
     }
 
     @Test

@@ -79,6 +79,22 @@ fun Cupboard.saveAs(
     runBlocking { saveBundleAs(viewModel, Path(path), cupboardDirectory(), dispatcher) }
 
 /**
+ * [viewModel]'s bundle moved to [path], which is Rename when only the name
+ * differs and Move To when only the folder does. `.cupboard` is appended if
+ * [path] came without it.
+ *
+ * See [MoveResult]: the editor that comes back replaces the one passed in,
+ * which is already closed, and a move that could not happen is a sentence to
+ * show with nothing changed.
+ */
+fun Cupboard.move(
+    viewModel: EditorViewModel,
+    path: String,
+    dispatcher: CoroutineDispatcher,
+): MoveResult =
+    runBlocking { moveBundle(viewModel, Path(path), cupboardDirectory(), dispatcher) }
+
+/**
  * A brand new bundle, named after the first [name] nothing else answers to, and
  * where it went. [directory] is this app's own folder when null. Open it with
  * [openDocument] like any other deck.

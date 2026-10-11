@@ -690,7 +690,7 @@ private fun EditorWindow(
                 // picture too. Edit > Paste is greyed then, and a greyed item
                 // lets its accelerator through to here.
                 down && event.key == Key.V && event.hasPasteModifier() &&
-                    !state.canPaste && !state.isEditingText -> {
+                    !state.canPaste && !state.isTyping -> {
                     if (insertFiles(clipboardFiles())) {
                         true
                     } else {
@@ -850,10 +850,26 @@ private fun EditorWindow(
                             ?.let { documents.saveAs(viewModel, it) }
                     },
                 )
+                // Both are the bundle going somewhere: a new name beside where
+                // it is, or the name it has in another folder.
                 Item(
                     text = "Rename...",
                     onClick = {
-                        askDocumentName(window, state.title)?.let(viewModel::onRenameDocument)
+                        val bundle = Path(viewModel.location)
+                        val folder: Path? = bundle.parent
+                        val name: String? = askDocumentName(window, deckName(viewModel.location))
+                        if (folder != null && name != null) {
+                            documents.move(viewModel, Path(folder, name), window)
+                        }
+                    },
+                )
+                Item(
+                    text = "Move To...",
+                    onClick = {
+                        chooseDirectory(window, "Move To", "Move")?.let { folder ->
+                            val target = Path(folder.path, Path(viewModel.location).name)
+                            documents.move(viewModel, target, window)
+                        }
                     },
                 )
 
@@ -939,7 +955,7 @@ private fun EditorWindow(
                     // and nothing else, so its accelerator has to come off
                     // by hand for Cmd+V to be the field's paste.
                     text = "Paste",
-                    shortcut = editShortcut(Key.V).takeIf { !state.isEditingText },
+                    shortcut = editShortcut(Key.V).takeIf { !state.isTyping },
                     enabled = state.canPaste,
                     onClick = viewModel::onPaste,
                 )

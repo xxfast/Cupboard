@@ -17,6 +17,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.io.IOException
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -193,6 +194,110 @@ internal suspend fun saveBundleAs(
     }
 
     return editorOver(bundle, directory, document, CupboardBundle.documentStore(bundle), dispatcher)
+}
+
+/**
+ * What came back from moving a deck: Rename and Move To, which are one thing,
+ * a bundle ending up at another path.
+ *
+ * Two outcomes for [OpenResult]'s reason: a name that is taken and a folder
+ * that will not be written to are sentences for an alert, and the shell showing
+ * them should not be composing them.
+ */
+sealed interface MoveResult {
+    /**
+     * The editor on the bundle where it is now. A new one, and the one that was
+     * passed in is closed, unless the deck was already there: then it is the
+     * same one back, still running.
+     */
+    data class Moved(val viewModel: EditorViewModel) : MoveResult
+
+    /** [reason] is written for the person who typed the name. Nothing moved. */
+    data class Failed(val reason: String) : MoveResult
+}
+
+/**
+ * Moves this editor's bundle to [target], and opens an editor on it there.
+ *
+ * The bundle itself moves rather than being copied and deleted, so everything
+ * the filesystem hangs off it (Finder tags, dates) comes along. Across volumes
+ * there is no such move, and the deck is laid out again at [target] instead.
+ *
+ * A new name is the deck's name too, the way Save As has it, so the title bar
+ * and the file keep agreeing. A move to another folder leaves the name alone.
+ *
+ * The new editor is a new view model, [EditorViewModel.location] being fixed
+ * for its life, so the undo history stays behind with the old one. That one is
+ * closed here rather than by the caller: its store points at a folder that is
+ * no longer there, and an autosave from it would have nowhere to land. The deck
+ * as it stood is written into the moved bundle first, so an edit still waiting
+ * on its debounce is not lost with it.
+ */
+internal suspend fun moveBundle(
+    viewModel: EditorViewModel,
+    target: Path,
+    directory: Path,
+    dispatcher: CoroutineDispatcher,
+): MoveResult {
+    val source = Path(viewModel.location)
+    val bundle: Path = target.withBundleExtension()
+    if (bundle.toString() == source.toString()) return MoveResult.Moved(viewModel)
+    if (!CupboardBundle.isBundle(source)) return MoveResult.Failed("This deck has no file to move")
+
+    val folder: Path = bundle.parent ?: Path(".")
+    if (SystemFileSystem.metadataOrNull(folder)?.isDirectory != true) {
+        return MoveResult.Failed("The folder \"${folder.name}\" is not there")
+    }
+
+    // A change of case alone names the same file on a case-insensitive volume,
+    // so that one is not something being in the way.
+    val recased: Boolean = bundle.toString().equals(source.toString(), ignoreCase = true)
+    if (!recased && SystemFileSystem.exists(bundle)) {
+        return MoveResult.Failed("\"${bundle.deckName()}\" is already taken in \"${folder.name}\"")
+    }
+
+    val current: Document = viewModel.states.value.document
+    val document: Document =
+        if (bundle.name == source.name) current
+        else current.copy(name = bundle.deckName())
+
+    try {
+        SystemFileSystem.atomicMove(source, bundle)
+    } catch (moving: IOException) {
+        // Another volume, most likely. Copied through the stores, the way Save
+        // As copies, and the original only goes once the copy is whole.
+        try {
+            CupboardBundle.create(bundle, document)
+            val assets = CupboardBundle.assetStore(bundle)
+            for (id in viewModel.assets.ids()) {
+                val bytes: ByteArray = viewModel.assets.read(id) ?: continue
+                assets.write(id, bytes)
+            }
+        } catch (copying: IOException) {
+            deleteTree(bundle)
+            return MoveResult.Failed(copying.message ?: moving.message ?: "The deck could not be moved")
+        }
+        deleteTree(source)
+    }
+
+    // Over whatever the move carried: the name, and any edit autosave had not
+    // got to yet.
+    CupboardBundle.create(bundle, document)
+    recentsIn(directory).forget(source)
+
+    val moved: EditorViewModel =
+        editorOver(bundle, directory, document, CupboardBundle.documentStore(bundle), dispatcher)
+    viewModel.close()
+    return MoveResult.Moved(moved)
+}
+
+/** [path] and everything under it. A path that is not there is a no-op. */
+private fun deleteTree(path: Path) {
+    val metadata = SystemFileSystem.metadataOrNull(path) ?: return
+    if (metadata.isDirectory) {
+        for (child in SystemFileSystem.list(path)) deleteTree(child)
+    }
+    SystemFileSystem.delete(path, mustExist = false)
 }
 
 /** The decks this machine opened last. See [RecentDocuments]. */

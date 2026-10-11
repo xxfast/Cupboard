@@ -77,7 +77,6 @@ data class ChromeTheme(
      * the one thing about that row that isn't a colour.
      */
     val rowRail: Boolean,
-    val uiLabel: String,
 )
 
 val MacChrome: ChromeTheme = ChromeTheme(
@@ -173,7 +172,6 @@ val MacChrome: ChromeTheme = ChromeTheme(
     thumbR = 5.dp,
     rowR = 12.dp,
     rowRail = false,
-    uiLabel = "ui: SwiftUI / AppKit",
 )
 
 val WindowsChrome: ChromeTheme = ChromeTheme(
@@ -269,7 +267,6 @@ val WindowsChrome: ChromeTheme = ChromeTheme(
     thumbR = 4.dp,
     rowR = 4.dp,
     rowRail = true,
-    uiLabel = "ui: WinUI 3 · Mica",
 )
 
 val LinuxChrome: ChromeTheme = ChromeTheme(
@@ -365,7 +362,6 @@ val LinuxChrome: ChromeTheme = ChromeTheme(
     thumbR = 10.dp,
     rowR = 12.dp,
     rowRail = false,
-    uiLabel = "ui: Compose Desktop · M3",
 )
 
 /** The resolved palette of the chrome currently drawing, Linux dark by default. */

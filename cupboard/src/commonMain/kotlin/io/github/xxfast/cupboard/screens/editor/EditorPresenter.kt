@@ -144,7 +144,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginNotesEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndNotesEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
@@ -179,6 +182,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ResizeNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
@@ -696,6 +700,20 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
     else -> null
 }
 
+/** Whether this event is chrome: it touches no document and no selection. */
+private fun EditorEvent.isChrome(): Boolean = when (this) {
+    ToggleSidebar, ToggleNotes, is ResizeNotes, ToggleRulers, ToggleGuides, is SetSnap,
+    is SetZoom, ZoomIn, ZoomOut, ZoomToSelection, ZoomToFitContent, is ZoomBy,
+    is PanCanvas, is CanvasResized,
+    ToggleObjectList, is SetObjectListFilter, is ToggleObjectExpanded,
+    is PreviewObjectDrag, EndObjectDrag,
+    is SelectInspectorTab, CloseInspector, ToggleInspector,
+    is SelectFormatSegment, is SelectAnimateSegment, is ToggleInspectorSection,
+        -> true
+
+    else -> false
+}
+
 /**
  * Whether this event may land while the caret is in an element.
  *
@@ -706,20 +724,27 @@ private fun EditorEvent.focusing(): EditorPane? = when (this) {
  */
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview, is EditSelectionChanged,
-    ToggleSidebar, ToggleNotes, ToggleRulers, ToggleGuides, is SetSnap,
-    is SetZoom, ZoomIn, ZoomOut, ZoomToSelection, ZoomToFitContent, is ZoomBy,
-    is PanCanvas, is CanvasResized,
-    ToggleObjectList, is SetObjectListFilter, is ToggleObjectExpanded,
-    is PreviewObjectDrag, EndObjectDrag,
-    is SelectInspectorTab, CloseInspector, ToggleInspector,
-    is SelectFormatSegment, is SelectAnimateSegment, is ToggleInspectorSection,
         -> true
+
+    // The strip's blur, arriving after the click that moved the caret here.
+    EndNotesEdit -> true
 
     // Focus arriving on the pane the caret is already in says nothing new;
     // focus leaving for the navigator is the caret leaving too.
     is FocusPane -> pane == EditorPane.Canvas
 
-    else -> false
+    else -> isChrome()
+}
+
+/**
+ * Whether this event may land while the caret is in the speaker notes:
+ * [keepsTextEditing]'s rule for the strip. The chrome stays, bar the toggle that
+ * takes the strip away from under the caret.
+ */
+private fun EditorEvent.keepsNotesEditing(): Boolean = when (this) {
+    BeginNotesEdit, is EditNotes, EndNotesEdit -> true
+    ToggleNotes -> false
+    else -> isChrome()
 }
 
 /**
@@ -771,6 +796,23 @@ fun EditorPresenter(
         var clipboard: Clipboard? = null
         var pastes = 0
         var styleSource: Element? = null
+
+        // What ending a typing session comes to, on the canvas or in the notes:
+        // UpdateElements' commit when the text actually changed, and nothing
+        // when it came back the way it started. Either way one session costs at
+        // most one history entry, never one per keystroke.
+        fun settled(): EditorState {
+            val base: Document = gestureBase ?: return state
+            gestureBase = null
+            // Equal, so the document stays the instance the autosave last saw:
+            // swapping the base back in would read as an edit it never hears of
+            // (its key compares by value), and leave the deck marked edited.
+            if (base == state.document) return state.copy(isPreviewing = false)
+
+            undone.push(base)
+            redone.clear()
+            return state.copy(isPreviewing = false)
+        }
 
         // The whole reduction as one function, so the generic Edit verbs can
         // re-enter it with the specific event they resolve to instead of
@@ -1589,28 +1631,27 @@ fun EditorPresenter(
                 ?: state
 
             // The typing streamed through PreviewElements, so ending the
-            // session is settling that gesture: UpdateElements' commit when
-            // the text actually changed, CancelPreview's rollback when it
-            // came back the way it started. Either way one session costs one
-            // history entry, never one per keystroke.
-            EndTextEdit -> {
-                val base: Document? = gestureBase
-                val settled: EditorState = when {
-                    base == null -> state
-                    base != state.document -> {
-                        gestureBase = null
-                        undone.push(base)
-                        redone.clear()
-                        state.copy(isPreviewing = false)
-                    }
+            // session is settling that gesture.
+            EndTextEdit -> settled().copy(editingElementId = null)
 
-                    else -> {
-                        gestureBase = null
-                        state.copy(document = base, isPreviewing = false)
-                    }
-                }
-                settled.copy(editingElementId = null)
+            // The notes strip is a text session with no element under it: the
+            // typing previews into the selected slide, and the caret leaving
+            // settles it exactly the way EndTextEdit does.
+            BeginNotesEdit -> state.copy(isEditingNotes = true)
+
+            is EditNotes -> {
+                if (gestureBase == null) gestureBase = state.document
+                state.copy(
+                    document = state.document
+                        .updateSlide(state.selectedSlide.copy(notes = event.notes)),
+                    isPreviewing = true,
+                    isEditingNotes = true,
+                )
             }
+
+            EndNotesEdit ->
+                if (state.isEditingNotes) settled().copy(isEditingNotes = false)
+                else state
 
             // Looking at another version is not an edit either: no history
             // entry, and an index the block does not have lands on the
@@ -1890,6 +1931,8 @@ fun EditorPresenter(
             )
 
             ToggleNotes -> state.copy(showNotes = !state.showNotes)
+
+            is ResizeNotes -> state.copy(notesHeight = event.height.coerceAtLeast(NotesMinHeight))
 
             ToggleRulers -> state.copy(showRulers = !state.showRulers)
 
@@ -2286,6 +2329,7 @@ fun EditorPresenter(
             // document. The re-entrant reduce calls below skip the guard on
             // purpose, the session is already closed by the time they run.
             if (state.isEditingText && !event.keepsTextEditing()) state = reduce(EndTextEdit)
+            if (state.isEditingNotes && !event.keepsNotesEditing()) state = reduce(EndNotesEdit)
 
             val reduced: EditorState = reduce(event)
 

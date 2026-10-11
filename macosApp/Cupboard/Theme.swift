@@ -167,7 +167,6 @@ enum Layout {
     static let trafficLightsWidth: CGFloat = 54
     /// Collapsed, the group sits at 18 and the show-sidebar capsule follows it.
     static let collapsedToggle: CGFloat = inset + trafficLightsWidth + edge
-    static let notes: CGFloat = 122
     static let notesLeading: CGFloat = 256
     static let notesTrailing: CGFloat = 314
     static let notesInset: CGFloat = 48

@@ -21,11 +21,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.renderComposeScene
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
+import io.github.xxfast.cupboard.MoveResult
 import io.github.xxfast.cupboard.OpenResult
 import io.github.xxfast.cupboard.forgetRecent
+import io.github.xxfast.cupboard.move
 import io.github.xxfast.cupboard.newDocument
 import io.github.xxfast.cupboard.openDocument
 import io.github.xxfast.cupboard.recentDocuments
@@ -171,6 +174,8 @@ import io.github.xxfast.cupboard.screens.editor.FlipAxis
 import io.github.xxfast.cupboard.screens.editor.FormatSegment
 import io.github.xxfast.cupboard.screens.editor.InspectorSection
 import io.github.xxfast.cupboard.screens.editor.InspectorTab
+import io.github.xxfast.cupboard.screens.editor.NotesMaxFraction
+import io.github.xxfast.cupboard.screens.editor.NotesMinHeight
 import io.github.xxfast.cupboard.screens.editor.TextLinkExcerptLength
 import io.github.xxfast.cupboard.screens.editor.TextSelection
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -226,19 +231,18 @@ private val SIDEBAR = 212.dp
 private val OBJECT_LIST = 210.dp
 private val INSPECTOR = 282.dp
 private val TOOLBAR = 52.dp
-private val NOTES = 122.dp
 
 /**
  * The panels that are open right now, as the canvas's content padding: the
  * gutter-inset box is the viewport Fit measures against and pan centres in.
+ * [notes] is how tall the speaker-notes strip stands when it shows.
  */
-private val EditorState.gutters: PaddingValues
-    get() = PaddingValues(
-        start = (if (sidebarOpen) SIDEBAR else 0.dp) + (if (objectListOpen) OBJECT_LIST else 0.dp),
-        top = TOOLBAR,
-        end = if (inspectorOpen) INSPECTOR else 0.dp,
-        bottom = if (showNotes) NOTES else 0.dp,
-    )
+private fun EditorState.gutters(notes: Dp): PaddingValues = PaddingValues(
+    start = (if (sidebarOpen) SIDEBAR else 0.dp) + (if (objectListOpen) OBJECT_LIST else 0.dp),
+    top = TOOLBAR,
+    end = if (inspectorOpen) INSPECTOR else 0.dp,
+    bottom = if (showNotes) notes else 0.dp,
+)
 
 /**
  * What a background control commits when the slide is not wearing that kind of
@@ -1455,7 +1459,7 @@ class EditorHost(
         // constant. The canvas layer is still the whole window and doesn't clip
         // to that box, so at any fixed zoom the slide runs under the glass,
         // which is what sells it.
-        val gutters: PaddingValues = state.gutters
+        val gutters: PaddingValues = state.gutters(notesHeight().dp)
         CompositionLocalProvider(
             LocalResizeCursors provides AppKitResizeCursors,
             // Where the slide's images come from. The deck's own store, so the
@@ -1651,6 +1655,46 @@ class EditorHost(
     /** Notes for the selected slide, what the speaker-notes strip shows. */
     fun slideNotes(): String = state.selectedSlide.notes
 
+    /** The slide those notes belong to: a new one is a new text in the strip. */
+    fun notesSlideId(): String = state.selectedSlide.id
+
+    /**
+     * The tallest the strip may stand, in points: a fraction of the window, which
+     * is this canvas's own height since it runs full bleed. No ceiling before
+     * there is a window to measure.
+     */
+    private fun notesCeiling(): Float {
+        val window: Float = view.bounds.useContents { size.height }.toFloat()
+        if (window <= 0f) return Float.MAX_VALUE
+        return (window * NotesMaxFraction).coerceAtLeast(NotesMinHeight)
+    }
+
+    /** The strip's height in points, already capped against the window. */
+    fun notesHeight(): Double = state.notesHeight.coerceAtMost(notesCeiling()).toDouble()
+
+    fun isEditingNotes(): Boolean = state.isEditingNotes
+
+    /** The caret arriving in the strip, each keystroke there, and the caret leaving. */
+    fun beginNotesEdit() {
+        viewModel.onBeginNotesEdit()
+    }
+
+    fun editNotes(notes: String) {
+        viewModel.onEditNotes(notes)
+    }
+
+    fun endNotesEdit() {
+        viewModel.onEndNotesEdit()
+    }
+
+    /** The strip's top edge, dragged: the floor is the editor's, the ceiling the window's. */
+    fun resizeNotes(height: Double) {
+        viewModel.onResizeNotes(height.toFloat().coerceAtMost(notesCeiling()))
+    }
+
+    /** Under this a released drag hides the strip rather than resizing it. */
+    fun notesHideHeight(): Double = NotesMinHeight / 2.0
+
     fun toggleSidebar() {
         viewModel.onToggleSidebar()
     }
@@ -1831,7 +1875,7 @@ class EditorHost(
 
         val (anchorX, anchorY) = pinchAnchor ?: run {
             val scale: Float = state.canvasScale ?: return
-            val gutters: PaddingValues = state.gutters
+            val gutters: PaddingValues = state.gutters(notesHeight().dp)
             val start: Float = gutters.calculateLeftPadding(LayoutDirection.Ltr).value
             val end: Float = gutters.calculateRightPadding(LayoutDirection.Ltr).value
             val top: Float = gutters.calculateTopPadding().value
@@ -4852,11 +4896,6 @@ class EditorHost(
      */
     fun isEdited(): Boolean = state.savePending
 
-    /** File > Rename. The bundle keeps its own name; only the deck is renamed. */
-    fun renameDocument(name: String) {
-        viewModel.onRenameDocument(name)
-    }
-
     /**
      * Stops the editor (autosave included) and tears the scope down. Optional: a
      * document app keeps one editor for its whole life, so a host that never
@@ -4916,6 +4955,27 @@ object Documents {
     fun saveAs(host: EditorHost, path: String): EditorHost =
         EditorHost(Cupboard.saveAs(host.viewModel, path))
 
+    /**
+     * [host]'s bundle moved to [path]: Rename when only the name differs, Move
+     * To when only the folder does. What the title's popover comes down to.
+     *
+     * The window swaps to the host that comes back, as it does for [saveAs];
+     * the editor behind the one passed in is already stopped. A deck that was
+     * already at [path] hands [host] itself back, and a move that could not
+     * happen is the sentence saying why, with [host] still running.
+     */
+    fun move(host: EditorHost, path: String): OpenOutcome =
+        when (val result: MoveResult = Cupboard.move(host.viewModel, path)) {
+            is MoveResult.Failed -> OpenOutcome(null, result.reason)
+
+            is MoveResult.Moved -> {
+                val moved: EditorHost =
+                    if (result.viewModel === host.viewModel) host
+                    else EditorHost(result.viewModel)
+                OpenOutcome(moved, null)
+            }
+        }
+
     /** The decks this machine opened last, newest first, for Open Recent. */
     fun recents(): List<String> = Cupboard.recentDocuments()
 
@@ -4926,7 +4986,8 @@ object Documents {
 }
 
 /**
- * Either the host a deck opened into or the sentence saying why it did not.
+ * Either the host a deck opened into (or moved to) or the sentence saying why
+ * it did not.
  *
  * A pair rather than a nullable host because a failure has something to say, and
  * a plain class rather than a sealed hierarchy because Swift reads two optional

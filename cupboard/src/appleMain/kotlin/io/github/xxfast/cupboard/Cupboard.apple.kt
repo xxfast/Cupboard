@@ -29,3 +29,7 @@ fun Cupboard.openDocument(path: String): OpenResult = openDocument(path, Dispatc
 /** [saveAs] on the main dispatcher. [openDocument]'s reasoning. */
 fun Cupboard.saveAs(viewModel: EditorViewModel, path: String): EditorViewModel =
     saveAs(viewModel, path, Dispatchers.Main.immediate)
+
+/** [move] on the main dispatcher. [openDocument]'s reasoning. */
+fun Cupboard.move(viewModel: EditorViewModel, path: String): MoveResult =
+    move(viewModel, path, Dispatchers.Main.immediate)

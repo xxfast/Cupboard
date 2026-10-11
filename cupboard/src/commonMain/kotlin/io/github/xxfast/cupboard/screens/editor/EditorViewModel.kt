@@ -81,7 +81,10 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DuplicateSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSlideLayouts
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndGuideDrag
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginNotesEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndMarquee
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndNotesEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EndTextEdit
@@ -108,6 +111,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ResizeNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
@@ -400,6 +404,10 @@ class EditorViewModel(
     fun onSetObjectListFilter(text: String) { send(SetObjectListFilter(text)) }
     fun onToggleObjectExpanded(id: String) { send(ToggleObjectExpanded(id)) }
     fun onToggleNotes() { send(ToggleNotes) }
+    fun onResizeNotes(height: Float) { send(ResizeNotes(height)) }
+    fun onBeginNotesEdit() { send(BeginNotesEdit) }
+    fun onEditNotes(notes: String) { send(EditNotes(notes)) }
+    fun onEndNotesEdit() { send(EndNotesEdit) }
     fun onToggleRulers() { send(ToggleRulers) }
     fun onToggleGuides() { send(ToggleGuides) }
     fun onSetSnap(kind: SnapKind, enabled: Boolean) { send(SetSnap(kind, enabled)) }

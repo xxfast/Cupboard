@@ -152,6 +152,36 @@ internal class Documents(first: EditorViewModel) {
         viewModel.close()
     }
 
+    /**
+     * [viewModel]'s bundle moved to [target], with its window carrying on over
+     * it there: Rename when only the name differs, Move To when only the folder
+     * does.
+     *
+     * The same slot swap as [saveAs], a moved deck being a new editor too, but
+     * the old one is the core's to close. A move that could not happen is the
+     * core's sentence in an alert, see [MoveResult.Failed], and nothing changes.
+     */
+    fun move(viewModel: EditorViewModel, target: Path, owner: Frame) {
+        val index: Int = editors.indexOf(viewModel)
+        if (index < 0) return
+
+        when (val result: MoveResult = Cupboard.move(viewModel, target)) {
+            is MoveResult.Failed -> JOptionPane.showMessageDialog(
+                owner,
+                result.reason,
+                "Can't Move Deck",
+                JOptionPane.ERROR_MESSAGE,
+            )
+
+            is MoveResult.Moved -> {
+                // The same editor back is a deck that was already there.
+                if (result.viewModel === viewModel) return
+                editors[index] = result.viewModel
+                frames -= viewModel
+            }
+        }
+    }
+
     /** Puts this deck's window away, and says whether that was the last of them. */
     fun close(viewModel: EditorViewModel): Boolean {
         editors -= viewModel

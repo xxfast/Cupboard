@@ -33,6 +33,11 @@ struct Chrome {
     let canSendBackward: Bool
     let showNotes: Bool
     let notes: String
+    /// Whose notes those are, how tall the strip stands (already capped against
+    /// the window), and whether the caret is in it.
+    let notesSlideId: String
+    let notesHeight: CGFloat
+    let editingNotes: Bool
     /// Whether the canvas draws its rulers, and whether the user's guides show
     /// at all. View toggles like `showNotes`, and read the same way.
     let showRulers: Bool
@@ -165,6 +170,9 @@ struct Chrome {
         canSendBackward = host.canSendBackward()
         showNotes = host.showNotes()
         notes = host.slideNotes()
+        notesSlideId = host.notesSlideId()
+        notesHeight = host.notesHeight()
+        editingNotes = host.isEditingNotes()
         showRulers = host.showRulers()
         showGuides = host.showGuides()
         canZoomToSelection = host.canZoomToSelection()

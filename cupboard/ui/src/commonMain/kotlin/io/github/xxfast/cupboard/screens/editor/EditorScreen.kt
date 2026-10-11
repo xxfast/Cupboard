@@ -39,6 +39,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Density
@@ -249,6 +250,11 @@ fun EditorScreen(
             onSetElementsHidden = viewModel::onSetElementsHidden,
             onRenameElement = viewModel::onRenameElement,
             onSetObjectListFilter = viewModel::onSetObjectListFilter,
+            onBeginNotesEdit = viewModel::onBeginNotesEdit,
+            onEditNotes = viewModel::onEditNotes,
+            onEndNotesEdit = viewModel::onEndNotesEdit,
+            onResizeNotes = viewModel::onResizeNotes,
+            onToggleNotes = viewModel::onToggleNotes,
             onToggleObjectExpanded = viewModel::onToggleObjectExpanded,
             onPreviewObjectDrag = viewModel::onPreviewObjectDrag,
             onMoveElement = viewModel::onMoveElement,
@@ -500,6 +506,13 @@ fun EditorView(
     onSetElementsHidden: (ids: List<String>, hidden: Boolean) -> Unit = { _, _ -> },
     onRenameElement: (id: String, name: String?) -> Unit = { _, _ -> },
     onSetObjectListFilter: (String) -> Unit = {},
+    /** The speaker-notes strip: the caret arriving, each keystroke, the caret
+     * leaving, its top edge dragged, and that drag taken far enough to hide it. */
+    onBeginNotesEdit: () -> Unit = {},
+    onEditNotes: (String) -> Unit = {},
+    onEndNotesEdit: () -> Unit = {},
+    onResizeNotes: (Float) -> Unit = {},
+    onToggleNotes: () -> Unit = {},
     onToggleObjectExpanded: (String) -> Unit = {},
     /** An Object List drag reporting the gap it is over, its drop, and its cancel.
      * What the drag draws is [EditorState.objectDrag], which these three feed. */
@@ -704,7 +717,15 @@ fun EditorView(
                         )
                     }
 
-                    Column(Modifier.weight(1f).fillMaxHeight()) {
+                    // How tall the column is, which is what caps the notes strip.
+                    var columnHeight: Int by remember { mutableStateOf(0) }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .onSizeChanged { columnHeight = it.height },
+                    ) {
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -790,23 +811,18 @@ fun EditorView(
                             )
                         }
 
-                        if (state.showNotes) SpeakerNotes(notes = selectedSlide.notes)
-
-                        // In layout mode the count is of layouts: the deck's slide
-                        // count says nothing about where the canvas is.
-                        val layouts: List<Slide> = state.document.layouts
-                        EditorStatusBar(
-                            noun = if (state.isEditingLayouts) "layout" else "slide",
-                            slideNumber = if (state.isEditingLayouts) {
-                                layouts.indexOfFirst { it.id == selectedSlide.id } + 1
-                            } else {
-                                state.selectedSlideIndex() + 1
-                            },
-                            slideCount = if (state.isEditingLayouts) layouts.size
-                            else state.document.allSlides().size,
-                            uiLabel = theme.uiLabel + if (dark) " · dark" else " · light",
-                            slideWidth = state.document.slideWidth,
-                            slideHeight = state.document.slideHeight,
+                        if (state.showNotes) SpeakerNotes(
+                            slideId = selectedSlide.id,
+                            notes = selectedSlide.notes,
+                            isEditing = state.isEditingNotes,
+                            height = state.notesHeight,
+                            maxHeight = with(LocalDensity.current) { columnHeight.toDp() }.value *
+                                NotesMaxFraction,
+                            onBeginEdit = onBeginNotesEdit,
+                            onEdit = onEditNotes,
+                            onEndEdit = onEndNotesEdit,
+                            onResize = onResizeNotes,
+                            onHide = onToggleNotes,
                         )
                     }
 

@@ -13,6 +13,7 @@ final class TrafficLights {
     private var sidebarOpen = true
     private var grown = false
     private var observers: [NSObjectProtocol] = []
+    private var title: NSKeyValueObservation?
 
     func attach(to window: NSWindow) {
         guard self.window !== window else { return }
@@ -30,6 +31,12 @@ final class TrafficLights {
                 queue: .main
             ) { [weak self] _ in self?.apply() }
             observers.append(token)
+        }
+        // A new title is a relayout too, and it comes with no notification: a
+        // renamed deck put the buttons back in the corner. After AppKit's own
+        // pass, hence the hop.
+        title = window.observe(\.title) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.apply() }
         }
         apply()
     }
@@ -290,8 +297,9 @@ final class EditorModel {
     /// `generation` leaves out so a wheel tick doesn't rebuild the chrome. Only
     /// the zoom pill reads it.
     private(set) var viewportGeneration: Int = 0
-    /// File > Rename's alert. The command is in the menu bar and the alert is in
-    /// the window, so the flag has to live where both can see it.
+    /// The title's popover, which is also File > Rename. The command is in the
+    /// menu bar and the popover is in the window, so the flag has to live where
+    /// both can see it.
     var renaming = false
     /// What this window is playing, or nil for the editor. Here rather than in
     /// the view for the same reason: Play is a toolbar button and Preview Slide
@@ -310,9 +318,20 @@ final class EditorModel {
         listen()
     }
 
-    /// Moves this window onto [host] and stops the one it was on. Save As is the
-    /// only caller: a view model's bundle is fixed for its life, so saving
-    /// elsewhere is a new editor rather than a moved one.
+    /// Rename and Move To: this window's bundle to [path], and the window onto
+    /// the editor Kotlin opens on it there. Returns Kotlin's sentence when the
+    /// move could not happen, with nothing changed.
+    func move(to path: String) -> String? {
+        let outcome = Documents.shared.move(host: host, path: path)
+        guard let moved = outcome.host else { return outcome.error ?? "The deck could not be moved." }
+        // The same host back is a deck that was already there.
+        if moved !== host { adopt(moved) }
+        return nil
+    }
+
+    /// Moves this window onto [host] and stops the one it was on. A view
+    /// model's bundle is fixed for its life, so saving or moving elsewhere is a
+    /// new editor rather than a moved one.
     func adopt(_ host: EditorHost) {
         let previous = self.host
         unsubscribe?()

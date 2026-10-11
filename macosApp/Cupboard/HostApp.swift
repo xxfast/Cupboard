@@ -332,7 +332,7 @@ struct CupboardHostApp: App {
 // MARK: - Window
 
 /// One open deck, and everything a window rather than the app owns: which editor
-/// it is on, what it is playing, and the Rename alert the menu bar raises here.
+/// it is on, what it is playing, and which bundle its value says it is.
 ///
 /// The editor comes from [DocumentStore] rather than being made here: SwiftUI
 /// re-inits a window's root view freely, and an editor per init would put several
@@ -340,9 +340,6 @@ struct CupboardHostApp: App {
 struct DocumentWindow: View {
     @Binding var ref: DocumentRef?
     @State private var model: EditorModel
-    /// Rename's field. View state, not the model's: the name only becomes the
-    /// deck's when the alert is confirmed.
-    @State private var renameText = ""
     @AppStorage("showPresenterDisplay") private var showPresenter = true
     @Environment(\.openWindow) private var openWindow
 
@@ -379,15 +376,14 @@ struct DocumentWindow: View {
         // Every menu command acts on the window with focus, and this is what
         // says which one that is.
         .focusedSceneValue(\.editor, model)
-        .alert("Rename Deck", isPresented: $window.renaming) {
-            TextField("Name", text: $renameText)
-            Button("Cancel", role: .cancel) {}
-            Button("Rename") { model.host.renameDocument(name: renameText) }
-        } message: {
-            Text("What this deck is called. The bundle keeps its own file name.")
-        }
-        .onChange(of: model.renaming) { _, asking in
-            if asking { renameText = model.host.title() }
+        // Rename, Move To and Save As each leave this window on another bundle.
+        // The window's value follows it there, so a later Open of that deck
+        // raises this window and a relaunch restores the deck where it is now.
+        .onChange(of: locationOf(model)) { _, path in
+            let moved = DocumentRef(path: path)
+            guard moved != ref else { return }
+            DocumentStore.shared.rekey(ref, to: moved)
+            ref = moved
         }
         // Decks Finder handed over. Drained rather than read, so the second
         // window to see them does not open its own copy of the same file.
@@ -403,6 +399,11 @@ struct DocumentWindow: View {
     private func titleOf(_ model: EditorModel) -> String {
         let _ = model.generation
         return model.host.title()
+    }
+
+    private func locationOf(_ model: EditorModel) -> String {
+        let _ = model.generation
+        return model.host.location()
     }
 
     private func openRequested() {
@@ -554,34 +555,6 @@ struct EditorView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: Speaker notes
-
-    /// Full window width and pinned to the bottom, so it passes behind the
-    /// navigator card. Its text insets clear whichever panel is open.
-    func notesStrip(_ ui: Chrome) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("SPEAKER NOTES")
-                .font(.system(size: 10.5, weight: .bold))
-                .tracking(1.2)
-                .foregroundStyle(palette.faint)
-            Text(ui.notes)
-                .font(.system(size: 13.5))
-                .foregroundStyle(palette.dim)
-                .lineSpacing(6.75)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.top, 18)
-        .padding(.bottom, 20)
-        .padding(.leading, (ui.sidebarOpen ? Layout.notesLeading : Layout.notesInset)
-            + (ui.objectListOpen ? Layout.objectListRun : 0))
-        .padding(.trailing, ui.inspectorOpen ? Layout.notesTrailing : Layout.notesInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Layout.notes)
-        .background(palette.panel)
-        .overlay(alignment: .top) { palette.divider.frame(height: 1) }
     }
 
     /// The show, over the displays or in this window, whichever the Play menu

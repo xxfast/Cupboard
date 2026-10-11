@@ -1,4 +1,4 @@
-// The document lifecycle: File > New / Open / Open Recent / Save As / Rename,
+// The document lifecycle: File > New / Open / Open Recent / Save As / Rename / Move To,
 // one window per deck, and the `.cupboard` file association Finder opens through.
 // Everything that touches a bundle goes through Kotlin's `Documents`; this file
 // is the panels, the menu items and the bookkeeping that maps a bundle path to
@@ -108,6 +108,21 @@ final class DocumentStore {
         return made
     }
 
+    /// The window that was on [old] is on [new] now: Rename, Move To and Save
+    /// As all leave a window showing another bundle. Without this the editor
+    /// stays filed under a path it has left, and an Open of the deck it is
+    /// really on would start a second one autosaving over it.
+    func rekey(_ old: DocumentRef?, to new: DocumentRef) {
+        guard let old else {
+            guard let fallback else { return }
+            models[new] = fallback
+            self.fallback = nil
+            return
+        }
+        guard let model = models.removeValue(forKey: old) else { return }
+        models[new] = model
+    }
+
     /// Stops [ref]'s editor and forgets it, for a window that has gone. Autosave
     /// runs off the view model's scope, so an editor nobody is looking at is one
     /// still writing to disk.
@@ -156,8 +171,8 @@ final class OpenRequests {
 // MARK: - The File menu
 
 extension CupboardHostApp {
-    /// New, Open and Open Recent where the system's New Window was, then Save As
-    /// and Rename in the save group below it. Close is AppKit's own Cmd+W.
+    /// New, Open and Open Recent where the system's New Window was, then Save As,
+    /// Rename and Move To in the save group below it. Close is AppKit's own Cmd+W.
     var fileCommands: some Commands {
         Group {
             CommandGroup(replacing: .newItem) {
@@ -175,6 +190,7 @@ extension CupboardHostApp {
                 Button("Save As...") { saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                 Button("Rename...") { model.renaming = true }
+                Button("Move To...") { moveTo() }
             }
         }
     }
@@ -288,6 +304,17 @@ extension CupboardHostApp {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         target.adopt(Documents.shared.saveAs(host: target.host, path: url.path))
+    }
+
+    /// The bundle itself into a folder the user picks, under the name it has.
+    /// The popover's Where from the menu bar, for a move with no pointer.
+    func moveTo() {
+        let target = model
+        let bundle = URL(fileURLWithPath: target.host.location())
+        guard let folder = chooseFolder(startingAt: bundle.deletingLastPathComponent()) else { return }
+        let moved = folder.appendingPathComponent(bundle.lastPathComponent)
+        guard let reason = target.move(to: moved.path) else { return }
+        presentMoveFailure(reason, name: DocumentRef(path: bundle.path).name)
     }
 }
 

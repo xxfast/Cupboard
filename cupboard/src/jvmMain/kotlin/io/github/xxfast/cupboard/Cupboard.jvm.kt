@@ -115,6 +115,22 @@ fun Cupboard.saveAs(
 ): EditorViewModel = runBlocking { saveBundleAs(viewModel, target, directory, dispatcher) }
 
 /**
+ * [viewModel]'s bundle moved to [target], which is Rename when only the name
+ * differs and Move To when only the folder does. `.cupboard` is appended if
+ * [target] came without it.
+ *
+ * See [MoveResult]: the editor that comes back replaces the one passed in,
+ * which is already closed, and a move that could not happen is a sentence to
+ * show with nothing changed.
+ */
+fun Cupboard.move(
+    viewModel: EditorViewModel,
+    target: Path,
+    dispatcher: CoroutineDispatcher = Dispatchers.Main,
+    directory: Path = cupboardDirectory(),
+): MoveResult = runBlocking { moveBundle(viewModel, target, directory, dispatcher) }
+
+/**
  * The decks this machine opened last, newest first, at most ten, and only the
  * ones still on disk. Paths as strings, which is what a File > Open Recent menu
  * renders and what [openDocument] takes back through `Path(...)`.
