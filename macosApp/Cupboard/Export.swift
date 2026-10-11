@@ -20,20 +20,22 @@ extension CupboardHostApp {
             // one out: it writes a Gradle build rather than a document.
             CommandGroup(replacing: .importExport) {
                 Menu("Export") {
-                    Button("PDF...") { exportDeckPdf(host: model.host) }
-                    Button("Images (PNG)...") { exportDeckImages(host: model.host) }
-                    Button("Animated GIF...") { exportDeckGif(host: model.host) }
-                    Button("HTML Player...") { exportDeckHtml(host: model.host) }
-                    Button("PowerPoint (PPTX)...") { exportDeckPptx(host: model.host) }
+                    Button("PDF...") { if let host = model?.host { exportDeckPdf(host: host) } }
+                    Button("Images (PNG)...") { if let host = model?.host { exportDeckImages(host: host) } }
+                    Button("Animated GIF...") { if let host = model?.host { exportDeckGif(host: host) } }
+                    Button("HTML Player...") { if let host = model?.host { exportDeckHtml(host: host) } }
+                    Button("PowerPoint (PPTX)...") { if let host = model?.host { exportDeckPptx(host: host) } }
                     Divider()
-                    Button("CuP Project...") { exportCupProject(host: model.host) }
+                    Button("CuP Project...") { if let host = model?.host { exportCupProject(host: host) } }
                 }
+                .disabled(model == nil)
             }
             // Cmd+P, where every Mac app has it. Printing is a PDF export with
             // the system print panel pointed at it; see printDeck.
             CommandGroup(replacing: .printItem) {
-                Button("Print...") { printDeck(host: model.host) }
+                Button("Print...") { if let host = model?.host { printDeck(host: host) } }
                     .keyboardShortcut("p", modifiers: .command)
+                    .disabled(model == nil)
             }
         }
     }

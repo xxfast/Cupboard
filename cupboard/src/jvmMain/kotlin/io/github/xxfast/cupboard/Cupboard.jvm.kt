@@ -22,12 +22,15 @@ import kotlinx.io.files.Path
 fun cupboardDirectory(): Path = Path(System.getProperty("user.home"), ".cupboard")
 
 /**
- * An editor over a `.cupboard` bundle, creating it if missing, defaulting to
- * `~/.cupboard/Untitled.cupboard` so this shell and the macOS one open on the
- * same deck.
+ * An editor over the `.cupboard` bundle at [bundle], creating it if missing.
  *
- * A pre-bundle `~/.cupboard/document.json` moves into it on the way past, see
- * [CupboardBundle.migrate]. Opening remembers the bundle, so it is in the
+ * Nothing opens by default any more: a shell launched bare shows the new-deck
+ * chooser, and one launched on a file opens that file through [openDocument].
+ * This is for a bundle the shell already owns (the WinUI route, tests), not a
+ * way to pick a deck for the person.
+ *
+ * A pre-bundle `document.json` in the folder above moves in on the way past,
+ * see [CupboardBundle.migrate]. Opening remembers the bundle, so it is in the
  * recents list the shell shows next time.
  *
  * [dispatcher] is the host's serialized main dispatcher; never Unconfined, see
@@ -41,7 +44,7 @@ fun cupboardDirectory(): Path = Path(System.getProperty("user.home"), ".cupboard
  * Blocking is right here: there is no editor to show until the document loads.
  */
 fun Cupboard.editor(
-    bundle: Path = CupboardBundle.default(cupboardDirectory()),
+    bundle: Path,
     dispatcher: CoroutineDispatcher = Dispatchers.Main,
     directory: Path = bundle.parent ?: cupboardDirectory(),
 ): EditorViewModel = runBlocking { openEditor(bundle, directory, dispatcher) }

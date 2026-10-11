@@ -46,6 +46,7 @@ Every "not yet" the parity items left behind.
 - [ ] Lock a deck from the title popover: the padlock beside Where. Needs a read-only editor first, with Keynote's Unlock / Duplicate prompt on the first edit.
 - [ ] Edit menu items stay live mid-edit, Keynote-style, instead of greying while the field owns the chords.
 - [ ] Single-file `.cupboard` (zip) for Linux and Windows, where a folder-as-document doesn't fly. macOS keeps the package.
+- [ ] Launch like Keynote on every shell: a `.cupboard` opened from the OS (Finder, `open`, argv) opens that deck alone, and a bare launch shows the theme chooser and nothing else. No more `~/.cupboard/Untitled.cupboard` opening on its own.
 
 ## 0.4.0: Windows
 

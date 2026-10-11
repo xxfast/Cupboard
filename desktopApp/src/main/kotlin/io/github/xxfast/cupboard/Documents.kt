@@ -28,10 +28,13 @@ import kotlinx.io.files.Path
  *
  * Nothing here asks whether a deck is dirty. Autosave means closing a window
  * loses nothing, so a close is a close.
+ *
+ * Starts empty: a launch either hands over decks to [open] or puts up the
+ * [chooser], and the app runs for as long as one of the two is showing.
  */
-internal class Documents(first: EditorViewModel) {
+internal class Documents {
     /** The open editors, in the order their windows appeared. */
-    val editors: SnapshotStateList<EditorViewModel> = mutableStateListOf(first)
+    val editors: SnapshotStateList<EditorViewModel> = mutableStateListOf()
 
     /**
      * Each editor's window, so an Open of a deck that is already up can raise
@@ -44,12 +47,12 @@ internal class Documents(first: EditorViewModel) {
         frames[viewModel] = frame
     }
 
-    /** The theme chooser while File > New has it up, null when it doesn't. */
+    /**
+     * The theme chooser while it is up, null when it isn't: File > New, or a
+     * launch with no deck to open.
+     */
     var chooser: ThemeChooserViewModel? by mutableStateOf(null)
         private set
-
-    /** The window File > New was asked from, the owner of whatever Create opens. */
-    private var chooserOwner: Frame? = null
 
     /** A fresh deck in Cupboard's own folder, opened like any other. */
     fun new(owner: Frame) {
@@ -57,26 +60,31 @@ internal class Documents(first: EditorViewModel) {
     }
 
     /**
-     * File > New: the theme chooser, and the deck only once Create is pressed.
-     * A second ask while one is up keeps the one there.
+     * The theme chooser, and the deck only once Create is pressed. A window of
+     * its own rather than a sheet on an editor, since a bare launch has no
+     * editor to hang it from. A second ask while one is up keeps the one there.
      */
-    fun choose(owner: Frame) {
+    fun choose() {
         if (chooser != null) return
-        chooserOwner = owner
         chooser = Cupboard.themeChooser()
     }
 
-    /** Create: a deck on [theme] at [size], opened like any other, and the chooser away. */
+    /**
+     * Create: a deck on [theme] at [size], opened like any other, and the
+     * chooser away. A deck that won't open brings the chooser straight back
+     * when nothing else is up, rather than leaving an app with no windows.
+     */
     fun create(theme: Theme, size: SlideSizePreset) {
-        val owner: Frame? = chooserOwner
         dismissChooser()
-        if (owner != null) open(Cupboard.newDocument(theme = theme, size = size), owner)
+        open(Cupboard.newDocument(theme = theme, size = size), owner = null)
+        if (editors.isEmpty()) choose()
     }
 
-    fun dismissChooser() {
+    /** Puts the chooser away, and says whether that left nothing showing. */
+    fun dismissChooser(): Boolean {
         chooser?.close()
         chooser = null
-        chooserOwner = null
+        return editors.isEmpty()
     }
 
     /**
@@ -107,7 +115,16 @@ internal class Documents(first: EditorViewModel) {
         val showing: EditorViewModel = editors[index]
         showing.close()
         frames -= showing
-        editors[index] = Cupboard.editor(bundle = Cupboard.resetShowcase())
+        when (val result: OpenResult = Cupboard.openDocument(Cupboard.resetShowcase())) {
+            is OpenResult.Failed -> {
+                // The old editor is already stopped, so its window can't stay.
+                editors.removeAt(index)
+                cantOpen(owner, result.reason)
+                if (editors.isEmpty()) choose()
+            }
+
+            is OpenResult.Opened -> editors[index] = result.viewModel
+        }
     }
 
     /**
@@ -115,8 +132,11 @@ internal class Documents(first: EditorViewModel) {
      *
      * A failure is the core's own sentence in an alert. This shell has no
      * business rewording it, see [OpenResult.Failed].
+     *
+     * [owner] is null when there is no window to hang the alert from yet: a
+     * deck handed over at launch, or by the OS while only the chooser is up.
      */
-    fun open(bundle: Path, owner: Frame) {
+    fun open(bundle: Path, owner: Frame?) {
         val showing: EditorViewModel? = editors.firstOrNull { it.location == bundle.toString() }
         if (showing != null) {
             frames[showing]?.apply { toFront(); requestFocus() }
@@ -124,15 +144,13 @@ internal class Documents(first: EditorViewModel) {
         }
 
         when (val result: OpenResult = Cupboard.openDocument(bundle)) {
-            is OpenResult.Failed -> JOptionPane.showMessageDialog(
-                owner,
-                result.reason,
-                "Can't Open Deck",
-                JOptionPane.ERROR_MESSAGE,
-            )
-
+            is OpenResult.Failed -> cantOpen(owner, result.reason)
             is OpenResult.Opened -> editors += result.viewModel
         }
+    }
+
+    private fun cantOpen(owner: Frame?, reason: String) {
+        JOptionPane.showMessageDialog(owner, reason, "Can't Open Deck", JOptionPane.ERROR_MESSAGE)
     }
 
     /**
@@ -182,12 +200,16 @@ internal class Documents(first: EditorViewModel) {
         }
     }
 
-    /** Puts this deck's window away, and says whether that was the last of them. */
+    /**
+     * Puts this deck's window away, and says whether that left nothing showing.
+     * The chooser counts: with no menu bar outside a window on Linux and
+     * Windows, an app with neither is one nobody can get back to.
+     */
     fun close(viewModel: EditorViewModel): Boolean {
         editors -= viewModel
         frames -= viewModel
         viewModel.close()
-        return editors.isEmpty()
+        return editors.isEmpty() && chooser == null
     }
 }
 

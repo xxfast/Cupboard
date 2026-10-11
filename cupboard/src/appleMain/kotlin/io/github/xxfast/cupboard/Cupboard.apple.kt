@@ -1,28 +1,19 @@
 package io.github.xxfast.cupboard
 
-import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import kotlinx.io.files.Path
-import platform.Foundation.NSHomeDirectory
-
-/**
- * An editor over `~/.cupboard/Untitled.cupboard`.
- *
- * Deliberately the same bundle the Compose Desktop shell opens: the two shells
- * are front ends onto one deck on this machine. Apple hosts have a real main
- * loop, so [dispatcher] defaults to it, the immediate flavour: a call already on
- * the main thread runs the loop through to `states` without queueing, which on
- * macOS otherwise costs a frame per hop (the renderer's blocks sit between).
- */
-fun Cupboard.editor(dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate): EditorViewModel =
-    editor(CupboardBundle.default(Path(NSHomeDirectory(), ".cupboard")), dispatcher)
 
 /**
  * [openDocument] on the main dispatcher, which is the only one a SwiftUI host
  * has. The dispatcher-taking version is there for the hosts with no main loop of
  * their own; Swift cannot name a `CoroutineDispatcher` anyway.
+ *
+ * The immediate flavour: a call already on the main thread runs the loop
+ * through to `states` without queueing, which on macOS otherwise costs a frame
+ * per hop (the renderer's blocks sit between).
+ *
+ * There is no default deck: a shell launched bare shows the new-deck chooser,
+ * and everything it opens after that comes through here.
  */
 fun Cupboard.openDocument(path: String): OpenResult = openDocument(path, Dispatchers.Main.immediate)
 

@@ -110,9 +110,11 @@ import java.io.File
 import java.net.URI
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import javax.swing.SwingUtilities
 import java.awt.Menu as AwtMenu
 import java.awt.MenuItem as AwtMenuItem
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
@@ -440,25 +442,54 @@ fun main(args: Array<String>) {
     // other JVMs and platforms ignore it. Must be set before the first window.
     System.setProperty("apple.awt.application.appearance", "system")
 
-    // The deck this machine was last on, opened before there is a window to put
-    // it in: loading blocks, and an editor window with no editor has nothing to
-    // draw. Every deck after this one arrives through the File menu.
-    // `--showcase` swaps it for the feature showcase, reset to how it shipped.
-    val first: EditorViewModel =
-        if ("--showcase" in args) Cupboard.editor(bundle = Cupboard.resetShowcase()) else Cupboard.editor()
+    val documents = Documents()
 
-    val documents = Documents(first)
+    // A `.cupboard` opened from Finder reaches a mac app as an event rather than
+    // an argument, at launch and while running alike. Linux and Windows pass it
+    // in [args], so this is the mac's alone, and a no-op wherever the action
+    // isn't there. The callback runs on the AWT thread, where every open runs.
+    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.APP_OPEN_FILE)) {
+        Desktop.getDesktop().setOpenFileHandler { event ->
+            for (file in event.files) documents.open(Path(file.path), owner = null)
+        }
+    }
+
+    // Launched on decks, those decks and nothing else; launched bare, the
+    // chooser. Run on the AWT thread so it queues behind a file the mac handed
+    // over first, which would otherwise get the chooser alongside it. A path
+    // that won't open says why, and the chooser stands in for it.
+    // `--showcase` opens the feature showcase, reset to how it shipped.
+    SwingUtilities.invokeAndWait {
+        for (arg in args) {
+            when {
+                arg == "--showcase" -> documents.open(Cupboard.resetShowcase(), owner = null)
+                !arg.startsWith("--") -> documents.open(Path(arg), owner = null)
+            }
+        }
+
+        if (documents.editors.isEmpty()) documents.choose()
+    }
 
     application {
+        // An `application` ends once nothing in it is running, and a lone
+        // DialogWindow runs nothing, so a bare launch's chooser would close
+        // the moment it opened. The app goes when the last window going says
+        // so instead, through `exitApplication`.
+        LaunchedEffect(Unit) { awaitCancellation() }
+
+        // Away with no deck open is the app away too: without a window, Linux
+        // and Windows have nothing left to bring it back from.
+        val dismissChooser: () -> Unit = { if (documents.dismissChooser()) exitApplication() }
+
         documents.chooser?.let { chooser ->
             DialogWindow(
-                onCloseRequest = documents::dismissChooser,
+                onCloseRequest = dismissChooser,
                 title = "Choose a Theme",
                 state = rememberDialogState(size = DpSize(1024.dp, 768.dp)),
             ) {
                 ThemeChooserScreen(
                     viewModel = chooser,
-                    onCancel = documents::dismissChooser,
+                    onCancel = dismissChooser,
                     onCreate = documents::create,
                 )
             }
@@ -656,7 +687,8 @@ private fun EditorWindow(
 
     Window(
         // No are-you-sure: everything is autosaved, so a closed window has
-        // nothing left to lose. The last one going takes the app with it.
+        // nothing left to lose. The last one going takes the app with it,
+        // unless the chooser is still up.
         onCloseRequest = { if (documents.close(viewModel)) onExit() },
         // The deck's name, and whether an edit is still on its way to disk.
         // Autosave settles within the moment, so (Edited) is a flicker rather
@@ -806,7 +838,7 @@ private fun EditorWindow(
                 Item(
                     text = "New",
                     shortcut = editShortcut(Key.N),
-                    onClick = { documents.choose(window) },
+                    onClick = { documents.choose() },
                 )
                 Item(
                     text = "Open...",

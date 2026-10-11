@@ -54,56 +54,28 @@ final class DocumentStore {
 
     private var models: [DocumentRef: EditorModel] = [:]
     private var parked: [DocumentRef: EditorHost] = [:]
-    /// The deck this machine opens by default, which is the window with no ref.
-    private var fallback: EditorModel?
-    /// `--showcase` at launch: the default window starts on the feature showcase,
-    /// reset to how it shipped. Once only, so a later default window is the
-    /// usual deck.
-    private var launchShowcase = CommandLine.arguments.contains("--showcase")
 
     /// Whether a window is already on [ref], which is what makes a second Open
     /// of the same deck raise it rather than read the bundle again.
     func isOpen(_ ref: DocumentRef) -> Bool { models[ref] != nil }
 
-    /// Raises the default window when it is the one on [ref], and says whether
-    /// it did.
-    ///
-    /// The default window has no ref, so `openWindow` has no value to raise it
-    /// by, and a user who picks that bundle out of the Open panel would get a
-    /// second editor autosaving over the first. The window is found through the
-    /// canvas view it is showing, which is the only handle on it we have.
-    func raiseDefault(_ ref: DocumentRef) -> Bool {
-        guard let fallback, DocumentRef(path: fallback.host.location()) == ref else { return false }
-        guard let window = fallback.host.view.window else { return false }
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate()
-        return true
-    }
+    /// Whether any deck is open at all, which is what decides if a launch or a
+    /// Dock click still needs the theme chooser.
+    var isEmpty: Bool { models.isEmpty }
 
-    /// The editor a window is showing [ref] in, if one is: an opened window's,
-    /// or the default window's when that happens to be on the same bundle.
-    func showing(_ ref: DocumentRef) -> EditorModel? {
-        if let model = models[ref] { return model }
-        guard let fallback, DocumentRef(path: fallback.host.location()) == ref else { return nil }
-        return fallback
-    }
+    /// The editor a window is showing [ref] in, if one is.
+    func showing(_ ref: DocumentRef) -> EditorModel? { models[ref] }
 
     /// Leaves [host] for the window about to open on [ref].
     func park(_ host: EditorHost, as ref: DocumentRef) { parked[ref] = host }
 
     /// The one editor for [ref], made on the first ask and the same one after.
-    func model(for ref: DocumentRef?) -> EditorModel {
-        guard let ref else {
-            if let fallback { return fallback }
-            let made = launchShowcase
-                ? EditorModel(host: Documents.shared.open(path: Documents.shared.resetShowcase()).host ?? EditorHost())
-                : EditorModel()
-            launchShowcase = false
-            fallback = made
-            return made
-        }
+    /// Nil for a deck that will not read, which only a restored window can be
+    /// on: every other way in reads the bundle before the window opens.
+    func model(for ref: DocumentRef) -> EditorModel? {
         if let existing = models[ref] { return existing }
-        let made = EditorModel(host: host(for: ref))
+        guard let host = host(for: ref) else { return nil }
+        let made = EditorModel(host: host)
         models[ref] = made
         return made
     }
@@ -112,13 +84,7 @@ final class DocumentStore {
     /// As all leave a window showing another bundle. Without this the editor
     /// stays filed under a path it has left, and an Open of the deck it is
     /// really on would start a second one autosaving over it.
-    func rekey(_ old: DocumentRef?, to new: DocumentRef) {
-        guard let old else {
-            guard let fallback else { return }
-            models[new] = fallback
-            self.fallback = nil
-            return
-        }
+    func rekey(_ old: DocumentRef, to new: DocumentRef) {
         guard let model = models.removeValue(forKey: old) else { return }
         models[new] = model
     }
@@ -126,45 +92,104 @@ final class DocumentStore {
     /// Stops [ref]'s editor and forgets it, for a window that has gone. Autosave
     /// runs off the view model's scope, so an editor nobody is looking at is one
     /// still writing to disk.
-    func release(_ ref: DocumentRef?) {
-        guard let ref else {
-            fallback?.close()
-            fallback = nil
-            return
-        }
+    func release(_ ref: DocumentRef) {
         models.removeValue(forKey: ref)?.close()
     }
 
     /// The parked host if Open left one, otherwise the deck read now: a window
-    /// restored after a relaunch was never opened through the menu. A deck that
-    /// will not read falls back to the default one, because there is no alert to
-    /// put in a window that is already coming up.
-    private func host(for ref: DocumentRef) -> EditorHost {
+    /// restored after a relaunch was never opened through the menu.
+    private func host(for ref: DocumentRef) -> EditorHost? {
         if let parked = parked.removeValue(forKey: ref) { return parked }
-        return Documents.shared.open(path: ref.path).host ?? EditorHost()
+        return Documents.shared.open(path: ref.path).host
     }
 }
 
 // MARK: - Opening from Finder
 
-/// Decks Finder or `open` asked for, waiting for a window to put them in.
+/// Decks Finder or `open` asked for, and the window to open them with.
 ///
 /// The app delegate hears about them and SwiftUI opens the windows, and the two
 /// cannot talk directly: `openWindow` is an environment value, which a delegate
-/// has no way to read. So the delegate leaves the paths here and the first
-/// window's view drains them. Draining rather than reading is what stops every
-/// open window from opening its own copy of the same file.
-@Observable
+/// has no way to read. So the app hands its own here ([attach]), and the
+/// delegate's paths wait for launching to finish before going through it: a
+/// launch's files arrive before SwiftUI is ready to open anything.
 final class OpenRequests {
     static let shared = OpenRequests()
 
-    private(set) var pending: [String] = []
+    private var pending: [String] = []
+    private var openWindow: OpenWindowAction?
+    private var launched = false
 
-    func request(_ paths: [String]) { pending.append(contentsOf: paths) }
+    /// Whether this launch was on decks (Finder, `open`, `--showcase`) rather
+    /// than bare, which is a launch with no chooser in it.
+    private(set) var launchedOnDecks = false
 
-    func drain() -> [String] {
-        defer { pending = [] }
-        return pending
+    /// Whether the chooser about to appear is one this app asked for, rather
+    /// than the default window SwiftUI opens at launch by itself.
+    private var chooserRequested = false
+
+    func request(_ paths: [String]) {
+        guard !paths.isEmpty else { return }
+        if !launched { launchedOnDecks = true }
+        pending.append(contentsOf: paths)
+        flush()
+    }
+
+    /// Called from the app's body, which runs again freely, so this only keeps
+    /// the latest. The flush waits a turn: opening a window from inside a body
+    /// evaluation is not something SwiftUI promises to survive.
+    func attach(_ openWindow: OpenWindowAction) {
+        self.openWindow = openWindow
+        guard !pending.isEmpty else { return }
+        DispatchQueue.main.async { self.flush() }
+    }
+
+    func finishLaunching() {
+        launched = true
+        DispatchQueue.main.async { self.flush() }
+    }
+
+    /// The theme chooser, raised if it is already up: it is a single window.
+    func showChooser() {
+        chooserRequested = true
+        openWindow?(id: ThemeChooserView.windowId)
+    }
+
+    /// Whether the chooser that just appeared should go again: it is SwiftUI's
+    /// launch default rather than one anything asked for, on a launch that was
+    /// on decks or restored some. AppKit's contract says neither gets an
+    /// untitled window, so this is the backstop if SwiftUI opens its first
+    /// scene regardless. Every chooser the app opens itself is marked, so a
+    /// File > New over open decks is never mistaken for it.
+    func chooserIsUnwanted() -> Bool {
+        defer {
+            launchedOnDecks = false
+            chooserRequested = false
+        }
+        return !chooserRequested && (launchedOnDecks || !DocumentStore.shared.isEmpty)
+    }
+
+    private func flush() {
+        guard launched, let openWindow, !pending.isEmpty else { return }
+        open(with: openWindow)
+    }
+
+    /// Every waiting deck in a window of its own, or the window already on it
+    /// raised. Silent on a deck that will not read: this is usually a launch,
+    /// and an alert from a window that is still coming up is a modal on nothing.
+    func open(with openWindow: OpenWindowAction) {
+        let paths = pending
+        pending = []
+        for path in paths {
+            let ref = DocumentRef(path: path)
+            if DocumentStore.shared.isOpen(ref) {
+                openWindow(value: ref)
+                continue
+            }
+            guard let host = Documents.shared.open(path: ref.path).host else { continue }
+            DocumentStore.shared.park(host, as: ref)
+            openWindow(value: ref)
+        }
     }
 }
 
@@ -176,7 +201,7 @@ extension CupboardHostApp {
     var fileCommands: some Commands {
         Group {
             CommandGroup(replacing: .newItem) {
-                Button("New") { openWindow(id: ThemeChooserView.windowId) }
+                Button("New") { OpenRequests.shared.showChooser() }
                     .keyboardShortcut("n", modifiers: .command)
                 Button("Open...") { openDocument() }
                     .keyboardShortcut("o", modifiers: .command)
@@ -189,8 +214,11 @@ extension CupboardHostApp {
                 // means anything is the one that picks a new file.
                 Button("Save As...") { saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
-                Button("Rename...") { model.renaming = true }
+                    .disabled(model == nil)
+                Button("Rename...") { model?.renaming = true }
+                    .disabled(model == nil)
                 Button("Move To...") { moveTo() }
+                    .disabled(model == nil)
             }
         }
     }
@@ -280,7 +308,6 @@ extension CupboardHostApp {
             openWindow(value: ref)
             return
         }
-        if DocumentStore.shared.raiseDefault(ref) { return }
 
         let outcome = Documents.shared.open(path: ref.path)
         guard let host = outcome.host else {
@@ -295,7 +322,7 @@ extension CupboardHostApp {
     /// it. The bundle it was on stays exactly as it is, which is what Save As
     /// means everywhere else.
     func saveAs() {
-        let target = model
+        guard let target = model else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.cupboardDeck]
         panel.canCreateDirectories = true
@@ -309,7 +336,7 @@ extension CupboardHostApp {
     /// The bundle itself into a folder the user picks, under the name it has.
     /// The popover's Where from the menu bar, for a move with no pointer.
     func moveTo() {
-        let target = model
+        guard let target = model else { return }
         let bundle = URL(fileURLWithPath: target.host.location())
         guard let folder = chooseFolder(startingAt: bundle.deletingLastPathComponent()) else { return }
         let moved = folder.appendingPathComponent(bundle.lastPathComponent)

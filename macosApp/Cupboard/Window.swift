@@ -313,7 +313,7 @@ final class EditorModel {
     @ObservationIgnored private var unsubscribe: (() -> Void)?
     @ObservationIgnored private var unsubscribeViewport: (() -> Void)?
 
-    init(host: EditorHost = EditorHost()) {
+    init(host: EditorHost) {
         self.host = host
         listen()
     }

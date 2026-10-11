@@ -158,7 +158,6 @@ import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.editor.SnapKind
-import io.github.xxfast.cupboard.editor
 import io.github.xxfast.cupboard.export.ExportedFile
 import io.github.xxfast.cupboard.export.toCupProject
 import io.github.xxfast.cupboard.play.PlayerController
@@ -1340,24 +1339,12 @@ class PlaySession internal constructor(
 class EditorHost(
     /**
      * The editor this host is a front end onto. Internal, not private: Swift
-     * talks to the view model through the methods below and never holds one, but
-     * [Documents] hands a host the editor it just opened, so one window can be
-     * on a deck the user picked rather than on this machine's default one.
-     *
+     * talks to the view model through the methods below and never holds one,
+     * and [Documents] is the only way to get a host at all. There is no default
+     * deck, so every window is on one the user picked, made or reopened.
      */
     internal val viewModel: EditorViewModel,
 ) {
-    /**
-     * A host on this machine's default deck, which is what the first window
-     * opens on. Deliberately the bundle the Compose Desktop shell opens: two
-     * front ends onto one document, not two apps.
-     *
-     * A secondary constructor rather than a default argument: ObjC export only
-     * emits the full initializer, so a defaulted parameter would leave Swift
-     * with no way to ask for the default deck.
-     */
-    constructor() : this(Cupboard.editor())
-
 
     /** The state the sidebar reads right now. Never stale: the canvas and this
      * are the same flow, so an edit made in Compose shows up here too. */
