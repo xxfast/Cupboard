@@ -136,7 +136,8 @@ data class Theme(
 /**
  * The themes every deck can reach: Keynote's five Basic ones, then Cupboard's own
  * eleven (the app's own look, four vivid gradients, two light ones, and the four
- * muted darks that came first).
+ * muted darks that came first), then the Developer shelf, looks lifted out of
+ * real decks for presenting code.
  *
  * The Basic five are Keynote's File > New set, and are Keynote's to the number:
  * backgrounds, faces, text-box and shape defaults and every layout are read out
@@ -350,18 +351,50 @@ object BuiltInThemes {
         ),
     )
 
+    /**
+     * The look of the "Kotlin to C#" deck, after the JetBrains IDE theme it took
+     * its name from: IDE panels as white islands on a pale graded backdrop, set in
+     * JetBrains Mono, with a Kotlin (lavender) and a C# (sky) editor layout and
+     * verdict chips for the style library. See `IslandsLayouts.kt`.
+     */
+    val JetBrainsIslandsLight: Theme = run {
+        val defaults: ElementDefaults = ElementDefaults(
+            textColor = 0xFF202020,
+            bodyColor = 0xFF383838,
+            textFont = TextFont.JetBrainsMono,
+            textSize = 42f,
+            textLineHeight = 1.32f,
+            shapeFill = 0xFFFFFFFF,
+            shapeStroke = 0x00000000,
+            shapeLabelColor = 0xFF202020,
+            codeTheme = CodeTheme.Notepad,
+            accent = 0xFF3574F0,
+        )
+        Theme(
+            name = "JetBrains Islands Light",
+            background = IslandsGrey,
+            defaults = defaults,
+            layouts = jetBrainsIslandsLightLayouts(defaults),
+            objectStyles = jetBrainsIslandsLightStyles(defaults),
+        )
+    }
+
     val basic: List<Theme> = listOf(BasicWhite, BasicBlack, ClassicWhite, White, Black)
 
     val cupboard: List<Theme> = listOf(
         Cupboard, Aurora, Sunset, Ocean, Candy, Paper, Mint, Graphite, Nord, Solarized, Terminal,
     )
 
-    val all: List<Theme> = basic + cupboard
+    /** Looks drawn for presenting code, lifted out of real decks. */
+    val developer: List<Theme> = listOf(JetBrainsIslandsLight)
+
+    val all: List<Theme> = basic + cupboard + developer
 
     /** How the new-deck chooser groups them, in the order its sidebar lists them. */
     val categories: List<ThemeCategory> = listOf(
         ThemeCategory(name = "Basic", themes = basic),
         ThemeCategory(name = "Cupboard", themes = cupboard),
+        ThemeCategory(name = "Developer", themes = developer),
     )
 }
 

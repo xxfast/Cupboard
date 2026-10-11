@@ -45,10 +45,10 @@ class ThemeTest {
 
     @Test
     fun theBuiltInsAreDistinctThemes() {
-        assertEquals(16, BuiltInThemes.all.size)
-        assertEquals(16, BuiltInThemes.all.map { it.name }.toSet().size)
-        assertEquals(BuiltInThemes.basic + BuiltInThemes.cupboard, BuiltInThemes.all)
-        assertEquals(listOf("Basic", "Cupboard"), BuiltInThemes.categories.map { it.name })
+        assertEquals(17, BuiltInThemes.all.size)
+        assertEquals(17, BuiltInThemes.all.map { it.name }.toSet().size)
+        assertEquals(BuiltInThemes.basic + BuiltInThemes.cupboard + BuiltInThemes.developer, BuiltInThemes.all)
+        assertEquals(listOf("Basic", "Cupboard", "Developer"), BuiltInThemes.categories.map { it.name })
     }
 
     @Test
@@ -83,6 +83,47 @@ class ThemeTest {
             val ids: List<String> = theme.layouts.flatMap { layout -> layout.elements.map { it.id } + layout.id }
             assertEquals(ids.size, ids.toSet().size, theme.name)
         }
+    }
+
+    /** Islands Light is the "Kotlin to C#" deck's slides as layouts, each on the backdrop that deck gave it. */
+    @Test
+    fun islandsLightIsOverTheDecksOwnLayouts() {
+        val theme: Theme = BuiltInThemes.JetBrainsIslandsLight
+        val titles: List<String> = listOf(
+            "Title", "Statement", "Big Fact", "Notes", "Kotlin Editor", "Kotlin Editor and Run",
+            "C# Editor", "C# Editor and Run", "Photos", "Blank",
+        )
+
+        assertEquals(titles, theme.layouts.map { it.title })
+        val ids: List<String> = theme.layouts.flatMap { layout -> layout.elements.map { it.id } + layout.id }
+        assertEquals(ids.size, ids.toSet().size)
+
+        // The card layouts sit on the deck's pink, the editors on their language's tint,
+        // and the rest on the theme's own grey.
+        val byTitle: Map<String, Slide> = theme.layouts.associateBy { it.title }
+        assertEquals(byTitle.getValue("Title").background, byTitle.getValue("Statement").background)
+        assertEquals(byTitle.getValue("Kotlin Editor").background, byTitle.getValue("Kotlin Editor and Run").background)
+        assertNotEquals(byTitle.getValue("Kotlin Editor").background, byTitle.getValue("C# Editor").background)
+        assertNull(byTitle.getValue("Notes").background)
+        assertTrue(theme.background is SlideBackground.Gradient)
+
+        // An editor's code placeholder is in the deck's light syntax palette and its language.
+        val kotlin: CodeElement = byTitle.getValue("Kotlin Editor").elements.filterIsInstance<CodeElement>().single()
+        val csharp: CodeElement = byTitle.getValue("C# Editor").elements.filterIsInstance<CodeElement>().single()
+        assertEquals(CodeTheme.Notepad, kotlin.theme)
+        assertEquals("kotlin" to "csharp", kotlin.language to csharp.language)
+        assertEquals(PlaceholderRole.Code, kotlin.role)
+
+        // The islands are the layout's own, so a slide inherits rather than edits them.
+        val editor: Slide = byTitle.getValue("Kotlin Editor")
+        assertEquals(3, editor.elements.filterIsInstance<ShapeElement>().count { it.placeholderRole == null })
+        assertEquals(TextFont.JetBrainsMono, theme.defaults.textFont)
+
+        // Its style library is the six plus the island, the tab and the three verdicts, one Warning.
+        val styles: List<String> = theme.objectStyles.map { it.name }
+        assertEquals(listOf("Island", "Tab", "Success", "Warning", "Error"), styles.takeLast(5))
+        assertEquals(1, styles.count { it == "Warning" })
+        assertEquals(styles.size, theme.objectStyles.map { it.id }.toSet().size)
     }
 
     /** Switching between Basic themes carries every line of a title card to its own slot. */

@@ -95,7 +95,7 @@ class RenderSnapshotTest {
         directory.mkdirs()
 
         for (theme in BuiltInThemes.all) {
-            val layout: Slide = theme.layouts.first { it.title == "Title & Body" || it.title == "Title and Bullets" }
+            val layout: Slide = theme.layouts.first { it.title in listOf("Title & Body", "Title and Bullets", "Notes") }
             val shape = shapeElement(ShapeKind.Rectangle, Frame(560f, 300f, 150f, 80f), theme.defaults)
             val slide: Slide = layout.copy(
                 elements = layout.elements + listOf(
@@ -115,6 +115,28 @@ class RenderSnapshotTest {
             }
             val png = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
             val out = File(directory, "${theme.name.lowercase()}.png")
+            out.writeBytes(png)
+            println("snapshot: ${out.absolutePath}")
+        }
+    }
+
+    /**
+     * Every layout of Islands Light, each on its own backdrop, for a human to hold
+     * against the deck it was lifted from (`docs/keynote/theme-chooser/JETBRAINS_ISLANDS_LIGHT.md`).
+     */
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Test
+    fun renderEveryIslandsLayoutToPng() {
+        val directory = File(System.getProperty("snapshots.out") ?: "build/snapshots", "islands")
+        directory.mkdirs()
+        val theme = BuiltInThemes.JetBrainsIslandsLight
+
+        for ((index, layout) in theme.layouts.withIndex()) {
+            val image = renderComposeScene(1920, 1080) {
+                SlideView(layout, background = layout.background ?: theme.background)
+            }
+            val png = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
+            val out = File(directory, "${index.toString().padStart(2, '0')}-${layout.slug()}.png")
             out.writeBytes(png)
             println("snapshot: ${out.absolutePath}")
         }

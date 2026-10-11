@@ -167,6 +167,7 @@ enum class TextFont {
     CanelaText,
     CanelaDeck,
     Graphik,
+    JetBrainsMono,
     ;
 
     /** The system's name for this face; null for the three generic families. */
@@ -178,6 +179,7 @@ enum class TextFont {
             CanelaText -> "Canela Text"
             CanelaDeck -> "Canela Deck"
             Graphik -> "Graphik"
+            JetBrainsMono -> "JetBrains Mono"
         }
 
     /** What a picker calls this face: the system's name, or the generic family's own. */
@@ -190,6 +192,7 @@ enum class TextFont {
             Sans, Serif, Monospace -> this
             HelveticaNeue, Graphik -> Sans
             Canela, CanelaText, CanelaDeck -> Serif
+            JetBrainsMono -> Monospace
         }
 }
 

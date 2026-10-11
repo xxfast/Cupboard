@@ -82,7 +82,7 @@ internal class LayoutInk(private val defaults: ElementDefaults) {
         frame: Frame,
         text: String,
         look: TextLook,
-        role: PlaceholderRole = PlaceholderRole.Body,
+        role: PlaceholderRole? = PlaceholderRole.Body,
     ): TextElement = TextElement(
         id = id,
         frame = frame,
@@ -105,8 +105,12 @@ internal class LayoutInk(private val defaults: ElementDefaults) {
     fun photo(id: String, frame: Frame): ImageElement =
         ImageElement(id = id, frame = frame, placeholder = "Photo", role = PlaceholderRole.Media)
 
-    fun layout(id: String, title: String, vararg elements: Element): Slide =
-        Slide(id = id, title = title, elements = elements.toList())
+    fun layout(
+        id: String,
+        title: String,
+        vararg elements: Element,
+        background: SlideBackground? = null,
+    ): Slide = Slide(id = id, title = title, elements = elements.toList(), background = background)
 }
 
 private const val Black: Long = 0xFF000000
