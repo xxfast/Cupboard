@@ -54,9 +54,12 @@ import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.visibleIndices
 import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.AlignmentOverlay
+import io.github.xxfast.cupboard.editor.DragSample
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.SnapLine
+import io.github.xxfast.cupboard.editor.alignmentOverlay
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
@@ -385,6 +388,15 @@ data class EditorState(
      * the document, which is where a saved deck keeps them.
      */
     @Transient val guideDrag: GuideDrag? = null,
+    /**
+     * What the canvas draws over the move or resize in flight: the guides the
+     * dragged frame sits on, the gaps and sizes it matches, and the readout that
+     * follows the pointer. Null between gestures. [marquee]'s rule once more:
+     * derived here from each preview, never from the gesture's own state.
+     *
+     * Transient for the same reason as [marquee].
+     */
+    @Transient val alignment: AlignmentOverlay? = null,
     /**
      * The text element the caret is in, null when nothing is being edited in
      * place. The typing itself rides the loop as ordinary element previews; this
@@ -814,6 +826,29 @@ data class EditorState(
      * are drawn only while something snaps to them, and nothing about them is
      * worth saving to a file.
      */
+    /**
+     * The frames a drag measures its spacing and sizes against: every element
+     * on the slide that is not moving and not hidden. [exclude] as in [snapTargets].
+     */
+    fun neighbourFrames(exclude: Set<String>): List<Frame> =
+        selectedSlide.elements.filter { it.id !in exclude && !it.hidden }.map { it.frame }
+
+    /**
+     * What to draw over the canvas drag that previewed [elements], null when the
+     * preview was no drag at all. Measured against the state the preview has
+     * already folded into, so the frames are the ones on screen.
+     */
+    fun alignmentFor(elements: List<Element>, drag: DragSample?): AlignmentOverlay? {
+        if (drag == null) return null
+        val ids: Set<String> = elements.map { it.id }.toSet()
+        return alignmentOverlay(
+            frame = boundingFrame(elements.map { it.frame }),
+            lines = snapTargets(ids),
+            others = neighbourFrames(ids),
+            drag = drag,
+        )
+    }
+
     fun snapTargets(exclude: Set<String> = emptySet()): List<SnapLine> {
         val width: Float = document.slideWidth
         val height: Float = document.slideHeight
@@ -1129,8 +1164,10 @@ sealed interface EditorEvent {
     data class UpdateElements(val elements: List<Element>) : EditorEvent
     /** An in-flight sample from a continuous control, [PreviewSlide]'s semantics
      * at element granularity: it folds into the document, makes no history entry
-     * and is undone wholesale by [CancelPreview]. */
-    data class PreviewElements(val elements: List<Element>) : EditorEvent
+     * and is undone wholesale by [CancelPreview]. [drag] is set by a canvas
+     * move or resize and nothing else: it is what the alignment overlay is
+     * drawn from, and a slider or a keystroke has no pointer to report. */
+    data class PreviewElements(val elements: List<Element>, val drag: DragSample? = null) : EditorEvent
     /**
      * Puts [element] on top of the selected slide and selects it, alone: what a
      * shape from the catalog, a text box or a code block comes down to, whichever

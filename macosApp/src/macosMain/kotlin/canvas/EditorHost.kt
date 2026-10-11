@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalForeignApi::class, ExperimentalComposeUiApi::class)
+@file:OptIn(ExperimentalForeignApi::class, ExperimentalComposeUiApi::class, ExperimentalCoroutinesApi::class)
 
 package io.github.xxfast.cupboard.canvas
 
@@ -183,8 +183,10 @@ import kotlinx.cinterop.useContents
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -193,12 +195,16 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Rect as SkiaRect
 import org.jetbrains.skia.Surface as SkiaSurface
@@ -1476,6 +1482,7 @@ class EditorHost(
                     onEndMarquee = viewModel::onEndMarquee,
                     onUpdateElements = viewModel::onUpdateElements,
                     onPreviewElements = viewModel::onPreviewElements,
+                    onPreviewDrag = viewModel::onPreviewDrag,
                     onPreviewCancel = viewModel::onCancelPreview,
                     editingElementId = state.editingElementId,
                     onBeginTextEdit = viewModel::onBeginTextEdit,
@@ -1519,6 +1526,19 @@ class EditorHost(
                     // in the presentation is the document's to work out, not the
                     // canvas's.
                     number = state.slideNumber(state.selectedSlide.id),
+                    // Rulers, the user's guides and what a drag snaps to: all
+                    // view state the loop holds, the Compose shell's wiring exactly.
+                    guides = state.document.guides,
+                    showRulers = state.showRulers,
+                    showGuides = state.showGuides,
+                    guideDrag = state.guideDrag,
+                    snapTargets = { ids -> state.snapTargets(ids) },
+                    neighbourFrames = { ids -> state.neighbourFrames(ids) },
+                    alignment = state.alignment,
+                    onPreviewGuide = viewModel::onPreviewGuide,
+                    onCommitGuide = viewModel::onCommitGuide,
+                    onRemoveGuide = viewModel::onRemoveGuide,
+                    onEndGuideDrag = viewModel::onEndGuideDrag,
                 )
             }
         }
@@ -4610,9 +4630,25 @@ class EditorHost(
      */
     fun onChange(callback: () -> Unit): () -> Unit {
         val job = scope.launch {
+            // A drag is a state per pointer sample, up to 120 a second, and each
+            // callback is the whole chrome and the menu bar rebuilt: sampled,
+            // that was most of the main thread and the dropped frames on the
+            // canvas. So mid-gesture states are held to one chrome pass per
+            // [PreviewChromeInterval], the last one always landing, and a
+            // settled state (the commit, a click) goes straight through. The
+            // canvas draws every sample regardless; only the chrome waits.
+            var lastPass: TimeMark? = null
             viewModel.states
                 .map { state -> state.copy(viewport = CanvasViewport()) }
                 .distinctUntilChanged()
+                .transformLatest { state ->
+                    if (state.isPreviewing) {
+                        val since: Duration = lastPass?.elapsedNow() ?: Duration.INFINITE
+                        if (since < PreviewChromeInterval) delay(PreviewChromeInterval - since)
+                    }
+                    lastPass = TimeSource.Monotonic.markNow()
+                    emit(state)
+                }
                 .collect { callback() }
         }
         // An inspector thumbnail lands after the pass that asked for it, and no
@@ -4981,3 +5017,6 @@ object Documents {
  * properties more easily than it type-checks an exported ObjC class.
  */
 class OpenOutcome(val host: EditorHost?, val error: String?)
+
+/** How often the chrome re-reads the editor while a gesture is streaming previews. */
+private val PreviewChromeInterval: Duration = 100.milliseconds

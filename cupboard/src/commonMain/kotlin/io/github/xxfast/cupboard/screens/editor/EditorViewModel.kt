@@ -25,6 +25,7 @@ import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.encodeToString
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
+import io.github.xxfast.cupboard.editor.DragSample
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeStep
@@ -313,6 +314,8 @@ class EditorViewModel(
     fun onCancelPreview() { send(CancelPreview) }
     fun onUpdateElements(elements: List<Element>) { send(UpdateElements(elements)) }
     fun onPreviewElements(elements: List<Element>) { send(PreviewElements(elements)) }
+    /** A canvas move or resize sample: [onPreviewElements] plus what the alignment overlay is drawn from. */
+    fun onPreviewDrag(elements: List<Element>, drag: DragSample) { send(PreviewElements(elements, drag)) }
     fun onBeginTextEdit(id: String) { send(BeginTextEdit(id)) }
     fun onEndTextEdit() { send(EndTextEdit) }
     fun onEditSelectionChanged(elementId: String, start: Int, end: Int) { send(EditSelectionChanged(elementId, start, end)) }

@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
@@ -124,6 +125,7 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.ancestorIds
 import io.github.xxfast.cupboard.document.backgroundCascade
+import io.github.xxfast.cupboard.document.boundingFrame
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
 import io.github.xxfast.cupboard.document.elementById
@@ -147,7 +149,8 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 private val Accent = Color(0xFF7F52FF)
-private val GuideYellow = Color(0xFFF5C518)
+// Keynote's guide yellow, sampled off its canvas.
+private val GuideYellow = Color(0xFFE1C023)
 
 /**
  * The placeholder annotation's one colour, outline and tag alike: white at a
@@ -216,11 +219,18 @@ private const val RulerMajorStep: Float = 100f
 /** How close a press has to come to a guide to grab it, in screen dp. */
 private const val GuideGrab: Float = 4f
 
+/**
+ * How near, in screen dp, a drag has to come to a line, an equal gap or a
+ * matching size before it settles on it. Keynote's, measured: six points at
+ * any zoom.
+ */
+private const val SnapThreshold: Float = 6f
+
 private sealed interface DragTarget {
     /**
-     * A move of the whole selection. [draggedId] is the one under the pointer:
-     * it is the frame that snaps, and the rest take the delta the snap settled on
-     * so the selection keeps its shape.
+     * A move of the whole selection. [draggedId] is the one under the pointer;
+     * the selection's bounding box is what snaps, and every element takes the
+     * delta the snap settled on so the selection keeps its shape.
      */
     data class Move(val draggedId: String) : DragTarget
     data class Resize(val elementId: String, val handle: Handle) : DragTarget
@@ -377,6 +387,20 @@ fun EditorCanvas(
     guideDrag: GuideDrag? = null,
     /** The lines a move may settle on, the dragged elements' own excluded. */
     snapTargets: (exclude: Set<String>) -> List<SnapLine> = { emptyList() },
+    /** The frames a move or resize matches its spacing and size against, the dragged elements' own excluded. */
+    neighbourFrames: (exclude: Set<String>) -> List<Frame> = { emptyList() },
+    /**
+     * What the drag in flight sits on, back from the loop: `EditorState.alignment`.
+     * Drawn, never computed here; a shell that passes nothing draws no guides.
+     */
+    alignment: AlignmentOverlay? = null,
+    /**
+     * A move or resize sample: the elements as [onPreviewElements] would carry
+     * them, plus the pointer and the gesture's kind, which is what [alignment]
+     * is derived from. `EditorViewModel.onPreviewDrag`. Falls back to a plain
+     * preview, so a shell that wires only the former still moves things.
+     */
+    onPreviewDrag: (List<Element>, DragSample) -> Unit = { elements, _ -> onPreviewElements(elements) },
     onPreviewGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
     onCommitGuide: (id: String?, axis: GuideAxis, position: Float) -> Unit = { _, _, _ -> },
     onRemoveGuide: (id: String) -> Unit = {},
@@ -395,10 +419,8 @@ fun EditorCanvas(
     val currentGuides by rememberUpdatedState(guides)
     val currentShowGuides by rememberUpdatedState(showGuides)
     val currentSnapTargets by rememberUpdatedState(snapTargets)
-    // The lines the move in flight has settled on, one per axis, null when that
-    // axis is free. Written from the drag the way the two center flags were.
-    var snappedX by remember { mutableStateOf<SnapLine?>(null) }
-    var snappedY by remember { mutableStateOf<SnapLine?>(null) }
+    val currentNeighbourFrames by rememberUpdatedState(neighbourFrames)
+    val currentOnPreviewDrag by rememberUpdatedState(onPreviewDrag)
     // Cursor only. These two are written from pointer handlers, which the canvas
     // may not do for anything it draws, but the cursor is the shell's to paint.
     var hovered by remember { mutableStateOf<ResizeDirection?>(null) }
@@ -536,6 +558,9 @@ fun EditorCanvas(
             val canvasScale = LocalCanvasScale.current
             val docDensity = LocalDensity.current.density
             fun toDoc(position: Offset) = Offset(position.x / docDensity, position.y / docDensity)
+            // Read from the drag handlers, which are set up once: the snap
+            // distance is a screen distance, so it has to follow the zoom.
+            val currentCanvasScale by rememberUpdatedState(canvasScale)
 
             // The topmost visible child of [group] under [p]. A group's rotation is
             // layered over its children's absolute frames, so [p] goes back through
@@ -777,24 +802,29 @@ fun EditorCanvas(
                             totalDy = 0f
                             marqueeOrigin = null
                             guideStart = null
-                            snappedX = null
-                            snappedY = null
                             resizing = null
                         }
 
-                        // The whole selection moved by this gesture: the dragged
-                        // element snaps to whatever the settings offer and hands the
-                        // delta it settled on to the rest. The guides ride that same
-                        // snap. The dragged elements' own lines are left out, or the
-                        // selection would stick to where it started.
-                        fun moved(draggedId: String): List<Element> {
-                            val start: Frame = startFrames[draggedId] ?: return emptyList()
-                            val snapped: SnapResult = snapFrame(
+                        // Keynote's snap distance is a few screen pixels whatever
+                        // the zoom, so the threshold is handed over in doc units
+                        // at the zoom of the moment.
+                        fun snapDistance(): Float = SnapThreshold / currentCanvasScale
+
+                        // The whole selection moved by this gesture, as one box:
+                        // its bounding frame snaps to whatever the settings offer
+                        // (a lone element is its own box) and hands the delta it
+                        // settled on to every element. The guides ride that same
+                        // snap. The dragged elements' own lines are left out, or
+                        // the selection would stick to where it started.
+                        fun moved(): List<Element> {
+                            if (startFrames.isEmpty()) return emptyList()
+                            val start: Frame = boundingFrame(startFrames.values.toList())
+                            val snapped: SnapResult = snapMove(
                                 frame = start.translate(totalDx, totalDy),
                                 lines = currentSnapTargets(startFrames.keys),
+                                others = currentNeighbourFrames(startFrames.keys),
+                                threshold = snapDistance(),
                             )
-                            snappedX = snapped.snappedX
-                            snappedY = snapped.snappedY
                             val dx: Float = snapped.frame.x - start.x
                             val dy: Float = snapped.frame.y - start.y
                             return startFrames.mapNotNull { (id, from) ->
@@ -819,12 +849,24 @@ fun EditorCanvas(
                             return at.x in 0f..slideWidth && at.y in 0f..slideHeight
                         }
 
+                        // A resize matches another element's width or height when
+                        // it comes within the snap distance of one: Keynote's
+                        // relative sizing. Only for an unrotated element, whose
+                        // drawn box is its frame.
                         fun resized(t: DragTarget.Resize): List<Element> {
                             val start: Frame = startFrame ?: return emptyList()
                             val element: Element = currentSlide.elementById(t.elementId)
                                 ?: return emptyList()
-                            val frame: Frame =
+                            val stretched: Frame =
                                 resizeFrame(start, startRotation, t.handle, totalDx, totalDy)
+                            val frame: Frame =
+                                if (startRotation != 0f) stretched
+                                else snapResize(
+                                    frame = stretched,
+                                    handle = t.handle,
+                                    others = currentNeighbourFrames(setOf(t.elementId)),
+                                    threshold = snapDistance(),
+                                )
                             return listOf(element.update(frame = frame))
                         }
 
@@ -885,9 +927,15 @@ fun EditorCanvas(
                                     Offset(dragAmount.x / docDensity, dragAmount.y / docDensity)
                                 totalDx += delta.x
                                 totalDy += delta.y
+                                // Where the pointer is on the slide, for the readout
+                                // that follows it.
+                                fun sample(resizing: Boolean): DragSample {
+                                    val at: Offset = toDoc(change.position)
+                                    return DragSample(at.x, at.y, resizing)
+                                }
                                 when (val t = target) {
-                                    is DragTarget.Move -> onPreviewElements(moved(t.draggedId))
-                                    is DragTarget.Resize -> onPreviewElements(resized(t))
+                                    is DragTarget.Move -> currentOnPreviewDrag(moved(), sample(resizing = false))
+                                    is DragTarget.Resize -> currentOnPreviewDrag(resized(t), sample(resizing = true))
                                     is DragTarget.GuideMove ->
                                         onPreviewGuide(t.id, t.axis, guidePosition(t.axis))
 
@@ -909,7 +957,7 @@ fun EditorCanvas(
                             // drag must never publish anything.
                             onDragEnd = {
                                 when (val t = target) {
-                                    is DragTarget.Move -> onUpdateElements(moved(t.draggedId))
+                                    is DragTarget.Move -> onUpdateElements(moved())
                                     is DragTarget.Resize -> onUpdateElements(resized(t))
                                     // What a half-swept marquee caught, it keeps.
                                     is DragTarget.Marquee -> onEndMarquee()
@@ -983,10 +1031,11 @@ fun EditorCanvas(
                 GuideLine(guideDrag.axis, guideDrag.position, canvasScale, alpha = 1f)
             }
 
-            // Alignment guides: drawn only while the move in flight sits on one,
-            // which is what makes the layout guides layout guides rather than lines.
-            snappedX?.let { SnapGuide(it, canvasScale) }
-            snappedY?.let { SnapGuide(it, canvasScale) }
+            // Alignment guides, spacing and size arrows and the readout: drawn
+            // only while a move or resize is in flight, from what the loop derived
+            // of it, which is what makes the layout guides layout guides rather
+            // than lines.
+            if (alignment != null) AlignmentOverlayView(alignment, canvasScale)
 
             // The secondary press inside an edit session, for a shell that draws
             // its own menu. It has to be caught on the field's own rectangle:
@@ -2196,65 +2245,90 @@ private fun GuideLine(axis: GuideAxis, position: Float, scale: Float, alpha: Flo
     }
 }
 
-/** What the chip over a snapped line says. Short: it sits on the slide. */
-private fun SnapLine.label(): String = when (kind) {
-    SnapKind.Center -> if (axis == GuideAxis.Vertical) "center x" else "center y"
-    SnapKind.Edges -> "edge"
-    SnapKind.Objects -> "object"
-    SnapKind.Guides -> "guide"
+/**
+ * Keynote's alignment overlay, over the move or resize in flight: a solid 1px
+ * yellow line across the slide for every guide the dragged box sits on, a
+ * double-headed arrow across every gap it makes equal to its neighbours', one
+ * over every element whose width or height a resize matches, and a dark pill
+ * beside the pointer reading the box's position (or, mid-resize, its size) in
+ * points. Screen space throughout, like every other editing affordance: lines,
+ * arrowheads and text hold their size at any zoom, positions stay in doc units.
+ */
+@Composable
+private fun AlignmentOverlayView(overlay: AlignmentOverlay, scale: Float) {
+    Canvas(Modifier.fillMaxSize()) {
+        val stroke: Float = (1f / scale).dp.toPx()
+        for (line in overlay.guides) {
+            val at: Float = line.position.dp.toPx()
+            if (line.axis == GuideAxis.Vertical) {
+                drawLine(GuideYellow, Offset(at, 0f), Offset(at, size.height), stroke)
+            } else {
+                drawLine(GuideYellow, Offset(0f, at), Offset(size.width, at), stroke)
+            }
+        }
+        for (mark in overlay.spacing) {
+            measure(mark.axis, mark.from.dp.toPx(), mark.to.dp.toPx(), mark.at.dp.toPx(), scale)
+        }
+        for (mark in overlay.sizes) {
+            val frame: Frame = mark.frame
+            // The arrow sits just off the element, clear of its selection ring.
+            val off: Float = (SizeArrowGap / scale).dp.toPx()
+            if (mark.axis == Axis.Horizontal) {
+                measure(mark.axis, frame.x.dp.toPx(), (frame.x + frame.width).dp.toPx(), frame.y.dp.toPx() - off, scale)
+            } else {
+                measure(mark.axis, frame.y.dp.toPx(), (frame.y + frame.height).dp.toPx(), frame.x.dp.toPx() - off, scale)
+            }
+        }
+    }
+
+    val drag: DragSample = overlay.drag
+    val frame: Frame = overlay.frame
+    val readout: String =
+        if (drag.resizing) "w: ${frame.width.roundToInt()} pt  h: ${frame.height.roundToInt()} pt"
+        else "x: ${frame.x.roundToInt()} pt  y: ${frame.y.roundToInt()} pt"
+    // Up and to the right of the pointer, where Keynote puts it, so the hand
+    // dragging never covers it.
+    Box(
+        Modifier
+            .offset((drag.pointerX + ReadoutDx / scale).dp, (drag.pointerY - ReadoutDy / scale).dp)
+            .background(ReadoutBackground, RoundedCornerShape((6f / scale).dp))
+            .padding(horizontal = (9f / scale).dp, vertical = (4f / scale).dp)
+    ) {
+        Text(
+            text = readout,
+            color = Color.White,
+            fontSize = (12f / scale).sp,
+            lineHeight = (14f / scale).sp,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
 
 /**
- * The alignment guide over the line a drag has settled on: 1px dashed yellow
- * running 12dp past both slide edges, with a label chip at the near edge. Screen
- * space, like every other editing affordance, so it holds its size at any zoom.
+ * One measuring arrow along [axis] from [from] to [to], at [at] across it: a
+ * line with a head at each end and a tick past each head, the way Keynote
+ * draws its relative spacing and sizing. Pixel arguments, screen-sized parts.
  */
-@Composable
-private fun SnapGuide(line: SnapLine, scale: Float) {
-    Canvas(Modifier.fillMaxSize()) {
-        val stroke: Float = (1f / scale).dp.toPx()
-        val over: Float = (12f / scale).dp.toPx()
-        val dash: PathEffect = PathEffect.dashPathEffect(
-            floatArrayOf((5f / scale).dp.toPx(), (4f / scale).dp.toPx()),
-        )
-        val at: Float = line.position.dp.toPx()
-        if (line.axis == GuideAxis.Vertical) {
-            drawLine(
-                color = GuideYellow,
-                start = Offset(at, -over),
-                end = Offset(at, size.height + over),
-                strokeWidth = stroke,
-                pathEffect = dash,
-            )
-        } else {
-            drawLine(
-                color = GuideYellow,
-                start = Offset(-over, at),
-                end = Offset(size.width + over, at),
-                strokeWidth = stroke,
-                pathEffect = dash,
-            )
-        }
-    }
+private fun DrawScope.measure(axis: Axis, from: Float, to: Float, at: Float, scale: Float) {
+    val stroke: Float = (1f / scale).dp.toPx()
+    val head: Float = (5f / scale).dp.toPx()
+    val tick: Float = (4f / scale).dp.toPx()
+    fun point(along: Float, across: Float): Offset =
+        if (axis == Axis.Horizontal) Offset(along, across) else Offset(across, along)
 
-    val chip: Modifier =
-        if (line.axis == GuideAxis.Vertical) {
-            Modifier.offset((line.position - 24f / scale).dp, (8f / scale).dp)
-        } else {
-            Modifier.offset((8f / scale).dp, (line.position - 18f / scale).dp)
-        }
-
-    Box(
-        chip
-            .background(GuideYellow, RoundedCornerShape((3f / scale).dp))
-            .padding(horizontal = (6f / scale).dp, vertical = (1f / scale).dp)
-    ) {
-        Text(
-            text = line.label(),
-            color = Color(0xFF17181C),
-            fontSize = (10f / scale).sp,
-            fontWeight = FontWeight.Bold,
-            fontFamily = FontFamily.Monospace,
-        )
+    drawLine(GuideYellow, point(from, at), point(to, at), stroke)
+    for ((end, inward) in listOf(from to 1f, to to -1f)) {
+        drawLine(GuideYellow, point(end, at - tick), point(end, at + tick), stroke)
+        drawLine(GuideYellow, point(end, at), point(end + inward * head, at - head / 2), stroke)
+        drawLine(GuideYellow, point(end, at), point(end + inward * head, at + head / 2), stroke)
     }
 }
+
+/** How far a size arrow sits off its element, in screen dp. */
+private const val SizeArrowGap: Float = 10f
+
+/** Where the readout sits from the pointer, in screen dp: to the right, and above by its own height plus a gap. */
+private const val ReadoutDx: Float = 8f
+private const val ReadoutDy: Float = 42f
+private val ReadoutBackground: Color = Color(0xF21C1C1E)

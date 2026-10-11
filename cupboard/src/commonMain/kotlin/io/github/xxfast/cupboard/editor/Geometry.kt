@@ -292,3 +292,216 @@ fun snapToSlideCenter(
     ),
     threshold = threshold,
 )
+
+/**
+ * How near two measurements have to be to read as the same one, in doc units.
+ * Snapping lands frames on exact values, so this only has to absorb float noise.
+ */
+private const val Coincident: Float = 0.01f
+
+/**
+ * One gap the overlay marks as equal to another: a double-headed arrow from
+ * [from] to [to] along [axis], drawn at [at] on the other axis, which is the
+ * middle of where the two frames bounding the gap overlap. Keynote's relative
+ * spacing indicator.
+ */
+data class SpacingMark(val axis: Axis, val from: Float, val to: Float, val at: Float)
+
+/**
+ * One frame whose extent along [axis] matches the frame being resized: a
+ * double-headed arrow over its top (width) or beside its left (height).
+ * Keynote's relative sizing indicator.
+ */
+data class SizeMark(val axis: Axis, val frame: Frame)
+
+/** What a canvas drag knows that its elements don't: where the pointer is, in doc units, and what the gesture is. */
+data class DragSample(val pointerX: Float, val pointerY: Float, val resizing: Boolean)
+
+/**
+ * Everything the canvas draws over a move or resize in flight, derived from the
+ * frames it previewed: the alignment guides, the equal-spacing and equal-size
+ * arrows, and the position (or size) readout that follows the pointer.
+ *
+ * [frame] is what the readout reports: the dragged element, or the selection's
+ * bounding box when several move together, which is also what the guides are
+ * measured against.
+ */
+data class AlignmentOverlay(
+    val frame: Frame,
+    val guides: List<SnapLine>,
+    val spacing: List<SpacingMark>,
+    val sizes: List<SizeMark>,
+    val drag: DragSample,
+)
+
+/** [frame] shifted along [axis]. */
+private fun Frame.along(axis: Axis, by: Float): Frame =
+    if (axis == Axis.Horizontal) translate(by, 0f) else translate(0f, by)
+
+private fun Frame.start(axis: Axis): Float = if (axis == Axis.Horizontal) x else y
+private fun Frame.extent(axis: Axis): Float = if (axis == Axis.Horizontal) width else height
+private fun Frame.end(axis: Axis): Float = start(axis) + extent(axis)
+
+/** Whether the two frames share any run on the axis across [axis]: a gap only reads as a gap between neighbours. */
+private fun Frame.besides(other: Frame, axis: Axis): Boolean {
+    val cross: Axis = if (axis == Axis.Horizontal) Axis.Vertical else Axis.Horizontal
+    return start(cross) < other.end(cross) && other.start(cross) < end(cross)
+}
+
+/** The middle of the run two neighbours share on the axis across [axis], where their gap's arrow sits. */
+private fun overlapMiddle(a: Frame, b: Frame, axis: Axis): Float {
+    val cross: Axis = if (axis == Axis.Horizontal) Axis.Vertical else Axis.Horizontal
+    return (maxOf(a.start(cross), b.start(cross)) + minOf(a.end(cross), b.end(cross))) / 2
+}
+
+/** The nearest of [others] wholly before [frame] along [axis] and beside it, if any. */
+private fun before(frame: Frame, others: List<Frame>, axis: Axis): Frame? =
+    others.filter { it.end(axis) <= frame.start(axis) + Coincident && it.besides(frame, axis) }
+        .maxByOrNull { it.end(axis) }
+
+/** The nearest of [others] wholly after [frame] along [axis] and beside it, if any. */
+private fun after(frame: Frame, others: List<Frame>, axis: Axis): Frame? =
+    others.filter { it.start(axis) >= frame.end(axis) - Coincident && it.besides(frame, axis) }
+        .minByOrNull { it.start(axis) }
+
+/** One way [frame] could sit at an equal distance from its neighbours: the shift that gets it there and the two gaps it would match. */
+private data class SpacingFit(val shift: Float, val marks: List<SpacingMark>)
+
+/**
+ * The equal-spacing positions near [frame] along [axis], Keynote's three: midway
+ * between the neighbour on each side, as far past the one before it as that one
+ * is from its own predecessor, and the mirror of that on the other side.
+ */
+private fun spacingFits(frame: Frame, others: List<Frame>, axis: Axis): List<SpacingFit> {
+    val fits: MutableList<SpacingFit> = mutableListOf()
+    val previous: Frame? = before(frame, others, axis)
+    val next: Frame? = after(frame, others, axis)
+
+    fun mark(a: Frame, b: Frame): SpacingMark =
+        SpacingMark(axis, a.end(axis), b.start(axis), overlapMiddle(a, b, axis))
+
+    if (previous != null && next != null) {
+        val gap: Float = (next.start(axis) - previous.end(axis) - frame.extent(axis)) / 2
+        val moved: Frame = frame.along(axis, previous.end(axis) + gap - frame.start(axis))
+        fits += SpacingFit(moved.start(axis) - frame.start(axis), listOf(mark(previous, moved), mark(moved, next)))
+    }
+    if (previous != null) {
+        val earlier: Frame? = before(previous, others, axis)
+        if (earlier != null) {
+            val gap: Float = previous.start(axis) - earlier.end(axis)
+            val moved: Frame = frame.along(axis, previous.end(axis) + gap - frame.start(axis))
+            fits += SpacingFit(moved.start(axis) - frame.start(axis), listOf(mark(earlier, previous), mark(previous, moved)))
+        }
+    }
+    if (next != null) {
+        val later: Frame? = after(next, others, axis)
+        if (later != null) {
+            val gap: Float = later.start(axis) - next.end(axis)
+            val moved: Frame = frame.along(axis, next.start(axis) - gap - frame.end(axis))
+            fits += SpacingFit(moved.start(axis) - frame.start(axis), listOf(mark(moved, next), mark(next, later)))
+        }
+    }
+    return fits
+}
+
+/**
+ * [snapFrame], then equal spacing on whichever axis came down free: a frame
+ * within [threshold] of sitting as far from one neighbour as that neighbour is
+ * from the next settles there, the way Keynote's relative spacing does. Lines
+ * win over spacing, so a frame on a guide stays on it. [others] are the frames
+ * left in place; [frame] is the one, or the bounding box of the ones, moving.
+ */
+fun snapMove(
+    frame: Frame,
+    lines: List<SnapLine>,
+    others: List<Frame>,
+    threshold: Float = 10f,
+): SnapResult {
+    val onLines: SnapResult = snapFrame(frame, lines, threshold)
+    var settled: Frame = onLines.frame
+    if (onLines.snappedX == null) {
+        spacingFits(settled, others, Axis.Horizontal)
+            .filter { abs(it.shift) <= threshold }
+            .minByOrNull { abs(it.shift) }
+            ?.let { settled = settled.along(Axis.Horizontal, it.shift) }
+    }
+    if (onLines.snappedY == null) {
+        spacingFits(settled, others, Axis.Vertical)
+            .filter { abs(it.shift) <= threshold }
+            .minByOrNull { abs(it.shift) }
+            ?.let { settled = settled.along(Axis.Vertical, it.shift) }
+    }
+    return SnapResult(settled, onLines.snappedX, onLines.snappedY)
+}
+
+/**
+ * [frame] mid-resize by [handle], its width and height each pulled to the
+ * nearest of [others]' when one is within [threshold]: Keynote's relative sizing.
+ * The side opposite the handle stays put, so a left handle grows leftwards. A
+ * corner handle matches both; an edge handle only the axis it moves.
+ */
+fun snapResize(frame: Frame, handle: Handle, others: List<Frame>, threshold: Float = 10f): Frame {
+    var settled: Frame = frame
+    if (handle.affectsLeft || handle.affectsRight) {
+        val width: Float? = others.map { it.width }
+            .filter { abs(it - frame.width) <= threshold }
+            .minByOrNull { abs(it - frame.width) }
+        if (width != null) {
+            settled = if (handle.affectsLeft) settled.copy(x = settled.x + settled.width - width, width = width)
+            else settled.copy(width = width)
+        }
+    }
+    if (handle.affectsTop || handle.affectsBottom) {
+        val height: Float? = others.map { it.height }
+            .filter { abs(it - frame.height) <= threshold }
+            .minByOrNull { abs(it - frame.height) }
+        if (height != null) {
+            settled = if (handle.affectsTop) settled.copy(y = settled.y + settled.height - height, height = height)
+            else settled.copy(height = height)
+        }
+    }
+    return settled
+}
+
+/**
+ * What to draw over [frame] where a drag has left it: every line of [lines] one
+ * of its edges or centers sits on, every gap it makes equal to a neighbouring
+ * one, and, mid-resize, every one of [others] whose width or height it matches.
+ * Pure recognition, no snapping: the frame is already where the gesture put it,
+ * and the marks say what it coincides with there.
+ */
+fun alignmentOverlay(
+    frame: Frame,
+    lines: List<SnapLine>,
+    others: List<Frame>,
+    drag: DragSample,
+): AlignmentOverlay {
+    val xs: List<Float> = listOf(frame.x, frame.centerX, frame.x + frame.width)
+    val ys: List<Float> = listOf(frame.y, frame.centerY, frame.y + frame.height)
+    val guides: List<SnapLine> = lines
+        .filter { line ->
+            val edges: List<Float> = if (line.axis == GuideAxis.Vertical) xs else ys
+            edges.any { abs(it - line.position) < Coincident }
+        }
+        // Two settings can offer the same line (the slide's center and an
+        // element centered on it): one line drawn, whichever offered it first.
+        .distinctBy { it.axis to it.position }
+
+    val spacing: List<SpacingMark> =
+        if (drag.resizing) emptyList()
+        else Axis.entries.flatMap { axis ->
+            spacingFits(frame, others, axis)
+                .filter { abs(it.shift) < Coincident }
+                .flatMap { it.marks }
+        }.distinct()
+
+    val sizes: List<SizeMark> =
+        if (!drag.resizing) emptyList()
+        else Axis.entries.flatMap { axis ->
+            val matching: List<Frame> = others.filter { abs(it.extent(axis) - frame.extent(axis)) < Coincident }
+            if (matching.isEmpty()) emptyList()
+            else (listOf(frame) + matching).map { SizeMark(axis, it) }
+        }
+
+    return AlignmentOverlay(frame, guides, spacing, sizes, drag)
+}

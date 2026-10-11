@@ -98,6 +98,7 @@ import io.github.xxfast.cupboard.document.withVersionAdded
 import io.github.xxfast.cupboard.document.withVersionMoved
 import io.github.xxfast.cupboard.document.withVersionRemoved
 import io.github.xxfast.cupboard.editor.SnapKind
+import io.github.xxfast.cupboard.editor.alignmentOverlay
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
@@ -944,13 +945,14 @@ fun EditorPresenter(
                 state.copy(
                     document = state.document.updateSlide(event.slide),
                     isPreviewing = false,
+                    alignment = null,
                 )
             }
 
             CancelPreview -> gestureBase
                 ?.let { base ->
                     gestureBase = null
-                    state.copy(document = base, isPreviewing = false)
+                    state.copy(document = base, isPreviewing = false, alignment = null)
                 }
                 ?: state
 
@@ -965,7 +967,8 @@ fun EditorPresenter(
                 .takeIf { it.isNotEmpty() }
                 ?.let { elements ->
                     if (gestureBase == null) gestureBase = state.document
-                    state.withElements(elements).copy(isPreviewing = true)
+                    val previewed: EditorState = state.withElements(elements)
+                    previewed.copy(isPreviewing = true, alignment = previewed.alignmentFor(elements, event.drag))
                 }
                 ?: state
 
@@ -975,7 +978,7 @@ fun EditorPresenter(
                     undone.push(gestureBase ?: state.document)
                     gestureBase = null
                     redone.clear()
-                    state.withElements(elements).copy(isPreviewing = false)
+                    state.withElements(elements).copy(isPreviewing = false, alignment = null)
                 }
                 ?: state
 

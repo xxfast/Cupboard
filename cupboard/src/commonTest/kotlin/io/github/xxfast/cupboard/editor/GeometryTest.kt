@@ -103,6 +103,130 @@ class GeometryTest {
         assertEquals(frame, far.frame)
     }
 
+    // Keynote's survey deck: three 308-squares in a row at y 386, gaps of 94 and 93.
+    private val square = Frame(404f, 386f, 308f, 308f)
+    private val circle = Frame(806f, 386f, 308f, 308f)
+    private val triangle = Frame(1207f, 386f, 308f, 308f)
+    private val move = DragSample(0f, 0f, resizing = false)
+    private val resize = DragSample(0f, 0f, resizing = true)
+
+    @Test
+    fun snapMoveSettlesOnAnEqualGapToTheNextPair() {
+        // The circle-triangle gap is 93; the square 6 short of matching it.
+        val near = square.copy(x = 404f - 6f)
+        val snapped = snapMove(near, emptyList(), listOf(circle, triangle))
+        assertEquals(806f - 93f - 308f, snapped.frame.x)
+        assertEquals(386f, snapped.frame.y)
+        assertNull(snapped.snappedX)
+    }
+
+    @Test
+    fun snapMoveCentersBetweenTwoNeighbours() {
+        // The square ends at 712 and the triangle starts at 1207: 495 less the
+        // circle's 308 leaves 93.5 a side, so the circle's x is 805.5.
+        val near = circle.copy(x = 810f)
+        val snapped = snapMove(near, emptyList(), listOf(square, triangle))
+        assertEquals(805.5f, snapped.frame.x)
+    }
+
+    @Test
+    fun snapMovePrefersALineOverAGap() {
+        val near = square.copy(x = 404f - 6f)
+        val line = SnapLine(GuideAxis.Vertical, 400f, SnapKind.Guides)
+        val snapped = snapMove(near, listOf(line), listOf(circle, triangle))
+        assertEquals(400f, snapped.frame.x)
+        assertEquals(line, snapped.snappedX)
+    }
+
+    @Test
+    fun snapMoveIgnoresAGapPastTheThreshold() {
+        val far = square.copy(x = 404f - 20f)
+        val snapped = snapMove(far, emptyList(), listOf(circle, triangle))
+        assertEquals(far, snapped.frame)
+    }
+
+    @Test
+    fun snapMoveOnlyCountsNeighboursBesideTheFrame() {
+        // Same x as before, but nothing shares a row with it: no gap to match.
+        val alone = square.copy(x = 404f - 6f, y = 900f)
+        val snapped = snapMove(alone, emptyList(), listOf(circle, triangle))
+        assertEquals(alone, snapped.frame)
+    }
+
+    @Test
+    fun snapResizeMatchesANeighboursWidthAndHoldsTheAnchor() {
+        val stretched = resizeFrame(Frame(100f, 100f, 200f, 100f), Handle.Right, dx = 104f, dy = 0f)
+        val matched = snapResize(stretched, Handle.Right, listOf(circle))
+        assertEquals(Frame(100f, 100f, 308f, 100f), matched)
+
+        // A left handle grows leftwards, so the right edge stays at 300.
+        val leftward = resizeFrame(Frame(100f, 100f, 200f, 100f), Handle.Left, dx = -104f, dy = 0f)
+        assertEquals(Frame(-8f, 100f, 308f, 100f), snapResize(leftward, Handle.Left, listOf(circle)))
+    }
+
+    @Test
+    fun snapResizeOnAnEdgeHandleLeavesTheOtherAxisAlone() {
+        // 305 tall is within reach of 308, but a right handle never touches height.
+        val frame = Frame(100f, 100f, 305f, 305f)
+        assertEquals(frame.copy(width = 308f), snapResize(frame, Handle.Right, listOf(circle)))
+        assertEquals(Frame(100f, 100f, 308f, 308f), snapResize(frame, Handle.BottomRight, listOf(circle)))
+    }
+
+    @Test
+    fun overlayNamesTheLinesTheFrameSitsOn() {
+        val centered = circle.copy(x = 806f, y = 386f)
+        val lines = listOf(
+            SnapLine(GuideAxis.Vertical, 960f, SnapKind.Center),
+            SnapLine(GuideAxis.Horizontal, 540f, SnapKind.Center),
+            SnapLine(GuideAxis.Horizontal, 540f, SnapKind.Objects),
+            SnapLine(GuideAxis.Vertical, 100f, SnapKind.Guides),
+        )
+        val overlay = alignmentOverlay(centered, lines, emptyList(), move)
+        // One line per position, however many settings offer it.
+        assertEquals(listOf(lines[0], lines[1]), overlay.guides)
+        assertTrue(overlay.spacing.isEmpty())
+    }
+
+    @Test
+    fun overlayMarksBothGapsWhenTheyAreEqual() {
+        // The square 93 short of the circle, as the circle is of the triangle.
+        val even = square.copy(x = 806f - 93f - 308f)
+        val overlay = alignmentOverlay(even, emptyList(), listOf(circle, triangle), move)
+        assertEquals(
+            listOf(
+                SpacingMark(Axis.Horizontal, 713f, 806f, 540f),
+                SpacingMark(Axis.Horizontal, 1114f, 1207f, 540f),
+            ),
+            overlay.spacing.sortedBy { it.from },
+        )
+        assertTrue(overlay.sizes.isEmpty())
+    }
+
+    @Test
+    fun spacingArrowSitsMidwayAlongTheOverlap() {
+        // The square 40 higher than its neighbours: the shared run is 386..654.
+        val raised = square.copy(x = 806f - 93f - 308f, y = 346f)
+        val overlay = alignmentOverlay(raised, emptyList(), listOf(circle, triangle), move)
+        assertEquals(520f, overlay.spacing.first { it.to == 806f }.at)
+        // The circle and triangle share their whole height, so theirs sits at 540.
+        assertEquals(540f, overlay.spacing.first { it.to == 1207f }.at)
+    }
+
+    @Test
+    fun overlayMarksMatchingSizesOnlyMidResize() {
+        val lines = emptyList<SnapLine>()
+        val resizing = alignmentOverlay(square, lines, listOf(circle, triangle), resize)
+        assertEquals(
+            listOf(square, circle, triangle),
+            resizing.sizes.filter { it.axis == Axis.Horizontal }.map { it.frame },
+        )
+        assertEquals(3, resizing.sizes.count { it.axis == Axis.Vertical })
+        assertTrue(resizing.spacing.isEmpty())
+
+        val moving = alignmentOverlay(square, lines, listOf(circle, triangle), move)
+        assertTrue(moving.sizes.isEmpty())
+    }
+
     @Test
     fun unrotatedElementHitTestsItsFrame() {
         val element = TextElement(frame = frame)

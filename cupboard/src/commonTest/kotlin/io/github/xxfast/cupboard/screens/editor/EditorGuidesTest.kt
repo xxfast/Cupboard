@@ -6,6 +6,8 @@ import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.editor.DragSample
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.SnapLine
 import kotlinx.coroutines.test.runTest
@@ -135,6 +137,36 @@ class EditorGuidesTest {
         val ended: EditorState = editor.await { it.guideDrag == null }
         assertTrue(ended.document.guides.isEmpty())
         assertFalse(ended.canUndo)
+    }
+
+    @Test
+    fun aDragPreviewCarriesItsOverlayAndTheCommitClearsIt() = runTest {
+        val editor = editor(document())
+        val a: ShapeElement = editor.await { true }.selectedSlide.elementById("a") as ShapeElement
+        // Onto the slide's vertical center line, 100 wide: x 910.
+        editor.onPreviewDrag(listOf(a.update(frame = a.frame.copy(x = 860f))), DragSample(900f, 150f, resizing = false))
+
+        val previewed: EditorState = editor.await { it.alignment != null }
+        val overlay = previewed.alignment!!
+        assertEquals(Frame(860f, 100f, 200f, 100f), overlay.frame)
+        assertTrue(overlay.guides.any { it.axis == GuideAxis.Vertical && it.position == 960f })
+        assertEquals(DragSample(900f, 150f, resizing = false), overlay.drag)
+        assertEquals(860f, previewed.selectedSlide.elementById("a")!!.frame.x)
+
+        editor.onUpdateElements(listOf(a.update(frame = a.frame.copy(x = 860f))))
+        val committed: EditorState = editor.await { !it.isPreviewing }
+        assertNull(committed.alignment)
+        assertTrue(committed.canUndo)
+    }
+
+    @Test
+    fun aPlainPreviewDrawsNoOverlay() = runTest {
+        val editor = editor(document())
+        val a: ShapeElement = editor.await { true }.selectedSlide.elementById("a") as ShapeElement
+        editor.onPreviewElements(listOf(a.update(frame = a.frame.copy(x = 860f))))
+
+        val previewed: EditorState = editor.await { it.isPreviewing }
+        assertNull(previewed.alignment)
     }
 
     @Test

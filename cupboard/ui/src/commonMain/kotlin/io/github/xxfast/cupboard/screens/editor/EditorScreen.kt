@@ -86,6 +86,7 @@ import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.editor.AlignEdge
+import io.github.xxfast.cupboard.editor.DragSample
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.EditorCanvas
 import io.github.xxfast.cupboard.theme.ChromeTheme
@@ -239,6 +240,7 @@ fun EditorScreen(
             onCancelPreview = viewModel::onCancelPreview,
             onUpdateElements = viewModel::onUpdateElements,
             onPreviewElements = viewModel::onPreviewElements,
+            onPreviewDrag = viewModel::onPreviewDrag,
             onInsertElement = viewModel::onInsertElement,
             onAddSlide = { layoutId -> viewModel.onAddSlide(state.selectedSlide.id, layoutId) },
             onAddLayout = viewModel::onAddLayout,
@@ -354,6 +356,8 @@ fun EditorView(
     onMoveBuild: (from: Int, to: Int) -> Unit = { _, _ -> },
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
+    /** A canvas move or resize sample, `EditorViewModel.onPreviewDrag`; a plain preview when a host has none. */
+    onPreviewDrag: (List<Element>, DragSample) -> Unit = { elements, _ -> onPreviewElements(elements) },
     /** A toolbar insertion, already sized and placed: the element goes on the
      * selected slide and takes the selection. */
     onInsertElement: (Element) -> Unit,
@@ -791,6 +795,9 @@ fun EditorView(
                                 showGuides = state.showGuides,
                                 guideDrag = state.guideDrag,
                                 snapTargets = { ids -> state.snapTargets(ids) },
+                                neighbourFrames = { ids -> state.neighbourFrames(ids) },
+                                alignment = state.alignment,
+                                onPreviewDrag = onPreviewDrag,
                                 onPreviewGuide = onPreviewGuide,
                                 onCommitGuide = onCommitGuide,
                                 onRemoveGuide = onRemoveGuide,
