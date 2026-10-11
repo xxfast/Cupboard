@@ -60,6 +60,8 @@ import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.previewOf
+import io.github.xxfast.cupboard.canvas.AssetImageCache
+import io.github.xxfast.cupboard.canvas.LocalAssetImages
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
 import io.github.xxfast.cupboard.canvas.LocalMediaPlayer
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
@@ -536,6 +538,13 @@ private fun EditorWindow(
     var screens: List<Rectangle> by remember { mutableStateOf(emptyList()) }
 
     val state: EditorState by viewModel.states.collectAsState()
+
+    // This deck's decoded images, one cache shared by the editor and every
+    // window playing the deck, so a show's first frame draws what the editor
+    // already decoded. Keyed on the generation: an image swapped on disk keeps
+    // its id, and only a new cache reads the new bytes. Left to the default, a
+    // process-wide cache would keep the picture decoded before the swap.
+    val images: AssetImageCache = remember(state.assetGeneration) { AssetImageCache() }
 
     val scope: CoroutineScope = rememberCoroutineScope()
 
@@ -1372,6 +1381,7 @@ private fun EditorWindow(
                 // composition over the deck, like it is there.
                 CompositionLocalProvider(
                     LocalAssetStore provides viewModel.assets,
+                    LocalAssetImages provides images,
                     LocalMediaPlayer provides mediaPlayer,
                 ) {
                     PresentationPlayer(
@@ -1391,59 +1401,61 @@ private fun EditorWindow(
                         target = dropFiles,
                     ),
             ) {
-                EditorScreen(
-                    viewModel = viewModel,
-                    onPlay = playSlideshow,
-                    onPlayPreview = previewSlide,
-                    onShowContextMenu = nativeMenu?.let { menu ->
-                        { elementId, positionInWindow ->
-                            showNativeMenu(
-                                popup = menu,
-                                parent = window.contentPane,
-                                density = density,
-                                positionInWindow = positionInWindow,
-                                sections = canvasContextSections(state, viewModel, elementId),
-                            )
-                        }
-                    },
-                    // The same popup: two menus can't be open at once anyway, and
-                    // the row's verbs carry its id, so nothing here has to guess
-                    // what the click did to the selection.
-                    onShowSlideContextMenu = nativeMenu?.let { menu ->
-                        { slideId, positionInWindow, onRename ->
-                            showNativeMenu(
-                                popup = menu,
-                                parent = window.contentPane,
-                                density = density,
-                                positionInWindow = positionInWindow,
-                                // In layout mode the row is a layout, so the verbs
-                                // are the layout ones. Rename's dialog belongs to
-                                // the editor view, which hands its opener in.
-                                sections = if (state.isEditingLayouts) {
-                                    layoutSections(viewModel, slideId, onRename)
-                                } else {
-                                    slideSections(
-                                        state = state,
-                                        viewModel = viewModel,
-                                        slideId = slideId,
-                                        includePaste = true,
-                                    )
-                                },
-                            )
-                        }
-                    },
-                    onInsertImage = insertImage,
-                    onReplaceImage = replaceImage,
-                    onInsertGallery = insertGalleryFiles,
-                    onAddGalleryImages = addGalleryImages,
-                    onInsertMovie = insertMovie,
-                    onInsertAudio = insertAudio,
-                    onInsertWebVideo = insertWebVideo,
-                    onReplaceMedia = replaceMedia,
-                    onChoosePoster = choosePoster,
-                    onChooseImage = chooseFillImage,
-                    onAddFontFile = addFontFile,
-                )
+                CompositionLocalProvider(LocalAssetImages provides images) {
+                    EditorScreen(
+                        viewModel = viewModel,
+                        onPlay = playSlideshow,
+                        onPlayPreview = previewSlide,
+                        onShowContextMenu = nativeMenu?.let { menu ->
+                            { elementId, positionInWindow ->
+                                showNativeMenu(
+                                    popup = menu,
+                                    parent = window.contentPane,
+                                    density = density,
+                                    positionInWindow = positionInWindow,
+                                    sections = canvasContextSections(state, viewModel, elementId),
+                                )
+                            }
+                        },
+                        // The same popup: two menus can't be open at once anyway, and
+                        // the row's verbs carry its id, so nothing here has to guess
+                        // what the click did to the selection.
+                        onShowSlideContextMenu = nativeMenu?.let { menu ->
+                            { slideId, positionInWindow, onRename ->
+                                showNativeMenu(
+                                    popup = menu,
+                                    parent = window.contentPane,
+                                    density = density,
+                                    positionInWindow = positionInWindow,
+                                    // In layout mode the row is a layout, so the verbs
+                                    // are the layout ones. Rename's dialog belongs to
+                                    // the editor view, which hands its opener in.
+                                    sections = if (state.isEditingLayouts) {
+                                        layoutSections(viewModel, slideId, onRename)
+                                    } else {
+                                        slideSections(
+                                            state = state,
+                                            viewModel = viewModel,
+                                            slideId = slideId,
+                                            includePaste = true,
+                                        )
+                                    },
+                                )
+                            }
+                        },
+                        onInsertImage = insertImage,
+                        onReplaceImage = replaceImage,
+                        onInsertGallery = insertGalleryFiles,
+                        onAddGalleryImages = addGalleryImages,
+                        onInsertMovie = insertMovie,
+                        onInsertAudio = insertAudio,
+                        onInsertWebVideo = insertWebVideo,
+                        onReplaceMedia = replaceMedia,
+                        onChoosePoster = choosePoster,
+                        onChooseImage = chooseFillImage,
+                        onAddFontFile = addFontFile,
+                    )
+                }
             }
         }
     }
@@ -1525,6 +1537,7 @@ private fun EditorWindow(
             // where a movie or a sound on the slide asks to be played.
             CompositionLocalProvider(
                 LocalAssetStore provides viewModel.assets,
+                LocalAssetImages provides images,
                 LocalMediaPlayer provides mediaPlayer,
             ) {
                 PresentationPlayer(
@@ -1555,7 +1568,10 @@ private fun EditorWindow(
             state = presenterState,
             onKeyEvent = showKeys(controller, close, swapDisplays),
         ) {
-            CompositionLocalProvider(LocalAssetStore provides viewModel.assets) {
+            CompositionLocalProvider(
+                LocalAssetStore provides viewModel.assets,
+                LocalAssetImages provides images,
+            ) {
                 // The show itself, playing at a pixel: the display follows a
                 // controller, and a controller has nothing to say until a
                 // player is composed against it. Behind the display and out of

@@ -13,6 +13,7 @@ import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.instantiating
 import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
+import io.github.xxfast.cupboard.document.watchBundle
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
 import io.github.xxfast.kstore.file.storeOf
@@ -328,6 +329,7 @@ private suspend fun editorOver(
         documentStore = store,
         themeStore = themes,
         assets = CupboardBundle.assetStore(bundle),
+        changes = watchBundle(bundle),
         dispatcher = dispatcher,
         location = bundle.toString(),
     )

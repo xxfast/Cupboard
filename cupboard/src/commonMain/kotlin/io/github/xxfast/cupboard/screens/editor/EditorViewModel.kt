@@ -6,6 +6,7 @@ import app.cash.molecule.RecompositionMode.Immediate
 import app.cash.molecule.SnapshotNotifier
 import app.cash.molecule.moleculeFlow
 import io.github.xxfast.cupboard.document.AssetStore
+import io.github.xxfast.cupboard.document.BundleChange
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramStep
@@ -167,6 +168,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -203,6 +208,16 @@ class EditorViewModel(
      * so it has no business in [EditorState].
      */
     val assets: AssetStore = InMemoryAssetStore(),
+    /**
+     * The bundle's changes from outside this editor, mapped onto
+     * [EditorEvent.Reload] and [EditorEvent.RefreshAssets] and merged into the
+     * event flow, so a reload is an ordinary event and the watcher runs exactly
+     * as long as the presenter does. Empty for a host with no bundle behind it.
+     *
+     * Not an on-method: what is on disk is the core's to notice, not a shell's
+     * to report, so the ObjC and .NET surface stays as it was.
+     */
+    private val changes: Flow<BundleChange> = emptyFlow(),
     dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
     /**
      * The bundle this editor is open on, as a path string; empty for a host with
@@ -226,6 +241,7 @@ class EditorViewModel(
         documentStore: KStore<Document>,
         themeStore: KStore<List<Theme>>? = null,
         assets: AssetStore = InMemoryAssetStore(),
+        changes: Flow<BundleChange> = emptyFlow(),
         dispatcher: CoroutineDispatcher = Dispatchers.Unconfined,
         location: String = "",
     ) : this(
@@ -233,6 +249,7 @@ class EditorViewModel(
         documentStore,
         themeStore,
         assets,
+        changes,
         dispatcher,
         location,
     )
@@ -265,7 +282,13 @@ class EditorViewModel(
     // sits unflushed until some unrelated snapshot write comes along.
     val states: StateFlow<EditorState> =
         moleculeFlow(Immediate, snapshotNotifier = SnapshotNotifier.External) {
-            EditorPresenter(initialState, events.receiveAsFlow(), documentStore, themeStore, assets)
+            EditorPresenter(
+                initialState = initialState,
+                events = merge(events.receiveAsFlow(), changes.map { change -> change.toEvent() }),
+                documentStore = documentStore,
+                themeStore = themeStore,
+                assets = assets,
+            )
         }.stateIn(scope, SharingStarted.Lazily, initialState)
 
     // A write the loop makes on its own, a store load landing in a LaunchedEffect
@@ -447,3 +470,8 @@ class EditorViewModel(
  * clipboard. Reads the current state, so it is whatever the last event left.
  */
 fun EditorViewModel.documentJson(): String = states.value.document.encodeToString()
+
+private fun BundleChange.toEvent(): EditorEvent = when (this) {
+    is BundleChange.Deck -> EditorEvent.Reload(document)
+    BundleChange.Assets -> EditorEvent.RefreshAssets
+}

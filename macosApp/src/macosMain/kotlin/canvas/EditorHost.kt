@@ -12,6 +12,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
@@ -1219,6 +1220,12 @@ class PlaySession internal constructor(
      * editor is on the slide in front of the audience.
      */
     private val assets: AssetStore,
+    /**
+     * The decoded images the editor that started this show is drawing from, so
+     * a picture already on the canvas is not decoded again for the audience, and
+     * one swapped on disk since an earlier show is not drawn from its old decode.
+     */
+    private val images: AssetImageCache,
 ) {
     /**
      * The controller both faces play on, published by the show's own composition.
@@ -1247,6 +1254,7 @@ class PlaySession internal constructor(
         }
         CompositionLocalProvider(
             LocalAssetStore provides assets,
+            LocalAssetImages provides images,
             LocalMediaPlayer provides (media ?: NoMediaPlayer),
         ) {
             PresentationPlayer(
@@ -1293,7 +1301,10 @@ class PlaySession internal constructor(
             val player: PlayerController? = controller
             val deck: Document by documents.collectAsState(initial = document)
             if (player != null) {
-                CompositionLocalProvider(LocalAssetStore provides assets) {
+                CompositionLocalProvider(
+                    LocalAssetStore provides assets,
+                    LocalAssetImages provides images,
+                ) {
                     PresenterView(
                         document = deck,
                         controller = player,
@@ -1363,7 +1374,8 @@ class EditorHost(
     // And so is the slide size, which changes the shape of an empty slide's
     // thumbnail without changing anything on it. And the deck fonts loaded when
     // it was drawn: a row drawn before a face landed is in the fallback, and
-    // nothing about the slide changes when the face arrives.
+    // nothing about the slide changes when the face arrives. And the asset
+    // generation: a file swapped on disk changes the picture and no slide at all.
     private class Thumbnail(
         val slide: Slide,
         val layout: Slide?,
@@ -1373,6 +1385,7 @@ class EditorHost(
         val slideWidth: Float,
         val slideHeight: Float,
         val fonts: Set<String>,
+        val generation: Int,
         val image: NSImage,
     )
 
@@ -1396,6 +1409,17 @@ class EditorHost(
      * this the strip would stay empty until the next edit. See [onChange].
      */
     private val thumbnailTick = MutableStateFlow(0)
+
+    /**
+     * The decoded images behind everything this host draws: the canvas, the
+     * navigator's rows and a show started from here. One cache rather than one
+     * each, because a row is drawn in a single frame and only shows what the
+     * canvas has already decoded. See [assetImages] for when it is replaced.
+     */
+    private var assetImages: AssetImageCache = AssetImageCache()
+
+    /** The [EditorState.assetGeneration] [assetImages] was decoded under. */
+    private var assetImagesGeneration: Int = 0
 
     private val scope = CoroutineScope(Dispatchers.Main)
 
@@ -1436,6 +1460,26 @@ class EditorHost(
     /** Where a right-click inside an edit session goes. Canvas pixels, x then y. */
     private var fieldMenuClick: ((Double, Double) -> Unit)? = null
 
+    /**
+     * [assetImages], replaced first if the bytes under `assets/` changed since it
+     * was made, and the inspector's thumbnails dropped with it: the ids are the
+     * same, so every cache keyed on them would go on answering with the picture
+     * that was there before. Whoever draws next decodes afresh.
+     *
+     * Asked rather than observed, so the canvas, a row and the inspector all turn
+     * over on whichever of them gets there first, and none can draw from the
+     * old cache after another has moved on.
+     */
+    private fun assetImages(): AssetImageCache {
+        val generation: Int = state.assetGeneration
+        if (generation == assetImagesGeneration) return assetImages
+        assetImagesGeneration = generation
+        assetImages = AssetImageCache()
+        assetThumbnails.clear()
+        assetThumbnailsPending.clear()
+        return assetImages
+    }
+
     /** The full-bleed content layer: the shell floats its glass panels over this. */
     val view: NSView = ComposeNSView {
         val state: EditorState by viewModel.states.collectAsState()
@@ -1458,6 +1502,9 @@ class EditorHost(
             // Where the slide's images come from. The deck's own store, so the
             // canvas draws the bytes this window's bundle is carrying.
             LocalAssetStore provides viewModel.assets,
+            // Decoded once per generation of those bytes: a refresh hands the
+            // canvas a fresh cache, which is what makes its images read again.
+            LocalAssetImages provides remember(state.assetGeneration) { assetImages() },
             // And its fonts, out of the same store.
             LocalDeckFonts provides rememberDeckFonts(state.document.fonts, viewModel.assets),
         ) {
@@ -2335,10 +2382,14 @@ class EditorHost(
     private fun assetThumbnail(assetId: String, width: Int): NSImage? {
         if (width <= 0) return null
         val key = "$assetId@$width"
+        val images: AssetImageCache = assetImages()
         assetThumbnails[key]?.let { return it }
         if (!assetThumbnailsPending.add(key)) return null
         scope.launch {
             val drawn: DrawnThumbnail? = decodeThumbnail(assetId, width)
+            // Read before the bytes were swapped: the turnover already cleared
+            // this key, and the decode it asked for since is the one to keep.
+            if (images !== assetImages) return@launch
             assetThumbnailsPending.remove(key)
             if (drawn == null) return@launch
             val png: ByteArray = drawn.png
@@ -4775,6 +4826,7 @@ class EditorHost(
         },
         isRehearsal = rehearsal,
         assets = viewModel.assets,
+        images = assetImages(),
     )
 
     /**
@@ -4788,6 +4840,7 @@ class EditorHost(
             0,
             onExit,
             assets = viewModel.assets,
+            images = assetImages(),
         )
 
     /**
@@ -4861,12 +4914,15 @@ class EditorHost(
         val fonts: Set<String> = deckFonts
             .mapNotNull { font -> font.assetId.takeIf { DeckFontCache.Shared.get(it) != null } }
             .toSet()
+        val images: AssetImageCache = assetImages()
+        val generation: Int = assetImagesGeneration
         val cached = thumbnails[slide.id]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
         val usable = cached != null && cached.width == width &&
             cached.slideWidth == slideWidth && cached.slideHeight == slideHeight &&
             ((cached.slide == slide && cached.layout == layout && cached.number == number &&
-                cached.background == background && cached.fonts == fonts) || state.isPreviewing)
+                cached.background == background && cached.fonts == fonts &&
+                cached.generation == generation) || state.isPreviewing)
         if (usable) return cached.image
 
         val height = (width * slideHeight / slideWidth).toInt()
@@ -4877,6 +4933,7 @@ class EditorHost(
             // are whatever has loaded, the same set the cache key holds.
             CompositionLocalProvider(
                 LocalAssetStore provides viewModel.assets,
+                LocalAssetImages provides images,
                 LocalDeckFonts provides DeckFontCache.Shared.families(deckFonts),
             ) {
                 SlideView(
@@ -4898,7 +4955,18 @@ class EditorHost(
         } ?: return null
 
         thumbnails[slide.id] =
-            Thumbnail(slide, layout, number, background, width, slideWidth, slideHeight, fonts, image)
+            Thumbnail(
+                slide,
+                layout,
+                number,
+                background,
+                width,
+                slideWidth,
+                slideHeight,
+                fonts,
+                generation,
+                image,
+            )
         return image
     }
 

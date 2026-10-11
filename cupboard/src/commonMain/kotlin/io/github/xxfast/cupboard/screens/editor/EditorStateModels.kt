@@ -269,6 +269,15 @@ data class EditorState(
      * Transient: a state read back off disk was written by that very save.
      */
     @Transient val savePending: Boolean = false,
+    /**
+     * A counter, bumped by [EditorEvent.RefreshAssets]: the bytes under the
+     * bundle's `assets/` changed while the ids pointing at them did not. Shells
+     * key their decoded-image caches on it, so a swapped file repaints instead of
+     * showing the picture that was decoded before it.
+     *
+     * Transient like [savePending]: it is a fact about this session, not the deck.
+     */
+    @Transient val assetGeneration: Int = 0,
     /** Whether the navigator is showing. Chrome visibility is view state, but it
      * is the editor's view state: every shell has the same three panels, and a
      * shell that kept its own copy would lose it on the next window it opens. */
@@ -1878,4 +1887,25 @@ sealed interface EditorEvent {
     /** Picks the Animate segment. [SelectFormatSegment]'s kind, with nothing to
      * refuse: every element offers all three. */
     data class SelectAnimateSegment(val segment: AnimateSegment) : EditorEvent
+    /**
+     * The deck as the file now holds it, arriving from the bundle watcher rather
+     * than from a person: another tool wrote `document.json`, a checkout swapped
+     * it, a script regenerated it.
+     *
+     * Replaces the document and resets history the way a fresh open does, since
+     * an undo that stepped back past it would be undoing someone else's edit. The
+     * selection stays where it still exists, and re-anchors by index where it
+     * doesn't, the way an undo's does.
+     *
+     * Ignored when it equals what autosave last wrote, which is this editor's own
+     * write coming back round through the watcher, or what the editor already
+     * shows, which is a write that changed nothing.
+     */
+    data class Reload(val document: Document) : EditorEvent
+    /**
+     * Bytes under `assets/` changed; nothing in the document did. Bumps
+     * [EditorState.assetGeneration] so renderers re-read their images. Chrome as
+     * far as the loop goes: no document, no selection, no history.
+     */
+    data object RefreshAssets : EditorEvent
 }

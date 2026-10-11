@@ -67,16 +67,21 @@ class AssetImageCache(private val capacity: Int = 24) {
  * A cache hit is the initial value rather than something a frame later, so an
  * image that is already decoded draws on the first composition and a slide never
  * flashes its placeholder on the way back to a picture it just drew.
+ *
+ * Keyed on the cache as well as the id: a file swapped on disk under the open
+ * bundle is the same id with new bytes, so the id alone never asks for a second
+ * read. The screen provides a fresh cache per `EditorState.assetGeneration`, and
+ * a fresh cache is what makes this decode again.
  */
 @Composable
 fun rememberAssetImage(assetId: String?): ImageBitmap? {
     val store: AssetStore = LocalAssetStore.current
     val cache: AssetImageCache = LocalAssetImages.current
-    var image: ImageBitmap? by remember(assetId, store) {
+    var image: ImageBitmap? by remember(assetId, store, cache) {
         mutableStateOf(assetId?.let { cache.get(it) })
     }
 
-    LaunchedEffect(assetId, store) {
+    LaunchedEffect(assetId, store, cache) {
         if (assetId == null || cache.get(assetId) != null) return@LaunchedEffect
         // Off the composition's thread: a full-slide photo is megabytes, and a
         // decode on the main thread is a dropped frame every time one lands.

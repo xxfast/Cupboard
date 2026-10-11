@@ -175,6 +175,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewObjectDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewSlideDrag
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReapplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RefreshAssets
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.Reload
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
@@ -710,6 +712,7 @@ private fun EditorEvent.isChrome(): Boolean = when (this) {
     is PreviewObjectDrag, EndObjectDrag,
     is SelectInspectorTab, CloseInspector, ToggleInspector,
     is SelectFormatSegment, is SelectAnimateSegment, is ToggleInspectorSection,
+    RefreshAssets,
         -> true
 
     else -> false
@@ -784,6 +787,10 @@ fun EditorPresenter(
     // needs, and nothing downstream (persistence, shells, restoration) wants them.
     val undone: ArrayDeque<Document> = remember { ArrayDeque() }
     val redone: ArrayDeque<Document> = remember { ArrayDeque() }
+
+    // What the file holds, as far as this editor knows. Read by the reduce and
+    // the autosave effect only, never by a composition, so plain fields do.
+    val onDisk: OnDisk = remember { OnDisk(opened = initialState.document) }
 
     LaunchedEffect(Unit) {
         // The document as it stood before the gesture in flight; null when no
@@ -1921,6 +1928,37 @@ fun EditorPresenter(
                 }
                 ?: state
 
+            // Equal to our own last write is that write coming back round
+            // through the watcher; equal to what is showing is a write that
+            // changed nothing. Structural equality either way: what comes
+            // off disk is never the instance that went on.
+            //
+            // Anything else is somebody else's deck now, so history goes the
+            // way it goes on a fresh open: an undo past it would put back an
+            // edit made to a file that is no longer there. Element ids are
+            // pruned rather than left to dangle the way undo leaves them, since
+            // no redo is ever bringing them back.
+            is Reload ->
+                if (event.document == onDisk.written || event.document == state.document) state
+                else {
+                    undone.clear()
+                    redone.clear()
+                    gestureBase = null
+                    // The file is this deck now, not our last write: a checkout
+                    // back to that one is a change like any other.
+                    onDisk.opened = event.document
+                    onDisk.written = null
+                    val reloaded: EditorState =
+                        state.restoring(event.document, state.selectedSlideIndex())
+                    reloaded.copy(
+                        selectedElementIds = reloaded.selectedElementIds
+                            .filter { id -> reloaded.selectedSlide.elementById(id) != null },
+                        isPreviewing = false,
+                    )
+                }
+
+            RefreshAssets -> state.copy(assetGeneration = state.assetGeneration + 1)
+
             ToggleSidebar -> state.copy(sidebarOpen = !state.sidebarOpen)
 
             ToggleObjectList -> state.copy(objectListOpen = !state.objectListOpen)
@@ -2393,14 +2431,14 @@ fun EditorPresenter(
                 // the same state the edit arrives in: a shell must never paint a
                 // frame showing the edit and claiming it is already written. The
                 // effect below lowers it once the bytes are down.
-                savePending = reduced.savePending || reduced.document !== state.document,
+                //
+                // Except for a reload: that document is the file, so there is
+                // nothing in flight, and the autosave below sees it as opened.
+                savePending = event !is Reload &&
+                    (reduced.savePending || reduced.document !== state.document),
             )
         }
     }
-
-    // The document as it was opened. Writing that back would rewrite the file on
-    // a plain open, which is how a good file turns into a bad one after a crash.
-    val opened: Document = remember { initialState.document }
 
     /*
      * Autosave: the whole document, written to whatever store the host opened
@@ -2422,7 +2460,7 @@ fun EditorPresenter(
         // document we opened, and that has to be written: the edit it undoes is
         // already on disk. History being non-empty is what tells the two apart.
         val untouched = undone.isEmpty() && redone.isEmpty()
-        if (document === opened && untouched) {
+        if (document === onDisk.opened && untouched) {
             // A cancelled gesture puts the opened document back without ever
             // reaching disk, so nothing else would take the flag down.
             if (state.savePending) state = state.copy(savePending = false)
@@ -2430,6 +2468,7 @@ fun EditorPresenter(
         }
         delay(AutosaveDebounce)
         documentStore.set(document)
+        onDisk.written = document
         if (state.document === document) state = state.copy(savePending = false)
     }
 
@@ -2458,3 +2497,15 @@ fun EditorPresenter(
 
     return state
 }
+
+/**
+ * The two decks the presenter knows to be on disk already, so neither is written
+ * back nor read back in as news.
+ *
+ * [opened] is the deck the editor was opened on or last reloaded from: writing it
+ * back would rewrite the file on a plain open, which is how a good file turns
+ * into a bad one after a crash. [written] is the deck autosave last put down,
+ * null before the first write and after a reload: the watcher hands that one
+ * straight back, and it is our own edit, not someone else's.
+ */
+private class OnDisk(var opened: Document, var written: Document? = null)

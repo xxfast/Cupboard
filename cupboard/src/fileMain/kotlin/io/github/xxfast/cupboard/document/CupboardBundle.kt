@@ -53,7 +53,10 @@ object CupboardBundle {
     }
 
     /** The bytes inside [bundle]. The folder appears on the first write, see [FileAssetStore]. */
-    fun assetStore(bundle: Path): FileAssetStore = FileAssetStore(Path(bundle, ASSETS_DIRECTORY))
+    fun assetStore(bundle: Path): FileAssetStore = FileAssetStore(assetsDirectory(bundle))
+
+    /** Where [bundle]'s bytes live, whether or not anything has been written there yet. */
+    internal fun assetsDirectory(bundle: Path): Path = Path(bundle, ASSETS_DIRECTORY)
 
     /**
      * Whether [path] is something this app can open: a folder with a deck in it.
@@ -148,5 +151,6 @@ object CupboardBundle {
         SystemFileSystem.atomicMove(legacy, documentFile(bundle))
     }
 
-    private fun documentFile(bundle: Path): Path = Path(bundle, DOCUMENT_FILE_NAME)
+    /** Where [bundle]'s deck lives. */
+    internal fun documentFile(bundle: Path): Path = Path(bundle, DOCUMENT_FILE_NAME)
 }
