@@ -27,7 +27,7 @@ Shipped cores whose surfaces never landed, mostly parked on the bundle format, w
 - [x] Image fills on shapes and image slide backgrounds. (`2a38e52`, needs a visual pass. PPTX and the CuP export fall back to the colour underneath.)
 - [x] Real fonts: family picker over the fonts the OS has, embedded in the bundle so a deck renders the same on another machine; generic Sans/Serif/Monospace stay as the fallbacks. (`a909015`, needs a visual pass. Embedding is by Add Font File: installed fonts are not copied into the bundle on their own, for licensing and because the JVM can't find their files. Android always falls back.)
 - [x] Diagram step authoring: the Steps section the Code inspector got (`8e6ddd7`), for `DiagramStep`. (`34e726a`, needs a visual pass)
-- [x] Inline links: link ranges inside a text box, not just whole-box. (`6f26902`, needs a visual pass. Applying a link ends the edit session, and Cmd+K opens the inspector without focusing the URL field. PPTX and the CuP export drop range links. Found on the way: a box linked to a slide rather than a URL isn't underlined.)
+- [x] Inline links: link ranges inside a text box, not just whole-box. (`6f26902`, needs a visual pass. Applying a link ends the edit session, and Cmd+K opens the inspector without focusing the URL field. PPTX and the CuP export drop range links.)
 
 ## 0.3.0: Editing debts
 

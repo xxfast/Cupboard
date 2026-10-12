@@ -104,6 +104,7 @@ import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.colorMatrix
 import io.github.xxfast.cupboard.document.imageSourceRect
@@ -298,14 +299,17 @@ private const val ListMarkerGap: Float = 6f
  * before it, to the pixel.
  */
 internal fun TextElement.textStyle(deckFonts: DeckFontFamilies): TextStyle {
+    // Any target, not just the URL string: a box linked to a slide is as much a
+    // link as one that opens a page.
+    val linked: Boolean = resolvedLink() != null
     val decorations: List<TextDecoration> = buildList {
-        if (underline || link != null) add(TextDecoration.Underline)
+        if (underline || linked) add(TextDecoration.Underline)
         if (strikethrough) add(TextDecoration.LineThrough)
     }
 
     // A link recolours the box only where the box never said otherwise: a colour
     // that was chosen outlives the link, and the underline carries it instead.
-    val drawn: Long = if (link != null && color == DefaultTextColor) LinkColor else color
+    val drawn: Long = if (linked && color == DefaultTextColor) LinkColor else color
 
     return TextStyle(
         color = drawn.toComposeColor(),
