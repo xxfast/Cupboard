@@ -768,6 +768,8 @@ data class CodeElement(
     val language: String = "kotlin",
     val fontSize: Float = 14f,
     val theme: CodeTheme = CodeTheme.Atom,
+    /** The theme's 1pt outline. On, and so every document written before this field, keeps it. */
+    val showBorder: Boolean = true,
     /** Gutter numbers count physical lines, so they match what was typed. */
     val showLineNumbers: Boolean = false,
     /** Off, and a long line runs out of the box rather than reflowing under itself. */

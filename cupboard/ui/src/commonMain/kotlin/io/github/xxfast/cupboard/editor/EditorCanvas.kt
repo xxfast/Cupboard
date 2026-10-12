@@ -80,10 +80,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import io.github.xxfast.cupboard.canvas.CodeChrome
-import io.github.xxfast.cupboard.canvas.CodeCorner
 import io.github.xxfast.cupboard.canvas.CodeGutterGap
 import io.github.xxfast.cupboard.canvas.CodeLineHeight
-import io.github.xxfast.cupboard.canvas.CodePadding
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.LocalDeckFonts
@@ -102,6 +100,7 @@ import io.github.xxfast.cupboard.canvas.TerminalPadding
 import io.github.xxfast.cupboard.canvas.TerminalTitleBarView
 import io.github.xxfast.cupboard.canvas.alignment
 import io.github.xxfast.cupboard.canvas.chrome
+import io.github.xxfast.cupboard.canvas.codeChrome
 import io.github.xxfast.cupboard.canvas.highlightCode
 import io.github.xxfast.cupboard.canvas.textStyle
 import io.github.xxfast.cupboard.canvas.title
@@ -1561,10 +1560,7 @@ private fun CodeEditor(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(chrome.background, CodeCorner)
-                .border(1.dp, chrome.border, CodeCorner)
-                .clip(CodeCorner)
-                .padding(CodePadding)
+                .codeChrome(element)
         ) {
             Row {
                 // Counted off the field rather than off the element, so a line

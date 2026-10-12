@@ -367,18 +367,30 @@ private fun StyleBody(
             onChooseImage = onChooseImage,
         )
 
-        is CodeElement -> DropdownField(
-            label = "Theme",
-            value = primary.theme,
-            options = CodeTheme.entries.map { theme -> theme to theme.name },
-            enabled = !primary.locked,
-            onPick = { theme ->
-                elements.formatCode { it.copy(theme = theme) }
-                    .takeIf { it.isNotEmpty() }
-                    ?.let(onUpdate)
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        is CodeElement -> {
+            DropdownField(
+                label = "Theme",
+                value = primary.theme,
+                options = CodeTheme.entries.map { theme -> theme to theme.name },
+                enabled = !primary.locked,
+                onPick = { theme ->
+                    elements.formatCode { it.copy(theme = theme) }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let(onUpdate)
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            AppearanceRow(
+                label = "Border",
+                checked = primary.showBorder,
+                onToggle = if (primary.locked) null else ({ on ->
+                    elements.formatCode { it.copy(showBorder = on) }
+                        .takeIf { it.isNotEmpty() }
+                        ?.let(onUpdate)
+                }),
+            )
+        }
 
         is TerminalElement -> AppearanceRow(
             label = "Show Title Bar",

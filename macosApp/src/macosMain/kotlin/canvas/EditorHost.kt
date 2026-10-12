@@ -790,6 +790,7 @@ class CodeProps(
     val language: String,
     /** Spelled the way [CodeTheme] spells it, one of `codeThemes()`. */
     val theme: String,
+    val showBorder: Boolean,
     val fontSize: Float,
     val showLineNumbers: Boolean,
     val wrap: Boolean,
@@ -3262,6 +3263,7 @@ class EditorHost(
         CodeProps(
             language = code.language,
             theme = code.theme.name,
+            showBorder = code.showBorder,
             fontSize = code.fontSize,
             showLineNumbers = code.showLineNumbers,
             wrap = code.wrap,
@@ -3382,6 +3384,10 @@ class EditorHost(
     fun setCodeTheme(theme: String) {
         val picked: CodeTheme = CodeTheme.entries.firstOrNull { it.name == theme } ?: return
         formatCodeBlocks { it.copy(theme = picked) }
+    }
+
+    fun setCodeBorder(enabled: Boolean) {
+        formatCodeBlocks { it.copy(showBorder = enabled) }
     }
 
     /** Floors at a point, like the text box's: code with no size can't be read. */

@@ -67,6 +67,7 @@ fun Element.applyingStyle(source: Element): Element = when {
         opacity = source.opacity,
         fontSize = source.fontSize,
         theme = source.theme,
+        showBorder = source.showBorder,
         showLineNumbers = source.showLineNumbers,
         wrap = source.wrap,
     )

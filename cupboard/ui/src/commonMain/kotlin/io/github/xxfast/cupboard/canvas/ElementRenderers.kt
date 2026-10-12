@@ -1035,6 +1035,19 @@ internal val CodeCorner = RoundedCornerShape(8.dp)
 /** The block's inset, shared with the field so the first character sits still. */
 internal val CodePadding = 12.dp
 
+/** The block code sits on: its theme's fill, its outline if it keeps one, and its inset. */
+internal fun Modifier.codeChrome(element: CodeElement): Modifier {
+    val chrome: CodeChrome = element.theme.chrome
+    val outline: Modifier =
+        if (element.showBorder) Modifier.border(1.dp, chrome.border, CodeCorner)
+        else Modifier
+
+    return background(chrome.background, CodeCorner)
+        .then(outline)
+        .clip(CodeCorner)
+        .padding(CodePadding)
+}
+
 /**
  * A code block: its theme's chrome, its numbers, and its highlighted text.
  *
@@ -1057,10 +1070,7 @@ private fun CodeElementView(element: CodeElement, step: CodeStep? = null) {
     Box(
         modifier = Modifier
             .size(element.frame.width.dp, element.frame.height.dp)
-            .background(chrome.background, CodeCorner)
-            .border(1.dp, chrome.border, CodeCorner)
-            .clip(CodeCorner)
-            .padding(CodePadding),
+            .codeChrome(element),
     ) {
         if (step != null) {
             AnimatedCodeLines(element, step)

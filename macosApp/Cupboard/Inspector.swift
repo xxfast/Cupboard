@@ -1320,6 +1320,10 @@ extension EditorView {
             stylePopup(themes, selected: themes.firstIndex(of: code.theme) ?? 0) { index in
                 host.setCodeTheme(theme: themes[index])
             }
+
+            checkRow("Border", on: code.showBorder) {
+                host.setCodeBorder(enabled: !code.showBorder)
+            }
         }
     }
 

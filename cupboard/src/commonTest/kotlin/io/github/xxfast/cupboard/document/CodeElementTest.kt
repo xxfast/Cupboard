@@ -44,6 +44,7 @@ class CodeElementTest {
 
         val element = loadedDocument(json).slides.single().elements.single() as CodeElement
         assertEquals(CodeTheme.Atom, element.theme)
+        assertTrue(element.showBorder)
         assertFalse(element.showLineNumbers)
         assertFalse(element.wrap)
         assertEquals("fun main() {}", element.code)
@@ -58,6 +59,7 @@ class CodeElementTest {
                         CodeElement(
                             frame = frame,
                             theme = CodeTheme.Monokai,
+                            showBorder = false,
                             showLineNumbers = true,
                             wrap = true,
                         ),
@@ -80,6 +82,7 @@ class CodeElementTest {
             fontSize = 22f,
             opacity = 0.5f,
             theme = CodeTheme.Matrix,
+            showBorder = false,
             showLineNumbers = true,
             wrap = true,
         )
@@ -87,6 +90,7 @@ class CodeElementTest {
 
         val styled = target.applyingStyle(source) as CodeElement
         assertEquals(CodeTheme.Matrix, styled.theme)
+        assertFalse(styled.showBorder)
         assertTrue(styled.showLineNumbers)
         assertTrue(styled.wrap)
         assertEquals(22f, styled.fontSize)

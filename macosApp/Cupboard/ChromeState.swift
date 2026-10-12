@@ -669,6 +669,7 @@ struct CodeFormat {
     /// always one of `codeLanguages()` exactly.
     let language: String
     let theme: String
+    let showBorder: Bool
     let size: Double
     let showLineNumbers: Bool
     let wrap: Bool
@@ -693,6 +694,7 @@ struct CodeFormat {
     init(_ props: CodeProps) {
         language = props.language
         theme = props.theme
+        showBorder = props.showBorder
         size = Double(props.fontSize)
         showLineNumbers = props.showLineNumbers
         wrap = props.wrap
