@@ -55,7 +55,7 @@ extension EditorView {
         return ScrollView {
             // Identified by element, so a group opening reads as its children
             // arriving rather than every row below changing in place. Eager,
-            // unlike the navigator's: a lazy stack ignores zIndex, and the row
+            // like the navigator's: a lazy stack ignores zIndex, and the row
             // on the move has to ride over the ones after it. A slide's objects
             // are few enough that laziness buys nothing.
             VStack(alignment: .leading, spacing: 0) {

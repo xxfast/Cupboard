@@ -1389,20 +1389,51 @@ class EditorHost(
     // it was drawn: a row drawn before a face landed is in the fallback, and
     // nothing about the slide changes when the face arrives. And the asset
     // generation: a file swapped on disk changes the picture and no slide at all.
-    private class Thumbnail(
+    private data class ThumbnailInputs(
         val slide: Slide,
         val layout: Slide?,
         val number: Int?,
         val background: SlideBackground?,
-        val width: Int,
         val slideWidth: Float,
         val slideHeight: Float,
         val fonts: Set<String>,
         val generation: Int,
-        val image: NSImage,
     )
 
+    private class Thumbnail(val inputs: ThumbnailInputs, val image: NSImage)
+
+    /**
+     * By slide and width, since one slide is drawn at more than one: a layout
+     * is a navigator row in layout mode and the Document panel's card at once,
+     * and a cache keyed on the slide alone would have each undo the other.
+     */
     private val thumbnails = mutableMapOf<String, Thumbnail>()
+
+    /**
+     * A row to draw: read off the document when its turn comes, not when it was
+     * asked for. [inChrome] is who to tell when it lands: a navigator row hears
+     * through [onThumbnailsChange], a layout's card is part of the chrome.
+     */
+    private class ThumbnailRequest(
+        val id: String,
+        val width: Int,
+        val isLayout: Boolean,
+        val inChrome: Boolean,
+    )
+
+    /**
+     * The rows asked for and not drawn yet, oldest first, keyed like [thumbnails].
+     * A miss waits here rather than being drawn where it was asked for: that is
+     * a SwiftUI body, and the navigator builds every row, so drawing in it is
+     * the window frozen for as long as the deck has slides.
+     */
+    private val thumbnailsPending = mutableMapOf<String, ThumbnailRequest>()
+
+    /** The pass working through [thumbnailsPending], while there is one. */
+    private var thumbnailsDrawing: Job? = null
+
+    /** Bumped when navigator rows have been drawn. See [onThumbnailsChange]. */
+    private val rowThumbnailTick = MutableStateFlow(0)
 
     /**
      * Inspector thumbnails (the gallery strip, picture fills and backgrounds), by
@@ -4795,6 +4826,17 @@ class EditorHost(
     }
 
     /**
+     * Registers [callback], fired when navigator rows asked for through
+     * [thumbnail] have been drawn, and returns the unsubscribe. Apart from
+     * [onChange] for the reason the viewport is: a deck opening is a row landing
+     * every few milliseconds, and nothing but the rows shows it.
+     */
+    fun onThumbnailsChange(callback: () -> Unit): () -> Unit {
+        val job = scope.launch { rowThumbnailTick.drop(1).collect { callback() } }
+        return { job.cancel() }
+    }
+
+    /**
      * Registers [callback], fired on the main thread when the canvas is
      * right-clicked, carrying the element under it or null for empty slide space.
      * The loop has already been told by then; this is only the shell's cue to
@@ -4932,22 +4974,22 @@ class EditorHost(
      * purpose: one render costs 20-30ms, and paying that per pointer sample ate
      * three quarters of the main thread. The commit clears [EditorState.isPreviewing]
      * and the row catches up then, one render per gesture.
+     *
+     * Null now and an image later, like the inspector's: a miss answers with
+     * whatever the cache holds, the last draw of the slide or nothing, and
+     * queues the draw for [drawThumbnails], which wakes the rows through
+     * [onThumbnailsChange] when it lands.
      */
     fun thumbnail(index: Int, width: Int): NSImage? {
         // In layout mode the rows are the layouts, so that is what an index means
         // here too: one navigator, one row protocol, whichever list it is showing.
         if (state.isEditingLayouts) {
             val layout: Slide = state.document.layouts.getOrNull(index) ?: return null
-            return render(layout, layout = null, number = null, width = width)
+            return thumbnail(layout, width, isLayout = true, inChrome = false)
         }
 
         val slide: Slide = state.document.allSlides().getOrNull(index) ?: return null
-        return render(
-            slide,
-            layout = state.document.layoutOf(slide),
-            number = state.slideNumber(slide.id),
-            width = width,
-        )
+        return thumbnail(slide, width, isLayout = false, inChrome = false)
     }
 
     /**
@@ -4957,71 +4999,124 @@ class EditorHost(
      */
     fun layoutThumbnail(layoutId: String, width: Int): NSImage? {
         val layout: Slide = state.document.layouts.firstOrNull { it.id == layoutId } ?: return null
-        return render(layout, layout = null, number = null, width = width)
+        return thumbnail(layout, width, isLayout = true, inChrome = true)
     }
 
-    private fun render(slide: Slide, layout: Slide?, number: Int?, width: Int): NSImage? {
-        val background: SlideBackground? = state.document.background
-        val slideWidth: Float = state.document.slideWidth
-        val slideHeight: Float = state.document.slideHeight
-        val deckFonts: List<DeckFont> = state.document.fonts
-        val fonts: Set<String> = deckFonts
-            .mapNotNull { font -> font.assetId.takeIf { DeckFontCache.Shared.get(it) != null } }
-            .toSet()
-        val images: AssetImageCache = assetImages()
-        val generation: Int = assetImagesGeneration
-        val cached = thumbnails[slide.id]
+    private fun thumbnail(slide: Slide, width: Int, isLayout: Boolean, inChrome: Boolean): NSImage? {
+        val key = "${slide.id}@$width"
+        val cached: Thumbnail? = thumbnails[key]
         // Settled, the cache has to match the slide; mid-gesture any render of it will do.
-        val usable = cached != null && cached.width == width &&
-            cached.slideWidth == slideWidth && cached.slideHeight == slideHeight &&
-            ((cached.slide == slide && cached.layout == layout && cached.number == number &&
-                cached.background == background && cached.fonts == fonts &&
-                cached.generation == generation) || state.isPreviewing)
-        if (usable) return cached.image
+        val current: Boolean = cached != null &&
+            (state.isPreviewing || cached.inputs == thumbnailInputs(slide, isLayout))
+        if (current) return cached?.image
 
-        val height = (width * slideHeight / slideWidth).toInt()
-        val skiaImage = renderComposeScene(width * 2, height * 2) {
-            // One frame, so an image only lands here if the canvas has already
-            // decoded it: the row catches up on the next render, which is the
-            // next edit. Cheaper than blocking a thumbnail on a decode. Fonts
-            // are whatever has loaded, the same set the cache key holds.
-            CompositionLocalProvider(
-                LocalAssetStore provides viewModel.assets,
-                LocalAssetImages provides images,
-                LocalDeckFonts provides DeckFontCache.Shared.families(deckFonts),
-            ) {
-                SlideView(
-                    slide = slide,
-                    layout = layout,
-                    number = number,
-                    background = background,
-                    slideWidth = slideWidth,
-                    slideHeight = slideHeight,
-                )
+        // Asked for from both sides, the chrome is the one to tell: its pass
+        // re-reads the rows as well.
+        val forChrome: Boolean = inChrome || thumbnailsPending[key]?.inChrome == true
+        thumbnailsPending[key] = ThumbnailRequest(slide.id, width, isLayout, forChrome)
+        if (thumbnailsDrawing?.isActive != true) thumbnailsDrawing = scope.launch { drawThumbnails() }
+        return cached?.image
+    }
+
+    /** Everything a row's picture depends on, which is what its cache entry is checked against. */
+    private fun thumbnailInputs(slide: Slide, isLayout: Boolean): ThumbnailInputs {
+        val document: Document = state.document
+        // Asked for its side effect: this is what turns the generation over.
+        assetImages()
+        return ThumbnailInputs(
+            slide = slide,
+            layout = if (isLayout) null else document.layoutOf(slide),
+            // Only where it is drawn: a slide that shows no number looks the
+            // same wherever it sits, and keying on its place would redraw every
+            // row after an insert.
+            number = if (isLayout || !slide.showsSlideNumber) null else state.slideNumber(slide.id),
+            background = document.background,
+            slideWidth = document.slideWidth,
+            slideHeight = document.slideHeight,
+            fonts = document.fonts
+                .mapNotNull { font -> font.assetId.takeIf { DeckFontCache.Shared.get(it) != null } }
+                .toSet(),
+            generation = assetImagesGeneration,
+        )
+    }
+
+    /**
+     * Draws what [thumbnailsPending] holds, one row to a turn of the run loop,
+     * so a deck's worth of rows is the navigator filling in rather than the
+     * window stopped. The shell hears of them every [ThumbnailShowInterval]
+     * rather than one at a time, and only the rows hear of a row.
+     */
+    private suspend fun drawThumbnails() {
+        var shown: TimeMark = TimeSource.Monotonic.markNow()
+        var rowsDrawn = false
+        var chromeDrawn = false
+
+        fun show() {
+            if (chromeDrawn) thumbnailTick.value += 1
+            else if (rowsDrawn) rowThumbnailTick.value += 1
+            rowsDrawn = false
+            chromeDrawn = false
+        }
+
+        while (thumbnailsPending.isNotEmpty()) {
+            // The slide on the canvas first: its row is the one being looked at.
+            val selected = "${state.selectedSlide.id}@"
+            val key: String = thumbnailsPending.keys.firstOrNull { it.startsWith(selected) }
+                ?: thumbnailsPending.keys.first()
+            val request: ThumbnailRequest = thumbnailsPending.remove(key) ?: continue
+
+            // A timer rather than a yield: the main queue runs whatever is on
+            // it before the run loop gets a turn, and a turn is the point.
+            delay(1)
+
+            val document: Document = state.document
+            val slides: List<Slide> = if (request.isLayout) document.layouts else document.allSlides()
+            // Gone since it was asked for, so there is no row left to draw.
+            val slide: Slide = slides.firstOrNull { it.id == request.id } ?: continue
+            val inputs: ThumbnailInputs = thumbnailInputs(slide, request.isLayout)
+            val images: AssetImageCache = assetImages()
+            val deckFonts: List<DeckFont> = document.fonts
+            val width: Int = request.width
+            val height: Int = (width * inputs.slideHeight / inputs.slideWidth).toInt()
+
+            val skiaImage = renderComposeScene(width * 2, height * 2) {
+                // One frame, so an image only lands here if the canvas has already
+                // decoded it: the row catches up on the next render, which is the
+                // next edit. Cheaper than blocking a thumbnail on a decode. Fonts
+                // are whatever has loaded, the same set the cache key holds.
+                CompositionLocalProvider(
+                    LocalAssetStore provides viewModel.assets,
+                    LocalAssetImages provides images,
+                    LocalDeckFonts provides DeckFontCache.Shared.families(deckFonts),
+                ) {
+                    SlideView(
+                        slide = slide,
+                        layout = inputs.layout,
+                        number = inputs.number,
+                        background = inputs.background,
+                        slideWidth = inputs.slideWidth,
+                        slideHeight = inputs.slideHeight,
+                    )
+                }
             }
-        }
-        val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: return null
-        val nsData = png.usePinned { pinned ->
-            NSData.dataWithBytes(pinned.addressOf(0), png.size.toULong())
-        }
-        val image = NSImage(data = nsData)?.apply {
-            setSize(NSMakeSize(width.toDouble(), height.toDouble()))
-        } ?: return null
 
-        thumbnails[slide.id] =
-            Thumbnail(
-                slide,
-                layout,
-                number,
-                background,
-                width,
-                slideWidth,
-                slideHeight,
-                fonts,
-                generation,
-                image,
-            )
-        return image
+            // A draw that came to nothing is not told to the shell: asking again
+            // would only queue it again, round and round.
+            val png: ByteArray = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes ?: continue
+            val data: NSData = png.usePinned { pinned ->
+                NSData.dataWithBytes(pinned.addressOf(0), png.size.toULong())
+            }
+            val image: NSImage = NSImage(data = data) ?: continue
+            image.setSize(NSMakeSize(width.toDouble(), height.toDouble()))
+            thumbnails[key] = Thumbnail(inputs, image)
+            if (request.inChrome) chromeDrawn = true else rowsDrawn = true
+
+            if (shown.elapsedNow() < ThumbnailShowInterval) continue
+            show()
+            shown = TimeSource.Monotonic.markNow()
+        }
+
+        show()
     }
 
     /**
@@ -5142,3 +5237,6 @@ class OpenOutcome(val host: EditorHost?, val error: String?)
 
 /** How often the chrome re-reads the editor while a gesture is streaming previews. */
 private val PreviewChromeInterval: Duration = 100.milliseconds
+
+/** How often the shell hears that navigator rows have been drawn, while there are more to draw. */
+private val ThumbnailShowInterval: Duration = 100.milliseconds

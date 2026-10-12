@@ -162,7 +162,15 @@ extension EditorView {
                 // as those rows leaving and everything after sliding up, and a
                 // reorder as one row moving, not as every row changing in place.
                 // No spacing: selected neighbours have to meet to read as a run.
-                LazyVStack(alignment: .leading, spacing: 0) {
+                //
+                // Eager, like the Object List's: a lazy stack guesses the height
+                // of the rows it has not built, and these come in a height per
+                // level. A reload under a selection the list was scrolling to
+                // had it placing rows against a guess that never settled, all
+                // inside one pass of the run loop, which is the window hung.
+                // Every row being built is why a thumbnail is never drawn in
+                // one: `host.thumbnail` answers from its cache and draws later.
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                         switch item {
                         case .gap(let depth):
@@ -175,7 +183,8 @@ extension EditorView {
                                 run: selectionRun(at: index, in: items),
                                 layoutMode: layoutMode,
                                 palette: palette,
-                                host: host
+                                host: host,
+                                model: model
                             )
                             .transition(.move(edge: .top).combined(with: .opacity))
                         }
@@ -377,6 +386,7 @@ extension EditorView {
         let layoutMode: Bool
         let palette: Palette
         let host: EditorHost
+        let model: EditorModel
 
         @Environment(\.controlActiveState) private var activeState
         @State private var chevronHovering = false
@@ -539,6 +549,9 @@ extension EditorView {
         /// A soft shadow lifts it off the row the way Keynote's sit, and no ring:
         /// the fill behind the row alone marks selection.
         @ViewBuilder private var thumbnail: some View {
+            // A thumbnail is drawn after it is asked for. Reading this is what
+            // brings the row back for it, and the row alone.
+            let _ = model.thumbnailGeneration
             let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
             if let image = host.thumbnail(index: row.slideIndex, width: Int32(thumbWidth)) {
                 Image(nsImage: image)

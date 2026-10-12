@@ -297,6 +297,9 @@ final class EditorModel {
     /// `generation` leaves out so a wheel tick doesn't rebuild the chrome. Only
     /// the zoom pill reads it.
     private(set) var viewportGeneration: Int = 0
+    /// And the navigator rows' own: a thumbnail is drawn after the row that
+    /// asked for it, and only that row has anything to show for it landing.
+    private(set) var thumbnailGeneration: Int = 0
     /// The title's popover, which is also File > Rename. The command is in the
     /// menu bar and the popover is in the window, so the flag has to live where
     /// both can see it.
@@ -312,6 +315,7 @@ final class EditorModel {
     @ObservationIgnored let displays = ShowDisplays()
     @ObservationIgnored private var unsubscribe: (() -> Void)?
     @ObservationIgnored private var unsubscribeViewport: (() -> Void)?
+    @ObservationIgnored private var unsubscribeThumbnails: (() -> Void)?
 
     init(host: EditorHost) {
         self.host = host
@@ -336,10 +340,12 @@ final class EditorModel {
         let previous = self.host
         unsubscribe?()
         unsubscribeViewport?()
+        unsubscribeThumbnails?()
         self.host = host
         listen()
         generation += 1
         viewportGeneration += 1
+        thumbnailGeneration += 1
         previous.close()
     }
 
@@ -349,6 +355,8 @@ final class EditorModel {
         unsubscribe = nil
         unsubscribeViewport?()
         unsubscribeViewport = nil
+        unsubscribeThumbnails?()
+        unsubscribeThumbnails = nil
         host.close()
     }
 
@@ -357,6 +365,7 @@ final class EditorModel {
         // always the main thread here (SwiftUI calls, or Compose input).
         unsubscribe = host.onChange { [weak self] in self?.generation += 1 }
         unsubscribeViewport = host.onViewportChange { [weak self] in self?.viewportGeneration += 1 }
+        unsubscribeThumbnails = host.onThumbnailsChange { [weak self] in self?.thumbnailGeneration += 1 }
         // A right-click on the canvas. The event is already away by the time
         // this fires, so the menu is all that is left to do.
         host.setContextClickCallback { [weak self] elementId in
