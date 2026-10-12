@@ -23,6 +23,7 @@ import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.normalisedLinks
+import io.github.xxfast.cupboard.document.normalized
 import io.github.xxfast.cupboard.document.shiftedLinks
 import io.github.xxfast.cupboard.document.shiftedRange
 import io.github.xxfast.cupboard.document.withLink
@@ -1521,7 +1522,7 @@ fun EditorPresenter(
                 }
 
             is SetElementLinks -> state.unlockedElements(event.ids)
-                .mapNotNull { it.linkedTo(event.target) }
+                .mapNotNull { it.linkedTo(event.target?.normalized()) }
                 .takeIf { it.isNotEmpty() }
                 ?.let { linked ->
                     undone.push(state.document)
@@ -1535,7 +1536,7 @@ fun EditorPresenter(
             // is one entry, and this is the next.
             is SetTextLink -> (state.unlockedElement(event.elementId) as? TextElement)
                 ?.let { element ->
-                    element.withLink(event.start, event.end, event.target)
+                    element.withLink(event.start, event.end, event.target?.normalized())
                         .takeIf { it != element }
                 }
                 ?.let { linked ->

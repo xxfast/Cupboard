@@ -105,6 +105,7 @@ import io.github.xxfast.cupboard.document.DefaultVideoWidth
 import io.github.xxfast.cupboard.document.audioElement
 import io.github.xxfast.cupboard.document.replacingMedia
 import io.github.xxfast.cupboard.document.videoElement
+import io.github.xxfast.cupboard.document.webAddress
 import io.github.xxfast.cupboard.screens.editor.MediaKind
 import io.github.xxfast.cupboard.screens.editor.MovieExtensions
 import io.github.xxfast.cupboard.screens.editor.SoundExtensions
@@ -2859,13 +2860,6 @@ class EditorHost(
             viewModel.assets.write(id, data)
             id
         }
-
-    /** [url] trimmed, with https where it has no scheme; null for a blank one. */
-    private fun webAddress(url: String): String? {
-        val trimmed: String = url.trim()
-        if (trimmed.isEmpty()) return null
-        return if ("://" in trimmed) trimmed else "https://$trimmed"
-    }
 
     fun selectedElement(): ElementProps? = state.primaryElement?.let { element ->
         ElementProps(

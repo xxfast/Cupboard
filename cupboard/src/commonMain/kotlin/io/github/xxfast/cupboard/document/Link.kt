@@ -69,3 +69,31 @@ fun Element.resolvedLink(): LinkTarget? = when (this) {
     is ImageElement -> link
     else -> null
 }
+
+/**
+ * [url] trimmed, with https put in front of one that names no scheme; null for a blank one.
+ *
+ * A scheme is named by `://`, or by `mailto:` or `tel:`, which have no slashes
+ * to give them away. Nothing cleverer than that: `localhost:8080` looks like a
+ * scheme and isn't one, so it gets https like any other bare address.
+ */
+fun webAddress(url: String): String? {
+    val trimmed: String = url.trim()
+    if (trimmed.isEmpty()) return null
+    val namesScheme: Boolean = "://" in trimmed ||
+        trimmed.startsWith("mailto:", ignoreCase = true) ||
+        trimmed.startsWith("tel:", ignoreCase = true)
+    return if (namesScheme) trimmed else "https://$trimmed"
+}
+
+/**
+ * This target as it should be stored: a [LinkTarget.Url] with its address run
+ * through [webAddress], every other target as it is.
+ *
+ * A blank address comes back untouched rather than as null, so what a blank
+ * link means stays where it was decided and not here.
+ */
+fun LinkTarget.normalized(): LinkTarget = when (this) {
+    is LinkTarget.Url -> LinkTarget.Url(webAddress(url) ?: url)
+    else -> this
+}

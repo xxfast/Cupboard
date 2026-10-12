@@ -15,6 +15,7 @@ import io.github.xxfast.cupboard.document.audioElement
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.replacingMedia
 import io.github.xxfast.cupboard.document.videoElement
+import io.github.xxfast.cupboard.document.webAddress
 import io.github.xxfast.cupboard.theme.ChromeTheme
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LinuxChrome
@@ -149,7 +150,7 @@ fun WebVideoDialog(
                 confirmLabel = "Insert",
                 name = "",
                 onDismiss = onDismiss,
-                onCommit = { url -> onInsert(if ("://" in url) url else "https://$url") },
+                onCommit = { url -> webAddress(url)?.let(onInsert) },
             )
         }
     }

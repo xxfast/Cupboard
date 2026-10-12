@@ -10,6 +10,7 @@ import io.github.xxfast.cupboard.document.PlaybackType
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.resolvedLink
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -99,6 +100,22 @@ class EditorPlaybackTest {
         val undone = viewModel.await { it.element("shape").resolvedLink() == null }
         assertEquals(document(), undone.document)
         assertFalse(undone.canUndo)
+    }
+
+    @Test
+    fun anAddressTypedWithoutASchemeIsLinkedWithHttps() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onSetElementLinks(listOf("shape"), LinkTarget.Url("kotlinlang.org/docs"))
+        val linked = viewModel.await { it.element("shape").resolvedLink() != null }
+        assertEquals(LinkTarget.Url("https://kotlinlang.org/docs"), linked.element("shape").resolvedLink())
+
+        viewModel.onSetTextLink("text", 0, 2, LinkTarget.Url("kotlinlang.org/docs"))
+        val ranged = viewModel.await { (it.element("text") as TextElement).links.isNotEmpty() }
+        assertEquals(
+            listOf(TextLink(0, 2, LinkTarget.Url("https://kotlinlang.org/docs"))),
+            (ranged.element("text") as TextElement).links,
+        )
     }
 
     @Test
