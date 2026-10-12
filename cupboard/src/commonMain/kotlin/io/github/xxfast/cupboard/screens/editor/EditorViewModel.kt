@@ -48,6 +48,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.BreakApartElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectCodeVersion
@@ -364,6 +365,7 @@ class EditorViewModel(
     fun onFlipElements(ids: List<String>, axis: FlipAxis) { send(FlipElements(ids, axis)) }
     fun onGroupElements(ids: List<String>) { send(GroupElements(ids)) }
     fun onUngroupElements(id: String) { send(UngroupElements(id)) }
+    fun onBreakApartElement(id: String) { send(BreakApartElement(id)) }
     fun onAlignElements(edge: AlignEdge) { send(AlignElements(edge)) }
     fun onDistributeElements(axis: Axis) { send(DistributeElements(axis)) }
     fun onDeleteElements(ids: List<String>) { send(DeleteElements(ids)) }

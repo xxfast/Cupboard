@@ -98,6 +98,7 @@ struct Chrome {
     let selectedElementId: String
     let canGroup: Bool
     let canUngroup: Bool
+    let canBreakApart: Bool
     /// Whether the Format menu has anything to act on. Not `text != nil`: the
     /// primary may be a shape sitting in front of the text box the menu would
     /// format, and a locked primary greys nothing the rest of the selection can
@@ -199,6 +200,7 @@ struct Chrome {
         selectedElementId = host.selectedElementId()
         canGroup = host.canGroup()
         canUngroup = host.canUngroup()
+        canBreakApart = host.canBreakApart()
         canFormatText = host.canFormatText()
         slide = SlideProps(host)
         editingLayouts = host.isEditingLayouts()

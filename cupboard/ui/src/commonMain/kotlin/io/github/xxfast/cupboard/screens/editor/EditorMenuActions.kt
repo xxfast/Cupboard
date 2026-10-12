@@ -28,6 +28,7 @@ import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.isCompoundShape
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
 import io.github.xxfast.cupboard.document.toggleBold
@@ -99,6 +100,9 @@ fun arrangeSections(state: EditorState, viewModel: EditorViewModel): List<Editor
     // Ungrouping is a single-group act: two groups selected is a batch nothing
     // else in the app does.
     val group: GroupElement? = (primary as? GroupElement)?.takeIf { ids.size == 1 && !it.locked }
+    // Breaking apart is a single-shape act too, and only a compound one has
+    // pieces to split into.
+    val compound: Element? = primary?.takeIf { ids.size == 1 && !it.locked && it.isCompoundShape }
     // Two elements have no gap between them to equalize.
     val distributable: Boolean = unlocked.size >= 3
 
@@ -136,6 +140,9 @@ fun arrangeSections(state: EditorState, viewModel: EditorViewModel): List<Editor
                 EditorMenuItem("Group", unlocked.size >= 2) { viewModel.onGroupElements(ids) },
                 EditorMenuItem("Ungroup", group != null) {
                     group?.let { viewModel.onUngroupElements(it.id) }
+                },
+                EditorMenuItem("Break Apart", compound != null) {
+                    compound?.let { viewModel.onBreakApartElement(it.id) }
                 },
                 EditorMenuItem(
                     label = if (primary?.locked == true) "Unlock" else "Lock",

@@ -301,6 +301,11 @@ data class TextElement(
  * with a tail, bottom-left and bottom-center. [Line] is the odd one out: it runs
  * corner to corner across its frame and draws no fill, only its stroke and
  * whichever arrowheads are on.
+ *
+ * [Path] is the one kind the catalog doesn't offer, because it has no outline of
+ * its own: it draws whatever [ShapeElement.path] carries, which is what an
+ * imported SVG and the pieces of a broken-apart shape are. With no path to draw
+ * by it reads as the rectangle it is boxed by.
  */
 enum class ShapeKind {
     Rectangle,
@@ -313,6 +318,7 @@ enum class ShapeKind {
     QuoteBubble,
     Callout,
     Line,
+    Path,
 }
 
 /**
@@ -393,6 +399,12 @@ data class ShapeElement(
     val labelColor: Long = 0xFFD9CFFF,
     /** Where clicking the shape takes the show. See [LinkTarget]. */
     val link: LinkTarget? = null,
+    /**
+     * Only [ShapeKind.Path] draws by this; every other kind ignores it. The
+     * outline stretches with the frame, so a resize never rewrites it. See
+     * [ShapePath].
+     */
+    val path: ShapePath? = null,
 ) : Element {
     override fun update(
         frame: Frame,

@@ -87,6 +87,7 @@ import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.takesCaret
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.ungroupElement
+import io.github.xxfast.cupboard.document.breakApartElement
 import io.github.xxfast.cupboard.document.updateElements
 import io.github.xxfast.cupboard.document.updateSlide
 import io.github.xxfast.cupboard.document.updatingCodeStep
@@ -113,6 +114,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.BreakApartElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CancelPreview
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CanvasResized
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PanCanvas
@@ -1111,6 +1113,31 @@ fun EditorPresenter(
                     state.copy(
                         document = state.document.updateSlide(ungrouped),
                         selectedElementIds = group.children.map { it.id },
+                    )
+                }
+            }
+
+            // The pieces are whatever the slide holds now that it didn't
+            // before: breaking apart mints their ids, so there is no list of
+            // them to read off the shape the way a group has its children.
+            is BreakApartElement -> {
+                val slide: Slide = state.selectedSlide
+                val shape: Element? = state.unlockedElement(event.id)
+                val broken: Slide? = shape
+                    ?.let { slide.breakApartElement(event.id) }
+                    ?.takeIf { it !== slide }
+
+                if (shape == null || broken == null) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    val before: Set<String> =
+                        slide.elements.flatMapTo(mutableSetOf()) { it.subtreeIds() }
+                    state.copy(
+                        document = state.document.updateSlide(broken),
+                        selectedElementIds = broken.elements
+                            .flatMap { it.subtreeIds() }
+                            .filter { it !in before },
                     )
                 }
             }

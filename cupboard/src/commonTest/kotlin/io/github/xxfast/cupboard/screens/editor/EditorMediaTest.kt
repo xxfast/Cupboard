@@ -255,6 +255,12 @@ class EditorMediaTest {
         }
         // Case and a leading dot are forgiven: the platforms hand over both.
         assertEquals(MediaKind.Movie, mediaKind(".MOV"))
+        // A drawing is no image: it arrives as shapes, so nothing that takes
+        // image bytes may be offered one.
+        assertEquals(MediaKind.Vector, mediaKind("svg"))
+        assertEquals(MediaKind.Vector, mediaKind(".SVG"))
+        assertEquals(listOf("svg"), VectorExtensions)
+        assertFalse("svg" in ImageExtensions)
         assertNull(mediaKind("pdf"))
         assertNull(mediaKind(""))
     }

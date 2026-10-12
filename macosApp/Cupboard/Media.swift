@@ -2,7 +2,7 @@
 // nothing about what happens to them after. Three ways in: an Open panel, a
 // drop on the window, and the pasteboard, all sorted by the core's `mediaKind`
 // and ending at `insertImage`, `insertMovie` or `insertAudio`, which take bytes
-// and an extension. Everything AppKit and AVFoundation know about media stops
+// and an extension. An SVG goes through `insertImage` too, and comes out a shape. Everything AppKit and AVFoundation know about media stops
 // in this file; Kotlin has never heard of NSImage, AVAsset or a pasteboard type.
 import SwiftUI
 import AppKit
@@ -268,8 +268,14 @@ enum Media {
     }
 
     /// One picture on the slide, or several as one gallery. What every way in
-    /// ends at once its bytes are here.
+    /// ends at once its bytes are here. An SVG is a shape, not a picture, so it
+    /// never joins a gallery: each goes in on its own.
     private static func insert(_ loaded: [(Data, String)], into host: EditorHost) {
+        let isVector: ((Data, String)) -> Bool = { host.mediaKindOf(extension: $0.1) == "Vector" }
+        for vector in loaded.filter(isVector) {
+            host.insertImage(bytes: vector.0, extension: vector.1)
+        }
+        let loaded = loaded.filter { !isVector($0) }
         guard let first = loaded.first else { return }
         guard loaded.count > 1 else {
             host.insertImage(bytes: first.0, extension: first.1)

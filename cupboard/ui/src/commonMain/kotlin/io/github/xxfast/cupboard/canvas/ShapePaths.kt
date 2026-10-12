@@ -4,11 +4,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import io.github.xxfast.cupboard.document.PathCommand
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
+import io.github.xxfast.cupboard.document.ShapePath
+import io.github.xxfast.cupboard.document.commands
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.min
@@ -24,8 +31,15 @@ import kotlin.math.sin
  *
  * [ShapeKind.Line] has no outline of its own and is not answered for here: it is
  * a stroke between two corners, which the renderer draws directly.
+ *
+ * [ShapeKind.Path] is the exception to "a kind decides": its outline is data on
+ * the element, so it is answered here and not by the kind.
  */
-internal fun ShapeElement.shape(): Shape = kind.shape(cornerRadius)
+internal fun ShapeElement.shape(): Shape {
+    val path: ShapePath? = path
+    if (kind == ShapeKind.Path && path != null) return PathShape(path)
+    return kind.shape(cornerRadius)
+}
 
 /**
  * The same outline for a bare kind, which is what a mask has: an image cropped to
@@ -47,6 +61,52 @@ internal fun ShapeKind.shape(cornerRadius: Float = 0f): Shape = when (this) {
     // Never asked for, but a Shape has to come back: a line drawn as a box is a
     // less confusing wrong answer than a crash.
     ShapeKind.Line -> RoundedCornerShape(0.dp)
+    // A path's outline is the element's own (see [ShapeElement.shape]); a bare
+    // kind has none to draw, so it gets the line's answer.
+    ShapeKind.Path -> RoundedCornerShape(0.dp)
+}
+
+/**
+ * A [ShapePath] as a [Shape]. A data class so that two recompositions of the
+ * same element compare equal and nothing downstream re-reads the path.
+ */
+private data class PathShape(val path: ShapePath) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density,
+    ): Outline = Outline.Generic(path.toComposePath(size))
+}
+
+/**
+ * This outline as a Compose path in a box of [size]: each point goes through
+ * [ShapePath.bounds], so the box shows exactly that slice of path space.
+ *
+ * A side of the bounds with no extent (a straight line's) has nothing to scale
+ * by, so it collapses onto the box's edge rather than dividing by zero.
+ */
+internal fun ShapePath.toComposePath(size: Size): Path {
+    val scaleX: Float = if (bounds.width > 0f) size.width / bounds.width else 0f
+    val scaleY: Float = if (bounds.height > 0f) size.height / bounds.height else 0f
+
+    fun x(value: Float): Float = (value - bounds.x) * scaleX
+    fun y(value: Float): Float = (value - bounds.y) * scaleY
+
+    return Path().apply {
+        fillType = if (evenOdd) PathFillType.EvenOdd else PathFillType.NonZero
+        for (command in commands) {
+            when (command) {
+                is PathCommand.MoveTo -> moveTo(x(command.x), y(command.y))
+                is PathCommand.LineTo -> lineTo(x(command.x), y(command.y))
+                is PathCommand.CubicTo -> cubicTo(
+                    x(command.x1), y(command.y1),
+                    x(command.x2), y(command.y2),
+                    x(command.x), y(command.y),
+                )
+                PathCommand.Close -> close()
+            }
+        }
+    }
 }
 
 private val TriangleShape = GenericShape { size, _ ->

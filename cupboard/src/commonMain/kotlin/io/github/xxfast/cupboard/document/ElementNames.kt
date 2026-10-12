@@ -44,6 +44,13 @@ private val Element.defaultName: String
         return content.lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: kindName
     }
 
-/** The catalog's name for the kind ("Oval", "Hexagon"), the enum's own where it has none. */
+/**
+ * The catalog's name for the kind ("Oval", "Hexagon"), the enum's own where it has
+ * none. A [ShapeKind.Path] is the exception: "Path" is how it is stored, not what
+ * anyone would call an imported drawing, so it goes by the plain [kindName].
+ */
 private val ShapeKind.title: String
-    get() = ShapeCatalog.entries.firstOrNull { it.kind == this }?.title ?: name
+    get() = when (this) {
+        ShapeKind.Path -> "Shape"
+        else -> ShapeCatalog.entries.firstOrNull { it.kind == this }?.title ?: name
+    }

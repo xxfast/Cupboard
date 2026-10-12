@@ -4,6 +4,7 @@ package io.github.xxfast.cupboard.document
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlin.math.max
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -552,6 +553,80 @@ fun Slide.ungroupElement(id: String): Slide {
     return mapSiblings(ancestorIds(id).lastOrNull()) { siblings ->
         siblings.flatMap { if (it.id == id) group.freedChildren() else listOf(it) }
     }
+}
+
+/**
+ * Breaks a compound shape into its contours: one [ShapeElement] per subpath,
+ * spliced in where the shape sat, in the order its path drew them. A shape
+ * inside a group comes apart within its parent, which keeps its frame.
+ *
+ * Each piece is the shape over again (its fill, its stroke, its opacity) under a
+ * fresh id, with no name and no label, showing its own slice of the path in a
+ * frame that hugs it. Nothing about the outline is rewritten: a piece keeps the
+ * numbers it was drawn with and gets a [ShapePath.bounds] of its own. The
+ * shape's rotation and flips are baked into the pieces the way [ungroupElement]
+ * bakes a group's (see [freedChildren]), so nothing moves on the slide.
+ *
+ * A hole comes out as a filled shape of its own, as it does in Keynote: it was
+ * only ever a hole while the contour around it shared its path.
+ *
+ * Builds that pointed at the shape go with it, for [removeElements]' reason: the
+ * pieces are new elements, and none of them is the one a build named.
+ *
+ * An id that is not a compound shape's (see [isCompoundShape]), or not here at
+ * all, returns this same instance.
+ */
+fun Slide.breakApartElement(id: String): Slide {
+    val shape: ShapeElement = elementById(id) as? ShapeElement ?: return this
+    val path: ShapePath = shape.path?.takeIf { shape.kind == ShapeKind.Path } ?: return this
+    val subpaths: List<List<PathCommand>> = path.commands.subpaths()
+    if (subpaths.size < 2) return this
+
+    // How the renderer gets from the path's space to the slide's: its bounds
+    // stretched onto the frame.
+    val scaleX: Float = if (path.bounds.width == 0f) 1f else shape.frame.width / path.bounds.width
+    val scaleY: Float = if (path.bounds.height == 0f) 1f else shape.frame.height / path.bounds.height
+
+    // A straight contour has a box with no width or no height. It gets the room
+    // its stroke takes on the slide, measured back into the path's space.
+    val minimum: Float = max(shape.strokeWidth, 1f)
+    val minWidth: Float = if (scaleX > 0f) minimum / scaleX else 0f
+    val minHeight: Float = if (scaleY > 0f) minimum / scaleY else 0f
+
+    val pieces: List<Element> = subpaths.map { subpath ->
+        val bounds: Frame = subpath.tightBounds().atLeast(minWidth, minHeight)
+        shape.copy(
+            id = newId(),
+            frame = Frame(
+                x = shape.frame.x + (bounds.x - path.bounds.x) * scaleX,
+                y = shape.frame.y + (bounds.y - path.bounds.y) * scaleY,
+                width = bounds.width * scaleX,
+                height = bounds.height * scaleY,
+            ),
+            rotation = 0f,
+            flippedHorizontally = false,
+            flippedVertically = false,
+            name = null,
+            label = "",
+            path = path.copy(data = subpath.toPathData(), bounds = bounds),
+        )
+    }
+
+    // The shape turned and mirrored its contours about its own center, exactly
+    // as a group does its children, so a group is what frees them. The pieces
+    // already carry the shape's opacity; the stand-in adds none of its own.
+    val freed: List<Element> = GroupElement(
+        frame = shape.frame,
+        rotation = shape.rotation,
+        flippedHorizontally = shape.flippedHorizontally,
+        flippedVertically = shape.flippedVertically,
+        children = pieces,
+    ).freedChildren()
+
+    val broken: Slide = mapSiblings(ancestorIds(id).lastOrNull()) { siblings ->
+        siblings.flatMap { if (it.id == id) freed else listOf(it) }
+    }
+    return broken.copy(builds = builds.filter { it.elementId != id })
 }
 
 /**

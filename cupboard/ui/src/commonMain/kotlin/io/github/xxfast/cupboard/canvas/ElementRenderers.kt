@@ -95,6 +95,7 @@ import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
+import io.github.xxfast.cupboard.document.ShapePath
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
@@ -478,7 +479,25 @@ private fun ShapeElementView(element: ShapeElement) {
                     clipPath(outline) { drawImageFill(image, imageFill.mode) }
                 }
             }
-            .border(element.strokeWidth.dp, element.strokeColor.toComposeColor(), shape),
+            .let { base ->
+                // Compose insets a border and draws none on an open path, while an
+                // SVG stroke is centred on the outline and stroke-only icons are
+                // common: a path strokes its own outline instead.
+                val path: ShapePath? = element.path.takeIf { element.kind == ShapeKind.Path }
+                if (path == null) return@let base.border(
+                    element.strokeWidth.dp,
+                    element.strokeColor.toComposeColor(),
+                    shape,
+                )
+                if (element.strokeWidth <= 0f) return@let base
+                base.drawBehind {
+                    drawPath(
+                        path = path.toComposePath(size),
+                        color = element.strokeColor.toComposeColor(),
+                        style = Stroke(width = element.strokeWidth.dp.toPx()),
+                    )
+                }
+            },
         contentAlignment = Alignment.Center,
     ) {
         ShapeLabel(element)

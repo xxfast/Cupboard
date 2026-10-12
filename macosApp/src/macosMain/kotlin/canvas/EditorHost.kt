@@ -105,8 +105,10 @@ import io.github.xxfast.cupboard.document.DefaultVideoWidth
 import io.github.xxfast.cupboard.document.audioElement
 import io.github.xxfast.cupboard.document.replacingMedia
 import io.github.xxfast.cupboard.document.videoElement
+import io.github.xxfast.cupboard.screens.editor.MediaKind
 import io.github.xxfast.cupboard.screens.editor.MovieExtensions
 import io.github.xxfast.cupboard.screens.editor.SoundExtensions
+import io.github.xxfast.cupboard.screens.editor.insertSvg
 import io.github.xxfast.cupboard.screens.editor.mediaKind
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.action
@@ -116,6 +118,7 @@ import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.document.isCompoundShape
 import io.github.xxfast.cupboard.document.isLocked
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.fillKind
@@ -1148,6 +1151,7 @@ class ContextFacts(
     val canArrange: Boolean,
     val canGroup: Boolean,
     val canUngroup: Boolean,
+    val canBreakApart: Boolean,
     val canDistribute: Boolean,
     val canLock: Boolean,
     /** "Lock" or "Unlock", following the primary the way the Arrange menu does. */
@@ -2119,10 +2123,17 @@ class EditorHost(
      *
      * Bytes nothing can decode insert nothing rather than an empty frame:
      * a file that is not an image is a mistake, not a placeholder.
+     *
+     * An SVG is not a picture at all: it is parsed into a shape of its own, so it
+     * skips the asset write and inserts synchronously.
      */
     fun insertImage(bytes: NSData, extension: String) {
         val data: ByteArray = bytes.toByteArray()
         if (data.isEmpty()) return
+        if (mediaKind(extension) == MediaKind.Vector) {
+            viewModel.insertSvg(data) { width, height -> state.insertionFrame(width, height) }
+            return
+        }
         scope.launch {
             val size: NaturalSize = writeAsset(data, extension) ?: return@launch
             val fitted: ImageElement = imageElement(
@@ -3752,6 +3763,9 @@ class EditorHost(
      */
     fun canUngroup(): Boolean = canUngroup(state.selectedElements)
 
+    /** Breaking apart is a single-shape act too, and only a compound one has pieces. */
+    fun canBreakApart(): Boolean = canBreakApart(state.selectedElements)
+
     // Every can-fact takes the selection it judges, so the same rule serves both
     // the live selection and the one a right-click is about to settle on.
     // Grouping is top-level only, as `Slide.groupElements` is: a child in the
@@ -3767,6 +3781,11 @@ class EditorHost(
     private fun canUngroup(elements: List<Element>): Boolean {
         val group: Element = elements.singleOrNull() ?: return false
         return group is GroupElement && !isLocked(group)
+    }
+
+    private fun canBreakApart(elements: List<Element>): Boolean {
+        val shape: Element = elements.singleOrNull() ?: return false
+        return shape.isCompoundShape && !isLocked(shape)
     }
 
     // The selection an edit may touch. A locked element answers to nothing but
@@ -3806,6 +3825,7 @@ class EditorHost(
             canArrange = arrangeable,
             canGroup = canGroup(elements),
             canUngroup = canUngroup(elements),
+            canBreakApart = canBreakApart(elements),
             // Two elements have no gap between them to equalize.
             canDistribute = arrangeable && elements.size >= 3,
             canLock = primary != null,
@@ -3886,6 +3906,13 @@ class EditorHost(
         if (!canUngroup()) return
         val group: Element = state.primaryElement ?: return
         viewModel.onUngroupElements(group.id)
+    }
+
+    /** Splits the selected compound shape into its pieces. Does nothing unless [canBreakApart]. */
+    fun breakApartSelection() {
+        if (!canBreakApart()) return
+        val shape: Element = state.primaryElement ?: return
+        viewModel.onBreakApartElement(shape.id)
     }
 
     /** Two or more line up on their own bounds, a lone one on the slide. */

@@ -16,8 +16,17 @@ val MovieExtensions: List<String> = listOf("mp4", "mov", "m4v", "webm", "mkv", "
 /** The sound files an insert accepts, for [MovieExtensions]' reason. */
 val SoundExtensions: List<String> = listOf("mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg")
 
+/**
+ * The drawing files an insert accepts. Apart from [ImageExtensions] on purpose,
+ * though a file dialog lists the two together: an SVG arrives as shapes rather
+ * than as a picture (see `insertSvg`), so everything that filters on
+ * [ImageExtensions] for bytes it can decode (Replace, an image fill, a gallery)
+ * has to keep turning one away.
+ */
+val VectorExtensions: List<String> = listOf("svg")
+
 /** What a picked, dropped or pasted file inserts as. See [mediaKind]. */
-enum class MediaKind { Image, Movie, Sound }
+enum class MediaKind { Image, Movie, Sound, Vector }
 
 /**
  * What a file with [extension] inserts as, by its name alone, or null for a file
@@ -32,5 +41,6 @@ fun mediaKind(extension: String): MediaKind? = when (extension.removePrefix(".")
     in ImageExtensions -> MediaKind.Image
     in MovieExtensions -> MediaKind.Movie
     in SoundExtensions -> MediaKind.Sound
+    in VectorExtensions -> MediaKind.Vector
     else -> null
 }

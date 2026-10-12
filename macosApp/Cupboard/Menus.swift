@@ -34,6 +34,7 @@ struct ArrangeFacts {
     let canArrange: Bool
     let canGroup: Bool
     let canUngroup: Bool
+    let canBreakApart: Bool
     let canDistribute: Bool
     let canLock: Bool
     let lockLabel: String
@@ -42,6 +43,7 @@ struct ArrangeFacts {
         canArrange = ui.editable
         canGroup = ui.canGroup
         canUngroup = ui.canUngroup
+        canBreakApart = ui.canBreakApart
         // Two elements have no gap between them to equalize.
         canDistribute = ui.editable && ui.selectionCount >= 3
         canLock = ui.element != nil
@@ -54,6 +56,7 @@ struct ArrangeFacts {
         canArrange = facts.canArrange
         canGroup = facts.canGroup
         canUngroup = facts.canUngroup
+        canBreakApart = facts.canBreakApart
         canDistribute = facts.canDistribute
         canLock = facts.canLock
         lockLabel = facts.lockLabel
@@ -104,6 +107,11 @@ func arrangeEntries(_ facts: ArrangeFacts, _ host: EditorHost) -> [MenuEntry] {
             facts.canUngroup,
             shortcut: KeyboardShortcut("g", modifiers: [.command, .option, .shift])
         ) { host.ungroupSelection() },
+        command(
+            "Break Apart",
+            facts.canBreakApart,
+            shortcut: KeyboardShortcut("b", modifiers: [.command, .option, .shift])
+        ) { host.breakApartSelection() },
 
         .separator(),
 

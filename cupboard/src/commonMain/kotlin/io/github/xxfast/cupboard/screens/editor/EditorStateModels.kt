@@ -1211,6 +1211,12 @@ sealed interface EditorEvent {
     data class GroupElements(val ids: List<String>) : EditorEvent
     /** Breaks the group apart and selects the children it frees. Not for a locked group. */
     data class UngroupElements(val id: String) : EditorEvent
+    /**
+     * Breaks a compound shape into one shape per contour and selects the pieces.
+     * Not for a locked shape, and a no-op for anything `isCompoundShape` is false
+     * for. One history entry.
+     */
+    data class BreakApartElement(val id: String) : EditorEvent
     /** Lines the selection up: two or more on their own bounds, a lone one on the slide. */
     data class AlignElements(val edge: AlignEdge) : EditorEvent
     /** Equalizes the gaps across the selection. Needs three unlocked members. */

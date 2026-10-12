@@ -5,6 +5,8 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ShapeElement
+import io.github.xxfast.cupboard.document.ShapeKind
+import io.github.xxfast.cupboard.document.ShapePath
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.editor.AlignEdge
@@ -310,6 +312,72 @@ class EditorMultiSelectTest {
         viewModel.onToggleSidebar()
         val after = viewModel.await { !it.sidebarOpen }
         assertEquals(locked.document, after.document)
+    }
+
+    // "b" swapped for two boxes in one path, so there is something to break apart.
+    private fun compoundDocument(): Document {
+        val compound = ShapeElement(
+            id = "b",
+            frame = Frame(120f, 40f, 100f, 100f),
+            rotation = 90f,
+            kind = ShapeKind.Path,
+            path = ShapePath(
+                data = "M0 0 L40 0 L40 100 L0 100 Z M60 0 L100 0 L100 100 L60 100 Z",
+                bounds = Frame(0f, 0f, 100f, 100f),
+            ),
+        )
+        val document: Document = document()
+        val slide: Slide = document.slides.single()
+        return document.copy(
+            slides = listOf(slide.copy(elements = slide.elements.map { if (it.id == "b") compound else it })),
+        )
+    }
+
+    @Test
+    fun breakingApartSelectsThePiecesAndOneUndoPutsTheShapeBack() = runTest {
+        val viewModel = editor(compoundDocument())
+        val before = viewModel.states.value.document
+
+        viewModel.onBreakApartElement("b")
+        val broken = viewModel.await { it.selectedSlide.elements.size == 4 }
+        val pieces: List<String> = broken.order().subList(1, 3)
+        // Where the shape sat in the z-order, both selected, neither the old id.
+        assertEquals(listOf("a") + pieces + listOf("c"), broken.order())
+        assertEquals(pieces, broken.selectedElementIds)
+        assertFalse("b" in pieces)
+        assertTrue(broken.canUndo)
+
+        // Center (170,90); the left box sat 30 left of it, so its quarter turn
+        // came out baked in as 30 up.
+        assertEquals(90f, broken.element(pieces[0]).rotation)
+        assertEquals(170f, broken.element(pieces[0]).frame.centerX, 0.001f)
+        assertEquals(60f, broken.element(pieces[0]).frame.centerY, 0.001f)
+
+        viewModel.onUndo()
+        val undone = viewModel.await { it.document == before }
+        assertFalse(undone.canUndo)
+
+        viewModel.onRedo()
+        assertEquals(4, viewModel.await { it.selectedSlide.elements.size == 4 }.order().size)
+    }
+
+    @Test
+    fun aLockedShapeDoesNotBreakApart() = runTest {
+        val viewModel = editor(compoundDocument())
+        viewModel.onSetElementsLocked(listOf("b"), locked = true)
+        val locked = viewModel.await { it.element("b").locked }
+
+        viewModel.onBreakApartElement("b")
+        // A plain shape has nothing to break into, and neither has no shape at all.
+        viewModel.onBreakApartElement("a")
+        viewModel.onBreakApartElement("gone")
+        viewModel.onToggleSidebar()
+        val after = viewModel.await { !it.sidebarOpen }
+        assertEquals(locked.document, after.document)
+
+        // Only the lock is in the history, nothing the three tries added.
+        viewModel.onUndo()
+        assertFalse(viewModel.await { !it.element("b").locked }.canUndo)
     }
 
     @Test

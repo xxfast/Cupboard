@@ -222,6 +222,155 @@ class DocumentTest {
         assertEquals(150f, freed[1].frame.centerY, 0.001f)
     }
 
+    // Two boxes side by side in one path, drawn at twice the size they are
+    // written in: bounds 100x50 over a 200x100 frame.
+    private fun compound(id: String = "shape"): ShapeElement = ShapeElement(
+        id = id,
+        frame = Frame(100f, 100f, 200f, 100f),
+        name = "Pair",
+        kind = ShapeKind.Path,
+        fill = 0xFF112233,
+        strokeWidth = 0f,
+        label = "Both",
+        path = ShapePath(
+            data = "M0 0 L40 0 L40 50 L0 50 Z M60 10 L100 10 L100 50 L60 50 Z",
+            bounds = Frame(0f, 0f, 100f, 50f),
+            evenOdd = true,
+        ),
+    )
+
+    @Test
+    fun breakingApartSplicesThePiecesInWhereTheShapeSat() {
+        val slide = slideOf(shape("a", 0f, 0f), compound(), shape("c", 400f, 0f))
+
+        val broken = slide.breakApartElement("shape")
+        assertEquals(4, broken.elements.size)
+        assertEquals("a", broken.elements.first().id)
+        assertEquals("c", broken.elements.last().id)
+
+        val pieces = broken.elements.subList(1, 3).map { it as ShapeElement }
+        assertEquals(2, pieces.map { it.id }.toSet().size)
+        assertFalse("shape" in pieces.map { it.id })
+
+        // Each piece keeps the numbers it was drawn with and gets its own
+        // bounds, mapped onto the slide the way the whole shape's were.
+        assertEquals(
+            ShapePath("M0 0 L40 0 L40 50 L0 50 Z", Frame(0f, 0f, 40f, 50f), evenOdd = true),
+            pieces[0].path,
+        )
+        assertEquals(Frame(100f, 100f, 80f, 100f), pieces[0].frame)
+        assertEquals(
+            ShapePath("M60 10 L100 10 L100 50 L60 50 Z", Frame(60f, 10f, 40f, 40f), evenOdd = true),
+            pieces[1].path,
+        )
+        assertEquals(Frame(220f, 120f, 80f, 80f), pieces[1].frame)
+
+        // The shape over again, minus what named the whole of it.
+        for (piece in pieces) {
+            assertEquals(ShapeKind.Path, piece.kind)
+            assertEquals(0xFF112233, piece.fill)
+            assertEquals(null, piece.name)
+            assertEquals("", piece.label)
+            assertFalse(piece.isCompoundShape)
+        }
+    }
+
+    @Test
+    fun breakingApartNeedsACompoundShape() {
+        val single = compound("single")
+            .copy(path = ShapePath("M0 0 L40 0 L40 50 Z", Frame(0f, 0f, 40f, 50f)))
+        // The path only counts on the kind that draws by it.
+        val boxed = compound("boxed").copy(kind = ShapeKind.Rectangle)
+        val slide = slideOf(shape("a", 0f, 0f), single, boxed)
+
+        assertTrue(slide === slide.breakApartElement("a"))
+        assertTrue(slide === slide.breakApartElement("single"))
+        assertTrue(slide === slide.breakApartElement("boxed"))
+        assertTrue(slide === slide.breakApartElement("gone"))
+    }
+
+    @Test
+    fun breakingApartBakesTheShapesTransformsIntoThePieces() {
+        // Frame (100,100,200,100), center (200,150). The left piece's center
+        // (140,150) is 60 to the left of it, so a quarter turn swings it to 60
+        // above; the right one's, (260,160), is 60 right and 10 down, which
+        // lands 10 left and 60 down.
+        val turned = compound().copy(rotation = 90f, opacity = 0.5f)
+        val pieces = slideOf(turned).breakApartElement("shape").elements
+
+        assertEquals(90f, pieces[0].rotation)
+        assertEquals(0.5f, pieces[0].opacity)
+        assertEquals(200f, pieces[0].frame.centerX, 0.001f)
+        assertEquals(90f, pieces[0].frame.centerY, 0.001f)
+        assertEquals(190f, pieces[1].frame.centerX, 0.001f)
+        assertEquals(210f, pieces[1].frame.centerY, 0.001f)
+        // Turned in place: a piece's own box is the size it was.
+        assertEquals(80f, pieces[0].frame.width, 0.001f)
+        assertEquals(100f, pieces[0].frame.height, 0.001f)
+
+        val flipped = compound().copy(flippedHorizontally = true)
+        val mirrored = slideOf(flipped).breakApartElement("shape").elements
+        assertEquals(260f, mirrored[0].frame.centerX, 0.001f)
+        assertEquals(140f, mirrored[1].frame.centerX, 0.001f)
+        assertTrue(mirrored[0].flippedHorizontally)
+        assertFalse(mirrored[0].flippedVertically)
+    }
+
+    @Test
+    fun aHoleBreaksOutAsAFilledShapeOfItsOwn() {
+        val ring = compound().copy(
+            frame = Frame(0f, 0f, 100f, 100f),
+            path = ShapePath(
+                data = "M0 0 L100 0 L100 100 L0 100 Z M30 30 L30 70 L70 70 L70 30 Z",
+                bounds = Frame(0f, 0f, 100f, 100f),
+            ),
+        )
+
+        val pieces = slideOf(ring).breakApartElement("shape").elements.map { it as ShapeElement }
+        assertEquals(listOf(Frame(0f, 0f, 100f, 100f), Frame(30f, 30f, 40f, 40f)), pieces.map { it.frame })
+        // Later in the path is on top, so the hole's shape is not hidden by the outer one.
+        assertEquals(listOf(0xFF112233, 0xFF112233), pieces.map { it.fill })
+    }
+
+    @Test
+    fun aShapeInsideAGroupBreaksApartWithinIt() {
+        val slide = slideOf(compound(), shape("c", 400f, 0f))
+            .groupElements(listOf("shape", "c"), groupId = "group")
+        val group = slide.elements.single() as GroupElement
+
+        val broken = slide.breakApartElement("shape").elements.single() as GroupElement
+        assertEquals(3, broken.children.size)
+        assertEquals("c", broken.children.last().id)
+        assertEquals(group.frame, broken.frame)
+    }
+
+    @Test
+    fun breakingApartTakesTheShapesBuildsWithIt() {
+        val slide = slideOf(shape("a", 0f, 0f), compound())
+            .copy(builds = listOf(Build(elementId = "a"), Build(elementId = "shape")))
+
+        // A build left behind would hold a step open for a shape that is gone.
+        val broken = slide.breakApartElement("shape")
+        assertEquals(listOf("a"), broken.builds.map { it.elementId })
+    }
+
+    @Test
+    fun aStraightPieceGetsABoxAsWideAsItsStroke() {
+        // Two rails. Each one's tight box has no height, so it gets the 4 its
+        // stroke takes on the slide, which is 2 back in the path's space.
+        val rails = compound().copy(
+            frame = Frame(0f, 0f, 200f, 100f),
+            strokeWidth = 4f,
+            path = ShapePath("M0 0 L100 0 M0 50 L100 50", Frame(0f, 0f, 100f, 50f)),
+        )
+
+        val pieces = slideOf(rails).breakApartElement("shape").elements.map { it as ShapeElement }
+        assertEquals(Frame(0f, -1f, 100f, 2f), pieces[0].path?.bounds)
+        assertEquals(Frame(0f, -2f, 200f, 4f), pieces[0].frame)
+        assertEquals(Frame(0f, 49f, 100f, 2f), pieces[1].path?.bounds)
+        assertEquals(Frame(0f, 98f, 200f, 4f), pieces[1].frame)
+    }
+
     @Test
     fun aFlippedGroupMirrorsItsChildrenAcrossItsCenter() {
         val slide = slideOf(shape("a", 0f, 0f), shape("b", 200f, 0f))
@@ -705,6 +854,33 @@ class DocumentTest {
         assertFalse(line.endArrow)
     }
 
+    @Test
+    fun serializationRoundTripsAShapesPath() {
+        val path = ShapePath(
+            data = "M0 0 L10 0 C10 5 5 10 0 10 Z M2 2 L4 2 L4 4 Z",
+            bounds = Frame(0f, 0f, 10f, 10f),
+            evenOdd = true,
+        )
+        val document = Document(
+            slides = listOf(
+                Slide(
+                    elements = listOf(
+                        ShapeElement(frame = Frame(0f, 0f, 240f, 160f), kind = ShapeKind.Path, path = path),
+                    ),
+                ),
+            ),
+        )
+
+        val decoded = loadedDocument(document.encodeToString())
+        assertEquals(document, decoded)
+
+        val shape = decoded.slides.single().elements.single() as ShapeElement
+        assertEquals(ShapeKind.Path, shape.kind)
+        assertEquals(path, shape.path)
+        assertEquals(path.commands, shape.path?.commands)
+        assertTrue(shape.isCompoundShape)
+    }
+
     /**
      * Same story as the transform fields: shapes on disk predate the catalog,
      * and a file written before it has to open with the plain solid rectangle
@@ -740,5 +916,7 @@ class DocumentTest {
         assertEquals(null, element.shadow)
         assertFalse(element.startArrow)
         assertTrue(element.endArrow)
+        // Paths came later still: a shape without one has none, not an empty one.
+        assertEquals(null, element.path)
     }
 }

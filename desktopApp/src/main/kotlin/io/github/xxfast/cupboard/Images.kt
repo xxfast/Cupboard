@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard
 
 import io.github.xxfast.cupboard.screens.editor.ImageExtensions
+import io.github.xxfast.cupboard.screens.editor.VectorExtensions
 import java.awt.FileDialog
 import java.awt.Frame
 import java.awt.Image
@@ -25,31 +26,51 @@ internal class PickedImage(val bytes: ByteArray, val extension: String)
 /** Whether this file is one of the kinds an insert takes, by its name alone. */
 private fun File.isImage(): Boolean = extension.lowercase() in ImageExtensions
 
-/** [file]'s bytes, or null if it is not a readable image of a kind we take. */
+/** Whether this file is a vector drawing, which the deck draws rather than decodes. */
+private fun File.isVector(): Boolean = extension.lowercase() in VectorExtensions
+
+/**
+ * Whether this picked picture is a vector drawing. Those become shapes, so they
+ * never join a gallery, and a slot that holds one picture (a replace, a poster,
+ * a fill) has nothing to do with one.
+ */
+internal val PickedImage.isVector: Boolean get() = extension in VectorExtensions
+
+/**
+ * [file]'s bytes, or null if it is not a readable image of a kind we take.
+ *
+ * A vector file counts: a drop, a pasted file and the Insert panel can all hand
+ * one over. A shell whose slot takes pixels only filters it out after.
+ */
 internal fun readImage(file: File): PickedImage? {
-    if (!file.isFile || !file.isImage()) return null
+    if (!file.isFile || !(file.isImage() || file.isVector())) return null
 
     val bytes: ByteArray = runCatching { file.readBytes() }.getOrNull() ?: return null
     return PickedImage(bytes, file.extension.lowercase())
 }
 
 /**
- * A native open panel filtered to images, and what was picked in it.
+ * A native open panel filtered to images, and what was picked in it. Vector
+ * files are offered too when [vectors] is set, which only an insert wants: every
+ * other caller is filling a slot that takes pixels.
  *
  * AWT's panel rather than Swing's, like the Save As one: this is picking a file
  * that exists, which is the case macOS has a real panel for. The filter is
  * honoured on macOS and Linux; Windows reads the wildcard list in the file
  * field instead, so both are set.
  */
-internal fun chooseImage(owner: Frame): PickedImage? {
+internal fun chooseImage(owner: Frame, vectors: Boolean = false): PickedImage? {
+    val extensions: List<String> =
+        if (vectors) ImageExtensions + VectorExtensions else ImageExtensions
     val dialog = FileDialog(owner, "Insert Image", FileDialog.LOAD)
-    dialog.setFilenameFilter { _, name -> File(name).isImage() }
-    dialog.file = ImageExtensions.joinToString(";") { "*.$it" }
+    dialog.setFilenameFilter { _, name -> File(name).extension.lowercase() in extensions }
+    dialog.file = extensions.joinToString(";") { "*.$it" }
     dialog.isVisible = true
 
     val directory: String = dialog.directory ?: return null
     val name: String = dialog.file ?: return null
-    return readImage(File(directory, name))
+    val picked: PickedImage = readImage(File(directory, name)) ?: return null
+    return picked.takeIf { vectors || !it.isVector }
 }
 
 /**
@@ -70,7 +91,7 @@ internal fun chooseImages(owner: Frame): List<PickedImage> {
     dialog.file = ImageExtensions.joinToString(";") { "*.$it" }
     dialog.isVisible = true
 
-    return dialog.files.orEmpty().mapNotNull(::readImage)
+    return dialog.files.orEmpty().mapNotNull(::readImage).filterNot { it.isVector }
 }
 
 /**

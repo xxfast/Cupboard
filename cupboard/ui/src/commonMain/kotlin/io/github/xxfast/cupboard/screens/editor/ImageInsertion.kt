@@ -34,12 +34,17 @@ private const val InsertedImageFraction: Float = 0.6f
  * False is a file the toolkit could not decode, which inserts nothing and writes
  * nothing rather than taking the window down: a shell hands over whatever was
  * dropped on it, and not all of that is an image.
+ *
+ * A vector file is not decoded to pixels: it goes to [insertSvg], which puts its
+ * outlines on the slide as shapes.
  */
 suspend fun EditorViewModel.insertImage(
     bytes: ByteArray,
     extension: String,
     insertionFrame: (Float, Float) -> Frame,
 ): Boolean {
+    if (mediaKind(extension) == MediaKind.Vector) return insertSvg(bytes, insertionFrame)
+
     val image: ImageBitmap = decodeImage(bytes) ?: return false
     val assetId: String = "${newId()}.${extension.lowercase()}"
     assets.write(assetId, bytes)

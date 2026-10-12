@@ -591,16 +591,19 @@ private fun EditorWindow(
     // where pictures always have, and each movie and sound is an insert of its
     // own. False is a lot with nothing in it any insert takes.
     fun insertFiles(files: List<File>): Boolean {
-        val images: List<PickedImage> = files.mapNotNull(::readImage)
+        val (vectors: List<PickedImage>, images: List<PickedImage>) =
+            files.mapNotNull(::readImage).partition { it.isVector }
         val media: List<File> = files.filter { file ->
             file.mediaKind() == MediaKind.Movie || file.mediaKind() == MediaKind.Sound
         }
 
+        // A vector is never a gallery's picture: each is a drawing of its own.
+        insertImages(vectors)
         insertPictures(images)
         if (media.isNotEmpty()) scope.launch {
             for (file in media) viewModel.insertMediaFile(file)
         }
-        return images.isNotEmpty() || media.isNotEmpty()
+        return vectors.isNotEmpty() || images.isNotEmpty() || media.isNotEmpty()
     }
 
     // Insert > Web Video's prompt, up while this is. The shell's rather than the
@@ -755,7 +758,9 @@ private fun EditorWindow(
         // The two verbs that need a file dialog, and so this window: the panel
         // is modal and belongs to the frame it was asked from. Both hand what
         // comes back to the shared insert.
-        val insertImage: () -> Unit = { chooseImage(window)?.let { insertImages(listOf(it)) } }
+        val insertImage: () -> Unit = {
+            chooseImage(window, vectors = true)?.let { insertImages(listOf(it)) }
+        }
         val insertGalleryFiles: () -> Unit = { insertGallery(chooseImages(window)) }
         val addGalleryImages: (GalleryElement) -> Unit = { element ->
             val picked: List<PickedImage> = chooseImages(window)

@@ -14,12 +14,18 @@ internal fun shapeSlides(): List<Slide> = listOf(
     strokesSlide(),
     shadowsSlide(),
     linesAndArrowsSlide(),
+    pathsSlide(),
     objectStylesSlide(),
 )
 
-/** Every [ShapeKind], off `entries` so a new one lands on this grid by itself. */
+/**
+ * Every [ShapeKind] with an outline of its own, off `entries` so a new one lands
+ * on this grid by itself. [ShapeKind.Path] has none to show here: what it draws
+ * is whatever path it carries, which is [pathsSlide]'s to demonstrate.
+ */
 private fun shapeCatalogSlide(): Slide {
-    val shapes: List<Element> = ShapeKind.entries.flatMapIndexed { index, kind ->
+    val kinds: List<ShapeKind> = ShapeKind.entries.filter { it != ShapeKind.Path }
+    val shapes: List<Element> = kinds.flatMapIndexed { index, kind ->
         tile(gridCell(columns = 5, rows = 2, index = index), kind.name) { box ->
             plainShape(box, kind)
         }
@@ -240,6 +246,63 @@ private fun linesAndArrowsSlide(): Slide {
         notes = "Look for: four diagonals running top-left to bottom-right, with the " +
             "arrowheads the caption names and no others. None of the four draws a fill, " +
             "and the heads sit on the ends of the stroke rather than beyond them.",
+    )
+}
+
+/**
+ * [ShapeKind.Path]: a shape drawn by a [ShapePath] of its own. One contour, the
+ * two ways a second contour cuts a hole in the first, and an SVG read into shapes.
+ */
+private fun pathsSlide(): Slide {
+    // Two squares, one inside the other. Wound the same way they only make a
+    // hole under even-odd; wound against each other, nonzero makes it too.
+    val outer = "M0 0 L100 0 L100 100 L0 100 Z"
+    val sameWay = "M30 30 L70 30 L70 70 L30 70 Z"
+    val against = "M30 30 L30 70 L70 70 L70 30 Z"
+    val unit = Frame(0f, 0f, 100f, 100f)
+
+    val paths: List<Pair<String, ShapePath>> = listOf(
+        "one contour" to ShapePath("M0 100 C0 0 100 0 100 100 L50 60 Z", Frame(0f, 25f, 100f, 75f)),
+        "nonzero, same winding" to ShapePath("$outer $sameWay", unit),
+        "nonzero, opposite winding" to ShapePath("$outer $against", unit),
+        "evenOdd, same winding" to ShapePath("$outer $sameWay", unit, evenOdd = true),
+    )
+
+    val drawn: List<Element> = paths.flatMapIndexed { index, (label, path) ->
+        tile(gridCell(columns = 5, rows = 1, index = index), label) { box ->
+            plainShape(box, ShapeKind.Path).copy(cornerRadius = 0f, path = path)
+        }
+    }
+
+    // Two paints, so it arrives as a group of two shapes, the disc over the square.
+    val svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="240" height="240">
+          <rect x="10" y="10" width="100" height="100" rx="16" fill="#7F52FF"/>
+          <circle cx="60" cy="60" r="30" fill="#00C2A8" stroke="white" stroke-width="4"/>
+        </svg>
+    """.trimIndent()
+    val imported: List<Element> = tile(gridCell(columns = 5, rows = 1, index = 4), "svgElement") { box ->
+        val element: Element = svgElement(svg, box.width, box.height) ?: plainShape(box)
+        element.update(
+            frame = Frame(
+                x = box.centerX - element.frame.width / 2,
+                y = box.centerY - element.frame.height / 2,
+                width = element.frame.width,
+                height = element.frame.height,
+            ),
+        )
+    }
+
+    return featureSlide(
+        title = "Paths",
+        subtitle = "ShapeKind.Path: a ShapePath stretched over the frame, and an SVG read into one",
+        elements = drawn + imported,
+        notes = "Look for: an arch with a notch cut up into its base, stretched to fill its " +
+            "box. Then three squares: the second solid with no hole, the third and fourth " +
+            "each with a square hole showing the slide through it. Last, a purple rounded " +
+            "square with a teal disc on it, ringed in white, at its own size in the middle " +
+            "of its box. Select the third or fourth square and Break Apart: two filled " +
+            "squares, the small one on top, both selected.",
     )
 }
 
