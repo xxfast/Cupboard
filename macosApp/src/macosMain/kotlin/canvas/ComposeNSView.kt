@@ -177,27 +177,31 @@ class ComposeNSView(
             override val textInputService get() = this@ComposeNSView.textInputService
         }
 
-    private val skiaLayer = SkiaLayer()
+    // One per stay in a window, null between them. Skiko reads `nsView.window!!`
+    // under every frame it draws (SkiaLayer.contentScale) and a frame asked for
+    // in a window is still queued once we have left it, so the layer goes when
+    // the window does. A new one each time: skiko's will not attach twice.
+    private var skiaLayer: SkiaLayer? = null
     private val scene = CanvasLayersComposeScene(
         coroutineContext = Dispatchers.Main,
         platformContext = platformContext,
-        invalidate = skiaLayer::needRender,
+        invalidate = { skiaLayer?.needRender() },
     )
 
-    private var isAttached = false
+    private val renderDelegate = object : SkikoRenderDelegate {
+        override fun onRender(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
+            if (isDisposed) return
+            val sizeInPx = IntSize(width, height)
+            windowInfo.containerSize = sizeInPx
+            scene.size = sizeInPx
+            scene.render(canvas.asComposeCanvas(), nanoTime)
+        }
+    }
+
     private var isDisposed = false
     private var trackingArea: NSTrackingArea? = null
 
     init {
-        skiaLayer.renderDelegate = object : SkikoRenderDelegate {
-            override fun onRender(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
-                if (isDisposed) return
-                val sizeInPx = IntSize(width, height)
-                windowInfo.containerSize = sizeInPx
-                scene.size = sizeInPx
-                scene.render(canvas.asComposeCanvas(), nanoTime)
-            }
-        }
         scene.setContent(content)
         // A composition left hanging when the field loses focus would keep painting an
         // underline AppKit no longer knows about, so throw it away with the field.
@@ -212,9 +216,11 @@ class ComposeNSView(
         super.viewDidMoveToWindow()
         if (isDisposed) return
         val window = this.window
-        if (window != null && !isAttached) {
-            skiaLayer.attachTo(this)
-            isAttached = true
+        if (window != null && skiaLayer == null) {
+            skiaLayer = SkiaLayer().also { layer ->
+                layer.renderDelegate = renderDelegate
+                layer.attachTo(this)
+            }
         }
         if (window != null) {
             scene.density = Density(window.backingScaleFactor.toFloat())
@@ -222,12 +228,10 @@ class ComposeNSView(
             // Back in a window, so skiko can safely hear about frames again. The
             // post is the catch-up for whatever it missed while we were detached.
             postsFrameChangedNotifications = true
-            if (isAttached) {
-                NSNotificationCenter.defaultCenter.postNotificationName(
-                    aName = NSViewFrameDidChangeNotification,
-                    `object` = this,
-                )
-            }
+            NSNotificationCenter.defaultCenter.postNotificationName(
+                aName = NSViewFrameDidChangeNotification,
+                `object` = this,
+            )
         }
     }
 
@@ -240,7 +244,7 @@ class ComposeNSView(
     override fun layout() {
         super.layout()
         if (isDisposed) return
-        skiaLayer.needRender()
+        skiaLayer?.needRender()
     }
 
     override fun viewWillMoveToWindow(newWindow: NSWindow?) {
@@ -250,6 +254,9 @@ class ComposeNSView(
         // exactly that: re-hosting sets the frame before adding us back, which is
         // what exiting play mode does. Go quiet until we have a window again.
         if (newWindow == null) postsFrameChangedNotifications = false
+        // Detaching disposes the redrawer, so a frame already queued is skipped
+        // and nothing can ask for another until viewDidMoveToWindow builds the next.
+        if (newWindow !== window) detachLayer()
         updateTrackingAreas()
     }
 
@@ -491,8 +498,13 @@ class ComposeNSView(
         trackingArea?.let { removeTrackingArea(it) }
         trackingArea = null
         postsFrameChangedNotifications = false
-        if (isAttached) skiaLayer.detach()
+        detachLayer()
         scene.close()
+    }
+
+    private fun detachLayer() {
+        skiaLayer?.detach()
+        skiaLayer = null
     }
 
     private fun onMouseEvent(event: NSEvent, eventType: PointerEventType, button: PointerButton? = null) {
