@@ -198,6 +198,54 @@ class CodeStepTest {
     }
 
     @Test
+    fun aStepWrittenBeforeScrollingFollowsItsHighlight() {
+        val json = """
+            {
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "code",
+                      "id": "code",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "code": "fun main() {}",
+                      "steps": [{ "highlight": [{ "first": 1, "last": 1 }] }]
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val code = loadedDocument(json).slides.single().elements.single() as CodeElement
+        assertNull(code.steps.single().scrollTo)
+    }
+
+    @Test
+    fun aScrolledStepSurvivesARoundTrip() {
+        val block: CodeElement = steppedBlock(CodeStep(), CodeStep(scrollTo = 4))
+        val document = Document(id = "doc", name = "Deck", slides = listOf(Slide(elements = listOf(block))))
+
+        val decoded = loadedDocument(document.encodeToString())
+        assertEquals(block, decoded.slides.single().elements.single())
+    }
+
+    @Test
+    fun theScrollToFieldReadsALineOrNothing() {
+        assertEquals(12, parseScrollTo("12"))
+        assertEquals(12, parseScrollTo("  12 "))
+        // Empty is the field's Auto, and so is everything that names no line.
+        assertNull(parseScrollTo(""))
+        assertNull(parseScrollTo("0"))
+        assertNull(parseScrollTo("-3"))
+        assertNull(parseScrollTo("top"))
+        assertNull(parseScrollTo("1-3"))
+    }
+
+    @Test
     fun theSampleDeckWalksItsCodeBlockThroughEveryStep() {
         val slide = sampleDocument().allSlides().first { it.title == "Slides as Data" }
         val code = slide.elements.filterIsInstance<CodeElement>().single()

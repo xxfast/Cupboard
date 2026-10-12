@@ -781,6 +781,10 @@ fun EditorView(
                                 onEndTextEdit = onEndTextEdit,
                                 onEditSelectionChanged = onEditSelectionChanged,
                                 shownCodeVersion = { element -> state.shownVersion(element) },
+                                shownCodeStep = { element ->
+                                    state.selectedCodeStep
+                                        .takeIf { element.id == state.selectedCodeElement?.id }
+                                },
                                 shownDiagramStep = { element -> state.shownDiagramStep(element) },
                                 zoom = state.canvasScale,
                                 panX = state.canvasViewport.panX,

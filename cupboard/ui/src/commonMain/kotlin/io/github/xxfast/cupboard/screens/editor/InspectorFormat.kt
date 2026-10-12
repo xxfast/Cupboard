@@ -96,6 +96,7 @@ import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.parseNodeIds
+import io.github.xxfast.cupboard.document.parseScrollTo
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.toggleBold
@@ -1315,24 +1316,31 @@ private fun CodeBody(
             enabled = enabled,
             placeholder = "None",
         ) { text -> write { it.copy(highlight = parseLineRanges(text)) } }
+        EntryField(
+            label = "Scroll To",
+            display = picked.scrollTo?.toString() ?: "",
+            enabled = enabled,
+            placeholder = "Auto",
+        ) { text -> write { it.copy(scrollTo = parseScrollTo(text)) } }
     }
 
     AddStepBuilds(enabled = steps.size > 1, onClick = { onAddSteps(primary.id) })
 }
 
 /**
- * What a step row reads under its name: the version it plays, the lines it shows
- * and the lines it points at, in that order.
+ * What a step row reads under its name: the version it plays, the lines it shows,
+ * the lines it points at and the line it scrolls to, in that order.
  *
- * The version is always there, since every step plays one. The other two are
- * only there when they say something: an empty reveal is every line and an empty
- * highlight is no dimming at all, and spelling those out would be three quarters
- * of the row saying nothing.
+ * The version is always there, since every step plays one. The other three are
+ * only there when they say something: an empty reveal is every line, an empty
+ * highlight is no dimming at all and no scroll line is the step finding its own,
+ * and spelling those out would be most of the row saying nothing.
  */
 private fun CodeStep.summary(): String = buildList {
     add("Version ${version + 1}")
     if (reveal.isNotEmpty()) add("Lines ${reveal.formatLineRanges()}")
     if (highlight.isNotEmpty()) add("Highlight ${highlight.formatLineRanges()}")
+    if (scrollTo != null) add("Scroll $scrollTo")
 }.joinToString(" · ")
 
 /**

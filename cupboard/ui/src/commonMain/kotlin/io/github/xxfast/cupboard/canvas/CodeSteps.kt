@@ -43,7 +43,8 @@ internal data class SteppedLine(
  * the cut, and the point of revealing a body line by line is that the lines look
  * the same on the way in as they do at the end.
  *
- * A null [step], the editor's case, is every line, undimmed.
+ * A null [step], the editor's case with no step row picked, is every line,
+ * undimmed.
  */
 internal fun steppedLines(
     code: String,
@@ -56,8 +57,9 @@ internal fun steppedLines(
  * The block [step] draws: only its revealed lines, each still carrying its own
  * original number, and every line outside its highlight dimmed.
  *
- * A null [step], the editor's case, is the whole block at full strength: same
- * highlighting, same numbers, no spans of ours over the top.
+ * A null [step], the editor's case with no step row picked, is the whole block
+ * at full strength: same highlighting, same numbers, no spans of ours over the
+ * top.
  */
 internal fun steppedCode(
     code: String,

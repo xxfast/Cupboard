@@ -35,12 +35,23 @@ data class LineRange(val first: Int, val last: Int) {
  *
  * [reveal] and [highlight] count lines of that step's own version, not of
  * version 0: a step showing a rewrite points at the rewrite's lines.
+ *
+ * [scrollTo] is for a block with more code than its frame holds: the line, 1-based
+ * and of that same version, the step puts at the top of the block. Null, and so
+ * every step written before this field, follows the [highlight] instead, bringing
+ * the lines the step points at into view, and stays at the top when it points at
+ * nothing. Either way it is where the block rests in this step rather than a
+ * distance from the step before, so a deck opened on step five shows what walking
+ * there would have. A block that fits its frame never scrolls, and one that
+ * doesn't never scrolls past its last line. The renderer does the arithmetic,
+ * since only it knows how tall a line came out.
  */
 @Serializable
 data class CodeStep(
     val reveal: List<LineRange> = emptyList(),
     val highlight: List<LineRange> = emptyList(),
     val version: Int = 0,
+    val scrollTo: Int? = null,
 )
 
 /**
@@ -76,6 +87,16 @@ fun parseLineRanges(text: String): List<LineRange> = text.split(',').mapNotNull 
 fun List<LineRange>.formatLineRanges(): String = joinToString(", ") { range ->
     if (range.first == range.last) "${range.first}" else "${range.first}-${range.last}"
 }
+
+/**
+ * The line [text] names, as the inspector's Scroll To field writes it, or null
+ * for the step's own choice ([CodeStep.scrollTo]).
+ *
+ * As forgiving as [parseLineRanges] and for its reason: an empty field, a zero
+ * and anything that is not a line number are all null, which is the field's
+ * "Auto", rather than an error to put in front of someone mid-keystroke.
+ */
+fun parseScrollTo(text: String): Int? = text.trim().toIntOrNull()?.takeIf { it >= 1 }
 
 /**
  * The 1-based original line numbers [step] shows, in order, out of a block of

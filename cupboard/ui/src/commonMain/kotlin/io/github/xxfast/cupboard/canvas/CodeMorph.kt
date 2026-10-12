@@ -8,15 +8,22 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.lerp
@@ -32,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.CodeToken
@@ -40,6 +48,7 @@ import io.github.xxfast.cupboard.document.TokenEdit
 import io.github.xxfast.cupboard.document.diffTokens
 import io.github.xxfast.cupboard.document.sourceAt
 import io.github.xxfast.cupboard.document.tokenizeCode
+import kotlin.math.roundToInt
 
 /**
  * Where a token sits on one side of a morph, and the ink it draws in there.
@@ -149,8 +158,9 @@ internal fun morphGlyphs(
     return runs
 }
 
-/** One side of a morph: the source it draws, its visible lines, and that text set. */
+/** One side of a morph: its step, the source it draws, its visible lines, and that text set. */
 private data class MorphSide(
+    val step: CodeStep,
     val source: String,
     val lines: List<SteppedLine>,
     val text: AnnotatedString,
@@ -160,8 +170,24 @@ private data class MorphSide(
 /** A run with its glyphs measured once, so a frame of the morph is only drawing. */
 private data class MorphRun(val glyph: GlyphRun, val layout: TextLayoutResult)
 
-/** Everything a frame needs: the runs, and how tall a row of the new version is. */
-private data class MorphPlan(val runs: List<MorphRun>, val rowHeight: Float)
+/**
+ * Where a block with more code than room rests on each side of a morph, in pixels
+ * up from its top: [codeScroll] over each side's own laid out lines.
+ */
+private data class MorphScroll(val from: Int, val to: Int) {
+    /** The one translation the whole block rides at [fraction] of the way through. */
+    fun at(fraction: Float): Float = lerp(from.toFloat(), to.toFloat(), fraction)
+}
+
+/**
+ * Everything a frame needs: the runs, how tall a row of the new version is, and
+ * how far the block has scrolled at either end.
+ */
+private data class MorphPlan(
+    val runs: List<MorphRun>,
+    val rowHeight: Float,
+    val scroll: MorphScroll,
+)
 
 /**
  * [element]'s code morphing from the version [from] shows to the one [to] does,
@@ -172,6 +198,10 @@ private data class MorphPlan(val runs: List<MorphRun>, val rowHeight: Float)
  * so what travels is the token. Both sides are laid out once, the diff pairs the
  * tokens up, and every frame is a walk over that plan at one progress, with no
  * composable and no clock of its own per token.
+ *
+ * A block that scrolls between the two steps does it here the way it does in the
+ * line path: one translation of the glyphs and of both gutters, between the two
+ * places [codeScroll] rests each side at.
  *
  * At rest the caller draws the line path again, so what is on screen when this
  * stops is the static render of [to] to the pixel rather than this pass's
@@ -201,39 +231,69 @@ internal fun MorphedCodeLines(
     val was: MorphSide = remember(element, from) { element.morphSide(from) }
     val now: MorphSide = remember(element, to) { element.morphSide(to) }
 
+    // Known only once the code is laid out, which is under the gutter's width
+    // and so inside the box below. Handed back up here for the gutters, which
+    // read it where they read their alpha: in their layer, never in composition.
+    var scroll: MorphScroll by remember { mutableStateOf(MorphScroll(from = 0, to = 0)) }
+
     Row(modifier.fillMaxSize()) {
         // Crossfaded where the lines are morphed: the numbering changes wholesale
         // between two versions, and a number chasing its line reads as noise
         // beside the code that is actually moving.
         if (element.showLineNumbers) {
             Box(Modifier.padding(end = CodeGutterGap)) {
-                GutterNumbers(was.numbers, element, chrome) { 1f - progress.value }
-                GutterNumbers(now.numbers, element, chrome) { progress.value }
+                GutterNumbers(
+                    numbers = was.numbers,
+                    element = element,
+                    chrome = chrome,
+                    alpha = { 1f - progress.value },
+                    scroll = { scroll.at(progress.value) },
+                )
+                GutterNumbers(
+                    numbers = now.numbers,
+                    element = element,
+                    chrome = chrome,
+                    alpha = { progress.value },
+                    scroll = { scroll.at(progress.value) },
+                )
             }
         }
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val width: Int = with(LocalDensity.current) { maxWidth.roundToPx() }
-            val plan: MorphPlan = remember(was, now, width, element.wrap, style) {
-                morphPlan(element, was, now, style, measurer, width, chrome.text)
+            val viewport: Int = constraints.maxHeight
+            val plan: MorphPlan = remember(was, now, width, viewport, element.wrap, style) {
+                morphPlan(element, was, now, style, measurer, width, viewport, chrome.text)
             }
+            SideEffect { scroll = plan.scroll }
 
             Canvas(Modifier.fillMaxSize()) {
                 val fraction: Float = progress.value
                 val slide: Float = plan.rowHeight * CodeStepSlide
-                for (run in plan.runs) drawGlyphRun(run, fraction, slide)
+                translate(top = -plan.scroll.at(fraction)) {
+                    for (run in plan.runs) drawGlyphRun(run, fraction, slide)
+                }
             }
         }
     }
 }
 
-/** One side's gutter, at whatever [alpha] the crossfade is giving it this frame. */
+/**
+ * One side's gutter, at whatever [alpha] the crossfade is giving it this frame
+ * and [scroll] pixels up, with the code it numbers.
+ *
+ * Measured as tall as its numbers run rather than as tall as the block: a text
+ * set under a bounded height cuts itself off at it, and the numbers under the
+ * fold are the ones a scroll brings up. The layer is inside that for the same
+ * reason, a translucent one being a buffer the size of what it wraps.
+ */
 @Composable
 private fun GutterNumbers(
     numbers: AnnotatedString,
     element: CodeElement,
     chrome: CodeChrome,
     alpha: () -> Float,
+    scroll: () -> Float,
 ) {
     Text(
         text = numbers,
@@ -243,7 +303,12 @@ private fun GutterNumbers(
         lineHeight = (element.fontSize * CodeLineHeight).sp,
         softWrap = false,
         textAlign = TextAlign.End,
-        modifier = Modifier.graphicsLayer { this.alpha = alpha() },
+        modifier = Modifier
+            .wrapContentHeight(align = Alignment.Top, unbounded = true)
+            .graphicsLayer {
+                this.alpha = alpha()
+                translationY = -scroll()
+            },
     )
 }
 
@@ -258,6 +323,7 @@ private fun CodeElement.morphSide(step: CodeStep): MorphSide {
     val source: String = sourceAt(step.version)
     val stepped: SteppedCode = steppedCode(source, language, theme, step)
     return MorphSide(
+        step = step,
         source = source,
         lines = steppedLines(source, language, theme, step),
         text = stepped.text,
@@ -272,6 +338,8 @@ private fun CodeElement.morphSide(step: CodeStep): MorphSide {
  * measures rows with, so a token's rest position is the position the static
  * render gives it. Every run is then measured on its own, so a frame costs one
  * [drawText] per run rather than a fresh layout.
+ *
+ * The same two layouts say where each side rests in [viewport] pixels of height.
  */
 private fun morphPlan(
     element: CodeElement,
@@ -280,6 +348,7 @@ private fun morphPlan(
     style: TextStyle,
     measurer: TextMeasurer,
     width: Int,
+    viewport: Int,
     fallback: Color,
 ): MorphPlan {
     fun layout(text: AnnotatedString): TextLayoutResult = measurer.measure(
@@ -305,7 +374,34 @@ private fun morphPlan(
             MorphRun(run, measurer.measure(AnnotatedString(run.text), style, softWrap = false))
         },
         rowHeight = currentLayout.getLineBottom(0) - currentLayout.getLineTop(0),
+        scroll = MorphScroll(
+            from = codeScroll(previous.step, previous.rows(previousLayout), viewport),
+            to = codeScroll(current.step, current.rows(currentLayout), viewport),
+        ),
     )
+}
+
+/**
+ * This side's lines as [codeScroll] wants them, read off the one [layout] they
+ * were all set in.
+ *
+ * A line starts at the top of the visual line its first character is on and runs
+ * to where the next one starts, so a line that wrapped is as tall as it came out
+ * and the rows under it sit where the line path stacks them.
+ */
+private fun MorphSide.rows(layout: TextLayoutResult): List<CodeScrollRow> {
+    val tops = IntArray(lines.size)
+    var offset = 0
+    for ((index, line) in lines.withIndex()) {
+        tops[index] = layout.getLineTop(layout.getLineForOffset(offset)).roundToInt()
+        offset += line.text.length + 1
+    }
+
+    val bottom: Int = layout.getLineBottom(layout.lineCount - 1).roundToInt()
+    return lines.mapIndexed { index, line ->
+        val next: Int = tops.getOrElse(index + 1) { bottom }
+        CodeScrollRow(line.number, tops[index], next - tops[index])
+    }
 }
 
 /**

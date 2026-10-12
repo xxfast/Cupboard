@@ -1576,8 +1576,9 @@ sealed interface EditorEvent {
      * control on the step row writes, from its revealed lines to its version.
      *
      * [CodeStep.version] is clamped into the versions the block has, so a row
-     * pointing past the end lands on the last one rather than on nothing. One
-     * history entry, and a step already exactly like this is a no-op.
+     * pointing past the end lands on the last one rather than on nothing, and a
+     * [CodeStep.scrollTo] that is no line at all goes back to null. One history
+     * entry, and a step already exactly like this is a no-op.
      */
     data class UpdateCodeStep(
         val elementId: String,

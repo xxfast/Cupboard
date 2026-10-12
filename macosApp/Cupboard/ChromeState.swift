@@ -685,11 +685,14 @@ struct CodeFormat {
     /// versions above.
     let stepCount: Int
     let selectedStep: Int
-    /// The picked step, flattened: the version it plays, and its two line sets
-    /// as the fields write them. Version 0 and empty text when no row is picked.
+    /// The picked step, flattened: the version it plays, its two line sets as
+    /// the fields write them, and the line it scrolls to. Version 0 and empty
+    /// text when no row is picked, and an empty scroll line also when the step
+    /// follows its highlight.
     let stepVersion: Int
     let stepLines: String
     let stepHighlight: String
+    let stepScrollTo: String
     /// One line per step, as the rows read it under their title.
     let stepSummaries: [String]
 
@@ -707,6 +710,7 @@ struct CodeFormat {
         stepVersion = Int(props.stepVersion)
         stepLines = props.stepLines
         stepHighlight = props.stepHighlight
+        stepScrollTo = props.stepScrollTo
         stepSummaries = props.stepSummaries
     }
 }

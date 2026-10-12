@@ -117,6 +117,10 @@ private fun SteppedLine?.strength(): Float = if (this?.dimmed == true) CodeDimAl
  * [MorphedCodeLines], which animates the same change a token at a time on the
  * same clock. The line path is what draws at rest either way.
  *
+ * A block holding more code than its frame also scrolls between the two: where
+ * each step rests is [codeScroll]'s to say, and the way from one to the other is
+ * one slide of the whole stack, over the top of everything its rows are doing.
+ *
  * A row is laid out rather than set as one string because the two orderings have
  * to be measured against each other, which is also what makes wrap behave: a line
  * that reflows is measured taller and everything under it stacks below that.
@@ -269,10 +273,28 @@ internal fun AnimatedCodeLines(
             if (constraints.hasBoundedWidth) constraints.maxWidth
             else left + (bodies.maxOfOrNull { it.width } ?: 0)
 
+        // Where a block with more code than room rests at each end, worked out
+        // over that end's own stack: the room is the height this is measured
+        // under, and what slides out of it is cut at the block's edge, not here.
+        fun scroll(step: CodeStep, tops: IntArray, rowOf: (LineTransition) -> Int?): Int =
+            codeScroll(
+                step = step,
+                rows = rows.indices
+                    .filter { rowOf(rows[it].transition) != null }
+                    .sortedBy { rowOf(rows[it].transition) }
+                    .map { CodeScrollRow(rows[it].transition.number, tops[it], heights[it]) },
+                viewport = constraints.maxHeight,
+            )
+
+        val fromScroll: Int = scroll(from, fromTops) { it.fromRow }
+        val toScroll: Int = scroll(to, toTops) { it.toRow }
+
         // Only the placement reads the animation, so a frame of it costs a walk
         // over the rows rather than a recomposition and a remeasure of the text.
         layout(width, constraints.constrainHeight(stacked)) {
             val fraction: Float = progress.value
+            // One translation over every row, on top of whatever each is doing.
+            val scrolled: Float = lerp(fromScroll.toFloat(), toScroll.toFloat(), fraction)
             for (index in rows.indices) {
                 val slide: Float = CodeStepSlide * heights[index]
                 val y: Float = when (rows[index].transition.motion) {
@@ -283,8 +305,8 @@ internal fun AnimatedCodeLines(
                     LineMotion.Removed -> fromTops[index] + fraction * slide
                 }
 
-                gutters?.get(index)?.place(0, y.roundToInt())
-                bodies[index].place(left, y.roundToInt())
+                gutters?.get(index)?.place(0, (y - scrolled).roundToInt())
+                bodies[index].place(left, (y - scrolled).roundToInt())
             }
         }
     }

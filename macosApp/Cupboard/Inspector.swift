@@ -1216,9 +1216,10 @@ extension EditorView {
         }
     }
 
-    /// The picked step itself: which source it plays, and its two line sets,
-    /// written the way the parser reads them (`1-3, 7`). Both fields commit on
-    /// Enter or on losing focus, so a line set typed in is one edit.
+    /// The picked step itself: which source it plays, its two line sets,
+    /// written the way the parser reads them (`1-3, 7`), and the line it
+    /// scrolls to. Every field commits on Enter or on losing focus, so a line
+    /// set typed in is one edit.
     func codeStepFields(_ code: CodeFormat) -> some View {
         let versions = (0..<code.versionCount).map { "Version \($0 + 1)" }
         let step = code.selectedStep
@@ -1246,6 +1247,15 @@ extension EditorView {
                 Spacer(minLength: 0)
                 StringField(placeholder: "None", value: code.stepHighlight, palette: palette) {
                     host.setCodeStepHighlight(index: Int32(step), text: $0)
+                }
+                .frame(width: 128)
+            }
+
+            HStack(spacing: 8) {
+                rowLabel("Scroll To")
+                Spacer(minLength: 0)
+                StringField(placeholder: "Auto", value: code.stepScrollTo, palette: palette) {
+                    host.setCodeStepScrollTo(index: Int32(step), text: $0)
                 }
                 .frame(width: 128)
             }

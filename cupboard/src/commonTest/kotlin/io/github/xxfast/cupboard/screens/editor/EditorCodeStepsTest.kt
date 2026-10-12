@@ -285,6 +285,20 @@ class EditorCodeStepsTest {
     }
 
     @Test
+    fun aStepScrollsToALineOrGoesBackToFollowingItsHighlight() = runTest {
+        val viewModel: EditorViewModel = selected()
+
+        viewModel.onUpdateCodeStep("code", 0, steps[0].copy(scrollTo = 2))
+        val scrolled: EditorState = viewModel.await { it.block().steps[0].scrollTo == 2 }
+        assertTrue(scrolled.canUndo)
+
+        // No line at all is no scroll of the step's own: back to null, not kept.
+        viewModel.onUpdateCodeStep("code", 0, steps[0].copy(scrollTo = 0))
+        val cleared: EditorState = viewModel.await { it.block().steps[0].scrollTo == null }
+        assertEquals(steps[0], cleared.block().steps[0])
+    }
+
+    @Test
     fun staleEventsChangeNothingAndCostNoHistory() = runTest {
         val viewModel: EditorViewModel = selected()
 

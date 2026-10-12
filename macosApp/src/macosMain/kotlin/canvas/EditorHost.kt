@@ -141,6 +141,7 @@ import io.github.xxfast.cupboard.screens.editor.addDeckFont
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.parseLineRanges
+import io.github.xxfast.cupboard.document.parseScrollTo
 import io.github.xxfast.cupboard.document.parseNodeIds
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.document.resolvedLink
@@ -816,14 +817,17 @@ class CodeProps(
     val stepCount: Int,
     val selectedStep: Int,
     /**
-     * The picked step, flattened: the version it plays, and its two line sets
-     * spelled the way the fields write them (`1-3, 7`). Empty text and version 0
-     * when no row is picked, which is what the fields then show.
+     * The picked step, flattened: the version it plays, its two line sets
+     * spelled the way the fields write them (`1-3, 7`), and the line it scrolls
+     * to. Empty text and version 0 when no row is picked, which is what the
+     * fields then show, and an empty [stepScrollTo] is also a step that follows
+     * its highlight.
      */
     val stepVersion: Int,
     val stepLines: String,
     val stepHighlight: String,
-    /** One line per step, as the rows read it: `Version 2 · Lines 1-3, 7 · Highlight 5`. */
+    val stepScrollTo: String,
+    /** One line per step, as the rows read it: `Version 2 · Lines 1-3, 7 · Highlight 5 · Scroll 12`. */
     val stepSummaries: List<String>,
 )
 
@@ -837,6 +841,7 @@ private fun CodeStep.summary(): String {
         "Version ${version + 1}",
         reveal.formatLineRanges().takeIf { it.isNotEmpty() }?.let { "Lines $it" },
         highlight.formatLineRanges().takeIf { it.isNotEmpty() }?.let { "Highlight $it" },
+        scrollTo?.let { "Scroll $it" },
     )
     return parts.joinToString(" · ")
 }
@@ -1546,6 +1551,11 @@ class EditorHost(
                     // The version the inspector picked, so the canvas shows it
                     // and the caret types into it; every other block is at rest.
                     shownCodeVersion = { element -> state.shownVersion(element) },
+                    // And the step the inspector picked, drawn on its block the
+                    // way it will play: revealed, dimmed and scrolled.
+                    shownCodeStep = { element ->
+                        state.selectedCodeStep.takeIf { element.id == state.selectedCodeElement?.id }
+                    },
                     // Likewise the diagram step the inspector picked, previewed
                     // where it will play.
                     shownDiagramStep = { element -> state.shownDiagramStep(element) },
@@ -3290,6 +3300,7 @@ class EditorHost(
             stepVersion = state.selectedCodeStep?.version ?: 0,
             stepLines = state.selectedCodeStep?.reveal?.formatLineRanges().orEmpty(),
             stepHighlight = state.selectedCodeStep?.highlight?.formatLineRanges().orEmpty(),
+            stepScrollTo = state.selectedCodeStep?.scrollTo?.toString().orEmpty(),
             stepSummaries = code.steps.map { it.summary() },
         )
     }
@@ -3368,7 +3379,12 @@ class EditorHost(
         updateCodeStep(index) { it.copy(highlight = parseLineRanges(text)) }
     }
 
-    /** The three setters above, over the step the list has picked. */
+    /** The line step [index] puts at the top of the block. Empty follows the highlight. */
+    fun setCodeStepScrollTo(index: Int, text: String) {
+        updateCodeStep(index) { it.copy(scrollTo = parseScrollTo(text)) }
+    }
+
+    /** The four setters above, over the step the list has picked. */
     private inline fun updateCodeStep(index: Int, edit: (CodeStep) -> CodeStep) {
         val code: CodeElement = state.selectedCodeElement ?: return
         val step: CodeStep = code.steps.getOrNull(index) ?: return

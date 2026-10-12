@@ -1822,8 +1822,10 @@ fun EditorPresenter(
             is UpdateCodeStep -> (state.unlockedElement(event.elementId) as? CodeElement)
                 ?.takeIf { event.index in it.steps.indices }
                 ?.let { element ->
-                    val step: CodeStep = event.step
-                        .copy(version = event.step.version.coerceIn(element.sources.indices))
+                    val step: CodeStep = event.step.copy(
+                        version = event.step.version.coerceIn(element.sources.indices),
+                        scrollTo = event.step.scrollTo?.takeIf { it >= 1 },
+                    )
                     if (element.steps[event.index] == step) return@let state
 
                     undone.push(state.document)

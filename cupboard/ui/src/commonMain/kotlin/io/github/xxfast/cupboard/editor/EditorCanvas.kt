@@ -106,6 +106,7 @@ import io.github.xxfast.cupboard.canvas.textStyle
 import io.github.xxfast.cupboard.canvas.title
 import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
@@ -329,6 +330,19 @@ fun EditorCanvas(
      */
     shownCodeVersion: (CodeElement) -> Int = { 0 },
     /**
+     * Which step a code block draws in on this canvas: `EditorState.selectedCodeStep`
+     * for the selected block, so the row picked in the inspector draws the way it
+     * will play (its reveal, its dim, its scroll) and walks to the next row picked,
+     * and null, the whole block, for every other. [shownCodeVersion]'s twin, a
+     * lambda for the same reason, and defaulted to the whole block for a shell
+     * with no step list.
+     *
+     * Only what the step does to the lines is taken from it. Which version they
+     * are lines of stays [shownCodeVersion]'s to say, and the caret's field draws
+     * the whole block whatever is picked.
+     */
+    shownCodeStep: (CodeElement) -> CodeStep? = { null },
+    /**
      * Which step a diagram draws in on this canvas: `EditorState.shownDiagramStep`,
      * the inspector's picked step for the selected diagram and null, the whole
      * diagram, for every other. [shownCodeVersion]'s twin, a lambda for the same
@@ -547,6 +561,9 @@ fun EditorCanvas(
                 ElementView(
                     // A grouped element under the caret is left out of its group.
                     element = element.without(editing?.id).atShownVersion(shownCodeVersion),
+                    // The block above is already the shown version, written into
+                    // its first source, so the step is pointed at that one.
+                    codeStep = (element as? CodeElement)?.let(shownCodeStep)?.copy(version = 0),
                     diagramStep = (element as? DiagramElement)?.let(shownDiagramStep),
                 )
             }

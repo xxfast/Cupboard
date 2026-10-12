@@ -130,10 +130,11 @@ fun Long.toComposeColor(): Color = Color(this)
  * inside their group's box would otherwise apply the group's offset twice.
  *
  * [codeStep] and [diagramStep] are the states a [CodeElement] and a
- * [DiagramElement] draw in, resolved by the caller from the slide's build order.
- * Null, the editor's case, is the whole of either. Only a top-level element gets
- * one: a stepped element inside a group draws whole, since a build names an
- * element the slide holds.
+ * [DiagramElement] draw in, resolved by the caller: from the slide's build order
+ * in play, and from the step row picked in the inspector on the editor canvas.
+ * Null, the editor's case with no row picked, is the whole of either. Only a
+ * top-level element gets one: a stepped element inside a group draws whole, since
+ * a build names an element the slide holds.
  *
  * [entry] is the build that brings the element in, for the kinds that animate
  * themselves rather than being faded in from outside. Only [TerminalElement]
@@ -1133,9 +1134,11 @@ internal fun Modifier.codeChrome(element: CodeElement): Modifier {
  * A code block: its theme's chrome, its numbers, and its highlighted text.
  *
  * [step] is the state to draw, or null for the whole block, which is the editor's
- * case. A step that hides lines reflows the ones that are left, and the gutter
- * keeps drawing each one's original number, so a reveal reads as a block filling
- * in rather than as a block being renumbered.
+ * case until a step row is picked. A step that hides lines reflows the ones that
+ * are left, and the gutter keeps drawing each one's original number, so a reveal
+ * reads as a block filling in rather than as a block being renumbered. One with
+ * more code than the block holds scrolls it ([codeScroll]), under the padding and
+ * out through the clip [codeChrome] already makes at the block's edge.
  *
  * The whole block is two [Text]s, the gutter and the code: one line per line, so
  * they line up, and the numbers stay out of anything the code is selected or
