@@ -85,7 +85,24 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
         role = PlaceholderRole.Code,
     )
 
-    /** The [project] tree, tab chip and editor island of the two editor layouts. */
+    /** The Kotlin mark, in the gap the [project] heading leaves to its left. */
+    val kotlinLogo: ShapeElement = ShapeElement(
+        id = "islands-kotlin-logo",
+        frame = Frame(115f, 156f, 38f, 38f),
+        name = "kotlin logo",
+        kind = ShapeKind.Path,
+        cornerRadius = 0f,
+        fill = KotlinLogoStart,
+        gradient = ShapeGradient(start = KotlinLogoStart, end = KotlinLogoEnd, angle = 225f),
+        strokeColor = Black,
+        strokeWidth = 0f,
+        path = ShapePath(
+            data = "M112.484 112.484 L15.516 112.484 L15.516 15.516 L112.484 15.516 L64 64 Z",
+            bounds = Frame(15.516f, 15.516f, 96.968f, 96.968f),
+        ),
+    )
+
+    /** The [project] tree, tab chip and editor island of the two editor layouts, [logo] before its heading. */
     fun editor(
         id: String,
         title: String,
@@ -93,16 +110,20 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
         language: String,
         file: String,
         background: SlideBackground,
+        logo: ShapeElement? = null,
     ): Slide = layout(
             id,
             title,
-            textBox("$id-project", Frame(177f, 150f, 420f, 60f), project, heading, role = null),
-            island("$id-tree-island", Frame(89f, 249f, 518f, 698f)),
-            tree("$id-tree", Frame(112f, 272f, 472f, 652f)),
-            tabChip("$id-tab", Frame(666f, 124f, 513f, 87f)),
-            titleBox("$id-file", Frame(690f, 140f, 470f, 55f), file, tab),
-            island("$id-editor-island", Frame(662f, 239f, 1186f, 717f)),
-            code("$id-code", Frame(708f, 285f, 1094f, 625f), language),
+            *listOfNotNull(
+                logo,
+                textBox("$id-project", Frame(177f, 150f, 420f, 60f), project, heading, role = null),
+                island("$id-tree-island", Frame(89f, 249f, 518f, 698f)),
+                tree("$id-tree", Frame(112f, 272f, 472f, 652f)),
+                tabChip("$id-tab", Frame(666f, 124f, 513f, 87f)),
+                titleBox("$id-file", Frame(690f, 140f, 470f, 55f), file, tab),
+                island("$id-editor-island", Frame(662f, 239f, 1186f, 717f)),
+                code("$id-code", Frame(708f, 285f, 1094f, 625f), language),
+            ).toTypedArray(),
             background = background,
         )
 
@@ -148,7 +169,7 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
             "islands-big-fact",
             "Big Fact",
             textBox("islands-big-fact-body", Frame(98f, 480f, 1722f, 190f), "100%", fact),
-            background = SlideBackground.Color(White),
+            background = Mist,
         ),
         layout(
             "islands-notes",
@@ -157,7 +178,7 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
             island("islands-notes-island", Frame(82f, 223f, 1311f, 757f)),
             textBox("islands-notes-body", Frame(128f, 269f, 1219f, 665f), "Notes", notes),
         ),
-        editor("islands-kotlin", "Kotlin Editor", "Project", "kotlin", "File.kt", Lavender),
+        editor("islands-kotlin", "Kotlin Editor", "Project", "kotlin", "File.kt", Lavender, kotlinLogo),
         run("islands-kotlin-run", "Kotlin Editor and Run", "kotlin", "File.kt", Lavender),
         editor("islands-csharp", "C# Editor", "C# Project", "csharp", "File.cs", Sky),
         run("islands-csharp-run", "C# Editor and Run", "csharp", "File.cs", Sky),
@@ -221,6 +242,9 @@ internal val IslandsGrey: SlideBackground = SlideBackground.Gradient(start = Whi
 private val Lavender: SlideBackground = SlideBackground.Gradient(start = White, end = 0xFFABA3ED, angle = 135f)
 private val Sky: SlideBackground = SlideBackground.Gradient(start = White, end = 0xFF56C1FF, angle = 135f)
 
+/** Big Fact's: flat white in the deck, graded here like the rest so the card doesn't read as unthemed. */
+private val Mist: SlideBackground = SlideBackground.Gradient(start = White, end = 0xFFECEEF2, angle = 135f)
+
 /** Keynote's Dynamic Colour motion background, as the title and statement cards showed it. */
 private val Pink: SlideBackground = SlideBackground.Color(0xFFDC4065)
 
@@ -233,6 +257,8 @@ private const val TabFill: Long = 0xFFE3EAFD
 private const val TabStroke: Long = 0xFFA7BDF3
 private const val TabStrokeWidth: Float = 5f
 private const val KotlinPurple: Long = 0xFF7C51E6
+private const val KotlinLogoStart: Long = 0xFFE44857
+private const val KotlinLogoEnd: Long = 0xFF7F52FF
 private const val White: Long = 0xFFFFFFFF
 private const val Black: Long = 0xFF000000
 private const val Transparent: Long = 0x00000000

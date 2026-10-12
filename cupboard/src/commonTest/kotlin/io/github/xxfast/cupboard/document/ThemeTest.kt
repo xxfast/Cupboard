@@ -114,9 +114,9 @@ class ThemeTest {
         assertEquals("kotlin" to "csharp", kotlin.language to csharp.language)
         assertEquals(PlaceholderRole.Code, kotlin.role)
 
-        // The islands are the layout's own, so a slide inherits rather than edits them.
+        // The islands and the Kotlin logo are the layout's own, so a slide inherits rather than edits them.
         val editor: Slide = byTitle.getValue("Kotlin Editor")
-        assertEquals(3, editor.elements.filterIsInstance<ShapeElement>().count { it.placeholderRole == null })
+        assertEquals(4, editor.elements.filterIsInstance<ShapeElement>().count { it.placeholderRole == null })
         assertEquals(TextFont.JetBrainsMono, theme.defaults.textFont)
 
         // Its style library is the six plus the island, the tab and the three verdicts, one Warning.
