@@ -684,11 +684,16 @@ data class GroupElement(
  * their colours, because that is what someone picking one is looking for.
  *
  * [Atom] is where every code box starts, and where every document written before
- * this enum existed lands when it is opened. [Notepad] is the one light palette:
- * its block is drawn pale so its ink is legible, on a slide that stays dark.
+ * this enum existed lands when it is opened. [Notepad] and [IntelliJLight] are
+ * the light palettes: their blocks are drawn pale so their ink is legible, on a
+ * slide that may stay dark.
+ *
+ * [IntelliJLight] and [IntelliJDark] are ours rather than the highlighter's: the
+ * editor schemes the IDE's Islands Light and Islands Dark themes set, where
+ * [Darcula] is the scheme it shipped before 2023.
  */
 @Serializable
-enum class CodeTheme { Atom, Darcula, Monokai, Pastel, Matrix, Notepad }
+enum class CodeTheme { Atom, Darcula, Monokai, Pastel, Matrix, Notepad, IntelliJLight, IntelliJDark }
 
 /**
  * A terminal window on a slide: a command, what it printed, and the chrome around

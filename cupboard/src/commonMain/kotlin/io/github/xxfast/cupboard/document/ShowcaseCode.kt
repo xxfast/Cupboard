@@ -21,9 +21,9 @@ internal fun codeSlides(): List<Slide> = listOf(
 /** Every [CodeTheme], off `entries`, with one snippet in all of them. */
 private fun codeThemesSlide(): Slide {
     val palettes: List<Element> = CodeTheme.entries.flatMapIndexed { index, theme ->
-        val cell: Frame = gridCell(stage(560f), columns = 3, rows = 2, index = index)
+        val cell: Frame = gridCell(stage(560f), columns = 4, rows = 2, index = index)
         tile(cell, theme.name) { box ->
-            CodeElement(frame = box, code = PaletteSample, fontSize = 19f, theme = theme)
+            CodeElement(frame = box, code = PaletteSample, fontSize = 14f, theme = theme)
         }
     }
 
@@ -31,10 +31,10 @@ private fun codeThemesSlide(): Slide {
         title = "Code Themes",
         subtitle = "every CodeTheme, on the same four lines of Kotlin",
         elements = palettes,
-        notes = "Look for: six blocks of the same code in six palettes. Notepad is the one " +
-            "light block, so its ink must be dark and legible on a pale panel while the " +
-            "slide around it stays dark. Keywords, the string and the comment should be " +
-            "told apart in every palette, not just the first.",
+        notes = "Look for: eight blocks of the same code in eight palettes. Notepad and " +
+            "IntelliJLight are the light blocks, so their ink must be dark and legible on " +
+            "a pale panel while the slide around them stays dark. Keywords, the string and " +
+            "the comment should be told apart in every palette, not just the first.",
     )
 }
 

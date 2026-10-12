@@ -112,7 +112,7 @@ class ThemeTest {
         // An editor's code placeholder is in the deck's light syntax palette and its language.
         val kotlin: CodeElement = byTitle.getValue("Kotlin Editor").elements.filterIsInstance<CodeElement>().single()
         val csharp: CodeElement = byTitle.getValue("C# Editor").elements.filterIsInstance<CodeElement>().single()
-        assertEquals(CodeTheme.Notepad, kotlin.theme)
+        assertEquals(CodeTheme.IntelliJLight, kotlin.theme)
         assertEquals("kotlin" to "csharp", kotlin.language to csharp.language)
         assertEquals(PlaceholderRole.Code, kotlin.role)
 

@@ -149,7 +149,7 @@ data class Theme(
  * A slide's look is the document's and never the app's, so a light theme is light
  * in both app themes and a dark one dark. The vivid four set white ink on a
  * saturated gradient and cut their shapes out of it in translucent white; the
- * light two pair dark ink with [CodeTheme.Notepad], the one light syntax palette.
+ * light two pair dark ink with [CodeTheme.Notepad], a light syntax palette.
  *
  * "Cupboard" is the app's own look, and so is exactly what a document that has
  * never been themed already shows: [ElementDefaults]' own values, no background
@@ -367,7 +367,7 @@ object BuiltInThemes {
             shapeFill = 0xFFFFFFFF,
             shapeStroke = 0x00000000,
             shapeLabelColor = 0xFF202020,
-            codeTheme = CodeTheme.Notepad,
+            codeTheme = CodeTheme.IntelliJLight,
             accent = 0xFF3574F0,
         )
         Theme(

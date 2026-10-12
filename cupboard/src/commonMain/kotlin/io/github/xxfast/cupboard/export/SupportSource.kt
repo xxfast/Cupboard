@@ -78,6 +78,8 @@ val CodeBackgrounds: Map<String, Long> = mapOf(
     "Pastel" to 0xFF2E3436L,
     "Matrix" to 0xFF000000L,
     "Notepad" to 0xFFFDFDF6L,
+    "IntelliJLight" to 0xFFFFFFFFL,
+    "IntelliJDark" to 0xFF191A1CL,
 )
 
 val CodeForegrounds: Map<String, Long> = mapOf(
@@ -87,6 +89,8 @@ val CodeForegrounds: Map<String, Long> = mapOf(
     "Pastel" to 0xFFDFDEE0L,
     "Matrix" to 0xFF008500L,
     "Notepad" to 0xFF000080L,
+    "IntelliJLight" to 0xFF080808L,
+    "IntelliJDark" to 0xFFBCBEC4L,
 )
 
 /** A packed ARGB colour, the way a Cupboard document stores one. */

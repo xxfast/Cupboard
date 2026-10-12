@@ -15,7 +15,7 @@ Lifted out of the "Kotlin to C#" deck (`Kotlin to C#.key`, 47 slides on Keynote'
 | Text | JetBrains Mono 42, #202020, left, spacing 1.0 | the island body text |
 | Body ink | #383838 | the dimmer code runs |
 | Shape | fill #FFFFFF, no border | an island |
-| Code | Notepad (the light palette) | the deck's IDE-light syntax colours |
+| Code | IntelliJLight (the IDE's own Light scheme, which Islands Light sets) | the deck's IDE-light syntax colours |
 | Accent | #3574F0 | the JetBrains IDE's own accent; the deck has no one accent of its own |
 
 ## Backgrounds
@@ -59,11 +59,11 @@ Lifted out of the "Kotlin to C#" deck (`Kotlin to C#.key`, 47 slides on Keynote'
 | Kotlin Editor, C# Editor | tab chip | 666, 124, 513, 87 | | | | |
 | Kotlin Editor, C# Editor | title: File.kt / File.cs | 690, 140, 470, 55 | JetBrainsMono | 42 | 0.9 | #000000 |
 | Kotlin Editor, C# Editor | island | 662, 239, 1186, 717 | | | | |
-| Kotlin Editor, C# Editor | code | 708, 285, 1094, 625 | JetBrains Mono | 42 | | Notepad |
+| Kotlin Editor, C# Editor | code | 708, 285, 1094, 625 | JetBrains Mono | 42 | | IntelliJLight |
 | ... and Run | tab chip | 41, 132, 438, 91 | | | | |
 | ... and Run | title: File.kt / File.cs | 65, 150, 400, 55 | JetBrainsMono | 42 | 0.9 | #000000 |
 | ... and Run | island | 60, 249, 1142, 698 | | | | |
-| ... and Run | code | 106, 295, 1050, 606 | JetBrains Mono | 42 | | Notepad |
+| ... and Run | code | 106, 295, 1050, 606 | JetBrains Mono | 42 | | IntelliJLight |
 | ... and Run | text: ⏵ Run | 1247, 150, 300, 60 | JetBrainsMono-Bold | 42 | 0.9 | #000000 |
 | ... and Run | island | 1234, 249, 628, 698 | | | | |
 | ... and Run | body: Output | 1280, 295, 536, 606 | JetBrainsMono | 42 | 1.0 | #202020 |
