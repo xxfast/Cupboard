@@ -1,8 +1,10 @@
 // Pictures, movies and sounds on a slide: where the bytes come from, and
 // nothing about what happens to them after. Three ways in: an Open panel, a
 // drop on the window, and the pasteboard, all sorted by the core's `mediaKind`
-// and ending at `insertImage`, `insertMovie` or `insertAudio`, which take bytes
-// and an extension. An SVG goes through `insertImage` too, and comes out a shape. Everything AppKit and AVFoundation know about media stops
+// and ending at `insertImage`, which takes bytes and an extension, or at
+// `insertMovie` or `insertAudio`, which take the file's path and copy it into
+// the deck themselves: a recording is too big to hand over as bytes.
+// An SVG goes through `insertImage` too, and comes out a shape. Everything AppKit and AVFoundation know about media stops
 // in this file; Kotlin has never heard of NSImage, AVAsset or a pasteboard type.
 import SwiftUI
 import AppKit
@@ -74,22 +76,20 @@ enum Media {
         host.insertWebVideo(url: field.stringValue)
     }
 
-    /// New bytes behind the selected movie or sound, its box left where it is.
+    /// A new file behind the selected movie or sound, its box left where it is.
+    /// Handed over as a path: Kotlin copies it into the deck, file to file.
     /// A movie gets a fresh poster off the new file, since the old still was a
     /// picture of something else.
     static func replaceMedia(in host: EditorHost, movie: Bool) {
         let extensions = movie ? host.movieExtensions() : host.soundExtensions()
-        guard
-            let url = pickFile(prompt: "Replace", types: types(extensions)),
-            let bytes = try? Data(contentsOf: url, options: .mappedIfSafe)
-        else { return }
+        guard let url = pickFile(prompt: "Replace", types: types(extensions)) else { return }
         guard movie else {
-            host.replaceMedia(bytes: bytes, extension: url.pathExtension, poster: nil)
+            host.replaceMedia(path: url.path, extension: url.pathExtension, poster: nil)
             return
         }
         Task { @MainActor in
             let peek = await MoviePeek.of(url)
-            host.replaceMedia(bytes: bytes, extension: url.pathExtension, poster: peek.poster)
+            host.replaceMedia(path: url.path, extension: url.pathExtension, poster: peek.poster)
         }
     }
 
@@ -125,14 +125,17 @@ enum Media {
     /// [url]'s movie on the slide. The poster and the size come off the file
     /// first, which takes AVFoundation a moment, so the insert lands after.
     /// A file AVFoundation cannot read still inserts, as the dark box.
+    ///
+    /// Only the path crosses over. The movie itself is never read here: Kotlin
+    /// copies it into the deck file to file, and one it cannot copy inserts
+    /// nothing.
     private static func insertMovie(_ url: URL, into host: EditorHost) {
-        guard let bytes = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
         let extension_ = url.pathExtension
         let title = url.deletingPathExtension().lastPathComponent
         Task { @MainActor in
             let peek = await MoviePeek.of(url)
             host.insertMovie(
-                bytes: bytes,
+                path: url.path,
                 extension: extension_,
                 title: title,
                 poster: peek.poster,
@@ -142,10 +145,10 @@ enum Media {
         }
     }
 
+    /// [url]'s sound on the slide, by its path, for `insertMovie`'s reason.
     private static func insertAudio(_ url: URL, into host: EditorHost) {
-        guard let bytes = try? Data(contentsOf: url, options: .mappedIfSafe) else { return }
         host.insertAudio(
-            bytes: bytes,
+            path: url.path,
             extension: url.pathExtension,
             title: url.deletingPathExtension().lastPathComponent
         )

@@ -4,6 +4,7 @@ import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.DocumentLoad
+import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ShowcasePictureId
@@ -116,7 +117,12 @@ class CupboardLifecycleTest {
             Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
         )
         val hero = byteArrayOf(7, 7, 7)
-        runBlocking { opened.viewModel.assets.write("hero.png", hero) }
+        // Long enough to cross a few buffers on its way: assets go file to file.
+        val movie = ByteArray(100_003) { (it % 251).toByte() }
+        runBlocking {
+            opened.viewModel.assets.write("hero.png", hero)
+            opened.viewModel.assets.write("movie.mov", movie)
+        }
 
         // No extension: a save panel hands one back without it, and the deck
         // still has to end up a bundle.
@@ -134,16 +140,66 @@ class CupboardLifecycleTest {
         // Renamed to the file the user picked, on disk as well as in the editor.
         assertEquals("Copy", saved.states.value.document.name)
         assertEquals("Copy", deckIn(copy).name)
+        assertEquals(setOf("hero.png", "movie.mov"), runBlocking { saved.assets.ids() }.toSet())
         assertContentEquals(hero, runBlocking { saved.assets.read("hero.png") })
+        assertContentEquals(movie, runBlocking { saved.assets.read("movie.mov") })
 
         // A copy, not a move: what it was saved from is still there, still named
         // what it was, and still holding its own assets.
         assertEquals("Origin", deckIn(bundle).name)
         assertContentEquals(hero, runBlocking { opened.viewModel.assets.read("hero.png") })
+        assertContentEquals(movie, runBlocking { opened.viewModel.assets.read("movie.mov") })
         assertEquals(
             listOf(copy.toString(), bundle.toString()),
             Cupboard.recentDocuments(directory),
         )
+
+        opened.viewModel.close()
+        saved.close()
+    }
+
+    @Test
+    fun savesAMemoryBackedDecksAssetsIntoTheBundle() {
+        val directory: Path = tempDirectory()
+        val hero = byteArrayOf(7, 7, 7)
+        // An editor with no bundle behind it, as the preview shells run: it has
+        // no files to copy, only the bytes its store hands over.
+        val scratch = EditorViewModel(
+            initialDocument = Document(name = "Scratch"),
+            documentStore = CupboardBundle.documentStore(Path(directory, "Scratch.cupboard")),
+            assets = InMemoryAssetStore(mapOf("hero.png" to hero)),
+        )
+
+        val saved = Cupboard.saveAs(
+            scratch,
+            Path(directory, "Kept"),
+            Dispatchers.Unconfined,
+            directory,
+        )
+
+        assertEquals(listOf("hero.png"), runBlocking { saved.assets.ids() })
+        assertContentEquals(hero, runBlocking { saved.assets.read("hero.png") })
+
+        scratch.close()
+        saved.close()
+    }
+
+    @Test
+    fun savingOverItsOwnBundleKeepsItsAssets() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Origin")
+        val opened = assertIs<OpenResult.Opened>(
+            Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
+        )
+        val movie = ByteArray(100_003) { (it % 251).toByte() }
+        runBlocking { opened.viewModel.assets.write("movie.mov", movie) }
+
+        // The save panel's own file picked again: every asset is then copied
+        // onto itself, which must not be how a movie gets emptied.
+        val saved = Cupboard.saveAs(opened.viewModel, bundle, Dispatchers.Unconfined, directory)
+
+        assertEquals(bundle.toString(), saved.location)
+        assertContentEquals(movie, runBlocking { saved.assets.read("movie.mov") })
 
         opened.viewModel.close()
         saved.close()

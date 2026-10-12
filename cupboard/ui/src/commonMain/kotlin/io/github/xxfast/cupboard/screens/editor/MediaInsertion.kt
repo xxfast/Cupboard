@@ -34,7 +34,23 @@ import kotlinx.coroutines.withContext
  * tell it more is free to build the element itself.
  */
 suspend fun EditorViewModel.insertMovie(bytes: ByteArray, extension: String, title: String) {
-    val assetId: String = writeMedia(bytes, extension)
+    insertMovie(extension, title) { assetId -> assets.write(assetId, bytes) }
+}
+
+/**
+ * [insertMovie] for a movie the caller would rather not hold as bytes: [write]
+ * is handed the fresh asset id and puts the movie under it however it likes.
+ *
+ * What a shell with a file to hand uses, so a long recording is copied into the
+ * deck rather than read into memory first. A lambda rather than a path, because
+ * nothing here knows what a file is. A [write] that throws inserts nothing.
+ */
+suspend fun EditorViewModel.insertMovie(
+    extension: String,
+    title: String,
+    write: suspend (assetId: String) -> Unit,
+) {
+    val assetId: String = writeMedia(extension, write)
     val state: EditorState = states.value
     onInsertElement(
         videoElement(
@@ -48,7 +64,16 @@ suspend fun EditorViewModel.insertMovie(bytes: ByteArray, extension: String, tit
 
 /** [insertMovie] for a sound: the bytes written in, the pill on the slide under [title]. */
 suspend fun EditorViewModel.insertSound(bytes: ByteArray, extension: String, title: String) {
-    val assetId: String = writeMedia(bytes, extension)
+    insertSound(extension, title) { assetId -> assets.write(assetId, bytes) }
+}
+
+/** [insertSound] with the writing left to [write], for [insertMovie]'s reason. */
+suspend fun EditorViewModel.insertSound(
+    extension: String,
+    title: String,
+    write: suspend (assetId: String) -> Unit,
+) {
+    val assetId: String = writeMedia(extension, write)
     val state: EditorState = states.value
     onInsertElement(
         audioElement(
@@ -84,6 +109,13 @@ suspend fun EditorViewModel.replaceMedia(
     element: Element,
     bytes: ByteArray,
     extension: String,
+): Boolean = replaceMedia(element, extension) { assetId -> assets.write(assetId, bytes) }
+
+/** [replaceMedia] with the writing left to [write], for [insertMovie]'s reason. */
+suspend fun EditorViewModel.replaceMedia(
+    element: Element,
+    extension: String,
+    write: suspend (assetId: String) -> Unit,
 ): Boolean {
     val replacing: (String) -> Element = when (element) {
         is VideoElement -> element::replacingMedia
@@ -91,7 +123,7 @@ suspend fun EditorViewModel.replaceMedia(
         else -> return false
     }
 
-    onUpdateElements(listOf(replacing(writeMedia(bytes, extension))))
+    onUpdateElements(listOf(replacing(writeMedia(extension, write))))
     return true
 }
 
@@ -116,12 +148,15 @@ suspend fun EditorViewModel.setPoster(
 }
 
 /**
- * [bytes] written under a fresh id with [extension] kept, off the caller's
+ * A fresh id with [extension] kept, and [write] run on it off the caller's
  * thread: a movie is hundreds of megabytes where a picture is a few.
  */
-private suspend fun EditorViewModel.writeMedia(bytes: ByteArray, extension: String): String {
+private suspend fun writeMedia(
+    extension: String,
+    write: suspend (assetId: String) -> Unit,
+): String {
     val assetId: String = "${newId()}.${extension.removePrefix(".").lowercase()}"
-    withContext(Dispatchers.Default) { assets.write(assetId, bytes) }
+    withContext(Dispatchers.Default) { write(assetId) }
     return assetId
 }
 

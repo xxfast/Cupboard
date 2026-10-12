@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.document
 
+import kotlinx.io.IOException
 import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -27,6 +28,36 @@ class FileAssetStore(private val directory: Path) : AssetStore {
     override suspend fun write(id: String, bytes: ByteArray) {
         SystemFileSystem.createDirectories(directory)
         SystemFileSystem.sink(fileFor(id)).buffered().use { it.write(bytes) }
+    }
+
+    /**
+     * The file at [path] copied in under [id], over whatever was there.
+     *
+     * [write] for bytes that are already a file: streamed from one to the other
+     * a segment at a time, so a two gigabyte recording never has to fit in
+     * memory on its way into the bundle. A [path] that cannot be read throws,
+     * and so does a disk that fills up part way; what had landed by then is
+     * taken back out, so a failed copy leaves no half a movie behind.
+     *
+     * Copying a file onto itself is a no-op rather than a truncation: opening
+     * the sink empties the file the source is still reading.
+     */
+    suspend fun copyFrom(id: String, path: String) {
+        val source = Path(path)
+        val target: Path = fileFor(id)
+        val onItself: Boolean = SystemFileSystem.exists(target) &&
+            SystemFileSystem.resolve(source) == SystemFileSystem.resolve(target)
+        if (onItself) return
+
+        SystemFileSystem.createDirectories(directory)
+        SystemFileSystem.source(source).buffered().use { from ->
+            try {
+                SystemFileSystem.sink(target).buffered().use { to -> from.transferTo(to) }
+            } catch (copying: IOException) {
+                SystemFileSystem.delete(target, mustExist = false)
+                throw copying
+            }
+        }
     }
 
     override suspend fun delete(id: String) {
@@ -62,4 +93,22 @@ class FileAssetStore(private val directory: Path) : AssetStore {
         require('/' !in id && '\\' !in id) { "an asset id must be a single file name, was '$id'" }
         return Path(directory, id)
     }
+}
+
+/**
+ * The file at [path] written into this store under [id].
+ *
+ * The one place a shell hands over a file rather than bytes. A store over a
+ * real folder copies it across, see [FileAssetStore.copyFrom]; any other has
+ * nowhere to put a file but memory, so it is read whole and given to
+ * [AssetStore.write].
+ *
+ * An extension here rather than a member of [AssetStore]: a path means nothing
+ * on the web targets the interface spans.
+ */
+suspend fun AssetStore.writeFile(id: String, path: String) {
+    if (this is FileAssetStore) return copyFrom(id, path)
+
+    val bytes: ByteArray = SystemFileSystem.source(Path(path)).buffered().use { it.readByteArray() }
+    write(id, bytes)
 }

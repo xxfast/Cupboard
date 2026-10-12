@@ -23,7 +23,7 @@ Almost none of it has had a visual pass. That's 0.6.0.
 
 Shipped cores whose surfaces never landed, mostly parked on the bundle format, which exists now.
 
-- [x] Video/audio surfaces: Insert menu + toolbar, Video/Audio inspector sections on both shells, the macOS AVPlayer overlay in play, a JVM playback answer (no codec on the classpath: poster + open-in-OS-player is the fallback). (`b344dbb`, needs a visual pass; playback has never been run. Not done: the overlay ignores rotation, opacity and transitions, rehearse plays nothing, big movies are read whole into memory.)
+- [x] Video/audio surfaces: Insert menu + toolbar, Video/Audio inspector sections on both shells, the macOS AVPlayer overlay in play, a JVM playback answer (no codec on the classpath: poster + open-in-OS-player is the fallback). (`b344dbb`, needs a visual pass; playback has never been run. Not done: the overlay ignores rotation, opacity and transitions, rehearse plays nothing.)
 - [x] Image fills on shapes and image slide backgrounds. (`2a38e52`, needs a visual pass. PPTX and the CuP export fall back to the colour underneath.)
 - [x] Real fonts: family picker over the fonts the OS has, embedded in the bundle so a deck renders the same on another machine; generic Sans/Serif/Monospace stay as the fallbacks. (`a909015`, needs a visual pass. Embedding is by Add Font File: installed fonts are not copied into the bundle on their own, for licensing and because the JVM can't find their files. Android always falls back.)
 - [x] Diagram step authoring: the Steps section the Code inspector got (`8e6ddd7`), for `DiagramStep`. (`34e726a`, needs a visual pass)

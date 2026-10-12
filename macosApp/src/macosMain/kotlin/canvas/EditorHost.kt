@@ -106,6 +106,7 @@ import io.github.xxfast.cupboard.document.audioElement
 import io.github.xxfast.cupboard.document.replacingMedia
 import io.github.xxfast.cupboard.document.videoElement
 import io.github.xxfast.cupboard.document.webAddress
+import io.github.xxfast.cupboard.document.writeFile
 import io.github.xxfast.cupboard.screens.editor.MediaKind
 import io.github.xxfast.cupboard.screens.editor.MovieExtensions
 import io.github.xxfast.cupboard.screens.editor.SoundExtensions
@@ -204,6 +205,7 @@ import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.io.IOException
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.time.Duration
@@ -2627,8 +2629,10 @@ class EditorHost(
     fun mediaKindOf(extension: String): String = mediaKind(extension)?.name ?: ""
 
     /**
-     * A movie's bytes on the slide, named [title]: [insertImage]'s route, written
-     * under a fresh id off the main thread and inserted back on it.
+     * The movie at [path] on the slide, named [title]: [insertImage]'s route,
+     * but copied in file to file rather than handed over as bytes, since a
+     * recording can be larger than memory. Off the main thread, under a fresh
+     * id, and inserted back on it. A file that will not copy inserts nothing.
      *
      * [poster] is a still the shell grabbed from the movie (AppKit can decode
      * one, the shared code cannot), stored as an asset of its own; null, or bytes
@@ -2637,18 +2641,17 @@ class EditorHost(
      * the box is fitted to; 0 is a movie nobody could measure, which fills it.
      */
     fun insertMovie(
-        bytes: NSData,
+        path: String,
         extension: String,
         title: String,
         poster: NSData?,
         naturalWidth: Int,
         naturalHeight: Int,
     ) {
-        val data: ByteArray = bytes.toByteArray()
-        if (data.isEmpty()) return
+        if (path.isBlank()) return
         val still: ByteArray? = poster?.toByteArray()
         scope.launch {
-            val assetId: String = writeMedia(data, extension)
+            val assetId: String = writeMedia(path, extension) ?: return@launch
             val posterId: String? = still?.let { writeAsset(it, "png")?.assetId }
             viewModel.onInsertElement(
                 videoElement(
@@ -2664,12 +2667,11 @@ class EditorHost(
         }
     }
 
-    /** A sound's bytes on the slide, as the pill named [title]. */
-    fun insertAudio(bytes: NSData, extension: String, title: String) {
-        val data: ByteArray = bytes.toByteArray()
-        if (data.isEmpty()) return
+    /** The sound at [path] on the slide, as the pill named [title]. */
+    fun insertAudio(path: String, extension: String, title: String) {
+        if (path.isBlank()) return
         scope.launch {
-            val assetId: String = writeMedia(data, extension)
+            val assetId: String = writeMedia(path, extension) ?: return@launch
             viewModel.onInsertElement(
                 audioElement(
                     frame = state.insertionFrame(DefaultAudioWidth, DefaultAudioHeight),
@@ -2698,18 +2700,18 @@ class EditorHost(
     }
 
     /**
-     * New bytes behind the primary movie or sound: what Replace does. The core's
-     * `replacingMedia` says what goes with the old bytes (trims, poster, url);
-     * a movie then wears the [poster] grabbed from the new one, if any.
+     * The file at [path] behind the primary movie or sound: what Replace does.
+     * The core's `replacingMedia` says what goes with the old bytes (trims,
+     * poster, url); a movie then wears the [poster] grabbed from the new one,
+     * if any. A file that will not copy leaves the element as it was.
      */
-    fun replaceMedia(bytes: NSData, extension: String, poster: NSData?) {
+    fun replaceMedia(path: String, extension: String, poster: NSData?) {
         val target: Element = state.primaryElement ?: return
         if (target.locked || (target !is VideoElement && target !is AudioElement)) return
-        val data: ByteArray = bytes.toByteArray()
-        if (data.isEmpty()) return
+        if (path.isBlank()) return
         val still: ByteArray? = poster?.toByteArray()
         scope.launch {
-            val assetId: String = writeMedia(data, extension)
+            val assetId: String = writeMedia(path, extension) ?: return@launch
             val posterId: String? = still?.let { writeAsset(it, "png")?.assetId }
             // Re-read, for replaceImage's reason: the write took a moment.
             val replaced: Element = when (val live: Element? = liveMedia(target.id)) {
@@ -2850,15 +2852,24 @@ class EditorHost(
             ?.takeIf { (it is VideoElement || it is AudioElement) && !it.locked }
 
     /**
-     * [data] written to the deck's assets under a fresh id, as it is. Unlike
-     * [writeAsset] nothing decodes it first: whether this machine can play a
-     * movie is the player's question, and the deck keeps the bytes either way.
+     * The file at [path] copied into the deck's assets under a fresh id, as it
+     * is. Unlike [writeAsset] nothing decodes it first: whether this machine can
+     * play a movie is the player's question, and the deck keeps the bytes either
+     * way.
+     *
+     * A path rather than bytes, so the copy is file to file and the movie never
+     * sits in memory. Null is a file that would not copy (gone, unreadable, a
+     * full disk): the caller inserts nothing, and nothing is left in the deck.
      */
-    private suspend fun writeMedia(data: ByteArray, extension: String): String =
+    private suspend fun writeMedia(path: String, extension: String): String? =
         withContext(Dispatchers.Default) {
             val id = "${newId()}.${assetExtension(extension)}"
-            viewModel.assets.write(id, data)
-            id
+            try {
+                viewModel.assets.writeFile(id, path)
+                id
+            } catch (_: IOException) {
+                null
+            }
         }
 
     fun selectedElement(): ElementProps? = state.primaryElement?.let { element ->

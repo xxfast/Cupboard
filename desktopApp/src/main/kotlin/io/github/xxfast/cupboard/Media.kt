@@ -5,6 +5,7 @@ import io.github.xxfast.cupboard.canvas.MediaRequest
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.FileAssetStore
+import io.github.xxfast.cupboard.document.writeFile
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.MediaKind
 import io.github.xxfast.cupboard.screens.editor.MovieExtensions
@@ -20,6 +21,7 @@ import java.awt.Toolkit
 import java.awt.datatransfer.Clipboard
 import java.awt.datatransfer.DataFlavor
 import java.io.File
+import java.io.IOException
 import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -82,27 +84,40 @@ internal fun clipboardFiles(): List<File> {
  * [file] on the selected slide as a movie or a sound, by its extension, named
  * after it. False is a file of neither kind, or one that could not be read.
  *
- * Read off the main thread: a movie is the one asset big enough for the read
- * itself to stall a frame.
+ * Copied into the deck file to file, never read: a movie is the one asset big
+ * enough not to fit in memory, let alone for the read to stall a frame.
  */
 internal suspend fun EditorViewModel.insertMediaFile(file: File): Boolean {
     val kind: MediaKind = file.mediaKind() ?: return false
-    if (kind == MediaKind.Image) return false
+    if (kind == MediaKind.Image || !file.isFile) return false
 
-    val bytes: ByteArray = readMedia(file) ?: return false
-    if (kind == MediaKind.Movie) insertMovie(bytes, file.extension, file.name)
-    else insertSound(bytes, file.extension, file.name)
+    try {
+        if (kind == MediaKind.Movie) insertMovie(file.extension, file.name) { copyMedia(file, it) }
+        else insertSound(file.extension, file.name) { copyMedia(file, it) }
+    } catch (_: IOException) {
+        return false
+    }
+
     return true
 }
 
 /** [element] pointed at [file]'s bytes: the inspector's Replace. */
 internal suspend fun EditorViewModel.replaceMediaFile(element: Element, file: File): Boolean {
-    val bytes: ByteArray = readMedia(file) ?: return false
-    return replaceMedia(element, bytes, file.extension)
+    if (!file.isFile) return false
+
+    return try {
+        replaceMedia(element, file.extension) { copyMedia(file, it) }
+    } catch (_: IOException) {
+        false
+    }
 }
 
-private suspend fun readMedia(file: File): ByteArray? = withContext(Dispatchers.IO) {
-    runCatching { file.readBytes() }.getOrNull()
+/**
+ * [file] into the deck's assets under [assetId], on the IO dispatcher: the
+ * copy blocks for as long as the disk takes, which for a recording is seconds.
+ */
+private suspend fun EditorViewModel.copyMedia(file: File, assetId: String) {
+    withContext(Dispatchers.IO) { assets.writeFile(assetId, file.path) }
 }
 
 /**

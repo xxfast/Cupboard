@@ -1,9 +1,11 @@
 package io.github.xxfast.cupboard
 
+import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.DocumentLoad
+import io.github.xxfast.cupboard.document.FileAssetStore
 import io.github.xxfast.cupboard.document.RecentDocuments
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideSizePreset
@@ -174,9 +176,10 @@ private fun showcaseDeck(): Document = showcaseDocument().copy(name = SHOWCASE_N
  * closes the old one once its window is showing this one.
  *
  * The deck is renamed to the file the user chose, so a "Talk.cupboard" is a
- * deck called Talk. Assets are copied one at a time through the store interface
- * rather than by copying the folder: the bundle is the format, not the file
- * layout, and a shell that saved to a memory-backed editor still works.
+ * deck called Talk. Assets are copied one at a time through the stores rather
+ * than by copying the folder: the bundle is the format, not the file layout,
+ * and a shell that saved to a memory-backed editor still works. See
+ * [copyAssets].
  */
 internal suspend fun saveBundleAs(
     viewModel: EditorViewModel,
@@ -187,14 +190,29 @@ internal suspend fun saveBundleAs(
     val bundle: Path = target.withBundleExtension()
     val document: Document = viewModel.states.value.document.copy(name = bundle.deckName())
     CupboardBundle.create(bundle, document)
-
-    val assets = CupboardBundle.assetStore(bundle)
-    for (id in viewModel.assets.ids()) {
-        val bytes: ByteArray = viewModel.assets.read(id) ?: continue
-        assets.write(id, bytes)
-    }
+    copyAssets(viewModel.assets, CupboardBundle.assetStore(bundle))
 
     return editorOver(bundle, directory, document, CupboardBundle.documentStore(bundle), dispatcher)
+}
+
+/**
+ * Everything in [source] into [target], each under the id it had.
+ *
+ * File to file where [source] is a folder too, which is every editor a shell
+ * opens on a bundle: a movie is streamed across by [FileAssetStore.copyFrom]
+ * and never read into memory. Any other store has only bytes to give, so those
+ * go across through [AssetStore.read] and [AssetStore.write].
+ */
+private suspend fun copyAssets(source: AssetStore, target: FileAssetStore) {
+    for (id in source.ids()) {
+        if (source is FileAssetStore) {
+            target.copyFrom(id, source.pathOf(id))
+            continue
+        }
+
+        val bytes: ByteArray = source.read(id) ?: continue
+        target.write(id, bytes)
+    }
 }
 
 /**
@@ -269,11 +287,7 @@ internal suspend fun moveBundle(
         // As copies, and the original only goes once the copy is whole.
         try {
             CupboardBundle.create(bundle, document)
-            val assets = CupboardBundle.assetStore(bundle)
-            for (id in viewModel.assets.ids()) {
-                val bytes: ByteArray = viewModel.assets.read(id) ?: continue
-                assets.write(id, bytes)
-            }
+            copyAssets(viewModel.assets, CupboardBundle.assetStore(bundle))
         } catch (copying: IOException) {
             deleteTree(bundle)
             return MoveResult.Failed(copying.message ?: moving.message ?: "The deck could not be moved")
