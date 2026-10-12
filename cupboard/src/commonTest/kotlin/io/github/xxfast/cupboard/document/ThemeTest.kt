@@ -91,7 +91,7 @@ class ThemeTest {
         val theme: Theme = BuiltInThemes.JetBrainsIslandsLight
         val titles: List<String> = listOf(
             "Title", "Statement", "Big Fact", "Notes", "Kotlin Editor", "Kotlin Editor and Run",
-            "C# Editor", "C# Editor and Run", "Photos", "Blank",
+            "Swift Editor", "Swift Editor and Run", "C# Editor", "C# Editor and Run", "Photos", "Blank",
         )
 
         assertEquals(titles, theme.layouts.map { it.title })
@@ -104,6 +104,8 @@ class ThemeTest {
         assertEquals(byTitle.getValue("Title").background, byTitle.getValue("Statement").background)
         assertEquals(byTitle.getValue("Kotlin Editor").background, byTitle.getValue("Kotlin Editor and Run").background)
         assertNotEquals(byTitle.getValue("Kotlin Editor").background, byTitle.getValue("C# Editor").background)
+        assertEquals(byTitle.getValue("Swift Editor").background, byTitle.getValue("Swift Editor and Run").background)
+        assertNotEquals(byTitle.getValue("Swift Editor").background, byTitle.getValue("Kotlin Editor").background)
         assertNull(byTitle.getValue("Notes").background)
         assertTrue(theme.background is SlideBackground.Gradient)
 
