@@ -19,6 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Desktop distributables: `./gradlew :desktopApp:packageDistributionForCurrentOS` (Dmg/Msi/Deb)
 - macOS SwiftUI host (dev loop): `./macosApp/run.sh`, or open `macosApp/Cupboard.xcodeproj` in Xcode
 - macOS app bundle: `./macosApp/package.sh` (outputs `macosApp/build/Cupboard.app`)
+- macOS is two apps: Debug builds are `Cupboard Dev.app` (`io.github.xxfast.cupboard.dev`, menu bar and Dock say "Cupboard Dev") with the blueprint icon (`macosApp/Cupboard/cupboard-dev.icon`); Release keeps `io.github.xxfast.cupboard` and the real icon. The stable copy lives in `/Applications` and owns the `.cupboard` file association, so a double-clicked deck never lands in a dev build. Promote by re-running `package.sh` and replacing the copy in `/Applications`.
 
 ## Module structure
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dev loop: builds Cupboard.app (Debug) and launches it straight from
+# Dev loop: builds "Cupboard Dev.app" (Debug) and launches it straight from
 # DerivedData so stdout/stderr stay attached to this terminal.
 set -e
 cd "$(dirname "$0")/.."
@@ -20,8 +20,8 @@ xcodebuild -project macosApp/Cupboard.xcodeproj \
 # this terminal, -W keeps the script in the foreground, and the trap makes
 # Ctrl-C quit the app rather than orphan it. This script's own arguments go to
 # the app (`./macosApp/run.sh --showcase`).
-trap 'pkill -x Cupboard 2>/dev/null || true' INT TERM
-APP="$DERIVED_DATA/Build/Products/Debug/Cupboard.app"
+trap 'pkill -x "Cupboard Dev" 2>/dev/null || true' INT TERM
+APP="$DERIVED_DATA/Build/Products/Debug/Cupboard Dev.app"
 # The log path must be one the app's own process can open, so it is the real
 # tty device, not /dev/stdout (which would resolve to the app's stdout, not
 # ours; LaunchServices fails the whole launch on it with -10810). Without a

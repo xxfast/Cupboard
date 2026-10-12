@@ -308,7 +308,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ARCHS = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = cupboard;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "cupboard-dev";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
@@ -333,8 +333,8 @@
 					"-framework",
 					CupboardCanvas,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.xxfast.cupboard;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.xxfast.cupboard.dev;
+				PRODUCT_NAME = "Cupboard Dev";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 			};
