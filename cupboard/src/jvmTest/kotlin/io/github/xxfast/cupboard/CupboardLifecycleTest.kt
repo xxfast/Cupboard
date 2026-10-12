@@ -4,12 +4,15 @@ import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CupboardBundle
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.DocumentLoad
+import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.ShowcasePictureId
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.placeholderRole
 import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.encodeToString
@@ -22,6 +25,7 @@ import kotlinx.io.buffered
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 import kotlinx.io.writeString
+import java.io.File
 import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -113,6 +117,8 @@ class CupboardLifecycleTest {
     fun savesACopyWithItsAssetsUnderTheNewName() {
         val directory: Path = tempDirectory()
         val bundle: Path = Cupboard.newDocument(directory, "Origin")
+        // Pointed at by the deck: a copy takes what the deck names and no more.
+        point(bundle, at = listOf("hero.png", "movie.mov"))
         val opened = assertIs<OpenResult.Opened>(
             Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
         )
@@ -165,7 +171,7 @@ class CupboardLifecycleTest {
         // An editor with no bundle behind it, as the preview shells run: it has
         // no files to copy, only the bytes its store hands over.
         val scratch = EditorViewModel(
-            initialDocument = Document(name = "Scratch"),
+            initialDocument = Document(name = "Scratch").pointingAt(listOf("hero.png")),
             documentStore = CupboardBundle.documentStore(Path(directory, "Scratch.cupboard")),
             assets = InMemoryAssetStore(mapOf("hero.png" to hero)),
         )
@@ -372,6 +378,142 @@ class CupboardLifecycleTest {
     }
 
     @Test
+    fun openingADeckDropsWhatItStoppedPointingAt() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Talk")
+        point(bundle, at = listOf("hero.png", "movie.mov", "poster.jpg"))
+        val hero = byteArrayOf(7, 7, 7)
+        val movie = ByteArray(4_099) { (it % 251).toByte() }
+        val poster = byteArrayOf(9)
+        runBlocking {
+            val assets = CupboardBundle.assetStore(bundle)
+            assets.write("hero.png", hero)
+            assets.write("movie.mov", movie)
+            assets.write("poster.jpg", poster)
+            // What a replaced movie and a deleted image leave behind.
+            assets.write("old.mov", byteArrayOf(1, 2))
+            assets.write("gone.png", byteArrayOf(3))
+        }
+
+        val opened = assertIs<OpenResult.Opened>(
+            Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
+        )
+
+        assertEquals(setOf("hero.png", "movie.mov", "poster.jpg"), filesIn(Path(bundle, "assets")))
+        assertContentEquals(hero, runBlocking { opened.viewModel.assets.read("hero.png") })
+        assertContentEquals(movie, runBlocking { opened.viewModel.assets.read("movie.mov") })
+        assertContentEquals(poster, runBlocking { opened.viewModel.assets.read("poster.jpg") })
+
+        opened.viewModel.close()
+    }
+
+    @Test
+    fun aDeckThatCannotBeReadLosesNothing() {
+        // Neither of these says what the deck points at, so neither is a
+        // reason to believe it points at nothing.
+        val unreadable: Map<String, String> = mapOf(
+            "Damaged" to """{"name":"Damaged","slides":[{"elements":""",
+            "Future" to """{"formatVersion":99,"name":"Future"}""",
+        )
+
+        for ((name, json) in unreadable) {
+            val directory: Path = tempDirectory()
+            val bundle = Path(directory, "$name.cupboard")
+            CupboardBundle.create(bundle, Document(name = name))
+            write(Path(bundle, "document.json"), json)
+            runBlocking {
+                CupboardBundle.assetStore(bundle).write("hero.png", byteArrayOf(7))
+                CupboardBundle.assetStore(bundle).write("movie.mov", byteArrayOf(8))
+            }
+
+            val result: OpenResult = Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory)
+
+            assertIs<OpenResult.Failed>(result, name)
+            assertEquals(setOf("hero.png", "movie.mov"), filesIn(Path(bundle, "assets")), name)
+            assertEquals(json, CupboardBundle.read(bundle), name)
+        }
+    }
+
+    @Test
+    fun aDeckThatWillNotBeWrittenToStillOpens() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Locked")
+        runBlocking { CupboardBundle.assetStore(bundle).write("stray.png", byteArrayOf(1)) }
+        val assets = File(Path(bundle, "assets").toString())
+        assertTrue(assets.setWritable(false))
+
+        try {
+            val result: OpenResult = Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory)
+
+            // Tidying up is not what opening a deck is for: one that cannot be
+            // tidied opens as it is.
+            assertIs<OpenResult.Opened>(result).viewModel.close()
+            assertEquals(setOf("stray.png"), filesIn(Path(bundle, "assets")))
+        } finally {
+            assets.setWritable(true)
+        }
+    }
+
+    @Test
+    fun saveAsLeavesWhatTheDeckStoppedPointingAtBehind() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Origin")
+        point(bundle, at = listOf("hero.png"))
+        val opened = assertIs<OpenResult.Opened>(
+            Cupboard.openDocument(bundle, Dispatchers.Unconfined, directory),
+        )
+        val hero = byteArrayOf(7, 7, 7)
+        runBlocking {
+            opened.viewModel.assets.write("hero.png", hero)
+            // Still in the bundle for an undo in this editor to find, which the
+            // copy, opening with no history, has no use for.
+            opened.viewModel.assets.write("deleted.png", byteArrayOf(1))
+        }
+
+        val saved = Cupboard.saveAs(
+            opened.viewModel,
+            Path(directory, "Copy"),
+            Dispatchers.Unconfined,
+            directory,
+        )
+
+        assertEquals(setOf("hero.png"), filesIn(Path(directory, "Copy.cupboard", "assets")))
+        assertContentEquals(hero, runBlocking { saved.assets.read("hero.png") })
+        // A copy takes less, it does not take away: the original keeps both.
+        assertEquals(setOf("hero.png", "deleted.png"), filesIn(Path(bundle, "assets")))
+
+        opened.viewModel.close()
+        saved.close()
+    }
+
+    @Test
+    fun theEditorOverABundleDeletesNothing() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Talk")
+        runBlocking { CupboardBundle.assetStore(bundle).write("stray.png", byteArrayOf(1)) }
+
+        // No sweep on this way in: it opens the showcase over a deck it cannot
+        // read, and the showcase names none of that deck's assets.
+        val viewModel = Cupboard.editor(bundle, Dispatchers.Unconfined, directory)
+
+        assertEquals(setOf("stray.png"), filesIn(Path(bundle, "assets")))
+        viewModel.close()
+    }
+
+    @Test
+    fun theEditorOverADeckItCannotReadDeletesNothing() {
+        val directory: Path = tempDirectory()
+        val bundle: Path = Cupboard.newDocument(directory, "Future")
+        write(Path(bundle, "document.json"), """{"formatVersion":99,"name":"Future"}""")
+        runBlocking { CupboardBundle.assetStore(bundle).write("hero.png", byteArrayOf(7)) }
+
+        val viewModel = Cupboard.editor(bundle, Dispatchers.Unconfined, directory)
+
+        assertEquals(setOf("hero.png"), filesIn(Path(bundle, "assets")))
+        viewModel.close()
+    }
+
+    @Test
     fun aNewDeckTakesTheThemeAndSizeTheChooserPicked() {
         val directory: Path = tempDirectory()
 
@@ -401,6 +543,27 @@ class CupboardLifecycleTest {
             assertContentEquals(bytes, runBlocking { store.read(id) }, "$id in $bundle")
         }
     }
+
+    /** Rewrites [bundle]'s deck so it names every id in [at], the way an insert would have left it. */
+    private fun point(bundle: Path, at: List<String>) {
+        write(Path(bundle, "document.json"), deckIn(bundle).pointingAt(at).encodeToString())
+    }
+
+    /** This deck with a slide naming every id in [ids]: a movie for a `.mov`, a picture for the rest. */
+    private fun Document.pointingAt(ids: List<String>): Document {
+        val frame = Frame(0f, 0f, 100f, 100f)
+        val slide = Slide(
+            elements = ids.map { id ->
+                if (id.endsWith(".mov")) VideoElement(frame = frame, assetId = id)
+                else ImageElement(frame = frame, assetId = id)
+            },
+        )
+
+        return copy(slides = slides + slide)
+    }
+
+    private fun filesIn(folder: Path): Set<String> =
+        SystemFileSystem.list(folder).map { it.name }.toSet()
 
     private fun deckIn(bundle: Path): Document {
         val json: String = checkNotNull(CupboardBundle.read(bundle)) { "no deck in $bundle" }

@@ -12,9 +12,12 @@ import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.deck
 import io.github.xxfast.cupboard.document.decodeDocument
+import io.github.xxfast.cupboard.document.encodeToString
 import io.github.xxfast.cupboard.document.instantiating
+import io.github.xxfast.cupboard.document.namedIn
 import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
+import io.github.xxfast.cupboard.document.sweep
 import io.github.xxfast.cupboard.document.watchBundle
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.kstore.KStore
@@ -93,15 +96,29 @@ internal suspend fun openBundle(
 
         is DocumentLoad.Corrupt -> OpenResult.Failed(load.reason)
 
-        is DocumentLoad.Loaded -> OpenResult.Opened(
-            editorOver(
-                bundle,
-                directory,
-                load.document,
-                CupboardBundle.documentStore(bundle),
-                dispatcher,
-            ),
-        )
+        is DocumentLoad.Loaded -> {
+            // The one place a bundle loses what its deck stopped pointing at,
+            // and only for a deck that was read: here no editor is on it yet,
+            // so no undo can ask for the bytes back, where a save has one and
+            // a reload may be seeing assets land ahead of their deck. Before
+            // the editor, whose watcher would take this for a change from
+            // outside.
+            try {
+                CupboardBundle.assetStore(bundle).sweep(json)
+            } catch (sweeping: IOException) {
+                // A bundle that will not be written to still opens, strays and all.
+            }
+
+            OpenResult.Opened(
+                editorOver(
+                    bundle,
+                    directory,
+                    load.document,
+                    CupboardBundle.documentStore(bundle),
+                    dispatcher,
+                ),
+            )
+        }
     }
 }
 
@@ -190,21 +207,26 @@ internal suspend fun saveBundleAs(
     val bundle: Path = target.withBundleExtension()
     val document: Document = viewModel.states.value.document.copy(name = bundle.deckName())
     CupboardBundle.create(bundle, document)
-    copyAssets(viewModel.assets, CupboardBundle.assetStore(bundle))
+    copyAssets(viewModel.assets, CupboardBundle.assetStore(bundle), document.encodeToString())
 
     return editorOver(bundle, directory, document, CupboardBundle.documentStore(bundle), dispatcher)
 }
 
 /**
- * Everything in [source] into [target], each under the id it had.
+ * What [json], the deck being copied, names in [source] into [target], each
+ * under the id it had. See [namedIn].
+ *
+ * The rest stays where it is: what the deck stopped pointing at is only still
+ * in [source] for an undo there, and the copy opens with no history to undo.
+ * Nothing is deleted here, [source] is left as it was.
  *
  * File to file where [source] is a folder too, which is every editor a shell
  * opens on a bundle: a movie is streamed across by [FileAssetStore.copyFrom]
  * and never read into memory. Any other store has only bytes to give, so those
  * go across through [AssetStore.read] and [AssetStore.write].
  */
-private suspend fun copyAssets(source: AssetStore, target: FileAssetStore) {
-    for (id in source.ids()) {
+private suspend fun copyAssets(source: AssetStore, target: FileAssetStore, json: String) {
+    for (id in source.ids().filter(namedIn(json))) {
         if (source is FileAssetStore) {
             target.copyFrom(id, source.pathOf(id))
             continue
@@ -287,7 +309,8 @@ internal suspend fun moveBundle(
         // As copies, and the original only goes once the copy is whole.
         try {
             CupboardBundle.create(bundle, document)
-            copyAssets(viewModel.assets, CupboardBundle.assetStore(bundle))
+            val copy: FileAssetStore = CupboardBundle.assetStore(bundle)
+            copyAssets(viewModel.assets, copy, document.encodeToString())
         } catch (copying: IOException) {
             deleteTree(bundle)
             return MoveResult.Failed(copying.message ?: moving.message ?: "The deck could not be moved")

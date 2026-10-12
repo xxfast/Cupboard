@@ -1,5 +1,6 @@
 package io.github.xxfast.cupboard.document
 
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -34,6 +35,27 @@ class ShowcaseAssetsTest {
             "the deck stopped pointing at some of its assets: $referenced",
         )
         assertEquals(emptySet(), referenced - shipped, "named by the deck and never shipped")
+    }
+
+    @Test
+    fun aSweepAgainstTheDecksTextKeepsEverythingTheDeckNames() = runTest {
+        // The typed walk below is what a sweep must never trust, and here it is
+        // the witness instead: every kind of reference it knows of has to be
+        // one the text scan finds too.
+        val referenced: Set<String> = showcaseDocument().assetIds()
+        val json: String = showcaseDocument().encodeToString()
+        val store = InMemoryAssetStore(showcaseAssets() + ("stray.png" to byteArrayOf(1)))
+
+        val removed: List<String> = store.sweep(json)
+
+        assertTrue(referenced.isNotEmpty(), "the walk found nothing to check against")
+        // In the text as they are, not kept by the benefit of the doubt.
+        val unspelled: Set<String> = referenced.filterNot { it in json }.toSet()
+        assertEquals(emptySet(), unspelled, "named by the deck and missing from its text")
+        val lost: Set<String> = removed.toSet() intersect referenced
+        assertEquals(emptySet(), lost, "swept though the deck names it")
+        assertTrue("stray.png" in removed, "the sweep took nothing at all")
+        assertTrue(store.ids().containsAll(referenced intersect showcaseAssets().keys))
     }
 
     @Test

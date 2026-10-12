@@ -28,6 +28,52 @@ interface AssetStore {
 }
 
 /**
+ * Deletes every asset [json], a deck's `document.json`, does not name, and
+ * returns the ids that went.
+ *
+ * Named is the id turning up anywhere in the text, see [namedIn], not a walk
+ * over the model finding it: a walk loses the user's bytes the day someone adds
+ * a field that holds an asset and forgets it here, and a scan of the text
+ * cannot. An id that only turns up in a slide's words is a file kept for
+ * nothing, which is the cheap way to be wrong.
+ *
+ * For a deck being opened and nowhere else. Not on a save: undo lives in
+ * memory, so an image deleted, swept and then undone is an element with nothing
+ * behind it. Not on a reload: a tool rewriting a bundle may put its assets down
+ * before the deck that names them.
+ */
+suspend fun AssetStore.sweep(json: String): List<String> {
+    val unnamed: List<String> = ids().filterNot(namedIn(json))
+    for (id in unnamed) delete(id)
+
+    return unnamed
+}
+
+/**
+ * Whether an asset id is one [json] names: what [sweep] keeps, and what a copy
+ * of the deck takes with it.
+ *
+ * Wrong only ever towards yes. Case is ignored, since the volumes a bundle
+ * sits on mostly ignore it too. And an id is only looked for when every writer
+ * of JSON spells it as it is: letters, digits, `.`, `-`, `_` and spaces. Any
+ * other is named whatever the text says, because an escaped `\u00e9` in the
+ * text and the accented letter on disk are one asset and nothing here can tell.
+ */
+internal fun namedIn(json: String): (String) -> Boolean {
+    val text: String = json.lowercase()
+
+    fun named(id: String): Boolean {
+        val verbatim: Boolean = id.all { char ->
+            char in 'a'..'z' || char in 'A'..'Z' || char in '0'..'9' || char in ".-_ "
+        }
+
+        return !verbatim || id.lowercase() in text
+    }
+
+    return ::named
+}
+
+/**
  * An asset store that never leaves memory.
  *
  * What the hosts with no bundle of their own (the iOS and web preview shells)
