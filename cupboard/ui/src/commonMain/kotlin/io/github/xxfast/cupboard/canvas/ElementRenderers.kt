@@ -58,6 +58,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Placeable
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -67,6 +69,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -108,6 +112,7 @@ import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.pieces
 import io.github.xxfast.cupboard.document.sourceRect
+import kotlin.math.ceil
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -176,10 +181,18 @@ fun ElementView(
     alignment: Alignment? = null,
     playing: Boolean = false,
 ) {
+    // A translucent layer composites offscreen, into a buffer the size of its own
+    // box, so whatever the element paints past its frame is cut off for as long as
+    // it is dimmed. The layer is grown by that much on every side, which keeps its
+    // centre and so every transform, and the frame is padded back inside it. A
+    // build's wrapper is a layer of its own and does the same (`SlideView`).
+    val bleed: Dp = element.shadowBleed().dp
+
     Box(
         modifier = modifier
             .offset((element.frame.x - originX).dp, (element.frame.y - originY).dp)
             .size(element.frame.width.dp, element.frame.height.dp)
+            .outset(bleed)
             .graphicsLayer {
                 alpha = transform?.opacity ?: element.opacity
                 rotationZ = transform?.rotation ?: element.rotation
@@ -189,6 +202,7 @@ fun ElementView(
                 translationY = (transform?.translationY ?: 0f).dp.toPx()
                 transformOrigin = TransformOrigin.Center
             }
+            .padding(bleed)
     ) {
         when (element) {
             is TextElement -> TextElementView(element, pieces, alignment ?: element.alignment())
@@ -217,6 +231,50 @@ fun ElementView(
             }
         }
     }
+}
+
+/**
+ * Lays out what follows [by] bigger on every side, around the same centre, while
+ * the parent still sees the box it asked for: an overhang rather than a resize,
+ * so a slide never squeezes an element whose reach runs past its edge.
+ */
+internal fun Modifier.outset(by: Dp): Modifier = layout { measurable, constraints ->
+    val reach: Int = by.roundToPx()
+    val placeable: Placeable = measurable.measure(
+        Constraints.fixed(constraints.maxWidth + reach * 2, constraints.maxHeight + reach * 2)
+    )
+
+    layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-reach, -reach) }
+}
+
+/** How high Compose hangs the light an elevation shadow is cast by, and how wide it is. */
+private const val ShadowLightHeight: Float = 600f
+private const val ShadowLightRadius: Float = 800f
+
+/** How far above the layer's top edge that light sits. */
+private const val ShadowLightRise: Float = 300f
+
+/**
+ * How far past its frame the element's shadow can reach, in document units: zero
+ * for everything that casts none.
+ *
+ * An elevation shadow is the outline projected from a light above the top edge,
+ * so it is both blurred and pushed away from that light, further the bigger the
+ * shape. A group reaches as far as the furthest of its children, since theirs is
+ * the shadow its own layer would cut.
+ */
+internal fun Element.shadowBleed(): Float = when (this) {
+    is ShapeElement -> {
+        val elevation: Float = shadow?.blur ?: 0f
+        val ratio: Float =
+            (elevation / (ShadowLightHeight - elevation)).coerceIn(0f, 0.95f)
+        val blur: Float = ShadowLightRadius * ratio
+        val push: Float = ratio * (maxOf(frame.width, frame.height) + ShadowLightRise)
+        if (ratio == 0f) 0f else ceil(blur + push)
+    }
+
+    is GroupElement -> children.filterNot { it.hidden }.maxOfOrNull { it.shadowBleed() } ?: 0f
+    else -> 0f
 }
 
 /** The white a text box starts in, and the only colour a link is allowed to take over. */

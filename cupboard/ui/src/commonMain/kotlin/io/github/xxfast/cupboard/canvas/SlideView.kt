@@ -21,8 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.ActionState
@@ -205,6 +207,13 @@ fun SlideView(
             // of its box the wrapper is still holding open.
             val target: LinkTarget? = element.resolvedLink()?.takeIf { visible }
 
+            // A build fades through a layer of its own, around the element's, and
+            // that one cuts a shadow off at its edge just the same. So it overhangs
+            // the frame by as much, under the tap target rather than over it, and
+            // the effects are told how much of what they measure is overhang.
+            val bleed: Dp = drawn.shadowBleed().dp
+            val overhang: Int = with(LocalDensity.current) { bleed.roundToPx() }
+
             // The frame rides the wrapper rather than the element, so an effect
             // that clips (a wipe) or slides does it around the element's own box
             // instead of around the slide's corner.
@@ -217,15 +226,17 @@ fun SlideView(
                         else Modifier.pointerInput(target, linkHandler) {
                             detectTapGestures { linkHandler(target) }
                         },
-                    ),
+                    )
+                    .outset(bleed),
             ) {
                 AnimatedVisibility(
                     visible = visible,
-                    enter = buildEnter(element, entry?.build, entry?.delayMs ?: 0),
-                    exit = buildExit(element, exit?.build, exit?.delayMs ?: 0),
+                    enter = buildEnter(element, entry?.build, entry?.delayMs ?: 0, overhang),
+                    exit = buildExit(element, exit?.build, exit?.delayMs ?: 0, overhang),
                 ) {
                     ElementView(
                         element = drawn,
+                        modifier = Modifier.padding(bleed),
                         originX = drawn.frame.x,
                         originY = drawn.frame.y,
                         codeStep = if (element is CodeElement) {

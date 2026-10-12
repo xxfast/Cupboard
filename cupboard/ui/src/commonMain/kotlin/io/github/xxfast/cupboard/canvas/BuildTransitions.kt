@@ -60,8 +60,17 @@ private val PopEasing: Easing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
  * rather than under anything of its own. [BuildEffect.Typewriter] is the one
  * effect an element plays for itself: a terminal enters bare and types its
  * transcript out, and every other kind takes the dissolve instead.
+ *
+ * [overhang] is how many pixels of what the effect measures, on each side, are
+ * room left for a shadow rather than the element: an effect that travels by the
+ * element's own size leaves it out.
  */
-internal fun buildEnter(element: Element, build: Build?, delayMs: Int): EnterTransition {
+internal fun buildEnter(
+    element: Element,
+    build: Build?,
+    delayMs: Int,
+    overhang: Int = 0,
+): EnterTransition {
     if (build == null) return EnterTransition.None
 
     val duration: Int = build.durationMs
@@ -69,7 +78,9 @@ internal fun buildEnter(element: Element, build: Build?, delayMs: Int): EnterTra
         BuildEffect.Appear -> EnterTransition.None
 
         BuildEffect.FadeUp -> fadeIn(fade(duration, delayMs)) +
-            slideInVertically(offset(duration, delayMs)) { height -> (height * FadeUpRise).toInt() }
+            slideInVertically(offset(duration, delayMs)) { height ->
+                ((height - overhang * 2) * FadeUpRise).toInt()
+            }
 
         BuildEffect.Pop -> scaleIn(
             animationSpec = tween(duration, delayMs, PopEasing),
@@ -78,7 +89,8 @@ internal fun buildEnter(element: Element, build: Build?, delayMs: Int): EnterTra
 
         BuildEffect.Dissolve -> fadeIn(fade(duration, delayMs))
 
-        BuildEffect.MoveIn -> slideInHorizontally(offset(duration, delayMs)) { width -> -width }
+        BuildEffect.MoveIn ->
+            slideInHorizontally(offset(duration, delayMs)) { width -> overhang * 2 - width }
 
         BuildEffect.Scale -> scaleIn(tween(duration, delayMs, FastOutSlowInEasing), initialScale = 0f)
 
@@ -90,7 +102,12 @@ internal fun buildEnter(element: Element, build: Build?, delayMs: Int): EnterTra
 }
 
 /** [buildEnter]'s mirror: how [element] leaves under an [io.github.xxfast.cupboard.document.BuildKind.Out] build. */
-internal fun buildExit(element: Element, build: Build?, delayMs: Int): ExitTransition {
+internal fun buildExit(
+    element: Element,
+    build: Build?,
+    delayMs: Int,
+    overhang: Int = 0,
+): ExitTransition {
     if (build == null) return ExitTransition.None
 
     val duration: Int = build.durationMs
@@ -98,7 +115,9 @@ internal fun buildExit(element: Element, build: Build?, delayMs: Int): ExitTrans
         BuildEffect.Appear -> ExitTransition.None
 
         BuildEffect.FadeUp -> fadeOut(fade(duration, delayMs)) +
-            slideOutVertically(offset(duration, delayMs)) { height -> (height * FadeUpRise).toInt() }
+            slideOutVertically(offset(duration, delayMs)) { height ->
+                ((height - overhang * 2) * FadeUpRise).toInt()
+            }
 
         BuildEffect.Pop -> scaleOut(
             animationSpec = tween(duration, delayMs, PopEasing),
@@ -107,7 +126,8 @@ internal fun buildExit(element: Element, build: Build?, delayMs: Int): ExitTrans
 
         BuildEffect.Dissolve -> fadeOut(fade(duration, delayMs))
 
-        BuildEffect.MoveIn -> slideOutHorizontally(offset(duration, delayMs)) { width -> -width }
+        BuildEffect.MoveIn ->
+            slideOutHorizontally(offset(duration, delayMs)) { width -> overhang * 2 - width }
 
         BuildEffect.Scale -> scaleOut(tween(duration, delayMs, FastOutSlowInEasing), targetScale = 0f)
 
