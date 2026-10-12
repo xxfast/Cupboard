@@ -375,6 +375,9 @@ private fun Player(
                         )
                     },
                     backgroundColor = Color(0xFF101223),
+                    // The show draws its own overlays; CuP's hover chrome would
+                    // only sit on top of them.
+                    overlayEnabled = false,
                 )
             }
         }
