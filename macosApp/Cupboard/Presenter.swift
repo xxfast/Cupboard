@@ -36,7 +36,13 @@ final class PresenterKeyWindow: NSWindow {
 /// the way the traffic lights are: one place decides whether the window should
 /// be up, off the state that is on screen right now.
 final class PresenterWindow: NSObject, NSWindowDelegate {
+    /// Where the user last left a free-floating presenter, so the next show's
+    /// opens there. Only for this run: a launch starts centred again.
+    private static var lastFrame: NSRect?
+
     private var window: PresenterKeyWindow?
+    /// True while the window fills a screen, which is placement, not the user's.
+    private var fillsScreen = false
     private var session: PlaySession?
     /// The show whose presenter the user shut with the red button. Reopening it
     /// is the menu toggle's job, not the next stray view update's.
@@ -64,6 +70,7 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
     /// the presenter is a window like any other, opened centred and moved by hand.
     func place(on screen: NSScreen?) {
         guard let window, let screen else { return }
+        fillsScreen = true
         window.setFrame(screen.visibleFrame, display: true)
     }
 
@@ -109,7 +116,11 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
             }
             return false
         }
-        window.center()
+        if let frame = Self.lastFrame {
+            window.setFrame(frame, display: false)
+        } else {
+            window.center()
+        }
         // Front, but not key: the show keeps the keyboard, which is where the
         // presenter is driving from. Clicking this window still works, the keys
         // land on the same session either way.
@@ -124,6 +135,8 @@ final class PresenterWindow: NSObject, NSWindowDelegate {
             session = nil
             return
         }
+        if !fillsScreen { Self.lastFrame = window.frame }
+        fillsScreen = false
         window.delegate = nil
         window.onKey = nil
         // Off the window before the scene closes, so nothing is left drawing a
