@@ -54,7 +54,7 @@ private val CodeToken.key: TokenKey get() = TokenKey(content, kind, depth)
  * How [previous] becomes [current], token by token: Heckel's diff, which finds
  * the tokens both sides agree on and calls everything else an insert or a delete.
  *
- * Four passes. The first pairs up tokens that appear exactly once on each side,
+ * Four passes, with the start and end of both texts counting as anchors. The first pairs up tokens that appear exactly once on each side,
  * which are the anchors nothing else can be confused with. The second and third
  * march forwards and backwards out of every anchor, picking up the neighbours
  * that agree, which is what carries a whole unchanged line along with the one
@@ -95,6 +95,25 @@ fun diffTokens(previous: List<CodeToken>, current: List<CodeToken>): List<TokenE
         val key: TokenKey = token.key
         val context: TokenContext = contextP[key] ?: return@forEachIndexed
         if (frequencyC[key] == 1 && frequencyP[key] == 1) match(context.index, index)
+    }
+
+    // Heckel's sentinels: the start and end of both texts are matched anchors
+    // too, so the marches below reach a first or last line whose tokens all
+    // repeat elsewhere, which phase 1 can never pin down.
+    if (previous.isNotEmpty() && current.isNotEmpty()) {
+        if (current.first().key == previous.first().key &&
+            editsC.first() == null &&
+            editsP.first() == null
+        ) {
+            match(0, 0)
+        }
+
+        if (current.last().key == previous.last().key &&
+            editsC.last() == null &&
+            editsP.last() == null
+        ) {
+            match(previous.lastIndex, current.lastIndex)
+        }
     }
 
     // Phase 2: forwards out of every anchor, while both sides keep agreeing.
