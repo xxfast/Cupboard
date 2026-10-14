@@ -5,12 +5,14 @@ import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuiltInThemes
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.ColourPalette
 import io.github.xxfast.cupboard.document.DiagramElement
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.fontDisplayName
 import io.github.xxfast.cupboard.document.fontFamilies
+import io.github.xxfast.cupboard.document.palette
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.EquationElement
@@ -502,6 +504,9 @@ data class EditorState(
 
     /** The shape looks a style picker offers, which are the deck's. [defaults]' twin. */
     val objectStyles: List<ObjectStyle> get() = document.objectStyles
+
+    /** What every colour well's popover offers: the swatches [defaults] imply. */
+    val palette: ColourPalette get() = defaults.palette()
 
     /**
      * The families the deck carries in its bundle, once each and sorted: the

@@ -862,6 +862,7 @@ fun EditorView(
                         themes = state.themes,
                         userThemes = state.userThemes,
                         themeName = state.document.themeName,
+                        palette = state.palette,
                         documentBackground = state.document.background,
                         slideWidth = state.document.slideWidth,
                         slideHeight = state.document.slideHeight,

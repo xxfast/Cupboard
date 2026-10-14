@@ -17,6 +17,7 @@ import androidx.compose.material3.TabPosition
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -24,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.ColourPalette
 import io.github.xxfast.cupboard.document.DeckFont
 import io.github.xxfast.cupboard.document.DiagramStep
 import io.github.xxfast.cupboard.document.Element
@@ -112,6 +114,8 @@ fun EditorInspector(
     themeName: String,
     /** Behind every slide that asks for none of its own; null is the app's dark gradient. */
     documentBackground: SlideBackground?,
+    /** The deck theme's swatches, what every colour well's popover offers. */
+    palette: ColourPalette,
     /** The deck's slide shape, in document units, and the preset it is exactly,
      * null for a custom one: between them, what the size picker shows. */
     slideWidth: Float,
@@ -226,145 +230,147 @@ fun EditorInspector(
     )
     val selectedIndex: Int = tabs.indexOfFirst { (_, target) -> target == tab }
 
-    Column(
-        modifier = modifier
-            .width(282.dp)
-            .fillMaxHeight()
-            .background(tokens.insBg),
-    ) {
-        TabRow(
-            selectedTabIndex = selectedIndex,
-            containerColor = tokens.insBg,
-            contentColor = tokens.text,
-            indicator = { tabPositions -> TabIndicator(tabPositions[selectedIndex]) },
-            divider = { HorizontalDivider(thickness = 1.dp, color = tokens.div) },
+    CompositionLocalProvider(LocalColourPalette provides palette) {
+        Column(
+            modifier = modifier
+                .width(282.dp)
+                .fillMaxHeight()
+                .background(tokens.insBg),
         ) {
-            tabs.forEachIndexed { index, (title, target) ->
-                Tab(
-                    selected = index == selectedIndex,
-                    onClick = { if (index != selectedIndex) onSelectTab(target) },
-                    modifier = Modifier.height(48.dp),
-                    selectedContentColor = tokens.text,
-                    unselectedContentColor = tokens.dim,
-                ) {
-                    // The content slot, not `text`: that one pads 16dp a side,
-                    // which "Document" doesn't fit in a third of the panel.
-                    Text(
-                        text = title,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
+            TabRow(
+                selectedTabIndex = selectedIndex,
+                containerColor = tokens.insBg,
+                contentColor = tokens.text,
+                indicator = { tabPositions -> TabIndicator(tabPositions[selectedIndex]) },
+                divider = { HorizontalDivider(thickness = 1.dp, color = tokens.div) },
+            ) {
+                tabs.forEachIndexed { index, (title, target) ->
+                    Tab(
+                        selected = index == selectedIndex,
+                        onClick = { if (index != selectedIndex) onSelectTab(target) },
+                        modifier = Modifier.height(48.dp),
+                        selectedContentColor = tokens.text,
+                        unselectedContentColor = tokens.dim,
+                    ) {
+                        // The content slot, not `text`: that one pads 16dp a side,
+                        // which "Document" doesn't fit in a third of the panel.
+                        Text(
+                            text = title,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
                 }
             }
-        }
 
-        when (tab) {
-            InspectorTab.Format -> FormatPanel(
-                segments = formatSegments,
-                activeSegment = activeFormatSegment,
-                onSelectSegment = onSelectFormatSegment,
-                expandedSections = expandedSections,
-                onToggleSection = onToggleInspectorSection,
-                selectedElements = selectedElements,
-                onUpdateElements = onUpdateElements,
-                onPreviewElements = onPreviewElements,
-                onReorderElements = onReorderElements,
-                onSetElementsLocked = onSetElementsLocked,
-                onFlipElements = onFlipElements,
-                onGroupElements = onGroupElements,
-                onUngroupElements = onUngroupElements,
-                onAlignElements = onAlignElements,
-                onDistributeElements = onDistributeElements,
-                canBringForward = canBringForward,
-                canSendBackward = canSendBackward,
-                slides = slides,
-                onSetElementLinks = onSetElementLinks,
-                linkSelection = linkSelection,
-                selectionLink = selectionLink,
-                textLinkRows = textLinkRows,
-                onSetTextLink = onSetTextLink,
-                objectStyles = objectStyles,
-                onApplyObjectStyle = onApplyObjectStyle,
-                onSaveObjectStyle = onSaveObjectStyle,
-                onRenameObjectStyle = onRenameObjectStyle,
-                onDeleteObjectStyle = onDeleteObjectStyle,
-                onReplaceImage = onReplaceImage,
-                onAddGalleryImages = onAddGalleryImages,
-                onReplaceMedia = onReplaceMedia,
-                onChoosePoster = onChoosePoster,
-                onChooseImage = onChooseImage,
-                deckFontFamilies = deckFontFamilies,
-                onAddFontFile = onAddFontFile,
-                onAddElementSteps = onAddElementSteps,
-                codeVersion = codeVersion,
-                onSelectCodeVersion = onSelectCodeVersion,
-                onAddCodeVersion = onAddCodeVersion,
-                onRemoveCodeVersion = onRemoveCodeVersion,
-                onMoveCodeVersion = onMoveCodeVersion,
-                codeStep = codeStep,
-                onSelectCodeStep = onSelectCodeStep,
-                onAddCodeStep = onAddCodeStep,
-                onRemoveCodeStep = onRemoveCodeStep,
-                onMoveCodeStep = onMoveCodeStep,
-                onUpdateCodeStep = onUpdateCodeStep,
-                diagramStep = diagramStep,
-                diagramNodeIds = diagramNodeIds,
-                onSelectDiagramStep = onSelectDiagramStep,
-                onAddDiagramStep = onAddDiagramStep,
-                onRemoveDiagramStep = onRemoveDiagramStep,
-                onMoveDiagramStep = onMoveDiagramStep,
-                onUpdateDiagramStep = onUpdateDiagramStep,
-                slide = slide,
-                layouts = layouts,
-                isEditingLayouts = isEditingLayouts,
-                onUpdateSlide = onUpdateSlide,
-                onApplyLayout = onApplyLayout,
-                onReapplyLayout = onReapplyLayout,
-                onEditSlideLayouts = onEditSlideLayouts,
-                onExitSlideLayouts = onExitSlideLayouts,
-                onAddPlaceholder = onAddPlaceholder,
-                onRenameSlide = onRenameSlide,
-            )
+            when (tab) {
+                InspectorTab.Format -> FormatPanel(
+                    segments = formatSegments,
+                    activeSegment = activeFormatSegment,
+                    onSelectSegment = onSelectFormatSegment,
+                    expandedSections = expandedSections,
+                    onToggleSection = onToggleInspectorSection,
+                    selectedElements = selectedElements,
+                    onUpdateElements = onUpdateElements,
+                    onPreviewElements = onPreviewElements,
+                    onReorderElements = onReorderElements,
+                    onSetElementsLocked = onSetElementsLocked,
+                    onFlipElements = onFlipElements,
+                    onGroupElements = onGroupElements,
+                    onUngroupElements = onUngroupElements,
+                    onAlignElements = onAlignElements,
+                    onDistributeElements = onDistributeElements,
+                    canBringForward = canBringForward,
+                    canSendBackward = canSendBackward,
+                    slides = slides,
+                    onSetElementLinks = onSetElementLinks,
+                    linkSelection = linkSelection,
+                    selectionLink = selectionLink,
+                    textLinkRows = textLinkRows,
+                    onSetTextLink = onSetTextLink,
+                    objectStyles = objectStyles,
+                    onApplyObjectStyle = onApplyObjectStyle,
+                    onSaveObjectStyle = onSaveObjectStyle,
+                    onRenameObjectStyle = onRenameObjectStyle,
+                    onDeleteObjectStyle = onDeleteObjectStyle,
+                    onReplaceImage = onReplaceImage,
+                    onAddGalleryImages = onAddGalleryImages,
+                    onReplaceMedia = onReplaceMedia,
+                    onChoosePoster = onChoosePoster,
+                    onChooseImage = onChooseImage,
+                    deckFontFamilies = deckFontFamilies,
+                    onAddFontFile = onAddFontFile,
+                    onAddElementSteps = onAddElementSteps,
+                    codeVersion = codeVersion,
+                    onSelectCodeVersion = onSelectCodeVersion,
+                    onAddCodeVersion = onAddCodeVersion,
+                    onRemoveCodeVersion = onRemoveCodeVersion,
+                    onMoveCodeVersion = onMoveCodeVersion,
+                    codeStep = codeStep,
+                    onSelectCodeStep = onSelectCodeStep,
+                    onAddCodeStep = onAddCodeStep,
+                    onRemoveCodeStep = onRemoveCodeStep,
+                    onMoveCodeStep = onMoveCodeStep,
+                    onUpdateCodeStep = onUpdateCodeStep,
+                    diagramStep = diagramStep,
+                    diagramNodeIds = diagramNodeIds,
+                    onSelectDiagramStep = onSelectDiagramStep,
+                    onAddDiagramStep = onAddDiagramStep,
+                    onRemoveDiagramStep = onRemoveDiagramStep,
+                    onMoveDiagramStep = onMoveDiagramStep,
+                    onUpdateDiagramStep = onUpdateDiagramStep,
+                    slide = slide,
+                    layouts = layouts,
+                    isEditingLayouts = isEditingLayouts,
+                    onUpdateSlide = onUpdateSlide,
+                    onApplyLayout = onApplyLayout,
+                    onReapplyLayout = onReapplyLayout,
+                    onEditSlideLayouts = onEditSlideLayouts,
+                    onExitSlideLayouts = onExitSlideLayouts,
+                    onAddPlaceholder = onAddPlaceholder,
+                    onRenameSlide = onRenameSlide,
+                )
 
-            InspectorTab.Animate -> AnimatePanel(
-                slide = slide,
-                isEditingLayouts = isEditingLayouts,
-                selectedElements = selectedElements,
-                animateSegment = animateSegment,
-                onSelectAnimateSegment = onSelectAnimateSegment,
-                onSelectElement = onSelectElement,
-                onSetTransition = onSetSlideTransition,
-                onPreview = onPreviewSlide,
-                onUpdate = onUpdateSlide,
-                onAddBuild = onAddBuild,
-                onUpdateBuild = onUpdateBuild,
-                onRemoveBuild = onRemoveBuild,
-                onMoveBuild = onMoveBuild,
-                onPlayPreview = onPlayPreview,
-            )
+                InspectorTab.Animate -> AnimatePanel(
+                    slide = slide,
+                    isEditingLayouts = isEditingLayouts,
+                    selectedElements = selectedElements,
+                    animateSegment = animateSegment,
+                    onSelectAnimateSegment = onSelectAnimateSegment,
+                    onSelectElement = onSelectElement,
+                    onSetTransition = onSetSlideTransition,
+                    onPreview = onPreviewSlide,
+                    onUpdate = onUpdateSlide,
+                    onAddBuild = onAddBuild,
+                    onUpdateBuild = onUpdateBuild,
+                    onRemoveBuild = onRemoveBuild,
+                    onMoveBuild = onMoveBuild,
+                    onPlayPreview = onPlayPreview,
+                )
 
-            InspectorTab.Document -> DocumentPanel(
-                themes = themes,
-                userThemes = userThemes,
-                themeName = themeName,
-                documentBackground = documentBackground,
-                slideWidth = slideWidth,
-                slideHeight = slideHeight,
-                slideSizePreset = slideSizePreset,
-                playback = playback,
-                onChangeTheme = onChangeTheme,
-                onSaveAsTheme = onSaveAsTheme,
-                onDeleteUserTheme = onDeleteUserTheme,
-                onSetDocumentBackground = onSetDocumentBackground,
-                onSetSlideSize = onSetSlideSize,
-                onSetPlayback = onSetPlayback,
-                onChooseImage = onChooseImage,
-                deckFonts = deckFonts,
-                onRemoveDeckFont = onRemoveDeckFont,
-                onAddFontFile = onAddFontFile,
-            )
+                InspectorTab.Document -> DocumentPanel(
+                    themes = themes,
+                    userThemes = userThemes,
+                    themeName = themeName,
+                    documentBackground = documentBackground,
+                    slideWidth = slideWidth,
+                    slideHeight = slideHeight,
+                    slideSizePreset = slideSizePreset,
+                    playback = playback,
+                    onChangeTheme = onChangeTheme,
+                    onSaveAsTheme = onSaveAsTheme,
+                    onDeleteUserTheme = onDeleteUserTheme,
+                    onSetDocumentBackground = onSetDocumentBackground,
+                    onSetSlideSize = onSetSlideSize,
+                    onSetPlayback = onSetPlayback,
+                    onChooseImage = onChooseImage,
+                    deckFonts = deckFonts,
+                    onRemoveDeckFont = onRemoveDeckFont,
+                    onAddFontFile = onAddFontFile,
+                )
+            }
         }
     }
 }
