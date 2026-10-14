@@ -113,6 +113,42 @@ class BuildTimelineTest {
     }
 
     @Test
+    fun aWithPreviousBuildRidesItsAnchorsOffsetThroughAChain() {
+        val slide = slide(
+            Build("code", kind = BuildKind.Out, durationMs = 500),
+            Build("body", trigger = BuildTrigger.WithPrevious, durationMs = 500),
+            Build("code", kind = BuildKind.Out, trigger = BuildTrigger.AfterPrevious, durationMs = 500),
+            Build("body", trigger = BuildTrigger.WithPrevious, durationMs = 500),
+            Build("code", kind = BuildKind.Out, trigger = BuildTrigger.AfterPrevious, durationMs = 500),
+            Build("body", trigger = BuildTrigger.WithPrevious, durationMs = 500, delayMs = 50),
+        )
+
+        // Each pair plays one after the other: 0, 500, 1000, pair-mates alongside.
+        assertEquals(listOf(0, 0, 500, 500, 1000, 1050), slide.buildTimeline().map { it.delayMs })
+        assertEquals(2, slide.stepCount())
+    }
+
+    @Test
+    fun aPureAfterPreviousChainStacksDurationsAndDelays() {
+        val slide = slide(
+            Build("code", durationMs = 500),
+            Build("body", trigger = BuildTrigger.AfterPrevious, durationMs = 300, delayMs = 100),
+            Build("code", trigger = BuildTrigger.AfterPrevious, durationMs = 200),
+        )
+
+        assertEquals(listOf(0, 600, 900), slide.buildTimeline().map { it.delayMs })
+    }
+
+    @Test
+    fun aWithPreviousBuildOpeningTheSlideKeepsOnlyItsOwnDelay() {
+        val slide = slide(Build("body", trigger = BuildTrigger.WithPrevious, delayMs = 250))
+
+        val at = slide.buildTimeline().single()
+        assertEquals(0, at.firstStep)
+        assertEquals(250, at.delayMs)
+    }
+
+    @Test
     fun anOnClickBuildAfterPiecesOpensTheStepAfterTheLastOfThem() {
         val slide = slide(
             Build("body", delivery = BuildDelivery.ByParagraph),
