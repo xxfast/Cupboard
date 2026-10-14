@@ -204,6 +204,78 @@ struct ComposeCanvas: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// The arrow keys on the canvas: the selection moves 1pt, 10pt with shift, a held
+/// key repeating, and the key coming up settles the run as one undo entry, the
+/// way a drag's release does.
+///
+/// A window-level monitor, `NavigatorKeys`' pattern: the Compose canvas holds
+/// first responder whichever pane is focused, so the editor is asked whether the
+/// arrows are the canvas's (`canNudge`: canvas focused, no caret, something
+/// unlocked selected) and the keys are taken ahead of the responder chain. A
+/// field editor in the chrome keeps them, so does a caret on the canvas.
+struct NudgeKeys: NSViewRepresentable {
+    let host: EditorHost
+
+    func makeNSView(context: Context) -> MonitorView { MonitorView() }
+
+    func updateNSView(_ view: MonitorView, context: Context) { view.host = host }
+
+    static func dismantleNSView(_ view: MonitorView, coordinator: ()) { view.stop() }
+
+    final class MonitorView: NSView {
+        var host: EditorHost?
+        private var monitor: Any?
+        /// Whether a key down was taken, so only its own key up commits.
+        private var nudging = false
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            stop()
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                self?.handle(event) == true ? nil : event
+            }
+        }
+
+        func stop() {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+        }
+
+        private func handle(_ event: NSEvent) -> Bool {
+            guard let host, let window, event.window === window else { return false }
+            guard let direction = Self.direction(event.keyCode) else { return false }
+
+            if event.type == .keyUp {
+                guard nudging else { return false }
+                nudging = false
+                host.commitNudge()
+                return true
+            }
+
+            guard window.attachedSheet == nil, !(window.firstResponder is NSText) else { return false }
+            let modifiers = event.modifierFlags.intersection([.shift, .command, .option, .control])
+            guard modifiers.isEmpty || modifiers == .shift, host.canNudge() else { return false }
+
+            let step: Double = modifiers == .shift ? 10 : 1
+            host.nudgeSelection(dx: direction.dx * step, dy: direction.dy * step)
+            nudging = true
+            return true
+        }
+
+        /// The unit step of an arrow key, nil for any other key.
+        private static func direction(_ keyCode: UInt16) -> (dx: Double, dy: Double)? {
+            switch keyCode {
+            case 123: (-1, 0)
+            case 124: (1, 0)
+            case 125: (0, 1)
+            case 126: (0, -1)
+            default: nil
+            }
+        }
+    }
+}
+
 /// Full-bleed play surface. The session owns a Compose scene, so it has to be
 /// disposed when SwiftUI drops the view; the coordinator carries it there.
 struct PlayCanvas: NSViewRepresentable {

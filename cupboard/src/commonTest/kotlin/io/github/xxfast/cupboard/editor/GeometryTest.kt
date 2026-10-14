@@ -430,4 +430,25 @@ class GeometryTest {
         assertEquals(listOf("b"), spread.map { it.id })
         assertEquals(250f, spread.single().frame.y)
     }
+
+    @Test
+    fun nudgingMovesTheSelectionAndLeavesTheLockedWhereTheyAre() {
+        val slide = Slide(
+            id = "slide",
+            elements = listOf(
+                ShapeElement(id = "a", frame = Frame(0f, 0f, 100f, 100f)),
+                ShapeElement(id = "b", frame = Frame(200f, 0f, 100f, 100f), locked = true),
+                ShapeElement(id = "c", frame = Frame(400f, 0f, 100f, 100f)),
+                ShapeElement(id = "d", frame = Frame(600f, 0f, 100f, 100f)),
+            ),
+        ).groupElements(listOf("c", "d"), groupId = "group")
+
+        val nudged: List<Element> = slide.nudged(listOf("a", "b", "group"), dx = 10f, dy = -1f)
+
+        assertEquals(listOf("a", "group"), nudged.map { it.id })
+        assertEquals(Frame(10f, -1f, 100f, 100f), nudged.first().frame)
+        val group = nudged.last() as GroupElement
+        assertEquals(listOf(410f, 610f), group.children.map { it.frame.x })
+        assertEquals(listOf(-1f, -1f), group.children.map { it.frame.y })
+    }
 }

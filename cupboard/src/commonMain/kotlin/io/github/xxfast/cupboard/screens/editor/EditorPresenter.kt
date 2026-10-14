@@ -104,6 +104,7 @@ import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.editor.alignmentOverlay
 import io.github.xxfast.cupboard.editor.alignFrames
 import io.github.xxfast.cupboard.editor.distributeFrames
+import io.github.xxfast.cupboard.editor.nudged
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
@@ -130,6 +131,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitNudge
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Copy
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
@@ -169,6 +171,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.NudgeSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
@@ -734,6 +737,10 @@ private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview, is EditSelectionChanged,
         -> true
 
+    // An arrow that slipped past the shell: turned away below, never a reason
+    // to close the caret it belongs to.
+    is NudgeSelection, CommitNudge -> true
+
     // The strip's blur, arriving after the click that moved the caret here.
     EndNotesEdit -> true
 
@@ -751,6 +758,7 @@ private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
  */
 private fun EditorEvent.keepsNotesEditing(): Boolean = when (this) {
     BeginNotesEdit, is EditNotes, EndNotesEdit -> true
+    is NudgeSelection, CommitNudge -> true
     ToggleNotes -> false
     else -> isChrome()
 }
@@ -801,6 +809,10 @@ fun EditorPresenter(
         // gesture is running. Undo wants the pre-gesture document, and by
         // commit time the previews have already folded into state.
         var gestureBase: Document? = null
+
+        // Whether the gesture in flight is an arrow key's: only its own key
+        // coming up settles it, so a stray key up can't commit a drag.
+        var nudging = false
 
         // The clipboard, and how many times what's on it has been pasted: the
         // count is what cascades repeated pastes instead of stacking them.
@@ -966,6 +978,27 @@ fun EditorPresenter(
                     state.copy(document = base, isPreviewing = false, alignment = null)
                 }
                 ?: state
+
+            // The keyboard's drag: each press or repeat moves on from where the
+            // last one left the selection, and the key coming up is the release.
+            is NudgeSelection -> state
+                .takeIf { it.canNudge }
+                ?.selectedSlide
+                ?.nudged(state.selectedElementIds, event.dx, event.dy)
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { elements ->
+                    if (gestureBase == null) gestureBase = state.document
+                    nudging = true
+                    state.withElements(elements).copy(isPreviewing = true)
+                }
+                ?: state
+
+            CommitNudge ->
+                if (!nudging) state
+                else {
+                    nudging = false
+                    settled()
+                }
 
             // The element events below are the slide ones at finer grain, so
             // they carry the same history rules: one entry per settled edit,
@@ -2401,6 +2434,10 @@ fun EditorPresenter(
             // history entry and the event that follows acts on a settled
             // document. The re-entrant reduce calls below skip the guard on
             // purpose, the session is already closed by the time they run.
+            // A held arrow is a gesture like a drag, and anything else landing
+            // mid-run (a click, an undo, a menu verb) lands on a settled one:
+            // the run so far is its own history entry.
+            if (nudging && event !is NudgeSelection && event != CommitNudge && !event.isChrome()) state = reduce(CommitNudge)
             if (state.isEditingText && !event.keepsTextEditing()) state = reduce(EndTextEdit)
             if (state.isEditingNotes && !event.keepsNotesEditing()) state = reduce(EndNotesEdit)
 

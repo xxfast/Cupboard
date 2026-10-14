@@ -5,7 +5,10 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.boundingFrame
+import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.document.isLocked
 import io.github.xxfast.cupboard.document.rotateVector
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -505,3 +508,15 @@ fun alignmentOverlay(
 
     return AlignmentOverlay(frame, guides, spacing, sizes, drag)
 }
+
+/**
+ * The elements of [ids] on this slide moved [dx], [dy] together: an arrow key's
+ * nudge. The selection moves as one box, which a plain shift already is, and a
+ * group carries its children through its own `update`. Locked ones, a group's
+ * lock included, stay where they are, the way a drag leaves them. No clamping,
+ * since a drag doesn't either: an element may sit partly off the slide.
+ */
+fun Slide.nudged(ids: List<String>, dx: Float, dy: Float): List<Element> = ids
+    .filter { id -> !isLocked(id) }
+    .mapNotNull { id -> elementById(id) }
+    .map { element -> element.update(frame = element.frame.translate(dx, dy)) }
