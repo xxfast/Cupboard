@@ -4,6 +4,15 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import io.github.xxfast.cupboard.document.CodeDiagnostic
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -37,6 +46,9 @@ private const val CodeStepDuration: Int = 350
  * [MorphedCodeLines], whose tokens come and go the same distance.
  */
 internal const val CodeStepSlide: Float = 0.4f
+
+/** Between a line's last character and the first diagnostic message after it, in ems. */
+internal const val CodeDiagnosticGap: Float = 1.5f
 
 /** What one line does between two steps. */
 internal enum class LineMotion { Kept, Added, Removed }
@@ -85,13 +97,55 @@ internal fun lineTransitions(from: List<Int>, to: List<Int>): List<LineTransitio
     }
 }
 
-/** A row on screen: one line of code, and the two ends of the move it is making. */
+/**
+ * A row on screen: one line of code, and the two ends of the move it is making.
+ *
+ * [fromDiagnostics] and [toDiagnostics] are the ones each step puts on this line,
+ * empty for a step that doesn't show it.
+ */
 private data class CodeRow(
     val transition: LineTransition,
     val text: AnnotatedString,
     val fromAlpha: Float,
     val toAlpha: Float,
+    val fromDiagnostics: List<CodeDiagnostic>,
+    val toDiagnostics: List<CodeDiagnostic>,
 )
+
+/** Where a row's diagnostics sit at either end, once the row has been laid out. */
+private data class RowMarks(val from: List<DiagnosticMark>, val to: List<DiagnosticMark>)
+
+/**
+ * A row's diagnostics at [fraction] of the way through the step change.
+ *
+ * One both steps hold stays at full strength, its message sliding to where the
+ * new step sets it; one only the old step holds fades out and one only the new
+ * holds fades in. A row only one step shows is already fading as a whole, so its
+ * diagnostics ride that fade rather than doubling it.
+ */
+private fun DrawScope.drawRowDiagnostics(
+    row: CodeRow,
+    marks: RowMarks,
+    fraction: Float,
+    chrome: CodeChrome,
+    em: Float,
+) {
+    val fromAlpha: Float = if (row.transition.toRow == null) 1f else 1f - fraction
+    val toAlpha: Float = if (row.transition.fromRow == null) 1f else fraction
+
+    val leaving: MutableList<DiagnosticMark> = marks.from.toMutableList()
+    for (mark in marks.to) {
+        val kept: Int = leaving.indexOfFirst { it.diagnostic == mark.diagnostic }
+        if (kept < 0) {
+            drawDiagnostic(mark, chrome, em, toAlpha)
+            continue
+        }
+
+        val was: DiagnosticMark = leaving.removeAt(kept)
+        drawDiagnostic(mark, chrome, em, 1f, messageAt = lerp(was.messageAt, mark.messageAt, fraction))
+    }
+    for (mark in leaving) drawDiagnostic(mark, chrome, em, fromAlpha)
+}
 
 /** Where a row's ink sits at [fraction] of the way through the step change. */
 private fun CodeRow.alphaAt(fraction: Float): Float = when (transition.motion) {
@@ -163,6 +217,14 @@ internal fun AnimatedCodeLines(
     }
 
     val chrome: CodeChrome = element.theme.chrome
+    // A diagnostic's message is set in the block's type, so it reads as the
+    // editor talking about the code rather than as a label stuck over it.
+    val measurer: TextMeasurer = rememberTextMeasurer()
+    val messageStyle: TextStyle = LocalTextStyle.current.merge(
+        fontSize = element.fontSize.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+    val em: Float = with(LocalDensity.current) { element.fontSize.sp.toPx() }
     val was: List<SteppedLine> =
         remember(fromSource, element.language, element.theme, from) {
             steppedLines(fromSource, element.language, element.theme, from)
@@ -183,6 +245,12 @@ internal fun AnimatedCodeLines(
                 text = line.text,
                 fromAlpha = before[number].strength(),
                 toAlpha = after[number].strength(),
+                fromDiagnostics =
+                    if (number in before) from.diagnostics.filter { it.line == number }
+                    else emptyList(),
+                toDiagnostics =
+                    if (number in after) to.diagnostics.filter { it.line == number }
+                    else emptyList(),
             )
         }
     }
@@ -207,6 +275,12 @@ internal fun AnimatedCodeLines(
                         )
                     }
 
+                    // Laid out by the row's own text, so a squiggle sits under
+                    // the glyphs it means however the row wrapped, and is drawn
+                    // in the row's layer: it moves, scrolls and dims with it.
+                    var marks: RowMarks by remember(row) {
+                        mutableStateOf(RowMarks(emptyList(), emptyList()))
+                    }
                     Text(
                         text = row.text,
                         color = chrome.text,
@@ -215,9 +289,32 @@ internal fun AnimatedCodeLines(
                         lineHeight = (element.fontSize * CodeLineHeight).sp,
                         softWrap = element.wrap,
                         overflow = TextOverflow.Clip,
-                        modifier = Modifier.graphicsLayer {
-                            alpha = row.alphaAt(progress.value)
+                        onTextLayout = { layout ->
+                            if (row.fromDiagnostics.isEmpty() && row.toDiagnostics.isEmpty()) {
+                                return@Text
+                            }
+
+                            fun marksOf(diagnostics: List<CodeDiagnostic>): List<DiagnosticMark> =
+                                diagnosticMarks(
+                                    diagnostics = diagnostics,
+                                    layout = layout,
+                                    start = 0,
+                                    length = row.text.length,
+                                    measurer = measurer,
+                                    style = messageStyle,
+                                    chrome = chrome,
+                                    em = em,
+                                    gap = em * CodeDiagnosticGap,
+                                )
+
+                            marks = RowMarks(marksOf(row.fromDiagnostics), marksOf(row.toDiagnostics))
                         },
+                        modifier = Modifier
+                            .graphicsLayer { alpha = row.alphaAt(progress.value) }
+                            .drawWithContent {
+                                drawContent()
+                                drawRowDiagnostics(row, marks, progress.value, chrome, em)
+                            },
                     )
                 }
             }

@@ -693,6 +693,9 @@ struct CodeFormat {
     let stepLines: String
     let stepHighlight: String
     let stepScrollTo: String
+    /// The picked step's errors and warnings, in list order. Empty when no row
+    /// is picked.
+    let stepDiagnostics: [CodeDiagnosticEntry]
     /// One line per step, as the rows read it under their title.
     let stepSummaries: [String]
 
@@ -711,7 +714,27 @@ struct CodeFormat {
         stepLines = props.stepLines
         stepHighlight = props.stepHighlight
         stepScrollTo = props.stepScrollTo
+        stepDiagnostics = props.stepDiagnostics.map(CodeDiagnosticEntry.init)
         stepSummaries = props.stepSummaries
+    }
+}
+
+/// One diagnostic on the picked code step: its 1-based line and inclusive
+/// column span, its severity as a place in `diagnosticSeverities()`, and its
+/// message, empty for none.
+struct CodeDiagnosticEntry: Equatable {
+    let line: Int
+    let startColumn: Int
+    let endColumn: Int
+    let severity: Int
+    let message: String
+
+    init(_ props: DiagnosticProps) {
+        line = Int(props.line)
+        startColumn = Int(props.startColumn)
+        endColumn = Int(props.endColumn)
+        severity = Int(props.severityIndex)
+        message = props.message
     }
 }
 

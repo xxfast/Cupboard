@@ -234,6 +234,86 @@ class CodeStepTest {
     }
 
     @Test
+    fun aStepWrittenBeforeDiagnosticsHasNone() {
+        val json = """
+            {
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "code",
+                      "id": "code",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "code": "fun main() {}",
+                      "steps": [{ "highlight": [{ "first": 1, "last": 1 }], "scrollTo": 1 }]
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val code = loadedDocument(json).slides.single().elements.single() as CodeElement
+        assertEquals(emptyList(), code.steps.single().diagnostics)
+    }
+
+    @Test
+    fun aDiagnosticWrittenWithoutItsOptionalsIsAnErrorWithNoMessage() {
+        val json = """{ "line": 2, "startColumn": 5, "endColumn": 9 }"""
+        val diagnostic: CodeDiagnostic = DocumentJson.decodeFromString(CodeDiagnostic.serializer(), json)
+        assertEquals(CodeDiagnostic(2, 5, 9, DiagnosticSeverity.Error, message = null), diagnostic)
+    }
+
+    @Test
+    fun aStepsDiagnosticsSurviveARoundTrip() {
+        val block: CodeElement = steppedBlock(
+            CodeStep(),
+            CodeStep(
+                diagnostics = listOf(
+                    CodeDiagnostic(2, 1, 1, message = "Unresolved reference: two"),
+                    CodeDiagnostic(4, 1, 1, DiagnosticSeverity.Warning),
+                ),
+            ),
+        )
+        val document = Document(id = "doc", name = "Deck", slides = listOf(Slide(elements = listOf(block))))
+
+        val decoded = loadedDocument(document.encodeToString())
+        assertEquals(block, decoded.slides.single().elements.single())
+    }
+
+    @Test
+    fun aNewDiagnosticUnderlinesTheCodeOnTheFirstLineTheStepPointsAt() {
+        val source = "fun main() {\n    println(x)  \n}"
+
+        assertEquals(CodeDiagnostic(1, 1, 12), CodeStep().withDiagnosticAdded(source).diagnostics.single())
+        // Indent and trailing blanks are not code, so the squiggle skips them.
+        val pointed = CodeStep(highlight = listOf(LineRange(2, 3)))
+        assertEquals(CodeDiagnostic(2, 5, 14), pointed.withDiagnosticAdded(source).diagnostics.single())
+        // A highlight past the end lands on the last line rather than on nothing.
+        val past = CodeStep(highlight = listOf(LineRange(9, 9)))
+        assertEquals(CodeDiagnostic(3, 1, 1), past.withDiagnosticAdded(source).diagnostics.single())
+    }
+
+    @Test
+    fun removingAndUpdatingADiagnosticTheStepDoesNotHaveIsNoEdit() {
+        val step: CodeStep = CodeStep().withDiagnosticAdded("x")
+        assertEquals(step, step.withDiagnosticRemoved(3))
+        assertEquals(step, step.withDiagnosticUpdated(-1, CodeDiagnostic(9, 9, 9)))
+        assertEquals(CodeStep(), step.withDiagnosticRemoved(0))
+    }
+
+    @Test
+    fun aDiagnosticPositionFieldReadsANumberOrNothing() {
+        assertEquals(4, parseDiagnosticPosition(" 4 "))
+        assertNull(parseDiagnosticPosition("0"))
+        assertNull(parseDiagnosticPosition(""))
+        assertNull(parseDiagnosticPosition("four"))
+    }
+
+    @Test
     fun theScrollToFieldReadsALineOrNothing() {
         assertEquals(12, parseScrollTo("12"))
         assertEquals(12, parseScrollTo("  12 "))

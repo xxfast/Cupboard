@@ -76,6 +76,7 @@ import io.github.xxfast.cupboard.document.removeGuide
 import io.github.xxfast.cupboard.document.removeLayout
 import io.github.xxfast.cupboard.document.removeSlide
 import io.github.xxfast.cupboard.document.removingCodeStep
+import io.github.xxfast.cupboard.document.sanitized
 import io.github.xxfast.cupboard.document.removingDiagramStep
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.resized
@@ -1825,6 +1826,7 @@ fun EditorPresenter(
                     val step: CodeStep = event.step.copy(
                         version = event.step.version.coerceIn(element.sources.indices),
                         scrollTo = event.step.scrollTo?.takeIf { it >= 1 },
+                        diagnostics = event.step.diagnostics.map { it.sanitized() },
                     )
                     if (element.steps[event.index] == step) return@let state
 

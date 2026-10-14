@@ -1259,6 +1259,71 @@ extension EditorView {
                 }
                 .frame(width: 128)
             }
+
+            codeStepDiagnostics(code)
+        }
+    }
+
+    /// The picked step's errors and warnings: where each squiggles (line, then
+    /// the first and last column, all 1-based), how loud it is, and what it says
+    /// after its line. Each field commits on its own, one edit each, and a
+    /// position that is no number keeps the one it had.
+    func codeStepDiagnostics(_ code: CodeFormat) -> some View {
+        let step = Int32(code.selectedStep)
+        let severities = host.diagnosticSeverities()
+        return VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Diagnostics")
+
+            ForEach(Array(code.stepDiagnostics.enumerated()), id: \.offset) { index, diagnostic in
+                let at = Int32(index)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        rowLabel("Line")
+                        StringField(placeholder: "1", value: "\(diagnostic.line)", palette: palette) {
+                            host.setCodeStepDiagnosticLine(index: step, diagnostic: at, text: $0)
+                        }
+                        .frame(width: 40)
+                        rowLabel("Cols")
+                        StringField(
+                            placeholder: "1",
+                            value: "\(diagnostic.startColumn)",
+                            palette: palette
+                        ) {
+                            host.setCodeStepDiagnosticStart(index: step, diagnostic: at, text: $0)
+                        }
+                        .frame(width: 40)
+                        StringField(
+                            placeholder: "1",
+                            value: "\(diagnostic.endColumn)",
+                            palette: palette
+                        ) {
+                            host.setCodeStepDiagnosticEnd(index: step, diagnostic: at, text: $0)
+                        }
+                        .frame(width: 40)
+                    }
+
+                    HStack(spacing: 6) {
+                        stylePopup(severities, selected: diagnostic.severity) { picked in
+                            host.setCodeStepDiagnosticSeverity(
+                                index: step,
+                                diagnostic: at,
+                                severity: Int32(picked)
+                            )
+                        }
+                        .frame(width: 96)
+                        StringField(placeholder: "Message", value: diagnostic.message, palette: palette) {
+                            host.setCodeStepDiagnosticMessage(index: step, diagnostic: at, text: $0)
+                        }
+                        galleryStep("minus", help: "Remove Diagnostic") {
+                            host.removeCodeStepDiagnostic(index: step, diagnostic: at)
+                        }
+                    }
+                }
+            }
+
+            panelButton("Add Diagnostic", symbol: "exclamationmark.triangle") {
+                host.addCodeStepDiagnostic(index: step)
+            }
         }
     }
 

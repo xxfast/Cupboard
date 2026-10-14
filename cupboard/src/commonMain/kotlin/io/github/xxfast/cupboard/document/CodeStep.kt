@@ -45,6 +45,10 @@ data class LineRange(val first: Int, val last: Int) {
  * there would have. A block that fits its frame never scrolls, and one that
  * doesn't never scrolls past its last line. The renderer does the arithmetic,
  * since only it knows how tall a line came out.
+ *
+ * [diagnostics] are the errors and warnings the step points out, the way an IDE
+ * would: authored, not compiled. They belong to the step, so they arrive and
+ * leave with it, and count in the same version as everything else here.
  */
 @Serializable
 data class CodeStep(
@@ -52,7 +56,80 @@ data class CodeStep(
     val highlight: List<LineRange> = emptyList(),
     val version: Int = 0,
     val scrollTo: Int? = null,
+    val diagnostics: List<CodeDiagnostic> = emptyList(),
 )
+
+/** How loud a [CodeDiagnostic] is: a red squiggle or an amber one. */
+@Serializable
+enum class DiagnosticSeverity { Error, Warning }
+
+/**
+ * One error or warning on a code step: a squiggle under columns [startColumn]
+ * to [endColumn] of [line], and [message] drawn after the line's end.
+ *
+ * All three are 1-based and inclusive, the way an IDE reports `3:5` and the way
+ * [LineRange] and [CodeStep.scrollTo] count, so the inspector's fields read what
+ * the gutter shows. Like a [LineRange], a position past the end of the code is
+ * clamped by the renderer rather than refused, and a line that is not there
+ * draws nothing: a diagnostic outlives edits to the code it points into.
+ */
+@Serializable
+data class CodeDiagnostic(
+    val line: Int,
+    val startColumn: Int,
+    val endColumn: Int,
+    val severity: DiagnosticSeverity = DiagnosticSeverity.Error,
+    val message: String? = null,
+)
+
+/**
+ * This diagnostic made sound: every position at least 1, the span never
+ * reversed, and a blank message no message at all. What an edit commits, so a
+ * field typed into mid-way never puts a range nothing can draw into the deck.
+ */
+fun CodeDiagnostic.sanitized(): CodeDiagnostic {
+    val start: Int = startColumn.coerceAtLeast(1)
+    return copy(
+        line = line.coerceAtLeast(1),
+        startColumn = start,
+        endColumn = endColumn.coerceAtLeast(start),
+        message = message?.takeIf { it.isNotBlank() },
+    )
+}
+
+/**
+ * This step with one more diagnostic, on [source] (the text of the version the
+ * step plays): under the first line the step highlights, or line 1 when it
+ * highlights none, spanning that line's code from its first non-blank column to
+ * its last. Somewhere visible to start from, rather than a zero-width mark.
+ */
+fun CodeStep.withDiagnosticAdded(source: String): CodeStep {
+    val lines: List<String> = source.split("\n")
+    val line: Int = highlight.firstOrNull()?.first?.coerceIn(1, lines.size) ?: 1
+    val text: String = lines[line - 1]
+    val start: Int = text.indexOfFirst { !it.isWhitespace() }.let { if (it < 0) 0 else it } + 1
+    val end: Int = maxOf(text.trimEnd().length, start)
+    return copy(diagnostics = diagnostics + CodeDiagnostic(line, start, end))
+}
+
+/** This step without diagnostic [index], or itself when it has none there. */
+fun CodeStep.withDiagnosticRemoved(index: Int): CodeStep {
+    if (index !in diagnostics.indices) return this
+    return copy(diagnostics = diagnostics.toMutableList().also { it.removeAt(index) })
+}
+
+/** This step with [diagnostic] in place of diagnostic [index], or itself when it has none there. */
+fun CodeStep.withDiagnosticUpdated(index: Int, diagnostic: CodeDiagnostic): CodeStep {
+    if (index !in diagnostics.indices) return this
+    return copy(diagnostics = diagnostics.toMutableList().also { it[index] = diagnostic })
+}
+
+/**
+ * A position field's text as the diagnostic fields write it: a number of at
+ * least 1, or null for anything else, which the field reads as "keep what was
+ * there" rather than as an error to show someone mid-keystroke.
+ */
+fun parseDiagnosticPosition(text: String): Int? = text.trim().toIntOrNull()?.takeIf { it >= 1 }
 
 /**
  * The ranges [text] names, as an inspector field writes them: `1-3, 7, 9-12`.
