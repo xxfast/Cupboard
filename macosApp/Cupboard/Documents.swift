@@ -124,10 +124,6 @@ final class OpenRequests {
     /// than bare, which is a launch with no chooser in it.
     private(set) var launchedOnDecks = false
 
-    /// Whether the chooser about to appear is one this app asked for, rather
-    /// than the default window SwiftUI opens at launch by itself.
-    private var chooserRequested = false
-
     func request(_ paths: [String]) {
         guard !paths.isEmpty else { return }
         if !launched { launchedOnDecks = true }
@@ -151,22 +147,7 @@ final class OpenRequests {
 
     /// The theme chooser, raised if it is already up: it is a single window.
     func showChooser() {
-        chooserRequested = true
         openWindow?(id: ThemeChooserView.windowId)
-    }
-
-    /// Whether the chooser that just appeared should go again: it is SwiftUI's
-    /// launch default rather than one anything asked for, on a launch that was
-    /// on decks or restored some. AppKit's contract says neither gets an
-    /// untitled window, so this is the backstop if SwiftUI opens its first
-    /// scene regardless. Every chooser the app opens itself is marked, so a
-    /// File > New over open decks is never mistaken for it.
-    func chooserIsUnwanted() -> Bool {
-        defer {
-            launchedOnDecks = false
-            chooserRequested = false
-        }
-        return !chooserRequested && (launchedOnDecks || !DocumentStore.shared.isEmpty)
     }
 
     private func flush() {

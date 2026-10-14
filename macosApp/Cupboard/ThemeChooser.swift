@@ -69,11 +69,6 @@ struct ThemeChooserView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea(edges: .vertical)
         .background(WindowFit())
-        // A launch on decks should never open this, but if SwiftUI opens its
-        // first scene regardless, it goes before anyone has to look at it.
-        .onAppear {
-            if OpenRequests.shared.chooserIsUnwanted() { dismissWindow(id: Self.windowId) }
-        }
         .onDisappear { model.close() }
     }
 

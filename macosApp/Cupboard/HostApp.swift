@@ -33,8 +33,10 @@ import CupboardCanvas
 /// The chooser: it is the first scene, so it is the window SwiftUI opens for a
 /// launch with nothing to open, Keynote's way. AppKit delivers a launch's files
 /// between will- and did-finish-launching, and only asks about an untitled
-/// window when there were none, so a deck launch never gets a chooser. Reopen
-/// and `--showcase` are the two cases that need a word from here.
+/// window when there were none, so a deck launch should never get a chooser.
+/// SwiftUI opens its first scene regardless, so the deck's window closes it
+/// when it comes up ([DocumentWindow]). Reopen and `--showcase` are the two
+/// cases that need a word from here.
 final class ActivationDelegate: NSObject, NSApplicationDelegate {
     /// `--showcase` launches on the showcase alone, exactly as if Finder had
     /// handed it over. Without the registration, window restoration brings back
@@ -436,6 +438,11 @@ struct DocumentWindow: View {
         // Every menu command acts on the window with focus, and this is what
         // says which one that is.
         .focusedSceneValue(\.editor, model)
+        // A deck on screen is a deck chosen, so the chooser goes. This is what
+        // clears the one SwiftUI opens as its first scene on a launch that came
+        // with a deck. The chooser's own onAppear tried that once and missed:
+        // too early for dismissWindow, or before the deck's open had arrived.
+        .onAppear { dismissWindow(id: ThemeChooserView.windowId) }
         // Rename, Move To and Save As each leave this window on another bundle.
         // The window's value follows it there, so a later Open of that deck
         // raises this window and a relaunch restores the deck where it is now.
