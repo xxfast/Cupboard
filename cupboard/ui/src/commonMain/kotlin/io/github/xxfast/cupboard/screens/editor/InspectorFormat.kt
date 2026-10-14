@@ -97,6 +97,12 @@ import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.parseNodeIds
 import io.github.xxfast.cupboard.document.parseScrollTo
+import io.github.xxfast.cupboard.document.parseDiagnosticPosition
+import io.github.xxfast.cupboard.document.withDiagnosticAdded
+import io.github.xxfast.cupboard.document.withDiagnosticRemoved
+import io.github.xxfast.cupboard.document.withDiagnosticUpdated
+import io.github.xxfast.cupboard.document.CodeDiagnostic
+import io.github.xxfast.cupboard.document.DiagnosticSeverity
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.toggleBold
@@ -1322,6 +1328,14 @@ private fun CodeBody(
             enabled = enabled,
             placeholder = "Auto",
         ) { text -> write { it.copy(scrollTo = parseScrollTo(text)) } }
+
+        CodeDiagnostics(
+            diagnostics = picked.diagnostics,
+            enabled = enabled,
+            onAdd = { write { it.withDiagnosticAdded(sources[it.version.coerceIn(sources.indices)]) } },
+            onRemove = { index -> write { it.withDiagnosticRemoved(index) } },
+            onUpdate = { index, diagnostic -> write { it.withDiagnosticUpdated(index, diagnostic) } },
+        )
     }
 
     AddStepBuilds(enabled = steps.size > 1, onClick = { onAddSteps(primary.id) })
@@ -1341,7 +1355,90 @@ private fun CodeStep.summary(): String = buildList {
     if (reveal.isNotEmpty()) add("Lines ${reveal.formatLineRanges()}")
     if (highlight.isNotEmpty()) add("Highlight ${highlight.formatLineRanges()}")
     if (scrollTo != null) add("Scroll $scrollTo")
+    if (diagnostics.isNotEmpty()) add(diagnosticCount(diagnostics.size))
 }.joinToString(" · ")
+
+/**
+ * The picked step's errors and warnings, each a squiggle under a line's columns
+ * and an optional message after it: where it is, how loud, what it says, and a
+ * button to take it off. Every field commits the way the step's own do, so one
+ * pass over one is one history entry.
+ *
+ * A position that is not a number of at least 1 is refused rather than written,
+ * and the field goes back to what the diagnostic says.
+ */
+@Composable
+private fun CodeDiagnostics(
+    diagnostics: List<CodeDiagnostic>,
+    enabled: Boolean,
+    onAdd: () -> Boolean,
+    onRemove: (index: Int) -> Boolean,
+    onUpdate: (index: Int, diagnostic: CodeDiagnostic) -> Boolean,
+) {
+    SectionLabel("DIAGNOSTICS")
+
+    for ((index, diagnostic) in diagnostics.withIndex()) {
+        fun position(text: String, place: (Int) -> CodeDiagnostic): Boolean {
+            val at: Int = parseDiagnosticPosition(text) ?: return false
+            return onUpdate(index, place(at))
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EntryField(
+                label = "Line",
+                display = "${diagnostic.line}",
+                enabled = enabled,
+                modifier = Modifier.weight(1f),
+            ) { text -> position(text) { diagnostic.copy(line = it) } }
+            EntryField(
+                label = "From",
+                display = "${diagnostic.startColumn}",
+                enabled = enabled,
+                modifier = Modifier.weight(1f),
+            ) { text -> position(text) { diagnostic.copy(startColumn = it) } }
+            EntryField(
+                label = "To",
+                display = "${diagnostic.endColumn}",
+                enabled = enabled,
+                modifier = Modifier.weight(1f),
+            ) { text -> position(text) { diagnostic.copy(endColumn = it) } }
+        }
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            DropdownField(
+                label = "Severity",
+                value = diagnostic.severity,
+                options = DiagnosticSeverity.entries.map { it to it.name },
+                enabled = enabled,
+                onPick = { severity -> onUpdate(index, diagnostic.copy(severity = severity)) },
+                modifier = Modifier.weight(1f),
+            )
+            TonalButton(
+                label = "−",
+                enabled = enabled,
+                onClick = { onRemove(index) },
+                modifier = Modifier.width(56.dp),
+            )
+        }
+
+        EntryField(
+            label = "Message",
+            display = diagnostic.message.orEmpty(),
+            enabled = enabled,
+            monospace = false,
+            placeholder = "None",
+        ) { text -> onUpdate(index, diagnostic.copy(message = text.ifBlank { null })) }
+    }
+
+    TonalButton(label = "Add Diagnostic", enabled = enabled, onClick = { onAdd() })
+}
+
+/** `1 Diagnostic`, `2 Diagnostics`: what a step row says about the ones it holds. */
+private fun diagnosticCount(count: Int): String =
+    if (count == 1) "1 Diagnostic" else "$count Diagnostics"
 
 /**
  * One version in the code block's list: which one it is, and whether it is the

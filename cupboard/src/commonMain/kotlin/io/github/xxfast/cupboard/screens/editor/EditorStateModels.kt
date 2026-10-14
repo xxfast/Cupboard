@@ -1635,7 +1635,8 @@ sealed interface EditorEvent {
      *
      * [CodeStep.version] is clamped into the versions the block has, so a row
      * pointing past the end lands on the last one rather than on nothing, and a
-     * [CodeStep.scrollTo] that is no line at all goes back to null. One history
+     * [CodeStep.scrollTo] that is no line at all goes back to null. Its
+     * diagnostics are `sanitized`, so a span is never reversed. One history
      * entry, and a step already exactly like this is a no-op.
      */
     data class UpdateCodeStep(

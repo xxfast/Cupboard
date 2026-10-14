@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import io.github.xxfast.cupboard.document.CodeDiagnostic
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.CodeToken
@@ -180,11 +181,31 @@ private data class MorphScroll(val from: Int, val to: Int) {
 }
 
 /**
- * Everything a frame needs: the runs, how tall a row of the new version is, and
- * how far the block has scrolled at either end.
+ * A diagnostic one side of a morph holds, and how it moves through it.
+ *
+ * Diagnostics belong to steps, so one only fades: out when it is the old step's
+ * ([leaving]), in when it is the new one's. It moves as the token it starts on
+ * does, so it stays under its code: [travel] is how far that token goes to reach
+ * the other side, from the old side's point of view for a leaving one and from
+ * the new side's for an arriving one, and null when the token does not survive,
+ * which has the mark slide the way an arriving or departing token does.
+ * [strength] is its line's, so a diagnostic on a dimmed line is dimmed with it,
+ * as the line path draws it at rest.
+ */
+private data class MorphMark(
+    val mark: DiagnosticMark,
+    val leaving: Boolean,
+    val travel: Offset?,
+    val strength: Float,
+)
+
+/**
+ * Everything a frame needs: the runs, the diagnostics, how tall a row of the new
+ * version is, and how far the block has scrolled at either end.
  */
 private data class MorphPlan(
     val runs: List<MorphRun>,
+    val marks: List<MorphMark>,
     val rowHeight: Float,
     val scroll: MorphScroll,
 )
@@ -228,6 +249,12 @@ internal fun MorphedCodeLines(
         lineHeight = (element.fontSize * CodeLineHeight).sp,
     )
 
+    val messageStyle: TextStyle = LocalTextStyle.current.merge(
+        fontSize = element.fontSize.sp,
+        fontFamily = FontFamily.Monospace,
+    )
+    val em: Float = with(LocalDensity.current) { element.fontSize.sp.toPx() }
+
     val was: MorphSide = remember(element, from) { element.morphSide(from) }
     val now: MorphSide = remember(element, to) { element.morphSide(to) }
 
@@ -262,8 +289,8 @@ internal fun MorphedCodeLines(
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val width: Int = with(LocalDensity.current) { maxWidth.roundToPx() }
             val viewport: Int = constraints.maxHeight
-            val plan: MorphPlan = remember(was, now, width, viewport, element.wrap, style) {
-                morphPlan(element, was, now, style, measurer, width, viewport, chrome.text)
+            val plan: MorphPlan = remember(was, now, width, viewport, element.wrap, style, em) {
+                morphPlan(element, was, now, style, messageStyle, measurer, width, viewport, em)
             }
             SideEffect { scroll = plan.scroll }
 
@@ -272,6 +299,7 @@ internal fun MorphedCodeLines(
                 val slide: Float = plan.rowHeight * CodeStepSlide
                 translate(top = -plan.scroll.at(fraction)) {
                     for (run in plan.runs) drawGlyphRun(run, fraction, slide)
+                    for (mark in plan.marks) drawMorphMark(mark, fraction, slide, chrome, em)
                 }
             }
         }
@@ -346,11 +374,14 @@ private fun morphPlan(
     previous: MorphSide,
     current: MorphSide,
     style: TextStyle,
+    messageStyle: TextStyle,
     measurer: TextMeasurer,
     width: Int,
     viewport: Int,
-    fallback: Color,
+    em: Float,
 ): MorphPlan {
+    val chrome: CodeChrome = element.theme.chrome
+    val fallback: Color = chrome.text
     fun layout(text: AnnotatedString): TextLayoutResult = measurer.measure(
         text = text,
         style = style,
@@ -362,17 +393,79 @@ private fun morphPlan(
     val previousLayout: TextLayoutResult = layout(previous.text)
     val currentLayout: TextLayoutResult = layout(current.text)
 
+    val previousTokens: List<CodeToken> = tokenizeCode(previous.source, element.language)
+    val currentTokens: List<CodeToken> = tokenizeCode(current.source, element.language)
+    val previousPlacement: (CodeToken) -> TokenPlacement? = previous.placements(previousLayout, fallback)
+    val currentPlacement: (CodeToken) -> TokenPlacement? = current.placements(currentLayout, fallback)
+
     val runs: List<GlyphRun> = morphGlyphs(
-        previous = tokenizeCode(previous.source, element.language),
-        current = tokenizeCode(current.source, element.language),
-        previousPlacement = previous.placements(previousLayout, fallback),
-        currentPlacement = current.placements(currentLayout, fallback),
+        previous = previousTokens,
+        current = currentTokens,
+        previousPlacement = previousPlacement,
+        currentPlacement = currentPlacement,
     )
+
+    // Diffed again only when there is a diagnostic to carry, which most morphs
+    // don't have: the pairs say which token a squiggle rides to the other side.
+    val marks: List<MorphMark> =
+        if (previous.step.diagnostics.isEmpty() && current.step.diagnostics.isEmpty()) emptyList()
+        else {
+            val matches: List<TokenEdit.Match> =
+                diffTokens(previousTokens, currentTokens).filterIsInstance<TokenEdit.Match>()
+            val forward: Map<CodeToken, CodeToken> = matches.associate { it.previous to it.current }
+            val backward: Map<CodeToken, CodeToken> = matches.associate { it.current to it.previous }
+
+            fun MorphSide.marks(
+                layout: TextLayoutResult,
+                tokens: List<CodeToken>,
+                leaving: Boolean,
+                travel: (CodeToken) -> Offset?,
+            ): List<MorphMark> {
+                var offset = 0
+                return lines.flatMap { line ->
+                    val start: Int = offset
+                    offset += line.text.length + 1
+                    diagnosticMarks(
+                        diagnostics = step.diagnostics.filter { it.line == line.number },
+                        layout = layout,
+                        start = start,
+                        length = line.text.length,
+                        measurer = measurer,
+                        style = messageStyle,
+                        chrome = chrome,
+                        em = em,
+                        gap = em * CodeDiagnosticGap,
+                    ).map { mark ->
+                        val anchor: CodeToken? = tokens.anchorOf(mark.diagnostic)
+                        val strength: Float = if (line.dimmed) CodeDimAlpha else 1f
+                        MorphMark(mark, leaving, anchor?.let(travel), strength)
+                    }
+                }
+            }
+
+            fun travel(
+                from: CodeToken,
+                to: CodeToken?,
+                fromPlacement: (CodeToken) -> TokenPlacement?,
+                toPlacement: (CodeToken) -> TokenPlacement?,
+            ): Offset? {
+                val was: TokenPlacement = fromPlacement(from) ?: return null
+                val now: TokenPlacement = to?.let(toPlacement) ?: return null
+                return now.position - was.position
+            }
+
+            previous.marks(previousLayout, previousTokens, leaving = true) { token ->
+                travel(token, forward[token], previousPlacement, currentPlacement)
+            } + current.marks(currentLayout, currentTokens, leaving = false) { token ->
+                travel(token, backward[token], currentPlacement, previousPlacement)
+            }
+        }
 
     return MorphPlan(
         runs = runs.map { run ->
             MorphRun(run, measurer.measure(AnnotatedString(run.text), style, softWrap = false))
         },
+        marks = marks,
         rowHeight = currentLayout.getLineBottom(0) - currentLayout.getLineTop(0),
         scroll = MorphScroll(
             from = codeScroll(previous.step, previous.rows(previousLayout), viewport),
@@ -440,6 +533,36 @@ private fun MorphSide.placements(
             color = color,
         )
     }
+}
+
+/**
+ * The token [diagnostic] starts on: the one under its first column, or the next
+ * one on the line when that column is blank. Null when the line has nothing
+ * there, which leaves the mark to fade where it is.
+ */
+private fun List<CodeToken>.anchorOf(diagnostic: CodeDiagnostic): CodeToken? {
+    val line: Int = diagnostic.line - 1
+    val column: Int = diagnostic.startColumn - 1
+    return firstOrNull { token ->
+        token.line == line && token.kind != CodeTokenKind.Whitespace && token.end > column
+    }
+}
+
+/**
+ * One diagnostic at [fraction] of the way through the change: fading the way
+ * its step does, and moving with its token, or with the slide a token that
+ * arrives or leaves makes when its own has no other side to go to.
+ */
+private fun DrawScope.drawMorphMark(
+    mark: MorphMark,
+    fraction: Float,
+    slide: Float,
+    chrome: CodeChrome,
+    em: Float,
+) {
+    val moved: Float = if (mark.leaving) fraction else 1f - fraction
+    val shift: Offset = mark.travel?.times(moved) ?: Offset(0f, moved * slide)
+    drawDiagnostic(mark.mark, chrome, em, alpha = (1f - moved) * mark.strength, shift = shift)
 }
 
 /** One run at [fraction] of the way through the change, [slide] being a row's travel. */

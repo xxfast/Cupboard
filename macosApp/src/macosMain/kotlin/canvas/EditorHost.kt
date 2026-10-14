@@ -142,6 +142,13 @@ import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.parseScrollTo
+import io.github.xxfast.cupboard.document.CodeDiagnostic
+import io.github.xxfast.cupboard.document.DiagnosticSeverity
+import io.github.xxfast.cupboard.document.parseDiagnosticPosition
+import io.github.xxfast.cupboard.document.sourceAt
+import io.github.xxfast.cupboard.document.withDiagnosticAdded
+import io.github.xxfast.cupboard.document.withDiagnosticRemoved
+import io.github.xxfast.cupboard.document.withDiagnosticUpdated
 import io.github.xxfast.cupboard.document.parseNodeIds
 import io.github.xxfast.cupboard.document.previewOf
 import io.github.xxfast.cupboard.document.resolvedLink
@@ -827,8 +834,24 @@ class CodeProps(
     val stepLines: String,
     val stepHighlight: String,
     val stepScrollTo: String,
+    /** The picked step's errors and warnings, in list order. Empty when no row is picked. */
+    val stepDiagnostics: List<DiagnosticProps>,
     /** One line per step, as the rows read it: `Version 2 · Lines 1-3, 7 · Highlight 5 · Scroll 12`. */
     val stepSummaries: List<String>,
+)
+
+/**
+ * One diagnostic on the picked code step, flattened for the native fields: its
+ * 1-based line and inclusive column span, its severity as a place in
+ * `diagnosticSeverities()`, so no Kotlin enum crosses into ObjC, and its message,
+ * empty for none.
+ */
+class DiagnosticProps(
+    val line: Int,
+    val startColumn: Int,
+    val endColumn: Int,
+    val severityIndex: Int,
+    val message: String,
 )
 
 /**
@@ -842,6 +865,7 @@ private fun CodeStep.summary(): String {
         reveal.formatLineRanges().takeIf { it.isNotEmpty() }?.let { "Lines $it" },
         highlight.formatLineRanges().takeIf { it.isNotEmpty() }?.let { "Highlight $it" },
         scrollTo?.let { "Scroll $it" },
+        diagnostics.size.takeIf { it > 0 }?.let { if (it == 1) "1 Diagnostic" else "$it Diagnostics" },
     )
     return parts.joinToString(" · ")
 }
@@ -3338,6 +3362,15 @@ class EditorHost(
             stepLines = state.selectedCodeStep?.reveal?.formatLineRanges().orEmpty(),
             stepHighlight = state.selectedCodeStep?.highlight?.formatLineRanges().orEmpty(),
             stepScrollTo = state.selectedCodeStep?.scrollTo?.toString().orEmpty(),
+            stepDiagnostics = state.selectedCodeStep?.diagnostics.orEmpty().map { diagnostic ->
+                DiagnosticProps(
+                    line = diagnostic.line,
+                    startColumn = diagnostic.startColumn,
+                    endColumn = diagnostic.endColumn,
+                    severityIndex = diagnostic.severity.ordinal,
+                    message = diagnostic.message.orEmpty(),
+                )
+            },
             stepSummaries = code.steps.map { it.summary() },
         )
     }
@@ -3421,7 +3454,65 @@ class EditorHost(
         updateCodeStep(index) { it.copy(scrollTo = parseScrollTo(text)) }
     }
 
-    /** The four setters above, over the step the list has picked. */
+    /**
+     * Adds a diagnostic to step [index], under the first line it highlights (or
+     * line 1), spanning that line's code: somewhere to start from.
+     */
+    fun addCodeStepDiagnostic(index: Int) {
+        val code: CodeElement = state.selectedCodeElement ?: return
+        updateCodeStep(index) { it.withDiagnosticAdded(code.sourceAt(it.version)) }
+    }
+
+    /** Takes diagnostic [diagnostic] off step [index]. */
+    fun removeCodeStepDiagnostic(index: Int, diagnostic: Int) {
+        updateCodeStep(index) { it.withDiagnosticRemoved(diagnostic) }
+    }
+
+    /** The line diagnostic [diagnostic] of step [index] sits on. Text that is no line keeps the old one. */
+    fun setCodeStepDiagnosticLine(index: Int, diagnostic: Int, text: String) {
+        val line: Int = parseDiagnosticPosition(text) ?: return
+        updateCodeDiagnostic(index, diagnostic) { it.copy(line = line) }
+    }
+
+    /** The first column, 1-based, the squiggle starts under. */
+    fun setCodeStepDiagnosticStart(index: Int, diagnostic: Int, text: String) {
+        val column: Int = parseDiagnosticPosition(text) ?: return
+        updateCodeDiagnostic(index, diagnostic) { it.copy(startColumn = column) }
+    }
+
+    /** The last column, 1-based and inclusive, the squiggle runs under. */
+    fun setCodeStepDiagnosticEnd(index: Int, diagnostic: Int, text: String) {
+        val column: Int = parseDiagnosticPosition(text) ?: return
+        updateCodeDiagnostic(index, diagnostic) { it.copy(endColumn = column) }
+    }
+
+    /** Error or warning, as a place in [diagnosticSeverities]. */
+    fun setCodeStepDiagnosticSeverity(index: Int, diagnostic: Int, severity: Int) {
+        val picked: DiagnosticSeverity = DiagnosticSeverity.entries.getOrNull(severity) ?: return
+        updateCodeDiagnostic(index, diagnostic) { it.copy(severity = picked) }
+    }
+
+    /** What the diagnostic says after its line. Empty says nothing and only squiggles. */
+    fun setCodeStepDiagnosticMessage(index: Int, diagnostic: Int, text: String) {
+        updateCodeDiagnostic(index, diagnostic) { it.copy(message = text.ifBlank { null }) }
+    }
+
+    /** The severities a diagnostic's popup offers, in [DiagnosticSeverity]'s order. */
+    fun diagnosticSeverities(): List<String> = DiagnosticSeverity.entries.map { it.name }
+
+    /** The diagnostic setters above, over one diagnostic of the step the list has picked. */
+    private inline fun updateCodeDiagnostic(
+        index: Int,
+        diagnostic: Int,
+        edit: (CodeDiagnostic) -> CodeDiagnostic,
+    ) {
+        updateCodeStep(index) { step ->
+            val was: CodeDiagnostic = step.diagnostics.getOrNull(diagnostic) ?: return@updateCodeStep step
+            step.withDiagnosticUpdated(diagnostic, edit(was))
+        }
+    }
+
+    /** The step setters above, over the step the list has picked. */
     private inline fun updateCodeStep(index: Int, edit: (CodeStep) -> CodeStep) {
         val code: CodeElement = state.selectedCodeElement ?: return
         val step: CodeStep = code.steps.getOrNull(index) ?: return

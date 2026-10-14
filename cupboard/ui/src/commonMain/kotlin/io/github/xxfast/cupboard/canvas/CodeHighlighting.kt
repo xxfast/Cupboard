@@ -16,6 +16,7 @@ import io.github.xxfast.cupboard.document.CodeTheme
 /**
  * The block a theme is drawn on: its background, its outline, the colour the
  * spans the highlighter said nothing about fall back to, and the gutter's.
+ * [error] and [warning] are what a step's diagnostics squiggle and speak in.
  *
  * `design/` defines no code token palette, so each of these is the theme's own
  * editor chrome rather than anything of ours, which is what makes a picked theme
@@ -26,6 +27,8 @@ internal data class CodeChrome(
     val border: Color,
     val text: Color,
     val gutter: Color,
+    val error: Color,
+    val warning: Color,
 )
 
 /**
@@ -90,6 +93,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFF33363D),
         text = Color(0xFFD9CFFF),
         gutter = Color(0xFF5C6370),
+        error = Color(0xFFE06C75),
+        warning = Color(0xFFE5C07B),
     )
 
     CodeTheme.Darcula -> CodeChrome(
@@ -97,6 +102,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFF4E5254),
         text = Color(0xFFEDEDED),
         gutter = Color(0xFF606366),
+        error = Color(0xFFFF6B68),
+        warning = Color(0xFFD9A343),
     )
 
     CodeTheme.Monokai -> CodeChrome(
@@ -104,6 +111,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFF49483E),
         text = Color(0xFFF8F8F2),
         gutter = Color(0xFF75715E),
+        error = Color(0xFFF92672),
+        warning = Color(0xFFE6DB74),
     )
 
     CodeTheme.Pastel -> CodeChrome(
@@ -111,6 +120,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFF555753),
         text = Color(0xFFDFDEE0),
         gutter = Color(0xFF888A85),
+        error = Color(0xFFEF2929),
+        warning = Color(0xFFFCE94F),
     )
 
     CodeTheme.Matrix -> CodeChrome(
@@ -118,6 +129,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFF00591F),
         text = Color(0xFF008500),
         gutter = Color(0xFF004D00),
+        error = Color(0xFFFF3B3B),
+        warning = Color(0xFFC8E000),
     )
 
     CodeTheme.Notepad -> CodeChrome(
@@ -125,6 +138,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFFBFBFB4),
         text = Color(0xFF000080),
         gutter = Color(0xFF9A9A90),
+        error = Color(0xFFD00000),
+        warning = Color(0xFFB07800),
     )
 
     // TEXT's background and foreground, RIGHT_MARGIN_COLOR and LINE_NUMBERS_COLOR.
@@ -133,6 +148,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFFEBECF0),
         text = Color(0xFF080808),
         gutter = Color(0xFFAEB3C2),
+        error = Color(0xFFE50000),
+        warning = Color(0xFFC27C0E),
     )
 
     CodeTheme.IntelliJDark -> CodeChrome(
@@ -140,6 +157,8 @@ internal val CodeTheme.chrome: CodeChrome get() = when (this) {
         border = Color(0xFF323438),
         text = Color(0xFFBCBEC4),
         gutter = Color(0xFF4B5059),
+        error = Color(0xFFF75464),
+        warning = Color(0xFFF2C55C),
     )
 }
 

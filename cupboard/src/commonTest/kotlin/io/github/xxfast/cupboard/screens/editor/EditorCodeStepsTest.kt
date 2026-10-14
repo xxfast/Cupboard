@@ -1,13 +1,17 @@
 package io.github.xxfast.cupboard.screens.editor
 
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.CodeDiagnostic
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
+import io.github.xxfast.cupboard.document.DiagnosticSeverity
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.LineRange
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.withDiagnosticAdded
+import io.github.xxfast.cupboard.document.withDiagnosticUpdated
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -296,6 +300,38 @@ class EditorCodeStepsTest {
         viewModel.onUpdateCodeStep("code", 0, steps[0].copy(scrollTo = 0))
         val cleared: EditorState = viewModel.await { it.block().steps[0].scrollTo == null }
         assertEquals(steps[0], cleared.block().steps[0])
+    }
+
+    @Test
+    fun aStepsDiagnosticsAreWrittenSoundAndAreOneUndoEach() = runTest {
+        val viewModel: EditorViewModel = selected()
+
+        val added: CodeStep = steps[0].withDiagnosticAdded("one")
+        viewModel.onUpdateCodeStep("code", 0, added)
+        val one: EditorState = viewModel.await { it.block().steps[0].diagnostics.isNotEmpty() }
+        assertEquals(listOf(CodeDiagnostic(1, 1, 3)), one.block().steps[0].diagnostics)
+
+        // A reversed span and a blank message, as a field mid-edit would send them.
+        val typed = CodeDiagnostic(
+            line = 0,
+            startColumn = 3,
+            endColumn = 1,
+            severity = DiagnosticSeverity.Warning,
+            message = "  ",
+        )
+        viewModel.onUpdateCodeStep("code", 0, added.withDiagnosticUpdated(0, typed))
+        val warned: EditorState = viewModel.await {
+            it.block().steps[0].diagnostics.single().severity == DiagnosticSeverity.Warning
+        }
+        assertEquals(
+            CodeDiagnostic(1, 3, 3, DiagnosticSeverity.Warning, message = null),
+            warned.block().steps[0].diagnostics.single(),
+        )
+
+        viewModel.onUndo()
+        viewModel.await { it.block().steps[0] == added }
+        viewModel.onUndo()
+        assertEquals(document(), viewModel.await { it.block().steps[0] == steps[0] }.document)
     }
 
     @Test
