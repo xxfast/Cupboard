@@ -534,20 +534,20 @@ private fun ShapeStyleBody(
 
             gradient != null -> {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    HexField(
+                    ColourField(
                         label = "Start",
                         color = gradient.start,
                         enabled = enabled,
-                        onCommit = { color ->
+                        onPick = { color ->
                             format { it.copy(gradient = it.gradient?.copy(start = color)) }
                         },
                         modifier = Modifier.weight(1f),
                     )
-                    HexField(
+                    ColourField(
                         label = "End",
                         color = gradient.end,
                         enabled = enabled,
-                        onCommit = { color ->
+                        onPick = { color ->
                             format { it.copy(gradient = it.gradient?.copy(end = color)) }
                         },
                         modifier = Modifier.weight(1f),
@@ -579,19 +579,26 @@ private fun ShapeStyleBody(
         onToggle = { onToggleSection(InspectorSection.Border) },
         summary = { BorderSummary(primary.strokeColor, primary.strokeWidth) },
     ) {
-        SwatchRow(
-            colors = TEXT_SWATCHES,
-            selected = primary.strokeColor,
-            enabled = enabled,
-            onPick = { color -> format { it.copy(strokeColor = color) } },
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HexField(
-                label = "Hex",
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            // No Border is no width, which is what the summary reads as none, and
+            // a colour picked off none brings the default width back with it.
+            ColourField(
                 color = primary.strokeColor,
                 enabled = enabled,
-                onCommit = { color -> format { it.copy(strokeColor = color) } },
+                onPick = { color ->
+                    format {
+                        val width: Float =
+                            if (it.strokeWidth > 0f) it.strokeWidth else DEFAULT_STROKE_WIDTH
+                        it.copy(strokeColor = color, strokeWidth = width)
+                    }
+                },
                 modifier = Modifier.weight(1f),
+                none = if (isLine) null else "No Border",
+                isNone = primary.strokeWidth <= 0f,
+                onNone = { format { it.copy(strokeWidth = 0f) } },
             )
             NumberField(
                 label = "Width",
@@ -633,13 +640,18 @@ private fun ShapeStyleBody(
                 format { it.copy(shadow = if (on) ShapeShadow() else null) }
             }),
         )
-        if (shadow != null) Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            HexField(
+        if (shadow != null) Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            ColourField(
                 label = "Color",
                 color = shadow.color,
                 enabled = enabled,
-                onCommit = { color -> format { it.copy(shadow = it.shadow?.copy(color = color)) } },
+                onPick = { color -> format { it.copy(shadow = it.shadow?.copy(color = color)) } },
                 modifier = Modifier.weight(1f),
+                none = "No Shadow",
+                onNone = { format { it.copy(shadow = null) } },
             )
             NumberField(
                 label = "Blur",
@@ -662,7 +674,7 @@ private fun ShapeStyleBody(
     )
 }
 
-/** The four colours a chart is made of, typed as hex: node, outline, label, arrow. */
+/** The four colours a chart is made of, as wells: node, outline, label, arrow. */
 @Composable
 private fun DiagramColors(
     primary: DiagramElement,
@@ -679,29 +691,29 @@ private fun DiagramColors(
         return true
     }
 
-    HexField(
+    ColourField(
         label = "Node Fill",
         color = primary.nodeFill,
         enabled = enabled,
-        onCommit = { color -> format { it.copy(nodeFill = color) } },
+        onPick = { color -> format { it.copy(nodeFill = color) } },
     )
-    HexField(
+    ColourField(
         label = "Node Stroke",
         color = primary.nodeStroke,
         enabled = enabled,
-        onCommit = { color -> format { it.copy(nodeStroke = color) } },
+        onPick = { color -> format { it.copy(nodeStroke = color) } },
     )
-    HexField(
+    ColourField(
         label = "Node Text",
         color = primary.nodeText,
         enabled = enabled,
-        onCommit = { color -> format { it.copy(nodeText = color) } },
+        onPick = { color -> format { it.copy(nodeText = color) } },
     )
-    HexField(
+    ColourField(
         label = "Edge",
         color = primary.edgeColor,
         enabled = enabled,
-        onCommit = { color -> format { it.copy(edgeColor = color) } },
+        onPick = { color -> format { it.copy(edgeColor = color) } },
     )
 }
 
@@ -727,17 +739,10 @@ private fun EquationColor(
     }
 
     SwatchLabel("Color")
-    SwatchRow(
-        colors = TEXT_SWATCHES,
-        selected = primary.color,
-        enabled = enabled,
-        onPick = { color -> format { it.copy(color = color) } },
-    )
-    HexField(
-        label = "Hex",
+    ColourField(
         color = primary.color,
         enabled = enabled,
-        onCommit = { color -> format { it.copy(color = color) } },
+        onPick = { color -> format { it.copy(color = color) } },
     )
 }
 
@@ -1046,17 +1051,10 @@ private fun TextBody(
     }
 
     SwatchLabel("Color")
-    SwatchRow(
-        colors = TEXT_SWATCHES,
-        selected = primary.color,
-        enabled = enabled,
-        onPick = { color -> format { it.copy(color = color) } },
-    )
-    HexField(
-        label = "Hex",
+    ColourField(
         color = primary.color,
         enabled = enabled,
-        onCommit = { color -> format { it.copy(color = color) } },
+        onPick = { color -> format { it.copy(color = color) } },
     )
 
     SegmentedRow {
@@ -2776,12 +2774,24 @@ private fun Slide.linkTitle(number: Int): String =
 /** Where a shape's gradient runs to when it is switched on and has none yet. */
 private const val SHAPE_GRADIENT_END: Long = 0xFF2A2452
 
-/** A shape's solid: the swatch row and the hex under it, one [onPick] apiece. */
+/**
+ * A shape's solid: the well and its hex. No Fill is a fill nothing shows
+ * through, so picking a colour off it is the same edit as any other pick.
+ */
 @Composable
 private fun SolidFillFields(fill: Long, enabled: Boolean, onPick: (Long) -> Unit) {
-    SwatchRow(colors = TEXT_SWATCHES, selected = fill, enabled = enabled, onPick = onPick)
-    HexField(label = "Hex", color = fill, enabled = enabled, onCommit = onPick)
+    ColourField(
+        color = fill,
+        enabled = enabled,
+        onPick = onPick,
+        none = "No Fill",
+        isNone = fill ushr 24 == 0L,
+        onNone = { onPick(NO_COLOUR) },
+    )
 }
+
+/** What a border picked off No Border comes back at: [ShapeElement]'s own default. */
+private const val DEFAULT_STROKE_WIDTH: Float = 1.5f
 
 /** How many style swatches fit across the 282dp panel, gaps and padding in. */
 private const val StylesPerRow: Int = 6

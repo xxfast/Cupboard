@@ -673,7 +673,7 @@ extension EditorView {
                     // A fitted picture leaves the rest of the shape to the
                     // colour, so the colour is still the user's to pick.
                     if shape.imageMode == ShapeFormat.scaleToFit {
-                        colorWell("Colour", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
+                        fillWell(shape)
                     }
                 case .gradient:
                     HStack(spacing: 8) {
@@ -692,10 +692,22 @@ extension EditorView {
                         .frame(width: 92)
                     }
                 case .color:
-                    colorWell("Colour", argb: shape.fill) { host.setSelectedShapeFill(argb: $0) }
+                    fillWell(shape)
                 }
             }
         }
+    }
+
+    /// The solid's well. No Fill is a fill nothing shows through, so picking a
+    /// colour off it is the same edit as any other pick.
+    func fillWell(_ shape: ShapeFormat) -> some View {
+        colorWell(
+            "Colour",
+            argb: shape.fill,
+            none: "No Fill",
+            isNone: (shape.fill >> 24) & 0xFF == 0,
+            onNone: { host.setSelectedShapeFill(argb: 0) }
+        ) { host.setSelectedShapeFill(argb: $0) }
     }
 
     /// How big a picture fill's thumbnail is drawn, in points.
@@ -748,8 +760,17 @@ extension EditorView {
         } body: {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
-                    colorWell("Colour", argb: shape.strokeColor) {
-                        host.setSelectedShapeStroke(color: $0, width: Float(shape.strokeWidth))
+                    // No Border is no width, and a colour picked off none brings
+                    // the default width back with it.
+                    colorWell(
+                        "Colour",
+                        argb: shape.strokeColor,
+                        none: shape.isLine ? nil : "No Border",
+                        isNone: shape.strokeWidth <= 0,
+                        onNone: { host.setSelectedShapeStroke(color: shape.strokeColor, width: 0) }
+                    ) {
+                        let width = shape.strokeWidth > 0 ? shape.strokeWidth : Self.defaultStrokeWidth
+                        host.setSelectedShapeStroke(color: $0, width: Float(width))
                     }
                     Spacer(minLength: 0)
                     ValueField(
@@ -784,6 +805,9 @@ extension EditorView {
         }
     }
 
+    /// What a border picked off No Border comes back at: the shape's own default.
+    static let defaultStrokeWidth: Double = 1.5
+
     /// What the shape drops behind it. The checkbox is inside rather than on the
     /// header: the header's job is to say whether there is one, which the
     /// preview does without anything to click.
@@ -802,7 +826,18 @@ extension EditorView {
 
                 if shape.hasShadow {
                     HStack(spacing: 8) {
-                        colorWell("Colour", argb: shape.shadowColor) {
+                        colorWell(
+                            "Colour",
+                            argb: shape.shadowColor,
+                            none: "No Shadow",
+                            onNone: {
+                                host.setSelectedShapeShadow(
+                                    enabled: false,
+                                    color: shape.shadowColor,
+                                    blur: Float(shape.shadowBlur)
+                                )
+                            }
+                        ) {
                             host.setSelectedShapeShadow(
                                 enabled: true,
                                 color: $0,
@@ -974,10 +1009,15 @@ extension EditorView {
         )
     }
 
-    /// A labelled colour well, the system picker at small size.
+    /// A labelled colour well: the deck theme's palette in a popover, and the
+    /// system colour panel beside it for anything off the palette. `none` is
+    /// the popover's "No ..." row, nil where the well can't be empty.
     func colorWell(
         _ label: String,
         argb: Int64,
+        none: String? = nil,
+        isNone: Bool = false,
+        onNone: @escaping () -> Void = {},
         onPick: @escaping (Int64) -> Void
     ) -> some View {
         HStack(spacing: 8) {
@@ -987,25 +1027,50 @@ extension EditorView {
                     .foregroundStyle(palette.text)
             }
             Spacer(minLength: 0)
-            ColorPicker(
-                "",
-                selection: Binding(
-                    get: { Color(argb: argb) },
-                    set: { onPick(packedArgb($0)) }
-                ),
-                supportsOpacity: true
-            )
-            .labelsHidden()
-            .frame(width: Inspect.wellWidth, height: Inspect.wellHeight)
-            // A white swatch on a near-white panel needs an edge to be a
-            // swatch at all, which is what Keynote's well has.
-            .overlay {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .inset(by: 0.5)
-                    .stroke(palette.hairline, lineWidth: 1)
-                    .allowsHitTesting(false)
+            HStack(spacing: 4) {
+                ColourWell(
+                    host: host,
+                    argb: argb,
+                    palette: palette,
+                    none: none,
+                    isNone: isNone,
+                    onNone: onNone,
+                    onPick: onPick
+                )
+                .frame(width: Inspect.wellWidth - Inspect.wellHeight - 4, height: Inspect.wellHeight)
+
+                colourWheel(argb: argb, onPick: onPick)
             }
         }
+    }
+
+    /// Keynote's colour wheel button: the system picker under a wheel glyph, so
+    /// a click opens the colour panel and the well beside it shows the colour.
+    func colourWheel(argb: Int64, onPick: @escaping (Int64) -> Void) -> some View {
+        ColorPicker(
+            "",
+            selection: Binding(
+                get: { Color(argb: argb) },
+                set: { onPick(packedArgb($0)) }
+            ),
+            supportsOpacity: true
+        )
+        .labelsHidden()
+        .frame(width: Inspect.wellHeight, height: Inspect.wellHeight)
+        .overlay {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(palette.ctrl)
+                Circle()
+                    .fill(AngularGradient(
+                        colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red],
+                        center: .center
+                    ))
+                    .padding(4)
+            }
+            .allowsHitTesting(false)
+        }
+        .help("Colours")
     }
 
     // MARK: Code
@@ -3194,10 +3259,10 @@ extension EditorView {
 
             switch kind {
             case 1:
-                swatchGrid(selected: color, onPick: onColor)
+                colorWell("Colour", argb: color, onPick: onColor)
             case 2:
-                stopRow("Start", selected: gradientStart) { onGradient($0, gradientEnd) }
-                stopRow("End", selected: gradientEnd) { onGradient(gradientStart, $0) }
+                colorWell("Start", argb: gradientStart) { onGradient($0, gradientEnd) }
+                colorWell("End", argb: gradientEnd) { onGradient(gradientStart, $0) }
             case 3:
                 imageFillControls(
                     thumbnail: thumbnail,
@@ -3452,59 +3517,6 @@ extension EditorView {
             scaleContent: customScaleContent
         )
     }
-
-    /// One end of the gradient: the same swatches, said whose they are.
-    func stopRow(
-        _ label: String,
-        selected: Int64,
-        onPick: @escaping (Int64) -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .font(.system(size: 11))
-                .foregroundStyle(palette.subtle)
-            swatchGrid(selected: selected, onPick: onPick)
-        }
-    }
-
-    /// The palette, six to a row. No colour panel yet: one tap is one colour and
-    /// one undo entry, which a live picker would spend a hundred entries on.
-    func swatchGrid(selected: Int64, onPick: @escaping (Int64) -> Void) -> some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 6),
-            spacing: 6
-        ) {
-            ForEach(Self.backgroundSwatches, id: \.self) { argb in
-                swatch(argb, selected: argb == selected, onPick: onPick)
-            }
-        }
-    }
-
-    func swatch(
-        _ argb: Int64,
-        selected: Bool,
-        onPick: @escaping (Int64) -> Void
-    ) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5, style: .continuous)
-        return Button { onPick(argb) } label: {
-            shape
-                .fill(Color(argb: argb))
-                .frame(height: 22)
-                .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
-                .overlay {
-                    if selected { shape.inset(by: -2.5).stroke(palette.accent, lineWidth: 2) }
-                }
-                .contentShape(shape)
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// The deck's inks first, then the accents, then two paper tones. Packed
-    /// ARGB, the document model's colour format.
-    private static let backgroundSwatches: [Int64] = [
-        0xFF000000, 0xFF17181C, 0xFF23262E, 0xFF101223, 0xFF2A2452, 0xFF4C2FA8,
-        0xFF0F3B39, 0xFF10391F, 0xFF58151D, 0xFF6B4A0E, 0xFFD7D9DE, 0xFFFFFFFF,
-    ]
 
     /// One segment of a track: a capsule that fills with the accent while it is
     /// on, its label going white and semibold with it.

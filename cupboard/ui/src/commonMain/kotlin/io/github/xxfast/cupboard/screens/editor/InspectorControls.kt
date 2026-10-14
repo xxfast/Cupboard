@@ -32,6 +32,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,9 +75,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.rememberAssetImage
+import io.github.xxfast.cupboard.document.ColourPalette
+import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.palette
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import kotlin.math.roundToInt
@@ -89,26 +94,6 @@ import kotlin.math.roundToInt
  * the bug this file exists to prevent. Everything is [ChromeTokens]-coloured and
  * toolkit-free, so the whole set compiles for every target `:cupboard:ui` has.
  */
-
-/**
- * The text palette: the slide's own white, the deck's lilacs, its two ambers,
- * and black for a slide that has gone inverted. A fixed set like the background
- * grid, with the hex field underneath for anything outside it.
- */
-internal val TEXT_SWATCHES: List<Long> = listOf(
-    0xFFFFFFFF, 0xFFA9A0D8, 0xFFD9CFFF, 0xFFFFE28A, 0xFFA98FFF, 0xFFF5C518, 0xFF000000,
-)
-
-/**
- * The background palette, packed ARGB like the document model: the deck's own
- * darks first, then the accents it pairs with, then the two lights a slide needs
- * when it goes inverted. A fixed set, not a picker: the slide is a dark surface
- * and the point is the handful of colours that still read on it.
- */
-internal val BACKGROUND_SWATCHES: List<Long> = listOf(
-    0xFF000000, 0xFF17181C, 0xFF23262E, 0xFF101223, 0xFF2A2452, 0xFF4C2FA8,
-    0xFF0F3B39, 0xFF10391F, 0xFF58151D, 0xFF6B4A0E, 0xFFD7D9DE, 0xFFFFFFFF,
-)
 
 /** What a slide falls into when it is switched to a background it has no colour for yet. */
 internal const val DEFAULT_FILL: Long = 0xFF101223
@@ -349,46 +334,184 @@ internal fun ValueSummary(text: String) {
     Text(text = text, color = LocalChromeTokens.current.dim, fontSize = 12.sp)
 }
 
-/** The palette, six to a row, the current colour ringed. */
-@Composable
-internal fun SwatchGrid(selected: Long, onPick: (Long) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (row in BACKGROUND_SWATCHES.chunked(6)) {
-            SwatchRow(colors = row, selected = selected, enabled = true, onPick = onPick)
-        }
-    }
-}
+/**
+ * The deck's palette, for every colour well under the inspector. Provided once
+ * at the top rather than threaded down: the wells sit four or five composables
+ * deep in Format and Document, and every one of them wants the same swatches.
+ */
+internal val LocalColourPalette: ProvidableCompositionLocal<ColourPalette> =
+    compositionLocalOf { ElementDefaults().palette() }
 
-/** One row of the palette, the swatches sharing the width evenly. */
+/** What a well commits for "No Fill": nothing shows through a colour with no alpha. */
+internal const val NO_COLOUR: Long = 0x00000000
+
+/**
+ * A colour as a well and its hex, side by side: the well for the theme's
+ * swatches, the hex for anything off them. [label] is the hex field's.
+ */
 @Composable
-internal fun SwatchRow(
-    colors: List<Long>,
-    selected: Long,
+internal fun ColourField(
+    color: Long,
     enabled: Boolean,
     onPick: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "Hex",
+    none: String? = null,
+    isNone: Boolean = false,
+    onNone: () -> Unit = {},
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        ColourWell(
+            color = color,
+            enabled = enabled,
+            onPick = onPick,
+            none = none,
+            isNone = isNone,
+            onNone = onNone,
+        )
+        HexField(
+            label = label,
+            color = color,
+            enabled = enabled,
+            onCommit = onPick,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
+ * Keynote's colour well: a swatch of [color] that opens the theme's palette as
+ * a popover. The current colour on top, the six hues by four tints, the greys,
+ * and [none] ("No Fill", "No Border", "No Shadow") at the foot, ticked while
+ * [isNone]. Null [none] is a well that can't be empty, like a text colour.
+ *
+ * A pick is [onPick], the same call the hex field makes, so a swatch is one edit
+ * and one undo entry. Open or closed is the popover's own, like a menu's.
+ */
+@Composable
+internal fun ColourWell(
+    color: Long,
+    enabled: Boolean,
+    onPick: (Long) -> Unit,
+    none: String? = null,
+    isNone: Boolean = false,
+    onNone: () -> Unit = {},
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
+    val palette: ColourPalette = LocalColourPalette.current
+    var open: Boolean by remember { mutableStateOf(false) }
 
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        for (color in colors) {
-            Box(
+    Box {
+        WellSwatch(
+            color = if (isNone) null else color,
+            modifier = Modifier
+                .size(width = WellWidth, height = WellHeight)
+                .clickable(enabled = enabled) { open = true },
+        )
+
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(color))
-                    // The hairline is what keeps a near-black swatch off a
-                    // near-black panel; the ring replaces it when picked.
-                    .border(
-                        width = if (color == selected) 2.dp else 1.dp,
-                        color = if (color == selected) tokens.accent else tokens.outline,
-                        shape = RoundedCornerShape(6.dp),
+                    .width(PopoverWidth)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text("Current Color", color = tokens.text, fontSize = 12.sp)
+                    WellSwatch(
+                        color = if (isNone) null else color,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(20.dp),
                     )
-                    .clickable(enabled = enabled) { onPick(color) },
-            )
+                }
+
+                HorizontalDivider(color = tokens.div)
+                SwatchLabel("Color Fills")
+
+                for (row in palette.grid + listOf(palette.greys)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (swatch in row) {
+                            val picked: Boolean = !isNone && swatch == color
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(20.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .background(Color(swatch))
+                                    // The hairline keeps black off a dark popover
+                                    // and white off a light one; the ring replaces
+                                    // it on the current colour.
+                                    .border(
+                                        width = if (picked) 2.dp else 1.dp,
+                                        color = if (picked) tokens.accent else tokens.outline,
+                                        shape = RoundedCornerShape(3.dp),
+                                    )
+                                    .clickable {
+                                        open = false
+                                        onPick(swatch)
+                                    },
+                            )
+                        }
+                    }
+                }
+
+                if (none != null) {
+                    HorizontalDivider(color = tokens.div)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                open = false
+                                onNone()
+                            }
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(Modifier.width(14.dp)) {
+                            if (isNone) Text("✓", color = tokens.accent, fontSize = 12.sp)
+                        }
+                        Text(none, color = tokens.text, fontSize = 13.sp)
+                    }
+                }
+            }
         }
     }
 }
+
+/** A colour drawn as a well, or the struck-through "none" well for null. */
+@Composable
+private fun WellSwatch(color: Long?, modifier: Modifier) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Canvas(modifier) {
+        val corner = CornerRadius(SummaryCorner.toPx())
+        drawRoundRect(
+            color = if (color == null) tokens.track else Color(color),
+            cornerRadius = corner,
+        )
+        drawRoundRect(color = tokens.outline, cornerRadius = corner, style = Stroke(1.dp.toPx()))
+        if (color == null) drawLine(
+            color = NoneStrike,
+            start = Offset(0f, size.height),
+            end = Offset(size.width, 0f),
+            strokeWidth = 1.5.dp.toPx(),
+        )
+    }
+}
+
+/** As tall as the hex field beside it, so the pair reads as one control. */
+private val WellWidth: Dp = 40.dp
+private val WellHeight: Dp = 44.dp
+private val PopoverWidth: Dp = 232.dp
 
 /**
  * One appearance checklist row: an 18dp check square plus its label.
@@ -1201,22 +1324,25 @@ internal fun BackgroundControls(
     when (background) {
         null -> Unit
 
-        is SlideBackground.Color -> SwatchGrid(
-            selected = background.color,
+        is SlideBackground.Color -> ColourField(
+            color = background.color,
+            enabled = true,
             onPick = { color -> onChange(SlideBackground.Color(color)) },
         )
 
         is SlideBackground.Gradient -> {
             // The angle stays at its default: an angle control is a slider, and a
             // slider is a gesture, which this section has no need of yet.
-            SwatchLabel("Start")
-            SwatchGrid(
-                selected = background.start,
+            ColourField(
+                label = "Start",
+                color = background.start,
+                enabled = true,
                 onPick = { color -> onChange(background.copy(start = color)) },
             )
-            SwatchLabel("End")
-            SwatchGrid(
-                selected = background.end,
+            ColourField(
+                label = "End",
+                color = background.end,
+                enabled = true,
                 onPick = { color -> onChange(background.copy(end = color)) },
             )
         }

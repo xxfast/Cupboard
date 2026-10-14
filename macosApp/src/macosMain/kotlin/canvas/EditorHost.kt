@@ -4689,6 +4689,15 @@ class EditorHost(
     }
 
     /**
+     * The deck theme's swatches, what every colour well's popover offers: the
+     * grid row by row, lightest first and six to a row, then the greys. Flat
+     * lists of packed ARGB, the ObjC-friendly shape.
+     */
+    fun paletteGrid(): List<Long> = state.palette.grid.flatten()
+
+    fun paletteGreys(): List<Long> = state.palette.greys
+
+    /**
      * The deck's own background, under every slide that asks for none of its
      * own. Read and written exactly the way the slide's is above, down to the
      * value a switched kind would commit, so one section of controls drives
