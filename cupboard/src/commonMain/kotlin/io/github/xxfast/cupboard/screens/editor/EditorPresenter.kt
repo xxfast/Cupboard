@@ -91,6 +91,7 @@ import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideGroup
 import io.github.xxfast.cupboard.document.sources
 import io.github.xxfast.cupboard.document.takesCaret
+import io.github.xxfast.cupboard.document.reveal
 import io.github.xxfast.cupboard.document.toggleCollapsed
 import io.github.xxfast.cupboard.document.ungroupElement
 import io.github.xxfast.cupboard.document.breakApartElement
@@ -235,6 +236,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.StepSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RevealSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
@@ -705,7 +707,7 @@ private fun EditorState.targeting(
  * itself. Never a history entry either way.
  */
 private fun EditorEvent.focusing(): EditorPane? = when (this) {
-    is SelectSlide, is SelectSlideAt, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
+    is SelectSlide, is SelectSlideAt, is RevealSlide, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
     is ExtendSlideSelection, is ToggleSlideSelection, is SelectAllSlides,
     is StepSlideSelection, is IndentSlides,
     is CutSlide, is CopySlide, is DeleteSlide, is MoveSlide, is SetSlideSkipped,
@@ -1973,6 +1975,12 @@ fun EditorPresenter(
             is ToggleCollapsed ->
                 if (state.document.isLayout(event.slideId)) state
                 else state.copy(document = state.document.toggleCollapsed(event.slideId))
+
+            // A select that opens the way to the slide: disclosure, like
+            // ToggleCollapsed, so no history entry.
+            is RevealSlide ->
+                if (state.document.slideById(event.id) == null) state
+                else reduce(SelectSlide(event.id)).let { it.copy(document = it.document.reveal(event.id)) }
 
             // The slide selection is left alone as long as it still
             // resolves, which is the common case. It can now fail to:

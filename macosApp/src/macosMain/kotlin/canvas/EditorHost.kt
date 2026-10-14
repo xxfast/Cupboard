@@ -5326,9 +5326,10 @@ class EditorHost(
         document = state.document,
         startIndex = state.document.playIndexOf(state.selectedSlideIndex()),
         onExit = onExit,
-        // Where the show ended is where editing picks up. Guarded, since the
-        // show played a snapshot and the slide may have gone since.
-        onLanded = { id -> if (state.document.slideById(id) != null) viewModel.onSelectSlide(id) },
+        // Where the show ended is where editing picks up, with whatever group
+        // was hiding it opened: a selection the navigator can't show is a dead
+        // end. The show played a snapshot, so a slide gone since is ignored.
+        onLanded = viewModel::onRevealSlide,
         // The show plays a snapshot; the presenter follows the document, so a
         // note typed mid-show is the note it goes on showing.
         live = viewModel.states.map { it.document }.distinctUntilChanged(),

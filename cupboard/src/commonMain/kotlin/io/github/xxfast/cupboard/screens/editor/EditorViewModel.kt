@@ -152,6 +152,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideTransition
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RevealSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
@@ -328,6 +329,7 @@ class EditorViewModel(
 
     fun onSelectSlide(id: String) { send(SelectSlide(id)) }
     fun onSelectSlideAt(index: Int) { send(SelectSlideAt(index)) }
+    fun onRevealSlide(id: String) { send(RevealSlide(id)) }
     fun onExtendSlideSelection(id: String) { send(ExtendSlideSelection(id)) }
     fun onToggleSlideSelection(id: String) { send(ToggleSlideSelection(id)) }
     fun onSelectAllSlides() { send(SelectAllSlides) }

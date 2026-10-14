@@ -1721,6 +1721,13 @@ sealed interface EditorEvent {
     ) : EditorEvent
     data class ToggleCollapsed(val slideId: String) : EditorEvent
     /**
+     * Selects the slide [id] and opens whatever collapsed group was hiding it,
+     * so the navigator shows what the canvas does. Where a show ends lands
+     * here: the slide it ended on may sit inside a group collapsed before it
+     * started. Ignored for a slide not in the deck.
+     */
+    data class RevealSlide(val id: String) : EditorEvent
+    /**
      * Edit Slide Layouts: the navigator swaps its slides for the deck's layouts
      * and the canvas edits one of them, Keynote's master mode.
      *

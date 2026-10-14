@@ -61,7 +61,6 @@ import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.previewOf
-import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.canvas.AssetImageCache
 import io.github.xxfast.cupboard.canvas.LocalAssetImages
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
@@ -688,13 +687,14 @@ private fun EditorWindow(
     // Ending a show lands the editor on the slide the show ended on, not the
     // one it started from: that is where the talk was left, so that is where
     // editing picks up. By id, since the show played a snapshot and the deck
-    // is what the editor selects in. A preview is the selected slide alone,
-    // there is nowhere else for it to land.
+    // is what the editor selects in. Revealed, not just selected: the slide
+    // may sit in a group collapsed before the show, and a selection the
+    // navigator can't show is a dead end. A preview is the selected slide
+    // alone, there is nowhere else for it to land.
     val close: () -> Unit = {
         playing?.takeIf { !it.preview }
             ?.let { request -> request.document.playOrder().getOrNull(controller.slideIndex)?.id }
-            ?.takeIf { id -> state.document.slideById(id) != null }
-            ?.let(viewModel::onSelectSlide)
+            ?.let(viewModel::onRevealSlide)
         playing = null
     }
 

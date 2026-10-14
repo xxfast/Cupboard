@@ -28,6 +28,40 @@ class EditorSlideSelectionTest {
     private fun EditorState.slideIds(): List<String> = document.slides.map { it.id }
 
     @Test
+    fun revealingASlideOpensTheGroupHidingItAndSelectsIt() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onToggleCollapsed("two")
+        val collapsed = viewModel.await { it.document.slides[1].collapsed }
+        assertEquals(listOf("one", "two", "three"), collapsed.outline().map { it.slideId })
+
+        // Where a show ends: the slide inside the collapsed group.
+        viewModel.onRevealSlide("two-b")
+        val revealed = viewModel.await { it.selectedSlideId == "two-b" }
+        assertFalse(revealed.document.slides[1].collapsed)
+        assertEquals(listOf("one", "two", "two-a", "two-b", "three"), revealed.outline().map { it.slideId })
+
+        // Disclosure, not an edit: nothing to undo.
+        assertFalse(revealed.canUndo)
+    }
+
+    @Test
+    fun revealingAVisibleOrMissingSlideChangesNothingButTheSelection() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onToggleCollapsed("two")
+        val collapsed = viewModel.await { it.document.slides[1].collapsed }
+
+        viewModel.onRevealSlide("three")
+        val selected = viewModel.await { it.selectedSlideId == "three" }
+        assertTrue(selected.document.slides[1].collapsed)
+
+        viewModel.onRevealSlide("gone")
+        assertEquals("three", viewModel.states.value.selectedSlideId)
+        assertEquals(collapsed.document, viewModel.states.value.document)
+    }
+
+    @Test
     fun aShiftClickSelectsTheRangeAndKeepsTheSlideOnTheCanvas() = runTest {
         val viewModel = editor(document())
 

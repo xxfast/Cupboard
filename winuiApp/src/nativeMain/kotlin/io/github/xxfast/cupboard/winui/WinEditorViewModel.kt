@@ -107,6 +107,7 @@ class WinEditorViewModel {
     fun onSelectSlide(id: String) { viewModel.onSelectSlide(id) }
 
     fun onSelectSlideAt(index: Int) { viewModel.onSelectSlideAt(index) }
+    fun onRevealSlide(id: String) { viewModel.onRevealSlide(id) }
 
     /** Pass null to clear the selection. */
     fun onSelectElement(id: String?) { viewModel.onSelectElement(id) }

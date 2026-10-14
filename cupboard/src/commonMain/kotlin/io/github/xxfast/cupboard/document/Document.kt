@@ -796,6 +796,28 @@ fun Document.toggleCollapsed(id: String): Document =
     copy(slides = slides.map { if (it.id == id) it.copy(collapsed = !it.collapsed) else it })
 
 /**
+ * The deck with the slide [id] in view: every collapsed ancestor hiding it
+ * opens, and nothing else moves. An ancestor is the nearest shallower slide
+ * above it at each depth on the way up. Unchanged when the slide is already
+ * visible or not in the deck.
+ */
+fun Document.reveal(id: String): Document {
+    val index: Int = slides.indexOfFirst { it.id == id }
+    if (index == -1) return this
+    val ancestors = mutableSetOf<Int>()
+    var depth: Int = slides[index].depth
+    for (above in index - 1 downTo 0) {
+        if (depth == 0) break
+        if (slides[above].depth < depth) {
+            if (slides[above].collapsed) ancestors += above
+            depth = slides[above].depth
+        }
+    }
+    if (ancestors.isEmpty()) return this
+    return copy(slides = slides.mapIndexed { i, slide -> if (i in ancestors) slide.copy(collapsed = false) else slide })
+}
+
+/**
  * The slide now sitting at [index], or the last one when the index has fallen
  * off the end. Null only for a document with no slides at all.
  *
