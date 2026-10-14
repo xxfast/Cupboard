@@ -33,6 +33,7 @@ import androidx.compose.ui.draganddrop.DragAndDropEvent
 import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.DragData
 import androidx.compose.ui.draganddrop.dragData
+import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.key.isShiftPressed
@@ -246,6 +247,27 @@ private fun editShortcut(key: Key, shift: Boolean = false, alt: Boolean = false)
 
 /** Whether this key came with the Edit menu's own modifier held. */
 private fun KeyEvent.hasPasteModifier(): Boolean = if (isMacOs) isMetaPressed else isCtrlPressed
+
+/** Whether this is one of the four arrow keys, whatever is held with it. */
+private val KeyEvent.isArrow: Boolean
+    get() = key == Key.DirectionLeft || key == Key.DirectionRight ||
+        key == Key.DirectionUp || key == Key.DirectionDown
+
+/**
+ * How far this arrow nudges the selection, in points: 1, or 10 with shift. Null
+ * for any other key and for an arrow under another modifier, which is a chord
+ * that means something else.
+ */
+private fun KeyEvent.nudge(): Pair<Float, Float>? {
+    if (!isArrow || isMetaPressed || isCtrlPressed || isAltPressed) return null
+    val step: Float = if (isShiftPressed) 10f else 1f
+    return when (key) {
+        Key.DirectionLeft -> -step to 0f
+        Key.DirectionRight -> step to 0f
+        Key.DirectionUp -> 0f to -step
+        else -> 0f to step
+    }
+}
 
 private val isWindows: Boolean = System.getProperty("os.name").orEmpty().startsWith("Windows")
 
@@ -717,10 +739,27 @@ private fun EditorWindow(
         // behaviour. Guarded on the same canDelete, so the key is only ours
         // when there is something to take away. Nothing in the window takes
         // typing yet, so there is no field to steal from.
+        //
+        // The arrows nudge the canvas's selection, a held key repeating. Only a
+        // key no field took gets here, and only when the canvas may have it
+        // (canNudge): with a caret, the navigator focused or nothing unlocked
+        // selected, it falls through. The key coming up is the drag's release,
+        // one undo entry for the whole run.
         onKeyEvent = { event ->
             val down: Boolean = event.type == KeyEventType.KeyDown
+            val nudge: Pair<Float, Float>? = event.nudge()
             when {
                 playingHere != null -> showKeys(controller, close)(event)
+
+                down && nudge != null && state.canNudge -> {
+                    viewModel.onNudgeSelection(nudge.first, nudge.second)
+                    true
+                }
+
+                event.type == KeyEventType.KeyUp && event.isArrow && state.isPreviewing -> {
+                    viewModel.onCommitNudge()
+                    true
+                }
 
                 down && event.key == Key.Delete && state.canDelete -> {
                     viewModel.onDelete()

@@ -65,6 +65,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.ChangeTheme
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ClearAll
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CloseInspector
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitGuide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.CommitNudge
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ContextClick
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Copy
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CopyElements
@@ -99,6 +100,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.InsertElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.MoveSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.NudgeSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Paste
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PasteStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.PreviewElements
@@ -340,6 +342,10 @@ class EditorViewModel(
     fun onPreviewElements(elements: List<Element>) { send(PreviewElements(elements)) }
     /** A canvas move or resize sample: [onPreviewElements] plus what the alignment overlay is drawn from. */
     fun onPreviewDrag(elements: List<Element>, drag: DragSample) { send(PreviewElements(elements, drag)) }
+    /** An arrow key down or repeating on the canvas, in points: 1, or 10 with shift. */
+    fun onNudgeSelection(dx: Float, dy: Float) { send(NudgeSelection(dx, dy)) }
+    /** The arrow key back up: the run settles as one undo entry. */
+    fun onCommitNudge() { send(CommitNudge) }
     fun onBeginTextEdit(id: String) { send(BeginTextEdit(id)) }
     fun onEndTextEdit() { send(EndTextEdit) }
     fun onEditSelectionChanged(elementId: String, start: Int, end: Int) { send(EditSelectionChanged(elementId, start, end)) }

@@ -819,6 +819,16 @@ data class EditorState(
                 !isEditingText && selectedElements.any { !selectedSlide.isLocked(it.id) }
         }
 
+    /**
+     * Whether an arrow key is the canvas's to take, moving the selection: the
+     * canvas has the focus, nothing has a caret, and something selected isn't
+     * locked. A shell asks before it takes the key, so one it turns down still
+     * reaches whatever else wants arrows.
+     */
+    val canNudge: Boolean
+        get() = focusedPane == EditorPane.Canvas && !isTyping &&
+            selectedElements.any { !selectedSlide.isLocked(it.id) }
+
     /** [canCut]'s rule verbatim: what may be taken away may also be copied in place. */
     val canDuplicate: Boolean get() = canCut
 
@@ -1235,6 +1245,18 @@ sealed interface EditorEvent {
      * move or resize and nothing else: it is what the alignment overlay is
      * drawn from, and a slider or a keystroke has no pointer to report. */
     data class PreviewElements(val elements: List<Element>, val drag: DragSample? = null) : EditorEvent
+    /**
+     * An arrow key going down, or repeating, on the canvas: the unlocked part of
+     * the selection moves [dx], [dy] as one box, [PreviewElements]' semantics.
+     * A held run adds up, each repeat moving on from where the last one left
+     * the selection. No-op while there is a caret: the arrows are the text's.
+     */
+    data class NudgeSelection(val dx: Float, val dy: Float) : EditorEvent
+    /**
+     * The arrow key coming back up: the run of [NudgeSelection]s settles as one
+     * history entry, the way a drag's release does. No-op with no run in flight.
+     */
+    data object CommitNudge : EditorEvent
     /**
      * Puts [element] on top of the selected slide and selects it, alone: what a
      * shape from the catalog, a text box or a code block comes down to, whichever

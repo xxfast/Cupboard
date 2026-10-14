@@ -4090,6 +4090,23 @@ class EditorHost(
         viewModel.onDelete()
     }
 
+    /**
+     * Whether an arrow key is the canvas's: [EditorState.canNudge], asked by the
+     * window's key monitor before it takes the key, so one it turns down still
+     * reaches the navigator or the caret.
+     */
+    fun canNudge(): Boolean = state.canNudge
+
+    /** An arrow key down or repeating on the canvas, in points. */
+    fun nudgeSelection(dx: Double, dy: Double) {
+        viewModel.onNudgeSelection(dx.toFloat(), dy.toFloat())
+    }
+
+    /** The arrow key back up: the run settles as one undo entry. */
+    fun commitNudge() {
+        viewModel.onCommitNudge()
+    }
+
     /** A slide of nothing but locked elements has nothing left to clear. */
     fun canClearAll(): Boolean = state.selectedSlide.elements.any { !it.locked }
 

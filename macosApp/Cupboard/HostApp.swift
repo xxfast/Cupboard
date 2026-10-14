@@ -532,6 +532,7 @@ struct EditorView: View {
         let ui = chrome
         return ZStack {
             ComposeCanvas(host: host)
+                .background { NudgeKeys(host: host) }
 
             if ui.showNotes {
                 notesStrip(ui)
