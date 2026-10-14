@@ -24,6 +24,8 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
             implementation(libs.kotlinx.coroutinesCore)
+            // The HTML export takes the file it streams to as kotlinx-io's path.
+            implementation(libs.kotlinx.io.core)
         }
     }
 }

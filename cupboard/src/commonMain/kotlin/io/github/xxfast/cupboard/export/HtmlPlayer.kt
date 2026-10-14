@@ -21,20 +21,25 @@ import io.github.xxfast.cupboard.document.Slide
  * words is underlined in its frame, but a frame is a picture, and a click on it
  * is the next step like a click anywhere else.
  */
-fun exportHtmlPlayer(document: Document, rasterizer: Rasterizer): String {
+fun exportHtmlPlayer(document: Document, rasterizer: Rasterizer): String =
+    buildString { exportHtmlPlayer(document, rasterizer, this) }
+
+/**
+ * The player written into [out] as it is made, rather than built up and handed
+ * back.
+ *
+ * A frame is a PNG of the whole slide and a deck walked build by build is
+ * hundreds of them, so the page is easily a few hundred megabytes of base64. As
+ * one string that is more than a Kotlin/Native heap will hand out in one piece,
+ * and twice over while it is being copied into a bigger one. Here a frame is
+ * drawn, encoded and appended a chunk at a time, and gone before the next one is
+ * drawn: what is held at once is one frame, whatever the length of the deck.
+ */
+fun exportHtmlPlayer(document: Document, rasterizer: Rasterizer, out: Appendable) {
     val frames: List<ExportFrame> = document.exportFrames(everyBuild = true)
-    val images: String = frames.joinToString("\n") { frame ->
-        val png: ByteArray = encodePng(rasterizer.frame(frame.slideIndex, frame.step))
-        """    <img class="frame" alt="" src="data:image/png;base64,${base64(png)}">"""
-    }
 
-    val notes: String = frames.joinToString("\n") { frame ->
-        val slide: Slide = document.slides[frame.slideIndex]
-        val text: String = slide.notes.ifBlank { "No notes." }
-        """    <p class="note">${text.htmlEscaped()}</p>"""
-    }
-
-    return """
+    out.append(
+        """
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${document.name.htmlEscaped()}</title>
@@ -60,10 +65,31 @@ fun exportHtmlPlayer(document: Document, rasterizer: Rasterizer): String {
   .note.on { display: block; }
 </style>
 <div id="stage">
-$images
-</div>
-<aside id="notes" hidden>
-$notes
+""".trimStart()
+    )
+
+    frames.forEachIndexed { index, frame ->
+        if (index > 0) out.append('\n')
+        val png: ByteArray = encodePng(rasterizer.frame(frame.slideIndex, frame.step))
+        out.append("""    <img class="frame" alt="" src="data:image/png;base64,""")
+        out.appendBase64(png)
+        out.append("\">")
+    }
+
+    out.append("\n</div>\n<aside id=\"notes\" hidden>\n")
+
+    frames.forEachIndexed { index, frame ->
+        if (index > 0) out.append('\n')
+        val slide: Slide = document.slides[frame.slideIndex]
+        val text: String = slide.notes.ifBlank { "No notes." }
+        out.append("""    <p class="note">${text.htmlEscaped()}</p>""")
+    }
+
+    out.append(PlayerTail)
+}
+
+/** Everything after the notes: the counter, and the script that walks the frames. */
+private const val PlayerTail: String = """
 </aside>
 <div id="counter"></div>
 <script>
@@ -96,8 +122,7 @@ $notes
   document.getElementById('stage').addEventListener('click', () => show(at + 1));
   show(0);
 </script>
-""".trimStart()
-}
+"""
 
 /** Text as it can sit in an element: the three characters that would end it, escaped. */
 private fun String.htmlEscaped(): String =
@@ -107,38 +132,50 @@ private fun String.htmlEscaped(): String =
 private const val Base64Alphabet: String =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
+/** How many characters of base64 are handed to the sink at a time. A multiple of four. */
+private const val Base64Chunk: Int = 4096
+
 /**
- * [data] as base64.
+ * [data] appended as base64, [Base64Chunk] characters at a time.
+ *
+ * Into the sink rather than returned: a frame's base64 is a third bigger than
+ * its PNG, and as a string of its own it would be one more copy of the biggest
+ * thing in the file. One reused buffer is the most this holds.
  *
  * Written out rather than taken from `kotlin.io.encoding`, whose opt-in has moved
  * more than once and which every target would have to agree on.
  */
-internal fun base64(data: ByteArray): String {
-    val out = StringBuilder((data.size + 2) / 3 * 4)
+internal fun Appendable.appendBase64(data: ByteArray) {
+    val chunk = StringBuilder(Base64Chunk)
     var at = 0
     while (at + 2 < data.size) {
         val triple: Int = ((data[at].toInt() and 0xFF) shl 16) or
             ((data[at + 1].toInt() and 0xFF) shl 8) or
             (data[at + 2].toInt() and 0xFF)
-        out.append(Base64Alphabet[triple ushr 18])
-        out.append(Base64Alphabet[(triple ushr 12) and 0x3F])
-        out.append(Base64Alphabet[(triple ushr 6) and 0x3F])
-        out.append(Base64Alphabet[triple and 0x3F])
+        chunk.append(Base64Alphabet[triple ushr 18])
+        chunk.append(Base64Alphabet[(triple ushr 12) and 0x3F])
+        chunk.append(Base64Alphabet[(triple ushr 6) and 0x3F])
+        chunk.append(Base64Alphabet[triple and 0x3F])
         at += 3
+
+        if (chunk.length >= Base64Chunk) {
+            append(chunk)
+            chunk.clear()
+        }
     }
 
     val left: Int = data.size - at
     if (left == 1) {
         val byte: Int = data[at].toInt() and 0xFF
-        out.append(Base64Alphabet[byte ushr 2])
-        out.append(Base64Alphabet[(byte shl 4) and 0x3F])
-        out.append("==")
+        chunk.append(Base64Alphabet[byte ushr 2])
+        chunk.append(Base64Alphabet[(byte shl 4) and 0x3F])
+        chunk.append("==")
     } else if (left == 2) {
         val pair: Int = ((data[at].toInt() and 0xFF) shl 8) or (data[at + 1].toInt() and 0xFF)
-        out.append(Base64Alphabet[pair ushr 10])
-        out.append(Base64Alphabet[(pair ushr 4) and 0x3F])
-        out.append(Base64Alphabet[(pair shl 2) and 0x3F])
-        out.append('=')
+        chunk.append(Base64Alphabet[pair ushr 10])
+        chunk.append(Base64Alphabet[(pair ushr 4) and 0x3F])
+        chunk.append(Base64Alphabet[(pair shl 2) and 0x3F])
+        chunk.append('=')
     }
-    return out.toString()
+    append(chunk)
 }

@@ -23,6 +23,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import kotlinx.coroutines.runBlocking
+import kotlinx.io.files.Path
 import kotlin.math.roundToInt
 import org.jetbrains.skia.Image as SkiaImage
 import platform.Foundation.NSData
@@ -77,6 +78,11 @@ class ExportBytes(val name: String, val data: NSData)
  * a background queue and shows a sheet, which is why none of them is a
  * `suspend fun`: a callback into Swift per frame ([progress]) says more than an
  * awaited result would.
+ *
+ * Every one of them `@Throws(Throwable::class)`, so a failure (a frame that
+ * would not draw, a heap that ran out, a disk that filled) reaches Swift as an
+ * `NSError` and the shell's alert, rather than terminating the app the editor is
+ * in.
  */
 class DeckExporter(private val editor: EditorHost) {
     /**
@@ -94,6 +100,7 @@ class DeckExporter(private val editor: EditorHost) {
      * anything outside it falls back to one slide per page, since the number
      * crosses a language boundary on the way in.
      */
+    @Throws(Throwable::class)
     fun pdf(
         layoutIndex: Int,
         everyBuild: Boolean,
@@ -117,6 +124,7 @@ class DeckExporter(private val editor: EditorHost) {
     }
 
     /** Every slide as its own PNG, named the way the core names them. */
+    @Throws(Throwable::class)
     fun pngs(everyBuild: Boolean): List<ExportBytes> {
         val document: Document = document()
         val rasterizer: Rasterizer = counted(
@@ -134,6 +142,7 @@ class DeckExporter(private val editor: EditorHost) {
      * is 256 colours, and downsampling anti-aliased type is what keeps it
      * readable once it has been quantised.
      */
+    @Throws(Throwable::class)
     fun gif(width: Int, secondsPerFrame: Float, loop: Boolean): NSData {
         val document: Document = document()
         val source: Int = (width * 2).coerceIn(GIF_SOURCE_MIN, EXPORT_WIDTH)
@@ -150,17 +159,26 @@ class DeckExporter(private val editor: EditorHost) {
         return exportGif(document, rasterizer, options).toNSData()
     }
 
-    /** The deck as one self-contained HTML page, frames and notes carried in it. */
-    fun html(): String {
+    /**
+     * The deck as one self-contained HTML page, frames and notes carried in it,
+     * written to the file at [path].
+     *
+     * Written here rather than handed back like the others: the page is every
+     * frame of the deck in base64, and a long deck's is more than the heap will
+     * hold as one string. Streamed, it is one frame at a time.
+     */
+    @Throws(Throwable::class)
+    fun html(path: String) {
         val document: Document = document()
         val rasterizer: Rasterizer = counted(
             rasterizer(document, EXPORT_WIDTH),
             document.frameCount(everyBuild = true, includeSkipped = false),
         )
-        return exportHtmlPlayer(document, rasterizer)
+        exportHtmlPlayer(document, rasterizer, Path(path))
     }
 
     /** The deck as a .pptx: one picture-backed slide each, with the notes on it. */
+    @Throws(Throwable::class)
     fun pptx(): NSData {
         val document: Document = document()
         val rasterizer: Rasterizer = counted(
