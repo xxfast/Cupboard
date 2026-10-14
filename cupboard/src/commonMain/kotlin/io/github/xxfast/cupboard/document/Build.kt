@@ -292,7 +292,10 @@ fun Slide.buildTimeline(): List<BuildAt> {
 
             BuildTrigger.WithPrevious -> {
                 val step: Int = previous?.firstStep ?: 0
-                BuildAt(index, build, step, step, build.delayMs)
+                // Rides its anchor's offset, so an AfterPrevious chain behind it
+                // keeps counting from where the anchor started.
+                val offset: Int = previous?.delayMs ?: 0
+                BuildAt(index, build, step, step, offset + build.delayMs)
             }
 
             BuildTrigger.AfterPrevious -> {
