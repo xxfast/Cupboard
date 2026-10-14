@@ -42,13 +42,29 @@ val LocalAssetImages = staticCompositionLocalOf { AssetImageCache() }
  * Small on purpose: a deck's images are large, and what this is for is the handful
  * on screen at once being decoded once rather than once per composable that draws
  * them. Not thread-safe, and read only from the composition, which is one thread.
+ *
+ * [onPut] hears of every image as it lands. A one frame render (a thumbnail)
+ * draws a placeholder for whatever is not held yet, and nothing about the slide
+ * changes when the decode the canvas started finishes, so that landing is the
+ * only news there is.
  */
-class AssetImageCache(private val capacity: Int = 24) {
+class AssetImageCache(
+    private val capacity: Int = 24,
+    private val onPut: (id: String) -> Unit = {},
+) {
     private val images: LinkedHashMap<String, ImageBitmap> = LinkedHashMap()
+
+    /** Where [get] notes what it came up empty for, while [recordingMisses] is running. */
+    private var misses: MutableSet<String>? = null
 
     /** The image under [id] if it is held, promoted to most recently used. */
     fun get(id: String): ImageBitmap? {
-        val image: ImageBitmap = images.remove(id) ?: return null
+        val image: ImageBitmap? = images.remove(id)
+        if (image == null) {
+            misses?.add(id)
+            return null
+        }
+
         images[id] = image
         return image
     }
@@ -57,6 +73,22 @@ class AssetImageCache(private val capacity: Int = 24) {
         images.remove(id)
         images[id] = image
         while (images.size > capacity) images.remove(images.keys.first())
+        onPut(id)
+    }
+
+    /**
+     * [draw], with every id it asked for and this did not hold added to [into]:
+     * the pictures a one frame render drew as placeholders, which is what it is
+     * waiting on. Walks no document, so it is right for every kind of element
+     * that draws a picture, inside a group or out.
+     */
+    fun <T> recordingMisses(into: MutableSet<String>, draw: () -> T): T {
+        misses = into
+        try {
+            return draw()
+        } finally {
+            misses = null
+        }
     }
 }
 

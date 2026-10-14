@@ -1400,7 +1400,17 @@ class EditorHost(
         val generation: Int,
     )
 
-    private class Thumbnail(val inputs: ThumbnailInputs, val image: NSImage)
+    /**
+     * [missing] is the pictures it was drawn without, still decoding at the time:
+     * the inputs are the same once they land, so it is [imageLanded] that sends
+     * [request] round again.
+     */
+    private class Thumbnail(
+        val inputs: ThumbnailInputs,
+        val image: NSImage,
+        val missing: Set<String>,
+        val request: ThumbnailRequest,
+    )
 
     /**
      * By slide and width, since one slide is drawn at more than one: a layout
@@ -1460,7 +1470,7 @@ class EditorHost(
      * each, because a row is drawn in a single frame and only shows what the
      * canvas has already decoded. See [assetImages] for when it is replaced.
      */
-    private var assetImages: AssetImageCache = AssetImageCache()
+    private var assetImages: AssetImageCache = AssetImageCache(onPut = ::imageLanded)
 
     /** The [EditorState.assetGeneration] [assetImages] was decoded under. */
     private var assetImagesGeneration: Int = 0
@@ -1518,7 +1528,7 @@ class EditorHost(
         val generation: Int = state.assetGeneration
         if (generation == assetImagesGeneration) return assetImages
         assetImagesGeneration = generation
-        assetImages = AssetImageCache()
+        assetImages = AssetImageCache(onPut = ::imageLanded)
         assetThumbnails.clear()
         assetThumbnailsPending.clear()
         return assetImages
@@ -5010,12 +5020,31 @@ class EditorHost(
             (state.isPreviewing || cached.inputs == thumbnailInputs(slide, isLayout))
         if (current) return cached?.image
 
+        queueThumbnail(key, ThumbnailRequest(slide.id, width, isLayout, inChrome))
+        return cached?.image
+    }
+
+    /** [request] waiting under [key] for [drawThumbnails], which is started if it is not running. */
+    private fun queueThumbnail(key: String, request: ThumbnailRequest) {
         // Asked for from both sides, the chrome is the one to tell: its pass
         // re-reads the rows as well.
-        val forChrome: Boolean = inChrome || thumbnailsPending[key]?.inChrome == true
-        thumbnailsPending[key] = ThumbnailRequest(slide.id, width, isLayout, forChrome)
+        val inChrome: Boolean = request.inChrome || thumbnailsPending[key]?.inChrome == true
+        thumbnailsPending[key] =
+            ThumbnailRequest(request.id, request.width, request.isLayout, inChrome)
         if (thumbnailsDrawing?.isActive != true) thumbnailsDrawing = scope.launch { drawThumbnails() }
-        return cached?.image
+    }
+
+    /**
+     * [assetId] decoded into [assetImages], most often by the canvas a moment
+     * after the edit that put it on a slide. Every thumbnail drawn while it was
+     * still on its way shows a placeholder in its place, and nothing else will
+     * say so: the slide has not changed, so its inputs have not either. Those
+     * go back in the queue, and the rows hear when they land.
+     */
+    private fun imageLanded(assetId: String) {
+        for ((key, thumbnail) in thumbnails) {
+            if (assetId in thumbnail.missing) queueThumbnail(key, thumbnail.request)
+        }
     }
 
     /** Everything a row's picture depends on, which is what its cache entry is checked against. */
@@ -5079,24 +5108,28 @@ class EditorHost(
             val width: Int = request.width
             val height: Int = (width * inputs.slideHeight / inputs.slideWidth).toInt()
 
-            val skiaImage = renderComposeScene(width * 2, height * 2) {
-                // One frame, so an image only lands here if the canvas has already
-                // decoded it: the row catches up on the next render, which is the
-                // next edit. Cheaper than blocking a thumbnail on a decode. Fonts
-                // are whatever has loaded, the same set the cache key holds.
-                CompositionLocalProvider(
-                    LocalAssetStore provides viewModel.assets,
-                    LocalAssetImages provides images,
-                    LocalDeckFonts provides DeckFontCache.Shared.families(deckFonts),
-                ) {
-                    SlideView(
-                        slide = slide,
-                        layout = inputs.layout,
-                        number = inputs.number,
-                        background = inputs.background,
-                        slideWidth = inputs.slideWidth,
-                        slideHeight = inputs.slideHeight,
-                    )
+            // One frame, so an image only lands here if the canvas has already
+            // decoded it. Cheaper than blocking a thumbnail on a decode: the ones
+            // it went without are noted, and [imageLanded] redraws the row when
+            // they arrive. Fonts are whatever has loaded, the same set the cache
+            // key holds.
+            val missing: MutableSet<String> = mutableSetOf()
+            val skiaImage = images.recordingMisses(missing) {
+                renderComposeScene(width * 2, height * 2) {
+                    CompositionLocalProvider(
+                        LocalAssetStore provides viewModel.assets,
+                        LocalAssetImages provides images,
+                        LocalDeckFonts provides DeckFontCache.Shared.families(deckFonts),
+                    ) {
+                        SlideView(
+                            slide = slide,
+                            layout = inputs.layout,
+                            number = inputs.number,
+                            background = inputs.background,
+                            slideWidth = inputs.slideWidth,
+                            slideHeight = inputs.slideHeight,
+                        )
+                    }
                 }
             }
 
@@ -5108,7 +5141,7 @@ class EditorHost(
             }
             val image: NSImage = NSImage(data = data) ?: continue
             image.setSize(NSMakeSize(width.toDouble(), height.toDouble()))
-            thumbnails[key] = Thumbnail(inputs, image)
+            thumbnails[key] = Thumbnail(inputs, image, missing, request)
             if (request.inChrome) chromeDrawn = true else rowsDrawn = true
 
             if (shown.elapsedNow() < ThumbnailShowInterval) continue
