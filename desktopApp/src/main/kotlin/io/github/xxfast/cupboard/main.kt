@@ -61,6 +61,7 @@ import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.previewOf
+import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.canvas.AssetImageCache
 import io.github.xxfast.cupboard.canvas.LocalAssetImages
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
@@ -72,6 +73,8 @@ import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.play.PlayerController
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.PresenterView
+import io.github.xxfast.cupboard.play.playIndexOf
+import io.github.xxfast.cupboard.play.playOrder
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -666,7 +669,7 @@ private fun EditorWindow(
             screens = playScreens()
             playing = PlayRequest(
                 document = document,
-                slideIndex = index,
+                slideIndex = document.playIndexOf(index),
                 inWindow = PlayPreferences.inWindow,
                 // The talk goes to the projector and the lectern keeps the
                 // laptop, whichever display the editor is on: the first one
@@ -681,7 +684,19 @@ private fun EditorWindow(
     // has to follow the same one from its own. Keyed so each show starts on
     // a fresh one.
     val controller: PlayerController = key(playing != null) { rememberPlayerController() }
-    val close: () -> Unit = { playing = null }
+
+    // Ending a show lands the editor on the slide the show ended on, not the
+    // one it started from: that is where the talk was left, so that is where
+    // editing picks up. By id, since the show played a snapshot and the deck
+    // is what the editor selects in. A preview is the selected slide alone,
+    // there is nowhere else for it to land.
+    val close: () -> Unit = {
+        playing?.takeIf { !it.preview }
+            ?.let { request -> request.document.playOrder().getOrNull(controller.slideIndex)?.id }
+            ?.takeIf { id -> state.document.slideById(id) != null }
+            ?.let(viewModel::onSelectSlide)
+        playing = null
+    }
 
     // The show this window wears in place of the editor, if it is wearing one.
     val playingHere: PlayRequest? = playing?.takeIf { it.inWindow }
@@ -699,7 +714,7 @@ private fun EditorWindow(
             screens = playScreens()
             playing = PlayRequest(
                 document = state.document,
-                slideIndex = state.selectedSlideIndex().coerceAtLeast(0),
+                slideIndex = state.document.playIndexOf(state.selectedSlideIndex()),
                 rehearse = true,
             )
         }

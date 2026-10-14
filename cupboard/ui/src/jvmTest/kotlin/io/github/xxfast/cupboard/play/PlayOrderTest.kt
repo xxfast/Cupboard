@@ -37,6 +37,35 @@ class PlayOrderTest {
     }
 
     @Test
+    fun playIndexIsTheSlideIndexOnADeckWithNoSkips() {
+        val document: Document = sampleDocument()
+
+        assertEquals(2, document.playIndexOf(2))
+    }
+
+    @Test
+    fun playIndexCountsOutTheSkippedSlidesBefore() {
+        val document: Document = sampleDocument().let { it.setSlideSkipped(it.slides[0].id, true) }
+
+        assertEquals(1, document.playIndexOf(2))
+        assertEquals(document.slides[2].id, document.playOrder()[document.playIndexOf(2)].id)
+    }
+
+    @Test
+    fun playIndexOfASkippedSlideOpensOnTheNextOnePlayed() {
+        val document: Document = sampleDocument().let { it.setSlideSkipped(it.slides[1].id, true) }
+
+        assertEquals(document.slides[2].id, document.playOrder()[document.playIndexOf(1)].id)
+    }
+
+    @Test
+    fun playIndexOfASkippedLastSlideOpensOnTheLastOnePlayed() {
+        val document: Document = sampleDocument().let { it.setSlideSkipped(it.slides.last().id, true) }
+
+        assertEquals(document.playOrder().lastIndex, document.playIndexOf(document.slides.lastIndex))
+    }
+
+    @Test
     fun nextWalksEveryStepOfEverySlideInOrder() {
         val document: Document = sampleDocument()
 

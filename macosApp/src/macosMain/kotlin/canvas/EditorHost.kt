@@ -177,6 +177,8 @@ import io.github.xxfast.cupboard.export.toCupProject
 import io.github.xxfast.cupboard.play.PlayerController
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.PresenterView
+import io.github.xxfast.cupboard.play.playIndexOf
+import io.github.xxfast.cupboard.play.playOrder
 import io.github.xxfast.cupboard.play.rememberPlayerController
 import io.github.xxfast.cupboard.screens.editor.EditorPane
 import io.github.xxfast.cupboard.screens.editor.AnimateSegment
@@ -1241,6 +1243,12 @@ class PlaySession internal constructor(
     private val document: Document,
     startIndex: Int,
     private val onExit: () -> Unit,
+    /**
+     * Told the id of the slide the show ended on, just before [onExit]: where
+     * the editor picks up once the show is down. Null for a preview, which is
+     * the selected slide alone and has nowhere else to land.
+     */
+    private val onLanded: ((String) -> Unit)? = null,
     /** The document as it stands, for the presenter's notes. Null for a preview. */
     private val live: Flow<Document>? = null,
     /** Where a notes edit goes: slide id, new notes. Null for a preview. */
@@ -1297,7 +1305,7 @@ class PlaySession internal constructor(
                 document = document,
                 startIndex = startIndex,
                 modifier = Modifier.fillMaxSize(),
-                onExit = onExit,
+                onExit = ::end,
                 // The player has no idea what a browser is, and neither does
                 // anything else in the shared module: a URL link comes out here.
                 // A string that is not an address opens nothing rather than throwing.
@@ -1361,6 +1369,18 @@ class PlaySession internal constructor(
 
     /** Escape in the presenter window: ends the show, the way it does in it. */
     fun exit() {
+        end()
+    }
+
+    /**
+     * Every way out of the show comes through here: the editor hears which slide
+     * the show ended on, then the host hears that it is over. The controller's
+     * index counts the slides being played, so it is read back through the same
+     * order the player walked.
+     */
+    private fun end() {
+        controller?.let { document.playOrder().getOrNull(it.slideIndex)?.id }
+            ?.let { onLanded?.invoke(it) }
         onExit()
     }
 
@@ -5034,8 +5054,11 @@ class EditorHost(
 
     private fun playSession(onExit: () -> Unit, rehearsal: Boolean): PlaySession = PlaySession(
         document = state.document,
-        startIndex = state.selectedSlideIndex().coerceAtLeast(0),
+        startIndex = state.document.playIndexOf(state.selectedSlideIndex()),
         onExit = onExit,
+        // Where the show ended is where editing picks up. Guarded, since the
+        // show played a snapshot and the slide may have gone since.
+        onLanded = { id -> if (state.document.slideById(id) != null) viewModel.onSelectSlide(id) },
         // The show plays a snapshot; the presenter follows the document, so a
         // note typed mid-show is the note it goes on showing.
         live = viewModel.states.map { it.document }.distinctUntilChanged(),

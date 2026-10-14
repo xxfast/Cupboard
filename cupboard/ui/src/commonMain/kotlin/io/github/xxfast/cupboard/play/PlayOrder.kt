@@ -20,6 +20,22 @@ import io.github.xxfast.cupboard.document.stepCount
 fun Document.playOrder(): List<Slide> = slides.filterNot { it.skipped }.ifEmpty { slides }
 
 /**
+ * Where the slide at [slideIndex], an index into [Document.slides], sits in
+ * [playOrder]: the position a show started from that slide opens on.
+ *
+ * The two indices only agree on a deck with no skips. A skipped slide is not in
+ * the order at all, so a show started from one opens on the next slide that
+ * plays, or on the last one when nothing after it does.
+ */
+fun Document.playIndexOf(slideIndex: Int): Int {
+    val order: List<Slide> = playOrder()
+    val from: Int = slideIndex.coerceIn(0, slides.lastIndex.coerceAtLeast(0))
+    val opening: Slide = slides.drop(from).firstOrNull { slide -> order.any { it.id == slide.id } }
+        ?: return order.lastIndex.coerceAtLeast(0)
+    return order.indexOfFirst { it.id == opening.id }
+}
+
+/**
  * Where the show is: an index into [playOrder] and the step within that slide,
  * 0 being the slide as it opens. The same two ints the player mirrors out.
  */
