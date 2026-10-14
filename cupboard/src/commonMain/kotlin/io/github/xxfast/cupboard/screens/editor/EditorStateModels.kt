@@ -37,6 +37,7 @@ import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.boundingFrame
+import io.github.xxfast.cupboard.document.rotateVector
 import io.github.xxfast.cupboard.document.drawnBounds
 import io.github.xxfast.cupboard.document.displayName
 import io.github.xxfast.cupboard.document.hasChildren
@@ -68,6 +69,30 @@ import kotlinx.serialization.Transient
  * slide: 5%, which on a 1920x1080 slide is 96 by 54 units.
  */
 private const val LayoutMarginFraction: Float = 0.05f
+
+/** The grid [EditorState.insertionFrame] searches for a clear spot on, and its cascade step. */
+private const val InsertionGrid: Float = 20f
+
+private fun distanceSquared(a: Frame, b: Frame): Float {
+    val dx: Float = a.centerX - b.centerX
+    val dy: Float = a.centerY - b.centerY
+    return dx * dx + dy * dy
+}
+
+/** The axis-aligned box the element covers once its rotation is applied. */
+private fun Element.rotatedBounds(): Frame {
+    if (rotation == 0f) return frame
+    val corners: List<Pair<Float, Float>> = listOf(-1f to -1f, 1f to -1f, 1f to 1f, -1f to 1f)
+        .map { (sx, sy) -> rotateVector(sx * frame.width / 2, sy * frame.height / 2, rotation) }
+    val xs: List<Float> = corners.map { it.first }
+    val ys: List<Float> = corners.map { it.second }
+    return Frame(
+        x = frame.centerX + xs.min(),
+        y = frame.centerY + ys.min(),
+        width = xs.max() - xs.min(),
+        height = ys.max() - ys.min(),
+    )
+}
 
 /** One navigator row, already resolved for the shell that renders it. */
 data class OutlineEntry(
@@ -812,18 +837,51 @@ data class EditorState(
         }
 
     /**
-     * A [width] by [height] box in the middle of the slide: where an insertion
-     * that was not pointed at a spot lands.
+     * A [width] by [height] box where an insertion that was not pointed at a
+     * spot lands: the middle of the slide when that is clear, so a new element
+     * never sits on a layout's placeholders and a drag grabs the thing just made.
+     *
+     * Clear means no element on the slide overlaps it, measured by each
+     * element's rotated bounds. Otherwise the nearest clear spot to the middle on
+     * a [InsertionGrid] grid, ties going higher then lefter. A slide with no
+     * clear spot cascades: the middle, nudged by [InsertionGrid] per element
+     * already sitting on the spot, so repeated inserts don't stack exactly.
      *
      * The document's own slide size, not the constant, so a deck that ever
      * carries another aspect ratio still inserts in the middle of its own slide.
      */
-    fun insertionFrame(width: Float, height: Float): Frame = Frame(
-        x = (document.slideWidth - width) / 2,
-        y = (document.slideHeight - height) / 2,
-        width = width,
-        height = height,
-    )
+    fun insertionFrame(width: Float, height: Float): Frame {
+        val slideWidth: Float = document.slideWidth
+        val slideHeight: Float = document.slideHeight
+        val occupied: List<Frame> = selectedSlide.elements.map { it.rotatedBounds() }
+        val centred = Frame((slideWidth - width) / 2, (slideHeight - height) / 2, width, height)
+        if (occupied.none { it.overlaps(centred) }) return centred
+
+        val maxX: Float = slideWidth - width
+        val maxY: Float = slideHeight - height
+        val free: Frame? = generateSequence(0f) { it + InsertionGrid }
+            .takeWhile { it <= maxY }
+            .flatMap { y ->
+                generateSequence(0f) { it + InsertionGrid }
+                    .takeWhile { it <= maxX }
+                    .map { x -> Frame(x, y, width, height) }
+            }
+            .filter { candidate -> occupied.none { it.overlaps(candidate) } }
+            .minWithOrNull(
+                compareBy<Frame> { distanceSquared(it, centred) }.thenBy { it.y }.thenBy { it.x }
+            )
+        if (free != null) return free
+
+        val origins: List<Pair<Float, Float>> = selectedSlide.elements.map { it.frame.x to it.frame.y }
+        var step = 0
+        while (origins.contains(centred.x + step * InsertionGrid to centred.y + step * InsertionGrid)) {
+            step++
+        }
+        return centred.copy(
+            x = (centred.x + step * InsertionGrid).coerceIn(0f, maxOf(maxX, 0f)),
+            y = (centred.y + step * InsertionGrid).coerceIn(0f, maxOf(maxY, 0f)),
+        )
+    }
 
     /**
      * Every line a dragged frame may settle on right now, per the four snap
