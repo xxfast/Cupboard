@@ -1250,14 +1250,13 @@ class PlaySession internal constructor(
     private var controller: PlayerController? by mutableStateOf(null)
 
     /**
-     * What plays the deck's movies and sounds, over [view]. None for a
-     * rehearsal: its show is composed but hidden, so a movie would play where
-     * nobody can see it, and a soundtrack nobody asked for would play over the
-     * practice. The presenter display never gets one either, which is what
-     * keeps it from playing a second copy of what the audience is watching.
+     * What plays the deck's movies and sounds. The show drives it, rehearsal or
+     * not: a rehearsal's show is composed out of sight, and plays the same. The
+     * presenter display is handed it too, and only ever draws its pictures on
+     * the current slide (see `PresenterDisplay`), so there is still one copy of
+     * every movie playing, and a rehearsal shows them there.
      */
-    private val media: AVMediaPlayer? =
-        if (isRehearsal) null else AVMediaPlayer(assets, document.slideWidth, document.slideHeight)
+    private val media: AVMediaPlayer = AVMediaPlayer(assets)
 
     private val composeView = ComposeNSView {
         val player: PlayerController = rememberPlayerController()
@@ -1268,7 +1267,7 @@ class PlaySession internal constructor(
         CompositionLocalProvider(
             LocalAssetStore provides assets,
             LocalAssetImages provides images,
-            LocalMediaPlayer provides (media ?: NoMediaPlayer),
+            LocalMediaPlayer provides media,
         ) {
             PresentationPlayer(
                 document = document,
@@ -1289,10 +1288,6 @@ class PlaySession internal constructor(
     private var presenterCompose: ComposeNSView? = null
 
     val view: NSView = composeView
-
-    init {
-        media?.attach(composeView)
-    }
 
     /** Whether this session has a presenter display to show at all. */
     val hasPresenter: Boolean = live != null && notes != null
@@ -1317,6 +1312,7 @@ class PlaySession internal constructor(
                 CompositionLocalProvider(
                     LocalAssetStore provides assets,
                     LocalAssetImages provides images,
+                    LocalMediaPlayer provides media,
                 ) {
                     PresenterView(
                         document = deck,
@@ -1352,9 +1348,9 @@ class PlaySession internal constructor(
 
     fun dispose() {
         disposePresenter()
-        // Before the scene closes: every movie's layer comes off the show's view
-        // and every player stops, whichever slide the show ended on.
-        media?.stopAll()
+        // Before the scene closes: every player stops, whichever slide the show
+        // ended on.
+        media.stopAll()
         composeView.dispose()
     }
 }
