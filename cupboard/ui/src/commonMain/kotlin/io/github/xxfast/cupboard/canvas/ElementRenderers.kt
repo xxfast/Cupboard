@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
@@ -905,10 +906,11 @@ private const val AudioTrackHeight: Float = 3f
  * A movie at rest: its poster frame, the badge that says it plays, and what it
  * is called.
  *
- * The still is all the shared canvas ever draws. Decoding a movie is a platform
- * player's job, so [playing] mode hands the element to [LocalMediaPlayer] and the
- * host puts its own surface over this box; what stays here is what the slide
- * looks like before it does, which is also the whole of the editor's canvas.
+ * Decoding a movie is a platform player's job, so [playing] mode hands the
+ * element to [LocalMediaPlayer] and asks it every frame for the picture, which
+ * is drawn here in the poster's place. Here, so it is drawn inside everything the
+ * slide does to this box: the element's rotation and opacity, a build, a slide
+ * transition. The editor's canvas never plays, and draws the poster alone.
  *
  * A tap plays, except on a movie that is only a [VideoElement.webUrl]: there is
  * nothing to play, so it opens the page through [LocalLinkHandler] instead, the
@@ -921,6 +923,8 @@ private fun VideoElementView(element: VideoElement, playing: Boolean) {
     val links: (LinkTarget) -> Unit = LocalLinkHandler.current
     val caption: String = element.title.ifBlank { element.webUrl.orEmpty() }
 
+    var picture: MediaPicture? by remember(element.id, player) { mutableStateOf(null) }
+
     // Leaving the slide is the composition going away: an element a build takes
     // back out, a step that cuts to the next slide and the show ending all read
     // the same way here, which is what keeps a movie from playing on over them.
@@ -929,6 +933,16 @@ private fun VideoElementView(element: VideoElement, playing: Boolean) {
 
         LaunchedEffect(element.id, player, element.autoplay) {
             if (element.autoplay) player.play(element.mediaRequest())
+        }
+
+        // Every frame, inside the frame itself: a picture that lands here is
+        // drawn on this frame rather than the next. Asked for whether or not
+        // anything is playing yet, since a tap starts a movie from outside.
+        // Never of [NoMediaPlayer]: it has none to give, and asking every frame
+        // would keep the window drawing for nothing.
+        LaunchedEffect(element.id, player) {
+            if (player === NoMediaPlayer) return@LaunchedEffect
+            while (true) withFrameNanos { picture = player.picture(element.id) }
         }
     }
 
@@ -946,38 +960,76 @@ private fun VideoElementView(element: VideoElement, playing: Boolean) {
                 },
             ),
     ) {
-        if (poster == null) {
-            Box(
-                modifier = Modifier
-                    .size(element.frame.width.dp, element.frame.height.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MediaSurface.toComposeColor()),
-            )
+        val showing: MediaPicture? = picture
+        if (showing != null) {
+            MoviePicture(showing, element.frame.width, element.frame.height)
         } else {
-            AssetImageContent(
-                image = poster,
-                adjust = ImageAdjust(),
-                mask = null,
-                // Not recorded on the element: a poster is a still of the movie
-                // rather than a picture in its own right, so it is measured off
-                // the bitmap the way an image written before decode is.
-                naturalWidth = 0,
-                naturalHeight = 0,
-                width = element.frame.width,
-                height = element.frame.height,
-            )
-        }
+            if (poster == null) {
+                Box(
+                    modifier = Modifier
+                        .size(element.frame.width.dp, element.frame.height.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MediaSurface.toComposeColor()),
+                )
+            } else {
+                AssetImageContent(
+                    image = poster,
+                    adjust = ImageAdjust(),
+                    mask = null,
+                    // Not recorded on the element: a poster is a still of the movie
+                    // rather than a picture in its own right, so it is measured off
+                    // the bitmap the way an image written before decode is.
+                    naturalWidth = 0,
+                    naturalHeight = 0,
+                    width = element.frame.width,
+                    height = element.frame.height,
+                )
+            }
 
-        PlayGlyph(Modifier.align(Alignment.Center))
+            PlayGlyph(Modifier.align(Alignment.Center))
 
-        if (caption.isNotEmpty()) {
-            Caption(
-                text = caption,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = MediaTitleInset.dp),
-            )
+            if (caption.isNotEmpty()) {
+                Caption(
+                    text = caption,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = MediaTitleInset.dp),
+                )
+            }
         }
+    }
+}
+
+/**
+ * A playing movie's [picture], fitted inside its [width] by [height] box and
+ * centred, on the dark a movie box is drawn on: letterboxed the way a player
+ * shows a movie whose shape is not its box's, with no badge or title over it.
+ */
+@Composable
+private fun MoviePicture(picture: MediaPicture, width: Float, height: Float) {
+    Canvas(
+        modifier = Modifier
+            .size(width.dp, height.dp)
+            .background(MediaSurface.toComposeColor()),
+    ) {
+        // Read in the draw, so a new frame redraws this and nothing else.
+        picture.frame
+        val image: ImageBitmap = picture.image
+        if (image.width <= 0 || image.height <= 0) return@Canvas
+
+        val scale: Float = minOf(size.width / image.width, size.height / image.height)
+        val drawn = IntSize(
+            width = (image.width * scale).roundToInt(),
+            height = (image.height * scale).roundToInt(),
+        )
+        drawImage(
+            image = image,
+            dstOffset = IntOffset(
+                ((size.width - drawn.width) / 2).roundToInt(),
+                ((size.height - drawn.height) / 2).roundToInt(),
+            ),
+            dstSize = drawn,
+        )
     }
 }
 

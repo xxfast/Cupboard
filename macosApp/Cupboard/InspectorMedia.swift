@@ -15,8 +15,15 @@ extension EditorView {
     /// movie and sound in the selection.
     @ViewBuilder func mediaSection(_ media: MediaFormat, movie: Bool) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            StringField(placeholder: "Title", value: media.title, palette: palette) {
-                host.setMediaTitle(text: $0)
+            // Labelled like every row under it, and as wide as the File button,
+            // so the column of controls has one right edge.
+            HStack(spacing: 8) {
+                rowLabel("Title")
+                Spacer(minLength: 0)
+                StringField(placeholder: "Untitled", value: media.title, palette: palette) {
+                    host.setMediaTitle(text: $0)
+                }
+                .frame(width: Inspect.field * 2)
             }
 
             // A web video has no file yet, and choosing one makes it a movie in

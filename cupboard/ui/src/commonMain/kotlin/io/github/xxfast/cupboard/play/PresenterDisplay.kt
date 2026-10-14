@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.github.xxfast.cupboard.canvas.LocalMediaPlayer
+import io.github.xxfast.cupboard.canvas.MediaPicturesOf
+import io.github.xxfast.cupboard.canvas.MediaPlayerHost
+import io.github.xxfast.cupboard.canvas.NoMediaPlayer
 import io.github.xxfast.cupboard.canvas.ProvideDeckFonts
 import io.github.xxfast.cupboard.canvas.SlideView
 import io.github.xxfast.cupboard.document.Document
@@ -69,6 +74,11 @@ enum class PresenterLayout { CurrentAndNext, CurrentAndNotes, NextAndNotes, Note
  * [position] is: this draws what it is told to. [onLayoutChange] and
  * [onResetTimer] default to nothing so a host that gives the presenter no say
  * over either still gets a display.
+ *
+ * [LocalMediaPlayer] around the display is the show's own player. The current
+ * slide draws the pictures of the movies it is playing, and nothing here starts
+ * or stops one: the show is what plays, and the next slide's sound must not
+ * start a slide early.
  */
 @Composable
 fun PresenterDisplay(
@@ -142,6 +152,7 @@ private fun Display(
                 PresenterLayout.CurrentAndNext -> {
                     SlidePane(
                         label = "CURRENT",
+                        live = true,
                         document = document,
                         slide = current,
                         step = position.step,
@@ -161,6 +172,7 @@ private fun Display(
                 PresenterLayout.CurrentAndNotes -> {
                     SlidePane(
                         label = "CURRENT",
+                        live = true,
                         document = document,
                         slide = current,
                         step = position.step,
@@ -328,6 +340,9 @@ private fun LayoutPicker(layout: PresenterLayout, onLayoutChange: (PresenterLayo
  * is the only honest way to show what the audience is getting.
  *
  * A null [slide] is the end of the deck, which only the "NEXT" pane reaches.
+ *
+ * A [live] pane is the slide the audience is looking at, so its movies show what
+ * the show's are showing. Any other pane draws posters.
  */
 @Composable
 private fun SlidePane(
@@ -337,7 +352,13 @@ private fun SlidePane(
     step: Int,
     numbers: Map<String, Int?>,
     modifier: Modifier = Modifier,
+    live: Boolean = false,
 ) {
+    val show: MediaPlayerHost = LocalMediaPlayer.current
+    val media: MediaPlayerHost = remember(show, live) {
+        if (live) MediaPicturesOf(show) else NoMediaPlayer
+    }
+
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = label,
@@ -359,25 +380,27 @@ private fun SlidePane(
             val ratio: Float = document.slideWidth / document.slideHeight
             val shape = RoundedCornerShape(6.dp)
 
-            SlideView(
-                slide = slide,
-                layout = document.layoutOf(slide),
-                step = step,
-                number = numbers[slide.id],
-                background = document.background,
-                slideWidth = document.slideWidth,
-                slideHeight = document.slideHeight,
-                modifier = Modifier
-                    .then(
-                        // Fit to whichever edge runs out first, so the slide
-                        // never spills out of the pane it was given.
-                        if (maxWidth / maxHeight <= ratio) Modifier.fillMaxWidth()
-                        else Modifier.fillMaxHeight(),
-                    )
-                    .aspectRatio(ratio)
-                    .clip(shape)
-                    .border(1.dp, PresenterBorder, shape),
-            )
+            CompositionLocalProvider(LocalMediaPlayer provides media) {
+                SlideView(
+                    slide = slide,
+                    layout = document.layoutOf(slide),
+                    step = step,
+                    number = numbers[slide.id],
+                    background = document.background,
+                    slideWidth = document.slideWidth,
+                    slideHeight = document.slideHeight,
+                    modifier = Modifier
+                        .then(
+                            // Fit to whichever edge runs out first, so the slide
+                            // never spills out of the pane it was given.
+                            if (maxWidth / maxHeight <= ratio) Modifier.fillMaxWidth()
+                            else Modifier.fillMaxHeight(),
+                        )
+                        .aspectRatio(ratio)
+                        .clip(shape)
+                        .border(1.dp, PresenterBorder, shape),
+                )
+            }
         }
     }
 }

@@ -2,88 +2,87 @@
 
 package io.github.xxfast.cupboard.canvas
 
+import androidx.compose.ui.graphics.asComposeImageBitmap
 import io.github.xxfast.cupboard.document.AssetStore
 import io.github.xxfast.cupboard.document.FileAssetStore
-import io.github.xxfast.cupboard.document.Frame
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.useContents
-import platform.AVFoundation.AVLayerVideoGravityResizeAspect
+import kotlinx.cinterop.usePinned
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.ImageInfo
+import platform.AVFoundation.AVAssetTrack
+import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
-import platform.AVFoundation.AVPlayerLayer
+import platform.AVFoundation.AVPlayerItemVideoOutput
+import platform.AVFoundation.AVVideoComposition
+import platform.AVFoundation.addOutput
+import platform.AVFoundation.asset
+import platform.AVFoundation.forwardPlaybackEndTime
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
-import platform.AVFoundation.seekToTime
-import platform.AVFoundation.forwardPlaybackEndTime
+import platform.AVFoundation.preferredTransform
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
+import platform.AVFoundation.seekToTime
+import platform.AVFoundation.tracksWithMediaType
+import platform.AVFoundation.videoComposition
 import platform.AVFoundation.volume
-import platform.AppKit.NSView
-import platform.AppKit.NSViewHeightSizable
-import platform.AppKit.NSViewWidthSizable
 import platform.AppKit.NSWorkspace
+import platform.CoreFoundation.CFRetain
+import platform.CoreGraphics.CGAffineTransformIsIdentity
 import platform.CoreMedia.CMTime
 import platform.CoreMedia.CMTimeMake
+import platform.CoreVideo.CVPixelBufferGetBaseAddress
+import platform.CoreVideo.CVPixelBufferGetBytesPerRow
+import platform.CoreVideo.CVPixelBufferGetHeight
+import platform.CoreVideo.CVPixelBufferGetWidth
+import platform.CoreVideo.CVPixelBufferLockBaseAddress
+import platform.CoreVideo.CVPixelBufferRef
+import platform.CoreVideo.CVPixelBufferRelease
+import platform.CoreVideo.CVPixelBufferUnlockBaseAddress
+import platform.CoreVideo.kCVPixelBufferLock_ReadOnly
+import platform.CoreVideo.kCVPixelBufferPixelFormatTypeKey
+import platform.CoreVideo.kCVPixelFormatType_32BGRA
+import platform.Foundation.CFBridgingRelease
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSMakeRect
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
-import platform.Foundation.NSPoint
-import platform.Foundation.NSRect
-import platform.Foundation.NSSize
 import platform.Foundation.NSURL
-import platform.QuartzCore.CATransaction
+import platform.QuartzCore.CACurrentMediaTime
 import platform.darwin.NSObjectProtocol
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
-import kotlin.math.min
+import platform.posix.memcpy
 
 /**
  * The macOS show's [MediaPlayerHost]: one AVPlayer per element, and for a movie
- * a layer laid over the show where the slide draws its poster.
+ * a video output the canvas reads its pictures off.
  *
- * The layers live in one [MediaOverlay] added on top of the show's compose view
- * (the [attach]ed surface), never inside the compose scene: the canvas has no
- * idea a movie is decoding over it, which is the deal [MediaPlayerHost] makes.
- * The overlay maps slide units to view points with the same fit-and-centre the
- * show places the slide with (CuP's slide container and `SlideSurface` both fit
- * the slide inside the view and centre it), so a movie lands on its poster.
- *
- * Not applied to the layer: the element's rotation and opacity, and whatever a
- * slide transition is doing to it. A movie plays upright and opaque in its box,
- * which is the case that matters; a tilted movie is a later job.
+ * Nothing of AppKit goes over the show. The canvas asks [picture] once a frame
+ * and draws what it gets in the movie's place, so a movie turns with its
+ * element, fades with it, and rides every build and transition the slide puts
+ * it through, on the same frame as everything around it. And it plays for any
+ * view of the show that draws it: the presenter display's current slide, and a
+ * rehearsal, whose show is up but out of sight.
  *
  * Main thread only, like the session that owns it.
  */
-internal class AVMediaPlayer(
-    private val assets: AssetStore,
-    private val slideWidth: Float,
-    private val slideHeight: Float,
-) : MediaPlayerHost {
-    /** One element playing: its player, its picture (none for a sound), where it sits. */
+internal class AVMediaPlayer(private val assets: AssetStore) : MediaPlayerHost {
+    /** One element playing: its player, where its pictures come from (none for a sound). */
     private class Playing(
         val player: AVPlayer,
-        val view: NSView?,
-        val frame: Frame,
+        val pixels: MoviePixels?,
         /** The loop's end-of-item observer, null for a movie that plays once. */
         val ends: NSObjectProtocol?,
     )
 
     private val playing: MutableMap<String, Playing> = mutableMapOf()
-
-    /** What the overlay is added to: the show's own view. Null plays sound only. */
-    private var surface: NSView? = null
-
-    private var overlay: MediaOverlay? = null
-
-    /**
-     * The view the show draws in. Set after construction rather than passed in,
-     * because the show's composition is built with this player already in it.
-     */
-    fun attach(view: NSView) {
-        surface = view
-    }
 
     override fun play(request: MediaRequest) {
         stop(request.elementId)
@@ -107,6 +106,7 @@ internal class AVMediaPlayer(
         if (request.trimEndMs > request.trimStartMs) {
             item.forwardPlaybackEndTime = milliseconds(request.trimEndMs)
         }
+        val pixels: MoviePixels? = if (request.isAudio) null else MoviePixels(item)
         val player: AVPlayer = AVPlayer.playerWithPlayerItem(item)
         player.volume = request.volume.coerceIn(0f, 1f)
 
@@ -121,9 +121,7 @@ internal class AVMediaPlayer(
             ) { _ -> begin(request.elementId, player, start) }
         }
 
-        val view: NSView? = if (request.isAudio) null else videoView(player)
-        playing[request.elementId] = Playing(player, view, request.frame, ends)
-        layout()
+        playing[request.elementId] = Playing(player, pixels, ends)
         begin(request.elementId, player, start)
     }
 
@@ -132,14 +130,14 @@ internal class AVMediaPlayer(
         entry.ends?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         entry.player.pause()
         entry.player.replaceCurrentItemWithPlayerItem(null)
-        entry.view?.removeFromSuperview()
     }
 
     override fun stopAll() {
         playing.keys.toList().forEach(::stop)
-        overlay?.removeFromSuperview()
-        overlay = null
     }
+
+    override fun picture(elementId: String): MediaPicture? =
+        playing[elementId]?.pixels?.latest()
 
     /**
      * Plays [player] from [start]. A seek first unless the start is the start,
@@ -162,82 +160,95 @@ internal class AVMediaPlayer(
             }
         }
     }
-
-    /** A plain view hosting the movie's layer, in the overlay. */
-    private fun videoView(player: AVPlayer): NSView? {
-        val host: MediaOverlay = overlay() ?: return null
-        val layer: AVPlayerLayer = AVPlayerLayer.playerLayerWithPlayer(player)
-        layer.videoGravity = AVLayerVideoGravityResizeAspect
-
-        val view = NSView(NSMakeRect(0.0, 0.0, 0.0, 0.0))
-        // The layer first, then wantsLayer: a layer-hosting view, so AppKit
-        // draws nothing of its own over the picture.
-        view.layer = layer
-        view.wantsLayer = true
-        host.addSubview(view)
-        return view
-    }
-
-    private fun overlay(): MediaOverlay? {
-        overlay?.let { return it }
-        val surface: NSView = surface ?: return null
-        val made = MediaOverlay(surface.bounds, ::layout)
-        made.autoresizingMask = NSViewWidthSizable or NSViewHeightSizable
-        surface.addSubview(made)
-        overlay = made
-        return made
-    }
-
-    /**
-     * Every movie's view over its element's box, mapped from slide units the
-     * way the show maps the slide: scaled to fit, centred. Run on every play and
-     * on every resize of the overlay, which follows the show's view.
-     */
-    private fun layout() {
-        val host: MediaOverlay = overlay ?: return
-        val (width: Double, height: Double) = host.bounds.useContents { size.width to size.height }
-        if (width <= 0.0 || height <= 0.0 || slideWidth <= 0f || slideHeight <= 0f) return
-
-        val scale: Double = min(width / slideWidth, height / slideHeight)
-        val left: Double = (width - slideWidth * scale) / 2
-        val top: Double = (height - slideHeight * scale) / 2
-
-        // A layer-hosting view's frame moves its layer, which would otherwise
-        // animate there implicitly and trail the window edge on a resize.
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for (entry in playing.values) {
-            val view: NSView = entry.view ?: continue
-            view.frame = NSMakeRect(
-                left + entry.frame.x * scale,
-                top + entry.frame.y * scale,
-                entry.frame.width * scale,
-                entry.frame.height * scale,
-            )
-        }
-        CATransaction.commit()
-    }
 }
 
 /**
- * The layer the movies sit in: the show's size, flipped so slide units read top
- * down the way they do in the document, and transparent to the mouse, so a
- * click on a playing movie is still a click on the slide (a tap to restart it,
- * a link, a step).
+ * One movie's pictures, off a video output on its [item], copied into the one
+ * bitmap its [MediaPicture] draws.
+ *
+ * Upright: the item is given a video composition built from its own asset, which
+ * is what turns a movie shot on its side the way its track says to. A player
+ * layer does that by itself, and a video output hands over the frames as stored.
  */
-private class MediaOverlay(
-    frame: CValue<NSRect>,
-    private val onResize: () -> Unit,
-) : NSView(frame) {
-    override fun isFlipped(): Boolean = true
+private class MoviePixels(item: AVPlayerItem) {
+    private val output = AVPlayerItemVideoOutput(
+        pixelBufferAttributes = mapOf<Any?, Any>(PixelFormatKey to kCVPixelFormatType_32BGRA),
+    )
 
-    override fun hitTest(point: CValue<NSPoint>): NSView? = null
+    /** Null until the first frame lands: the canvas draws the poster until then. */
+    private var picture: MediaPicture? = null
+    private var bitmap: Bitmap? = null
 
-    override fun setFrameSize(newSize: CValue<NSSize>) {
-        super.setFrameSize(newSize)
-        onResize()
+    /** Where a frame is copied on its way into [bitmap], kept from frame to frame. */
+    private var bytes: ByteArray = ByteArray(0)
+
+    init {
+        // Only for a movie that needs turning: a composition is a render pass
+        // on every frame, and one built off an asset with no picture in it is
+        // not one AVFoundation will take.
+        val track: AVAssetTrack? =
+            item.asset.tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
+        if (track != null && !CGAffineTransformIsIdentity(track.preferredTransform)) {
+            item.videoComposition =
+                AVVideoComposition.videoCompositionWithPropertiesOfAsset(item.asset)
+        }
+        item.addOutput(output)
+    }
+
+    /** The picture with the newest frame in it, if the output has one it has not handed over. */
+    fun latest(): MediaPicture? {
+        val now: CValue<CMTime> = output.itemTimeForHostTime(CACurrentMediaTime())
+        if (!output.hasNewPixelBufferForItemTime(now)) return picture
+
+        val buffer: CVPixelBufferRef =
+            output.copyPixelBufferForItemTime(now, null) ?: return picture
+        try {
+            copy(buffer)
+        } finally {
+            CVPixelBufferRelease(buffer)
+        }
+        return picture
+    }
+
+    private fun copy(buffer: CVPixelBufferRef) {
+        CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly)
+        try {
+            val width: Int = CVPixelBufferGetWidth(buffer).toInt()
+            val height: Int = CVPixelBufferGetHeight(buffer).toInt()
+            val rowBytes: Int = CVPixelBufferGetBytesPerRow(buffer).toInt()
+            val base: CPointer<*> = CVPixelBufferGetBaseAddress(buffer) ?: return
+            if (width <= 0 || height <= 0) return
+
+            val size: Int = rowBytes * height
+            if (bytes.size != size) bytes = ByteArray(size)
+            bytes.usePinned { pinned -> memcpy(pinned.addressOf(0), base, size.toULong()) }
+
+            val info = ImageInfo(width, height, ColorType.BGRA_8888, ColorAlphaType.OPAQUE)
+            val current: Bitmap? = bitmap
+            val shown: MediaPicture? = picture
+            // The same bitmap for as long as the movie keeps its size, redrawn in
+            // place; a new one, and a new picture for the canvas to hold, when
+            // it changes.
+            if (current != null && shown != null &&
+                current.width == width && current.height == height
+            ) {
+                current.installPixels(info, bytes, rowBytes)
+                shown.frame++
+                return
+            }
+
+            val made = Bitmap()
+            made.installPixels(info, bytes, rowBytes)
+            bitmap = made
+            picture = MediaPicture(made.asComposeImageBitmap())
+        } finally {
+            CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly)
+        }
     }
 }
+
+/** CoreVideo's pixel format key, as the string a Foundation dictionary is keyed by. */
+private val PixelFormatKey: Any? = CFBridgingRelease(CFRetain(kCVPixelBufferPixelFormatTypeKey))
 
 /** [ms] as AVFoundation's time, in milliseconds. */
 private fun milliseconds(ms: Int): CValue<CMTime> =
