@@ -38,6 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.io.files.Path as KotlinxPath
 import org.jetbrains.skia.Image
 
 /**
@@ -344,8 +345,7 @@ private fun ExportRequest.write(document: Document, rasterizer: Rasterizer, targ
 
         ExportRequest.Pptx -> Files.write(path, exportPptx(document, rasterizer))
 
-        ExportRequest.Html ->
-            Files.writeString(path, exportHtmlPlayer(document, rasterizer), StandardCharsets.UTF_8)
+        ExportRequest.Html -> exportHtmlPlayer(document, rasterizer, KotlinxPath(target.path))
 
         is ExportRequest.Png -> {
             Files.createDirectories(path)

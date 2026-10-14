@@ -127,7 +127,7 @@ func exportDeckPdf(host: EditorHost) {
     let notes = options.notes.state == .on
 
     runExport(title: "Exporting PDF", exporter: exporter, revealing: url) {
-        let data = exporter.pdf(
+        let data = try exporter.pdf(
             layoutIndex: layout,
             everyBuild: everyBuild,
             includeSkipped: skipped,
@@ -160,7 +160,7 @@ func exportDeckImages(host: EditorHost) {
     let everyBuild = options.everyBuild.state == .on
 
     runExport(title: "Exporting images", exporter: exporter, revealing: root) {
-        let files = exporter.pngs(everyBuild: everyBuild)
+        let files = try exporter.pngs(everyBuild: everyBuild)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         for file in files {
             try (file.data as Data).write(to: root.appendingPathComponent(file.name))
@@ -185,7 +185,7 @@ func exportDeckGif(host: EditorHost) {
     let loop = options.loop.state == .on
 
     runExport(title: "Exporting GIF", exporter: exporter, revealing: url) {
-        let data = exporter.gif(width: width, secondsPerFrame: seconds, loop: loop)
+        let data = try exporter.gif(width: width, secondsPerFrame: seconds, loop: loop)
         try (data as Data).write(to: url)
     }
 }
@@ -201,7 +201,7 @@ func exportDeckHtml(host: EditorHost) {
     ) else { return }
 
     runExport(title: "Exporting HTML player", exporter: exporter, revealing: url) {
-        try exporter.html().write(to: url, atomically: true, encoding: .utf8)
+        try exporter.html(path: url.path)
     }
 }
 
@@ -216,7 +216,7 @@ func exportDeckPptx(host: EditorHost) {
     ) else { return }
 
     runExport(title: "Exporting PowerPoint", exporter: exporter, revealing: url) {
-        let data = exporter.pptx()
+        let data = try exporter.pptx()
         try (data as Data).write(to: url)
     }
 }
@@ -236,7 +236,7 @@ func printDeck(host: EditorHost) {
         .appendingPathComponent("\(host.cupProjectName()).pdf")
 
     runExport(title: "Preparing to print", exporter: exporter, then: { present(pdf: url) }) {
-        let data = exporter.pdf(
+        let data = try exporter.pdf(
             layoutIndex: 0,
             everyBuild: false,
             includeSkipped: false,
