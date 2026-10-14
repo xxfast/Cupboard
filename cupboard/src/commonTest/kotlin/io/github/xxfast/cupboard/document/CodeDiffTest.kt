@@ -135,4 +135,26 @@ class CodeDiffTest {
         assertEquals(0, match.current.start)
         assertEquals("x", match.current.content)
     }
+
+    @Test
+    fun aRepeatedTrailingLineIsKeptWhenNothingFollowsIt() {
+        val previous = "using System.Runtime.InteropServices;\n\n" +
+            "[DllImport(\"shared\")]\nstatic extern void greet();\n\ngreet();"
+        val current = "using System.Runtime.InteropServices;\n\n" +
+            "[DllImport(\"shared\")]\nstatic extern void greet(\n  string name);\n\ngreet();"
+        val edits: List<TokenEdit> = diffCode(previous, current, "csharp")
+
+        assertEquals(listOf("  ", "string", " ", "name"), inserted(edits))
+        assertTrue(deleted(edits).isEmpty(), "deleted ${deleted(edits)}")
+    }
+
+    @Test
+    fun aRepeatedFirstLineIsKeptWhenNothingPrecedesIt() {
+        val edits: List<TokenEdit> = diffCode("x = 1;\ny = 2;\nx = 1;", "x = 1;\nz = 3;\nx = 1;", "csharp")
+
+        assertEquals(listOf("x", "x"), matched(edits).filter { it == "x" })
+        assertTrue("z" in inserted(edits))
+        assertTrue("y" in deleted(edits))
+        assertTrue(edits.first() is TokenEdit.Match)
+    }
 }
