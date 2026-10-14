@@ -5,6 +5,7 @@ val Element.kindName: String
     get() = when (this) {
         is TextElement -> "Text"
         is ShapeElement -> "Shape"
+        is LineElement -> "Line"
         is ImageElement -> "Image"
         is GalleryElement -> "Gallery"
         is GroupElement -> "Group"
@@ -52,5 +53,9 @@ private val Element.defaultName: String
 private val ShapeKind.title: String
     get() = when (this) {
         ShapeKind.Path -> "Shape"
-        else -> ShapeCatalog.entries.firstOrNull { it.kind == this }?.title ?: name
+        else -> ShapeCatalog.entries
+            .filterIsInstance<ShapeCatalogEntry.Shape>()
+            .firstOrNull { it.kind == this }
+            ?.title
+            ?: name
     }

@@ -32,6 +32,7 @@ import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.LinkTarget
+import io.github.xxfast.cupboard.document.LineStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.PlaybackSettings
@@ -146,6 +147,12 @@ fun EditorInspector(
     onSaveObjectStyle: (shapeId: String, name: String) -> Unit,
     onRenameObjectStyle: (styleId: String, name: String) -> Unit,
     onDeleteObjectStyle: (styleId: String) -> Unit,
+    /** The deck's saved line looks: what the Style segment's strip offers a line. */
+    lineStyles: List<LineStyle>,
+    onApplyLineStyle: (ids: List<String>, styleId: String) -> Unit,
+    onSaveLineStyle: (lineId: String, name: String) -> Unit,
+    onRenameLineStyle: (styleId: String, name: String) -> Unit,
+    onDeleteLineStyle: (styleId: String) -> Unit,
     selectedElements: List<Element>,
     onUpdateElements: (List<Element>) -> Unit,
     onPreviewElements: (List<Element>) -> Unit,
@@ -295,6 +302,11 @@ fun EditorInspector(
                     onSaveObjectStyle = onSaveObjectStyle,
                     onRenameObjectStyle = onRenameObjectStyle,
                     onDeleteObjectStyle = onDeleteObjectStyle,
+                    lineStyles = lineStyles,
+                    onApplyLineStyle = onApplyLineStyle,
+                    onSaveLineStyle = onSaveLineStyle,
+                    onRenameLineStyle = onRenameLineStyle,
+                    onDeleteLineStyle = onDeleteLineStyle,
                     onReplaceImage = onReplaceImage,
                     onAddGalleryImages = onAddGalleryImages,
                     onReplaceMedia = onReplaceMedia,

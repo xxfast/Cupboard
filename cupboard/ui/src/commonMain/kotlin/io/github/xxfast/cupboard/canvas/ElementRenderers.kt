@@ -2,6 +2,7 @@ package io.github.xxfast.cupboard.canvas
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
@@ -54,8 +56,8 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -94,18 +96,23 @@ import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ImageFill
 import io.github.xxfast.cupboard.document.ImageMask
+import io.github.xxfast.cupboard.document.LineDraw
+import io.github.xxfast.cupboard.document.LineDrawDirection
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.LineEnd
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PieceReveal
+import io.github.xxfast.cupboard.document.Point
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapePath
 import io.github.xxfast.cupboard.document.ShapeShadow
+import io.github.xxfast.cupboard.document.StrokeStyle
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
-import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.colorMatrix
 import io.github.xxfast.cupboard.document.imageSourceRect
@@ -113,6 +120,7 @@ import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.pieces
+import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sourceRect
 import kotlin.math.ceil
 import kotlin.math.hypot
@@ -138,9 +146,9 @@ fun Long.toComposeColor(): Color = Color(this)
  * a build names an element the slide holds.
  *
  * [entry] is the build that brings the element in, for the kinds that animate
- * themselves rather than being faded in from outside. Only [TerminalElement]
- * reads it today, for [BuildEffect.Typewriter]. Null the same way [codeStep] is:
- * the editor, and anything nested in a group.
+ * themselves rather than being faded in from outside: [TerminalElement] reads it
+ * for [BuildEffect.Typewriter], [LineElement] for [BuildEffect.LineDraw]. Null the
+ * same way [codeStep] is: the editor, and anything nested in a group.
  *
  * [pieces] is how much of the element is out, for a build that hands it over a
  * piece at a time: a text box styles the pieces still to come out of sight, and
@@ -210,6 +218,7 @@ fun ElementView(
         when (element) {
             is TextElement -> TextElementView(element, pieces, alignment ?: element.alignment())
             is ShapeElement -> ShapeElementView(element)
+            is LineElement -> LineElementView(element, entry)
             is ImageElement -> ImageElementView(element)
             is GalleryElement -> GalleryElementView(
                 element = element,
@@ -265,8 +274,13 @@ private const val ShadowLightRise: Float = 300f
  * so it is both blurred and pushed away from that light, further the bigger the
  * shape. A group reaches as far as the furthest of its children, since theirs is
  * the shadow its own layer would cut.
+ *
+ * A line casts none, but its frame is as thin as 1pt and its stroke and heads
+ * hang off it on every side, so it reaches by those instead.
  */
 internal fun Element.shadowBleed(): Float = when (this) {
+    is LineElement -> ceil(strokeWidth / 2 + lineHeadSize(strokeWidth))
+
     is ShapeElement -> {
         val elevation: Float = shadow?.blur ?: 0f
         val ratio: Float =
@@ -505,13 +519,6 @@ private fun ShapeElement.brush(): Brush {
  */
 @Composable
 private fun ShapeElementView(element: ShapeElement) {
-    // A line is a stroke between two corners rather than an outline with a
-    // fill, so none of the shape modifiers below have anything to say about it.
-    if (element.kind == ShapeKind.Line) {
-        LineElementView(element)
-        return
-    }
-
     val shape: Shape = element.shape()
     val imageFill: ImageFill? = element.imageFill
     val image: ImageBitmap? = rememberAssetImage(imageFill?.assetId)
@@ -548,17 +555,37 @@ private fun ShapeElementView(element: ShapeElement) {
                 // SVG stroke is centred on the outline and stroke-only icons are
                 // common: a path strokes its own outline instead.
                 val path: ShapePath? = element.path.takeIf { element.kind == ShapeKind.Path }
-                if (path == null) return@let base.border(
+                val style: StrokeStyle = element.strokeStyle
+                if (path == null && style == StrokeStyle.Solid) return@let base.border(
                     element.strokeWidth.dp,
                     element.strokeColor.toComposeColor(),
                     shape,
                 )
                 if (element.strokeWidth <= 0f) return@let base
+                // A border can't dash, so a patterned one is drawn by hand, inset
+                // the way the border would have been.
+                if (path == null) return@let base.drawBehind {
+                    drawStyledOutline(
+                        outline = { inner ->
+                            Path().apply {
+                                addOutline(shape.createOutline(inner, layoutDirection, this@drawBehind))
+                            }
+                        },
+                        style = style,
+                        color = element.strokeColor.toComposeColor(),
+                        weight = element.strokeWidth.dp.toPx(),
+                    )
+                }
                 base.drawBehind {
+                    val weight: Float = element.strokeWidth.dp.toPx()
                     drawPath(
                         path = path.toComposePath(size),
                         color = element.strokeColor.toComposeColor(),
-                        style = Stroke(width = element.strokeWidth.dp.toPx()),
+                        style = Stroke(
+                            width = weight,
+                            cap = style.cap,
+                            pathEffect = style.pathEffect(weight),
+                        ),
                     )
                 }
             },
@@ -571,27 +598,99 @@ private fun ShapeElementView(element: ShapeElement) {
 /** How far an arrowhead reaches back from its tip, against the line's weight. */
 private const val ArrowHeadScale: Float = 4f
 
+/**
+ * A line from its start to its end, drawn in the frame's own space: the points
+ * come off the frame's origin, and the stroke and heads spill past a frame that
+ * may be 1pt thin (see [shadowBleed], which makes room for them). A curved one is
+ * its quadratic, and its heads sit on the curve's own tangents at the ends.
+ *
+ * The stroke stops short under each head ([LineEnd.inset]), measured along the
+ * path, so a dash never pokes through a filled head and a hollow one stays
+ * hollow. The shadow is not drawn yet, as the old line didn't draw one either.
+ *
+ * [entry] is read for [BuildEffect.LineDraw] alone: the stroke then grows over
+ * the build's duration, per [Build.lineDraw]. A head at a growing tip rides it
+ * when the build includes end points and otherwise lands once the line is whole;
+ * a head at an end that never moves is there from the first frame.
+ */
 @Composable
-private fun LineElementView(element: ShapeElement) {
-    Box(
-        modifier = Modifier.size(element.frame.width.dp, element.frame.height.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Canvas(modifier = Modifier.matchParentSize()) {
-            val color: Color = element.strokeColor.toComposeColor()
-            val width: Float = element.strokeWidth.dp.toPx()
+private fun LineElementView(element: LineElement, entry: Build? = null) {
+    // The one effect a line plays itself, the way a terminal plays Typewriter.
+    val drawing: Build? = entry?.takeIf { it.effect == BuildEffect.LineDraw }
+    val options: LineDraw = drawing?.lineDraw ?: LineDraw()
+    val progress: Animatable<Float, AnimationVector1D> =
+        remember(element.id) { Animatable(if (drawing == null) 1f else 0f) }
 
-            // Corner to corner. The other diagonal is a flip away, and the flip
-            // rides the element's graphics layer like every other transform.
-            val start = Offset.Zero
-            val end = Offset(size.width, size.height)
-            drawLine(color, start, end, strokeWidth = width, cap = StrokeCap.Round)
+    LaunchedEffect(element.id) {
+        if (drawing == null) return@LaunchedEffect
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(drawing.durationMs, easing = LinearEasing),
+        )
+    }
 
-            if (element.startArrow) drawArrowHead(color, tip = start, from = end, weight = width)
-            if (element.endArrow) drawArrowHead(color, tip = end, from = start, weight = width)
+    Canvas(Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
+        val frame: Frame = element.frame
+        val color: Color = element.strokeColor.toComposeColor()
+        val weight: Float = element.strokeWidth.dp.toPx()
+        val head: Float = lineHeadSize(element.strokeWidth).dp.toPx()
+        fun placed(point: Point): Offset =
+            Offset((point.x - frame.x).dp.toPx(), (point.y - frame.y).dp.toPx())
+
+        val start: Offset = placed(element.start)
+        val end: Offset = placed(element.end)
+        val control: Offset? = element.control?.let { placed(it) }
+        val path: Path = Path().apply {
+            moveTo(start.x, start.y)
+            if (control == null) lineTo(end.x, end.y)
+            else quadraticTo(control.x, control.y, end.x, end.y)
+        }
+        val measure: PathMeasure = PathMeasure().apply { setPath(path, forceClosed = false) }
+        val length: Float = measure.length
+        if (length == 0f) return@Canvas
+
+        // The stretch of the path showing, in distance along it, and which of its
+        // two ends are still on the move.
+        val shown: Float = progress.value
+        val whole: Boolean = shown >= 1f
+        val (from: Float, to: Float) = when {
+            whole -> 0f to length
+            options.direction == LineDrawDirection.StartToEnd -> 0f to shown * length
+            options.direction == LineDrawDirection.EndToStart -> (1 - shown) * length to length
+            else -> (length - shown * length) / 2 to (length + shown * length) / 2
+        }
+        val startMoving: Boolean = !whole && options.direction != LineDrawDirection.StartToEnd
+        val endMoving: Boolean = !whole && options.direction != LineDrawDirection.EndToStart
+        val startHead: LineEnd =
+            if (startMoving && !options.includeEnds) LineEnd.None else element.startEnd
+        val endHead: LineEnd =
+            if (endMoving && !options.includeEnds) LineEnd.None else element.endEnd
+
+        // Heads longer than the line between them leave no stroke to draw.
+        val strokeFrom: Float = from + startHead.inset(head, weight)
+        val strokeTo: Float = to - endHead.inset(head, weight)
+        if (strokeFrom < strokeTo) {
+            val stroke = Path()
+            measure.getSegment(strokeFrom, strokeTo, stroke, startWithMoveTo = true)
+            drawPath(
+                path = stroke,
+                color = color,
+                style = Stroke(
+                    width = weight,
+                    cap = element.strokeStyle.cap,
+                    pathEffect = element.strokeStyle.pathEffect(weight),
+                ),
+            )
         }
 
-        ShapeLabel(element)
+        // Each head on the path's own tangent where it sits, so a curve's heads
+        // lean the way the curve leaves its ends.
+        val startTip: Offset = measure.getPosition(from)
+        val endTip: Offset = measure.getPosition(to)
+        val startFrom: Offset = startTip + measure.getTangent(from)
+        val endFrom: Offset = endTip - measure.getTangent(to)
+        drawLineEnd(startHead, color, startTip, startFrom, weight, head)
+        drawLineEnd(endHead, color, endTip, endFrom, weight, head)
     }
 }
 

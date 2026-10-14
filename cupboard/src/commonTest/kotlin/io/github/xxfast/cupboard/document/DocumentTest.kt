@@ -63,6 +63,39 @@ class DocumentTest {
     }
 
     @Test
+    fun aLineDrawBuildRoundTripsItsOptions() {
+        val build = Build(
+            elementId = "line",
+            effect = BuildEffect.LineDraw,
+            durationMs = LineDrawDurationMs,
+            lineDraw = LineDraw(LineDrawDirection.MiddleToEnds, includeEnds = false),
+        )
+        val document = Document(slides = listOf(Slide(builds = listOf(build))))
+
+        val decoded: Build =
+            loadedDocument(document.encodeToString()).slides.single().builds.single()
+        assertEquals(build, decoded)
+    }
+
+    /** Hand-written for the same reason as the transform fields' test above. */
+    @Test
+    fun aBuildWrittenBeforeLineDrawDecodesWithoutOne() {
+        val json = """
+            {
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                { "id": "slide", "builds": [ { "elementId": "line", "effect": "Dissolve" } ] }
+              ]
+            }
+        """.trimIndent()
+
+        val build: Build = loadedDocument(json).slides.single().builds.single()
+        assertEquals(BuildEffect.Dissolve, build.effect)
+        assertEquals(null, build.lineDraw)
+    }
+
+    @Test
     fun updateElementReplacesByIdAndIgnoresAnUnknownOne() {
         val slide = Slide(
             elements = listOf(
@@ -831,11 +864,13 @@ class DocumentTest {
                             gradient = ShapeGradient(start = 0xFF7F52FF, end = 0xFF101223, angle = 40f),
                             shadow = ShapeShadow(color = 0x66000000, blur = 20f, dx = 4f, dy = 8f),
                         ),
-                        ShapeElement(
-                            frame = Frame(0f, 0f, 320f, 120f),
-                            kind = ShapeKind.Line,
-                            startArrow = true,
-                            endArrow = false,
+                        LineElement(
+                            start = Point(0f, 120f),
+                            end = Point(320f, 0f),
+                            strokeColor = 0xFFFFFFFF,
+                            strokeStyle = StrokeStyle.ShortDash,
+                            startEnd = LineEnd.Arrow,
+                            endEnd = LineEnd.OpenCircle,
                         ),
                     ),
                 ),
@@ -849,9 +884,117 @@ class DocumentTest {
         assertEquals(40f, star.gradient?.angle)
         assertEquals(8f, star.shadow?.dy)
 
-        val line = decoded.slides.single().elements[1] as ShapeElement
-        assertTrue(line.startArrow)
-        assertFalse(line.endArrow)
+        val line = decoded.slides.single().elements[1] as LineElement
+        assertEquals(Point(0f, 120f), line.start)
+        assertEquals(StrokeStyle.ShortDash, line.strokeStyle)
+        assertEquals(LineEnd.Arrow, line.startEnd)
+        assertEquals(LineEnd.OpenCircle, line.endEnd)
+    }
+
+    /**
+     * A version 1 line was a shape running corner to corner across its frame.
+     * Read now, it is a [LineElement] on the same two points: the diagonal,
+     * mirrored by its flips and turned by its rotation, with its arrows as
+     * arrow ends and everything it shared with a line carried across.
+     */
+    @Test
+    fun aVersionOneLineShapeReadsAsALine() {
+        val json = """
+            {
+              "formatVersion": 1,
+              "id": "doc",
+              "name": "Old",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "group",
+                      "id": "group",
+                      "frame": { "x": 100.0, "y": 200.0, "width": 300.0, "height": 100.0 },
+                      "children": [
+                        {
+                          "type": "shape",
+                          "id": "line",
+                          "frame": { "x": 100.0, "y": 200.0, "width": 300.0, "height": 100.0 },
+                          "kind": "Line",
+                          "rotation": 90.0,
+                          "flippedHorizontally": true,
+                          "startArrow": true,
+                          "endArrow": true,
+                          "strokeColor": 4294967295,
+                          "strokeWidth": 4.0,
+                          "opacity": 0.5,
+                          "name": "Pointer",
+                          "label": "dropped",
+                          "fill": 123
+                        }
+                      ]
+                    },
+                    {
+                      "type": "image",
+                      "id": "image",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 10.0, "height": 10.0 },
+                      "mask": { "kind": "Line", "frame": { "x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0 } }
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val slide: Slide = loadedDocument(json).slides.single()
+        val group = slide.elements[0] as GroupElement
+        val line = group.children.single() as LineElement
+
+        // Top-left to bottom-right, flipped on x, then turned 90 degrees
+        // clockwise about the frame's centre at (250, 250).
+        assertEquals(300f, line.start.x, 0.001f)
+        assertEquals(400f, line.start.y, 0.001f)
+        assertEquals(200f, line.end.x, 0.001f)
+        assertEquals(100f, line.end.y, 0.001f)
+        assertEquals("line", line.id)
+        assertEquals(0xFFFFFFFF, line.strokeColor)
+        assertEquals(4f, line.strokeWidth)
+        assertEquals(0.5f, line.opacity)
+        assertEquals("Pointer", line.name)
+        assertEquals(LineEnd.Arrow, line.startEnd)
+        assertEquals(LineEnd.Arrow, line.endEnd)
+        assertEquals(StrokeStyle.Solid, line.strokeStyle)
+
+        val image = slide.elements[1] as ImageElement
+        assertEquals(ShapeKind.Rectangle, image.mask?.kind)
+    }
+
+    @Test
+    fun aVersionOneLineWithoutArrowsHasBareEnds() {
+        val json = """
+            {
+              "id": "doc",
+              "slides": [
+                {
+                  "id": "slide",
+                  "elements": [
+                    {
+                      "type": "shape",
+                      "id": "line",
+                      "frame": { "x": 0.0, "y": 0.0, "width": 320.0, "height": 120.0 },
+                      "kind": "Line",
+                      "flippedVertically": true,
+                      "endArrow": false
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val line = loadedDocument(json).slides.single().elements.single() as LineElement
+        // Flipped on y, the diagonal rises: bottom-left to top-right.
+        assertEquals(Point(0f, 120f), line.start)
+        assertEquals(Point(320f, 0f), line.end)
+        assertEquals(LineEnd.None, line.startEnd)
+        assertEquals(LineEnd.None, line.endEnd)
     }
 
     @Test
@@ -914,8 +1057,8 @@ class DocumentTest {
         assertEquals(123L, element.fill)
         assertEquals(null, element.gradient)
         assertEquals(null, element.shadow)
-        assertFalse(element.startArrow)
-        assertTrue(element.endArrow)
+        // Stroke styles came later too: a border without one is solid.
+        assertEquals(StrokeStyle.Solid, element.strokeStyle)
         // Paths came later still: a shape without one has none, not an empty one.
         assertEquals(null, element.path)
     }

@@ -29,9 +29,6 @@ import kotlin.math.sin
  * element's box: the paths below are written in fractions of that box, so a
  * shape stretched by a resize handle stretches rather than re-laying itself out.
  *
- * [ShapeKind.Line] has no outline of its own and is not answered for here: it is
- * a stroke between two corners, which the renderer draws directly.
- *
  * [ShapeKind.Path] is the exception to "a kind decides": its outline is data on
  * the element, so it is answered here and not by the kind.
  */
@@ -58,11 +55,8 @@ internal fun ShapeKind.shape(cornerRadius: Float = 0f): Shape = when (this) {
     ShapeKind.Polygon -> HexagonShape
     ShapeKind.QuoteBubble -> QuoteBubbleShape
     ShapeKind.Callout -> CalloutShape
-    // Never asked for, but a Shape has to come back: a line drawn as a box is a
-    // less confusing wrong answer than a crash.
-    ShapeKind.Line -> RoundedCornerShape(0.dp)
     // A path's outline is the element's own (see [ShapeElement.shape]); a bare
-    // kind has none to draw, so it gets the line's answer.
+    // kind has none to draw, so it reads as the box it sits in.
     ShapeKind.Path -> RoundedCornerShape(0.dp)
 }
 

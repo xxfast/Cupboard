@@ -176,14 +176,15 @@ fun BoxScope.At(
 }
 
 /** The way a build brings its element on, one entry per effect the editor offers. */
-enum class BuildEffect { Appear, FadeUp, Pop, Dissolve, MoveIn, Scale, Wipe, Typewriter }
+enum class BuildEffect { Appear, FadeUp, Pop, Dissolve, MoveIn, Scale, Wipe, Typewriter, LineDraw }
 
 /**
  * A build: what the element does when its step arrives, in the effect and over
  * the timing the deck was written with.
  *
  * Typewriter types its element out in the editor and reveals it whole here, which
- * is why it sits with Appear on the branch that plays nothing at all.
+ * is why it sits with Appear on the branch that plays nothing at all. LineDraw
+ * draws a line out in the editor and dissolves it in here.
  */
 @Composable
 fun Appear(
@@ -201,7 +202,7 @@ fun Appear(
                     slideInVertically(tween(durationMs, delayMs)) { it / 8 }
             BuildEffect.Pop ->
                 scaleIn(tween(durationMs, delayMs)) + fadeIn(tween(durationMs, delayMs))
-            BuildEffect.Dissolve -> fadeIn(tween(durationMs, delayMs))
+            BuildEffect.Dissolve, BuildEffect.LineDraw -> fadeIn(tween(durationMs, delayMs))
             BuildEffect.MoveIn -> slideInHorizontally(tween(durationMs, delayMs)) { -it }
             BuildEffect.Scale -> scaleIn(tween(durationMs, delayMs))
             BuildEffect.Wipe -> expandVertically(tween(durationMs, delayMs))

@@ -32,6 +32,10 @@ val LocalPlayTransition = compositionLocalOf<PlayTransition?> { null }
  * [fromBackground] is what the leaving slide paints, already resolved through its
  * layout and the deck (`Slide.effectiveBackground`), because the arriving slide
  * crossfades from it and has no document in hand to resolve it itself.
+ *
+ * [fromLayout] is the layout the leaving slide is built on, for the same reason:
+ * the objects it draws behind that slide travel to the arriving layout's, and the
+ * arriving slide is the one that draws them.
  */
 data class PlayTransition(
     val fromSlide: Slide?,
@@ -39,6 +43,7 @@ data class PlayTransition(
     val forward: Boolean,
     val transition: SlideTransition,
     val fromBackground: SlideBackground? = null,
+    val fromLayout: Slide? = null,
 )
 
 /**

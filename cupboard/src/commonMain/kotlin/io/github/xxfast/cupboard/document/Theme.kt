@@ -119,6 +119,8 @@ data class Theme(
      * makes a hand-built style library travel with a saved look.
      */
     val objectStyles: List<ObjectStyle> = emptyList(),
+    /** The line looks a deck on this theme gets, empty for [defaultLineStyles]. */
+    val lineStyles: List<LineStyle> = emptyList(),
     /**
      * Layouts drawn for a slide size of their own, by the preset they are drawn
      * for. [layouts] are drawn at 16:9; a size with an entry here uses these
@@ -479,6 +481,7 @@ fun Document.applyingTheme(theme: Theme): Document {
         background = theme.background,
         defaults = theme.defaults,
         objectStyles = theme.objectStyles.ifEmpty { defaultObjectStyles(theme.defaults) },
+        lineStyles = theme.lineStyles.ifEmpty { defaultLineStyles(theme.defaults) },
         layouts = fresh,
         slides = slides.map { slide ->
             slide.applyingLayout(slide.layoutId?.let { titles[it] }?.let { byTitle[it] })
@@ -518,4 +521,5 @@ fun Document.asTheme(name: String): Theme = Theme(
     defaults = defaults,
     layouts = layouts,
     objectStyles = objectStyles,
+    lineStyles = lineStyles,
 )

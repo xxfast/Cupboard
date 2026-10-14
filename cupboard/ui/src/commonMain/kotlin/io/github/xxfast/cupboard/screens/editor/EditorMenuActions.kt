@@ -25,7 +25,6 @@ import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
-import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isCompoundShape

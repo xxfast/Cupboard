@@ -54,6 +54,8 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.isAltPressed
+import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isPrimaryPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
@@ -116,8 +118,11 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.GuideAxis
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.MinLineLength
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.Point
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TerminalElement
@@ -144,9 +149,14 @@ import io.github.xxfast.cupboard.screens.editor.GuideDrag
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
 import kotlinx.coroutines.channels.Channel
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 private val Accent = Color(0xFF7F52FF)
 // Keynote's guide yellow, sampled off its canvas.
@@ -218,6 +228,24 @@ private const val RulerMajorStep: Float = 100f
 
 /** How close a press has to come to a guide to grab it, in screen dp. */
 private const val GuideGrab: Float = 4f
+
+/**
+ * How close a press has to come to a line's stroke to land on it, in screen dp:
+ * Keynote's six points at any zoom, so a hairline can still be hit.
+ */
+private const val LineGrab: Float = 6f
+
+/**
+ * The modifier keys as the pointer last reported them. The drag callbacks see
+ * none, so an endpoint drag reads Shift, Option and Cmd from here, kept current
+ * by every pointer event on the way in. Plain fields, not snapshot state:
+ * nothing draws from it.
+ */
+private class HeldKeys {
+    var shift: Boolean = false
+    var alt: Boolean = false
+    var meta: Boolean = false
+}
 
 /**
  * How near, in screen dp, a drag has to come to a line, an equal gap or a
@@ -445,6 +473,7 @@ fun EditorCanvas(
     // The same latch for the secondary button, which the drag handler can't tell
     // from the primary one either: a right press is a click and never a gesture.
     var secondaryDown by remember { mutableStateOf(false) }
+    val heldKeys: HeldKeys = remember { HeldKeys() }
     // Where the slide sits inside this composable, so a right-click can be
     // reported in the canvas's space rather than the slide's: at any zoom but Fit
     // the slide is letterboxed, and a menu anchors to the canvas.
@@ -578,6 +607,9 @@ fun EditorCanvas(
             // distance is a screen distance, so it has to follow the zoom.
             val currentCanvasScale by rememberUpdatedState(canvasScale)
 
+            // A line's reach either side of its stroke, in doc units at this zoom.
+            fun lineGrab(): Float = LineGrab / currentCanvasScale
+
             // The topmost visible child of [group] under [p]. A group's rotation is
             // layered over its children's absolute frames, so [p] goes back through
             // the rotation of the group and of every group holding it first.
@@ -591,7 +623,7 @@ fun EditorCanvas(
                     x = localX
                     y = localY
                 }
-                return group.children.lastOrNull { !it.hidden && it.contains(x, y) }
+                return group.children.lastOrNull { !it.hidden && it.contains(x, y, lineGrab()) }
             }
 
             // Keynote's rule: a click picks among the top-level elements, unless
@@ -600,7 +632,7 @@ fun EditorCanvas(
             // child is under the pointer.
             fun elementAt(p: Offset): Element? {
                 var hit: Element = currentSlide.elements
-                    .lastOrNull { !it.hidden && it.contains(p.x, p.y) }
+                    .lastOrNull { !it.hidden && it.contains(p.x, p.y, lineGrab()) }
                     ?: return null
 
                 while (hit is GroupElement) {
@@ -644,7 +676,7 @@ fun EditorCanvas(
                     ?: return null
                 val p = toDoc(position)
                 val (localX, localY) = element.toLocal(p.x, p.y)
-                return hitTestHandle(element.frame, localX, localY, tolerance / canvasScale)
+                return hitTestHandle(element, localX, localY, tolerance / canvasScale)
             }
 
             // The guide under the pointer, when guides are showing at all: a press
@@ -673,6 +705,18 @@ fun EditorCanvas(
                     .fillMaxSize()
                     .onGloballyPositioned { slideBounds = it; measured() }
                     .then(cursorModifier)
+                    .pointerInput(Unit) {
+                        // On the way in, ahead of both handlers below, so the drag
+                        // reads the keys of the very event it is handling.
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event: PointerEvent = awaitPointerEvent(PointerEventPass.Initial)
+                                heldKeys.shift = event.keyboardModifiers.isShiftPressed
+                                heldKeys.alt = event.keyboardModifiers.isAltPressed
+                                heldKeys.meta = event.keyboardModifiers.isMetaPressed
+                            }
+                        }
+                    }
                     .pointerInput(Unit) {
                         // Hover for the cursor, and the click that selects. One loop
                         // because the click needs the modifiers of its own press,
@@ -744,10 +788,10 @@ fun EditorCanvas(
                                     }
 
                                     PointerEventType.Move -> {
-                                        val rotation: Float = soleSelected()?.rotation ?: 0f
+                                        val sole: Element? = soleSelected()
                                         hovered = position
                                             ?.let { handleAt(it, tolerance = 12f) }
-                                            ?.let { resizeDirection(it, rotation) }
+                                            ?.let { handle -> sole?.resizeDirection(handle) }
                                     }
 
                                     PointerEventType.Release -> {
@@ -804,6 +848,10 @@ fun EditorCanvas(
                         var startFrames: Map<String, Frame> = emptyMap()
                         var startFrame: Frame? = null
                         var startRotation = 0f
+                        // The line an endpoint drag picked up, and where the
+                        // pointer is now, in doc units: the end goes exactly there.
+                        var startLine: LineElement? = null
+                        var pointer: Offset? = null
                         var totalDx = 0f
                         var totalDy = 0f
                         var marqueeOrigin: Offset? = null
@@ -814,6 +862,8 @@ fun EditorCanvas(
                             startFrames = emptyMap()
                             startFrame = null
                             startRotation = 0f
+                            startLine = null
+                            pointer = null
                             totalDx = 0f
                             totalDy = 0f
                             marqueeOrigin = null
@@ -869,7 +919,97 @@ fun EditorCanvas(
                         // it comes within the snap distance of one: Keynote's
                         // relative sizing. Only for an unrotated element, whose
                         // drawn box is its frame.
+                        // A line's end goes exactly under the pointer. Shift settles
+                        // the angle on the nearest 45 degrees, as far out as the
+                        // pointer is; Option moves the other end the opposite way so
+                        // the midpoint stays. Cmd turns snapping off, and only a
+                        // plain drag snaps: the line's box takes the relative sizing
+                        // a box resize gets, and the end moves by what the box did.
+                        // Snapping a Shift or Option drag would undo the angle or
+                        // the symmetry those keys are for.
+                        fun endpointDragged(line: LineElement, handle: Handle): LineElement {
+                            val at: Offset = pointer ?: return line
+                            val moving: Boolean = handle == Handle.Start
+                            val fixed: Point = if (moving) line.end else line.start
+                            val anchor: Point = if (heldKeys.alt) line.midpoint else fixed
+                            var target = Point(at.x, at.y)
+
+                            if (heldKeys.shift) {
+                                val dx: Float = target.x - anchor.x
+                                val dy: Float = target.y - anchor.y
+                                val reach: Float = hypot(dx, dy)
+                                val radians: Float = atan2(dy, dx)
+                                val step: Float = PI.toFloat() / 4
+                                val snapped: Float = (radians / step).roundToInt() * step
+                                target = Point(
+                                    x = anchor.x + cos(snapped) * reach,
+                                    y = anchor.y + sin(snapped) * reach,
+                                )
+                            }
+
+                            val other: Point =
+                                if (heldKeys.alt) Point(2 * anchor.x - target.x, 2 * anchor.y - target.y)
+                                else fixed
+
+                            if (!heldKeys.shift && !heldKeys.alt && !heldKeys.meta) {
+                                // Only the axes the line actually spans: a flat line's
+                                // 1pt box has no height worth matching to anything.
+                                val spansX: Boolean = abs(target.x - other.x) > MinLineLength
+                                val spansY: Boolean = abs(target.y - other.y) > MinLineLength
+                                val right: Boolean = target.x >= other.x
+                                val bottom: Boolean = target.y >= other.y
+                                val corner: Handle? = when {
+                                    spansX && spansY -> when {
+                                        right && bottom -> Handle.BottomRight
+                                        right -> Handle.TopRight
+                                        bottom -> Handle.BottomLeft
+                                        else -> Handle.TopLeft
+                                    }
+
+                                    spansX -> if (right) Handle.Right else Handle.Left
+                                    spansY -> if (bottom) Handle.Bottom else Handle.Top
+                                    else -> null
+                                }
+                                if (corner != null) {
+                                    val box: Frame = line.copy(start = other, end = target).frame
+                                    val settled: Frame = snapResize(
+                                        frame = box,
+                                        handle = corner,
+                                        others = currentNeighbourFrames(setOf(line.id)),
+                                        threshold = snapDistance(),
+                                    )
+                                    val dx: Float =
+                                        if (corner.affectsRight) {
+                                            settled.x + settled.width - (box.x + box.width)
+                                        } else {
+                                            settled.x - box.x
+                                        }
+                                    val dy: Float =
+                                        if (corner.affectsBottom) {
+                                            settled.y + settled.height - (box.y + box.height)
+                                        } else {
+                                            settled.y - box.y
+                                        }
+                                    target = Point(target.x + dx, target.y + dy)
+                                }
+                            }
+
+                            // Through withStart and withEnd even for the end that
+                            // stays, so a curve's bend follows both.
+                            return if (moving) line.withEnd(other).withStart(target)
+                            else line.withStart(other).withEnd(target)
+                        }
+
+                        // A curve's bend goes exactly under the pointer: no snap, no
+                        // keys, Keynote's green handle.
                         fun resized(t: DragTarget.Resize): List<Element> {
+                            val line: LineElement? = startLine
+                            if (line != null && t.handle == Handle.Bend) {
+                                val at: Offset = pointer ?: return listOf(line)
+                                return listOf(line.copy(bend = Point(at.x, at.y)))
+                            }
+
+                            if (line != null) return listOf(endpointDragged(line, t.handle))
                             val start: Frame = startFrame ?: return emptyList()
                             val element: Element = currentSlide.elementById(t.elementId)
                                 ?: return emptyList()
@@ -902,6 +1042,8 @@ fun EditorCanvas(
                                     sole != null && handle != null -> {
                                         startFrame = sole.frame
                                         startRotation = sole.rotation
+                                        startLine = sole as? LineElement
+                                        pointer = p
                                         DragTarget.Resize(sole.id, handle)
                                     }
 
@@ -935,7 +1077,7 @@ fun EditorCanvas(
                                     }
                                 }
                                 resizing = (target as? DragTarget.Resize)
-                                    ?.let { resizeDirection(it.handle, startRotation) }
+                                    ?.let { resize -> sole?.resizeDirection(resize.handle) }
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
@@ -943,15 +1085,33 @@ fun EditorCanvas(
                                     Offset(dragAmount.x / docDensity, dragAmount.y / docDensity)
                                 totalDx += delta.x
                                 totalDy += delta.y
+                                pointer = toDoc(change.position)
                                 // Where the pointer is on the slide, for the readout
-                                // that follows it.
-                                fun sample(resizing: Boolean): DragSample {
+                                // that follows it, and the line an endpoint drag has
+                                // made, which the readout measures instead of a box.
+                                fun sample(
+                                    resizing: Boolean,
+                                    edited: List<Element> = emptyList(),
+                                ): DragSample {
                                     val at: Offset = toDoc(change.position)
-                                    return DragSample(at.x, at.y, resizing)
+                                    val line: LineElement? = edited.singleOrNull() as? LineElement
+                                    val bending: Boolean =
+                                        (target as? DragTarget.Resize)?.handle == Handle.Bend
+                                    return DragSample(
+                                        pointerX = at.x,
+                                        pointerY = at.y,
+                                        resizing = resizing,
+                                        line = line.takeIf { startLine != null && !bending },
+                                        bending = bending,
+                                    )
                                 }
                                 when (val t = target) {
                                     is DragTarget.Move -> currentOnPreviewDrag(moved(), sample(resizing = false))
-                                    is DragTarget.Resize -> currentOnPreviewDrag(resized(t), sample(resizing = true))
+                                    is DragTarget.Resize -> {
+                                        val edited: List<Element> = resized(t)
+                                        currentOnPreviewDrag(edited, sample(resizing = true, edited = edited))
+                                    }
+
                                     is DragTarget.GuideMove ->
                                         onPreviewGuide(t.id, t.axis, guidePosition(t.axis))
 
@@ -1022,7 +1182,7 @@ fun EditorCanvas(
                 // the field covers them, so a handle there would be a target you
                 // can see and never hit.
                 val handles: Boolean = selected.size == 1 && editing == null
-                SelectionOverlay(element, canvasScale, handles = handles)
+                SelectionOverlay(element, canvasScale, handles = handles, dragging = alignment != null)
             }
 
             // Over the rings rather than under them: a badge sits on the corner
@@ -2054,9 +2214,17 @@ internal class ListMarkerTransformation(
  * The selection ring, and the 8 handles when [handles] and [element] is unlocked:
  * a lock means what it says. Ring and handles both ride the element's rotation,
  * the handles by sitting at their corner's drawn position and turning with it.
+ *
+ * A line is drawn its own way (see [LineSelectionOverlay]), and [dragging] is only
+ * for it: a drag in flight comes back through the loop as an alignment overlay.
  */
 @Composable
-private fun SelectionOverlay(element: Element, scale: Float, handles: Boolean) {
+private fun SelectionOverlay(element: Element, scale: Float, handles: Boolean, dragging: Boolean) {
+    if (element is LineElement) {
+        LineSelectionOverlay(element, scale, dragging)
+        return
+    }
+
     val frame = element.frame
     Box(
         Modifier
@@ -2084,6 +2252,61 @@ private fun SelectionOverlay(element: Element, scale: Float, handles: Boolean) {
         )
     }
 }
+
+/**
+ * Keynote's selected line: no ring and no box, a square on each end and nothing
+ * else, hidden altogether while the line is being dragged. A locked line wears a
+ * grey cross on each end instead, since there is nothing there to grab.
+ *
+ * A curved line adds its bend: a green dot on the curve, white-edged, the size
+ * of the end squares. A locked one shows none, having nothing to bend.
+ *
+ * Every selected line shows its ends, one of several included: they are the
+ * whole of its selection mark, though only a lone line's can be dragged.
+ */
+@Composable
+private fun LineSelectionOverlay(line: LineElement, scale: Float, dragging: Boolean) {
+    if (dragging) return
+
+    val handleSize: Float = 9f / scale
+    for (point in listOf(line.start, line.end)) {
+        val placed: Modifier = Modifier
+            .offset((point.x - handleSize / 2).dp, (point.y - handleSize / 2).dp)
+            .size(handleSize.dp)
+        if (line.locked) {
+            Canvas(placed) {
+                val stroke: Float = (1.5f / scale).dp.toPx()
+                drawLine(LockedMark, Offset.Zero, Offset(size.width, size.height), stroke)
+                drawLine(LockedMark, Offset(size.width, 0f), Offset(0f, size.height), stroke)
+            }
+        } else {
+            Box(
+                placed
+                    .background(Color.White)
+                    .border((1f / scale).dp, LineHandleOutline)
+            )
+        }
+    }
+
+    val bend: Point = line.bend ?: return
+    if (line.locked) return
+    Box(
+        Modifier
+            .offset((bend.x - handleSize / 2).dp, (bend.y - handleSize / 2).dp)
+            .size(handleSize.dp)
+            .background(BendHandle, CircleShape)
+            .border((1f / scale).dp, Color.White, CircleShape)
+    )
+}
+
+/** A line's end handle outline: Keynote's dark square edge rather than the accent ring. */
+private val LineHandleOutline = Color(0xFF3C3C3C)
+
+/** A curve's bend handle: Keynote's green. */
+private val BendHandle = Color(0xFF34C759)
+
+/** The cross a locked line's ends wear. */
+private val LockedMark = Color(0xFF8E8E93)
 
 /**
  * What a placeholder wears while its layout is edited: a dashed hairline round
@@ -2295,10 +2518,17 @@ private fun AlignmentOverlayView(overlay: AlignmentOverlay, scale: Float) {
     }
 
     val drag: DragSample = overlay.drag
+    if (drag.bending) return
+
     val frame: Frame = overlay.frame
-    val readout: String =
-        if (drag.resizing) "w: ${frame.width.roundToInt()} pt  h: ${frame.height.roundToInt()} pt"
-        else "x: ${frame.x.roundToInt()} pt  y: ${frame.y.roundToInt()} pt"
+    val line: LineElement? = drag.line
+    // A line's end reads as Keynote's does, angle and length, since its box is
+    // not what the drag is changing. The angle rounds 359.6 to 0, not 360.
+    val readout: String = when {
+        line != null -> "${line.angle.roundToInt() % 360}°  l: ${line.length.roundToInt()} pt"
+        drag.resizing -> "w: ${frame.width.roundToInt()} pt  h: ${frame.height.roundToInt()} pt"
+        else -> "x: ${frame.x.roundToInt()} pt  y: ${frame.y.roundToInt()} pt"
+    }
     // Up and to the right of the pointer, where Keynote puts it, so the hand
     // dragging never covers it.
     Box(

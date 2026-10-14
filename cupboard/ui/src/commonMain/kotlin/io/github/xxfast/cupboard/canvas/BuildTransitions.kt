@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.IntSize
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.TerminalElement
 
 /**
@@ -38,6 +39,7 @@ val BuildEffectNames: List<Pair<BuildEffect, String>> = listOf(
     BuildEffect.Scale to "Scale",
     BuildEffect.Wipe to "Wipe",
     BuildEffect.Typewriter to "Typewriter",
+    BuildEffect.LineDraw to "Line Draw",
 )
 
 /** This effect's name, per [BuildEffectNames]. */
@@ -57,9 +59,10 @@ private val PopEasing: Easing = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
  * How [element] arrives under [build], delayed by [delayMs].
  *
  * Null [build] is an element the slide opens with, which arrives with the slide
- * rather than under anything of its own. [BuildEffect.Typewriter] is the one
- * effect an element plays for itself: a terminal enters bare and types its
- * transcript out, and every other kind takes the dissolve instead.
+ * rather than under anything of its own. [BuildEffect.Typewriter] and
+ * [BuildEffect.LineDraw] are the effects an element plays for itself: a terminal
+ * enters bare and types its transcript out, a line enters bare and draws itself,
+ * and every other kind takes the dissolve instead.
  *
  * [overhang] is how many pixels of what the effect measures, on each side, are
  * room left for a shadow rather than the element: an effect that travels by the
@@ -98,10 +101,20 @@ internal fun buildEnter(
 
         BuildEffect.Typewriter ->
             if (element is TerminalElement) EnterTransition.None else fadeIn(fade(duration, delayMs))
+
+        BuildEffect.LineDraw ->
+            if (element is LineElement) EnterTransition.None else fadeIn(fade(duration, delayMs))
     }
 }
 
-/** [buildEnter]'s mirror: how [element] leaves under an [io.github.xxfast.cupboard.document.BuildKind.Out] build. */
+/**
+ * [buildEnter]'s mirror: how [element] leaves under an
+ * [io.github.xxfast.cupboard.document.BuildKind.Out] build.
+ *
+ * [BuildEffect.LineDraw] dissolves a line out rather than un-drawing it: only
+ * the build that brings an element in reaches its renderer, so a line has no
+ * way to play its own exit.
+ */
 internal fun buildExit(
     element: Element,
     build: Build?,
@@ -135,6 +148,8 @@ internal fun buildExit(
 
         BuildEffect.Typewriter ->
             if (element is TerminalElement) ExitTransition.None else fadeOut(fade(duration, delayMs))
+
+        BuildEffect.LineDraw -> fadeOut(fade(duration, delayMs))
     }
 }
 

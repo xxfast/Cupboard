@@ -81,6 +81,8 @@ data class Document(
      * deck the way its layouts do. [applyingTheme] regenerates them.
      */
     val objectStyles: List<ObjectStyle> = defaultObjectStyles(ElementDefaults()),
+    /** The line looks this deck has saved, [objectStyles]' twin for lines. */
+    val lineStyles: List<LineStyle> = defaultLineStyles(ElementDefaults()),
     /**
      * How the deck plays: presenter-driven, self-playing or links-only, and what
      * loops and restarts. See [PlaybackSettings]; the default is the ordinary
@@ -428,6 +430,7 @@ fun Element.withNewIds(renamed: MutableMap<String, String> = mutableMapOf()): El
         is GroupElement -> copy(id = fresh, children = children.map { it.withNewIds(renamed) })
         is TextElement -> copy(id = fresh)
         is ShapeElement -> copy(id = fresh)
+        is LineElement -> copy(id = fresh)
         is ImageElement -> copy(id = fresh)
         is GalleryElement -> copy(id = fresh)
         is VideoElement -> copy(id = fresh)

@@ -109,6 +109,11 @@ class ShowcaseDocumentTest {
     }
 
     @Test
+    fun everyStrokeStyleIsShown() = assertCovered(StrokeStyle.entries) { document ->
+        document.elements().filterIsInstance<LineElement>().map { it.strokeStyle }
+    }
+
+    @Test
     fun everyCodeThemeIsShown() = assertCovered(CodeTheme.entries) { document ->
         document.elements().filterIsInstance<CodeElement>().map { it.theme }
     }

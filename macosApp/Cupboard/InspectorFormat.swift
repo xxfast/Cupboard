@@ -34,6 +34,10 @@ extension EditorView {
                 shapeSection(shape, ui)
                 palette.divider.frame(height: 1)
             }
+            if let line = ui.line {
+                lineSection(line, ui)
+                palette.divider.frame(height: 1)
+            }
             if let code = ui.code {
                 codeThemeSection(code)
                 palette.divider.frame(height: 1)
@@ -144,11 +148,19 @@ extension EditorView {
                 palette.divider.frame(height: 1)
                 alignSection(ui)
                 palette.divider.frame(height: 1)
-                sizeSection(element)
-                palette.divider.frame(height: 1)
-                positionSection(element)
-                palette.divider.frame(height: 1)
-                rotateSection(element)
+                // A line has no box of its own to size: its geometry is its
+                // two points, and its angle is the direction between them.
+                if let line = ui.line {
+                    lineGeometrySection(line)
+                    palette.divider.frame(height: 1)
+                    lineRotateSection(line)
+                } else {
+                    sizeSection(element)
+                    palette.divider.frame(height: 1)
+                    positionSection(element)
+                    palette.divider.frame(height: 1)
+                    rotateSection(element)
+                }
             }
             .disabled(element.locked)
             .opacity(element.locked ? 0.45 : 1)
@@ -314,6 +326,95 @@ extension EditorView {
         }
     }
 
+    /// A line's place on the slide, Keynote's: where it starts and where it
+    /// ends, each pair moving that end alone. Values clamp at 1pt, and an end
+    /// typed onto the other lands 1pt off it; the core decides both.
+    func lineGeometrySection(_ line: LineFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            pointRow(
+                "Start",
+                x: line.startX,
+                y: line.startY,
+                onX: { host.setSelectedLineStartX(x: Float($0)) },
+                onY: { host.setSelectedLineStartY(y: Float($0)) }
+            )
+
+            pointRow(
+                "End",
+                x: line.endX,
+                y: line.endY,
+                onX: { host.setSelectedLineEndX(x: Float($0)) },
+                onY: { host.setSelectedLineEndY(y: Float($0)) }
+            )
+        }
+    }
+
+    /// One end's X and Y, laid out the way Position lays its pair out. Each
+    /// field commits its own axis alone, so a multi-selection keeps the other.
+    func pointRow(
+        _ title: String,
+        x: Double,
+        y: Double,
+        onX: @escaping (Double) -> Void,
+        onY: @escaping (Double) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel(title)
+
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
+                captionedField("X") {
+                    ValueField(label: "", value: x, palette: palette, unit: "pt", minimum: 1) {
+                        onX($0)
+                    }
+                    .frame(width: Inspect.field + Inspect.stepper + 5)
+                }
+                captionedField("Y") {
+                    ValueField(label: "", value: y, palette: palette, unit: "pt", minimum: 1) {
+                        onY($0)
+                    }
+                    .frame(width: Inspect.field + Inspect.stepper + 5)
+                }
+            }
+        }
+    }
+
+    /// Rotate for a line: the angle is its direction, counterclockwise from
+    /// pointing right, to one decimal, and setting it turns the line about its
+    /// midpoint. The dial reads 0 up and clockwise, so it converts both ways.
+    /// The flips are the same two verbs as any element's.
+    func lineRotateSection(_ line: LineFormat) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            sectionLabel("Rotate")
+
+            HStack(alignment: .top, spacing: 10) {
+                RotateDial(degrees: Self.dialDegrees(line.angle), palette: palette) {
+                    host.setSelectedLineAngle(degrees: Float(Self.dialDegrees($0)))
+                }
+                .padding(.top, 1)
+
+                captionedField("Angle") {
+                    ValueField(
+                        label: "",
+                        value: (line.angle * 10).rounded() / 10,
+                        palette: palette,
+                        unit: "\u{00B0}",
+                        decimals: 1
+                    ) { host.setSelectedLineAngle(degrees: Float($0)) }
+                }
+
+                flipPair
+            }
+        }
+    }
+
+    /// A line's angle (0 right, counterclockwise) as the dial's (0 up,
+    /// clockwise), and back: the conversion is its own inverse.
+    static func dialDegrees(_ degrees: Double) -> Double {
+        let turned = (90 - degrees).truncatingRemainder(dividingBy: 360)
+        return turned < 0 ? turned + 360 : turned
+    }
+
     /// The dial, the angle, and the two flips, each captioned underneath. The
     /// dial is a drag: round the circle is how an angle is set by hand.
     func rotateSection(_ element: Selection) -> some View {
@@ -335,24 +436,28 @@ extension EditorView {
                     ) { host.setSelectedElementRotation(degrees: Float($0)) }
                 }
 
-                // Two separate buttons rather than a joined pair: the flips are
-                // two verbs, not a choice between two states.
-                VStack(spacing: 3) {
-                    HStack(spacing: 6) {
-                        flipButton(
-                            "arrow.left.and.right.righttriangle.left.righttriangle.right.fill",
-                            help: "Flip Horizontally"
-                        ) { host.flipSelectedElement(axis: FlipAxis.horizontal) }
-
-                        flipButton(
-                            "arrow.up.and.down.righttriangle.up.righttriangle.down.fill",
-                            help: "Flip Vertically"
-                        ) { host.flipSelectedElement(axis: FlipAxis.vertical) }
-                    }
-
-                    fieldCaption("Flip")
-                }
+                flipPair
             }
+        }
+    }
+
+    /// Two separate buttons rather than a joined pair: the flips are two verbs,
+    /// not a choice between two states.
+    var flipPair: some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 6) {
+                flipButton(
+                    "arrow.left.and.right.righttriangle.left.righttriangle.right.fill",
+                    help: "Flip Horizontally"
+                ) { host.flipSelectedElement(axis: FlipAxis.horizontal) }
+
+                flipButton(
+                    "arrow.up.and.down.righttriangle.up.righttriangle.down.fill",
+                    help: "Flip Vertically"
+                ) { host.flipSelectedElement(axis: FlipAxis.vertical) }
+            }
+
+            fieldCaption("Flip")
         }
     }
 
@@ -498,16 +603,34 @@ extension EditorView {
 
     /// What the Border header shows: the line in its own colour and width, or
     /// none when there is nothing to draw.
-    @ViewBuilder func borderPreview(_ shape: ShapeFormat) -> some View {
-        if shape.strokeWidth <= 0 {
+    func borderPreview(_ shape: ShapeFormat) -> some View {
+        strokePreview(color: shape.strokeColor, width: shape.strokeWidth, style: shape.strokeStyle)
+    }
+
+    /// A stroke in its colour, its width (held to what fits the well) and its
+    /// dashes, a shape's border and a line's alike. The dashes are
+    /// `LineGlyph`'s, scaled by the drawn width the way the canvas scales them.
+    @ViewBuilder func strokePreview(color: Int64, width: Double, style: String) -> some View {
+        if width <= 0 {
             nonePreview
         } else {
+            let weight = max(1, min(width, 6))
             previewWell { palette.inspectorControl }
                 .overlay {
-                    Rectangle()
-                        .fill(Color(argb: shape.strokeColor))
-                        .frame(height: max(1, min(shape.strokeWidth, 6)))
-                        .padding(.horizontal, 6)
+                    GeometryReader { proxy in
+                        Path { path in
+                            path.move(to: CGPoint(x: 6, y: proxy.size.height / 2))
+                            path.addLine(to: CGPoint(x: proxy.size.width - 6, y: proxy.size.height / 2))
+                        }
+                        .stroke(
+                            Color(argb: color),
+                            style: SwiftUI.StrokeStyle(
+                                lineWidth: weight,
+                                lineCap: style == "RoundDots" ? .round : .butt,
+                                dash: LineGlyph.dashes(style, weight: weight)
+                            )
+                        )
+                    }
                 }
         }
     }
@@ -521,6 +644,21 @@ extension EditorView {
                         .fill(Color(argb: shape.fill))
                         .frame(width: 18, height: 10)
                         .shadow(color: Color(argb: shape.shadowColor).opacity(0.7), radius: 2, y: 1)
+                }
+        } else {
+            nonePreview
+        }
+    }
+
+    /// What a line's Shadow header shows: a short stroke of it dropping one, or none.
+    @ViewBuilder func lineShadowPreview(_ line: LineFormat) -> some View {
+        if line.hasShadow {
+            previewWell { palette.inspectorControl }
+                .overlay {
+                    Capsule()
+                        .fill(Color(argb: line.strokeColor))
+                        .frame(width: 22, height: 2)
+                        .shadow(color: Color(argb: line.shadowColor).opacity(0.7), radius: 2, y: 1)
                 }
         } else {
             nonePreview
@@ -606,6 +744,40 @@ struct StylePager<Content: View>: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+    }
+}
+
+/// The two alerts a style strip names things through, the way Save Theme does:
+/// Save takes a fresh name, Rename the one it was opened on. Shapes and lines
+/// share it and say what each verb does. Rename's id rides in the closure the
+/// caller hands over: the menu it came from is gone by the time the field is
+/// typed into. A blank name commits nothing.
+struct StyleNameAlerts: ViewModifier {
+    @Binding var saving: Bool
+    @Binding var saveText: String
+    @Binding var renaming: Bool
+    @Binding var renameText: String
+    let onSave: (String) -> Void
+    let onRename: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .alert("Save Style", isPresented: $saving) {
+                TextField("Name", text: $saveText)
+                Button("Save") { commit(saveText, onSave) }
+                Button("Cancel", role: .cancel) {}
+            }
+            .alert("Rename Style", isPresented: $renaming) {
+                TextField("Name", text: $renameText)
+                Button("Rename") { commit(renameText, onRename) }
+                Button("Cancel", role: .cancel) {}
+            }
+    }
+
+    private func commit(_ text: String, _ action: (String) -> Void) {
+        let typed = text.trimmingCharacters(in: .whitespaces)
+        guard !typed.isEmpty else { return }
+        action(typed)
     }
 }
 

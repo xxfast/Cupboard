@@ -5,7 +5,7 @@ import kotlin.math.min
 /** The radius a rounded rectangle inserts with, and what "rounded" means here. */
 private const val RoundedCornerRadius: Float = 10f
 
-/** The stroke every shape but a line inserts with, per the design's shape boxes. */
+/** The stroke every shape inserts with, per the design's shape boxes. */
 private const val ShapeStrokeWidth: Float = 1.5f
 
 /** A line is nothing but its stroke, so it starts heavier than a shape's outline. */
@@ -16,8 +16,8 @@ const val DefaultShapeWidth: Float = 240f
 const val DefaultShapeHeight: Float = 160f
 
 /**
- * A line's box. Not flat: a zero-height frame has no handles to grab and no
- * second diagonal to flip to, so a line starts as the diagonal of a shallow box.
+ * The box a fresh line spans: it inserts as this box's rising diagonal, bottom-left
+ * to top-right, which is Keynote's fresh line given Cupboard's proportions.
  */
 const val DefaultLineWidth: Float = 320f
 const val DefaultLineHeight: Float = 120f
@@ -47,9 +47,42 @@ fun shapeElement(
     cornerRadius = RoundedCornerRadius,
     fill = defaults.shapeFill,
     strokeColor = defaults.shapeStroke,
-    strokeWidth = if (kind == ShapeKind.Line) LineStrokeWidth else ShapeStrokeWidth,
+    strokeWidth = ShapeStrokeWidth,
     labelColor = defaults.shapeLabelColor,
 )
+
+/**
+ * A fresh line across [frame], its rising diagonal from bottom-left to top-right,
+ * stroked in [defaults]' shape stroke and capped with [startEnd] and [endEnd].
+ *
+ * A [curved] one bulges up and to the left like Keynote's tile: its control point
+ * is the frame's top-left corner, so it leaves the start straight up and arrives
+ * at the end level. The bend is that quadratic's halfway point.
+ */
+fun lineElement(
+    frame: Frame,
+    defaults: ElementDefaults = ElementDefaults(),
+    startEnd: LineEnd = LineEnd.None,
+    endEnd: LineEnd = LineEnd.None,
+    curved: Boolean = false,
+): LineElement {
+    val start = Point(frame.x, frame.y + frame.height)
+    val end = Point(frame.x + frame.width, frame.y)
+    val control = Point(frame.x, frame.y)
+    val bend = Point(
+        x = (start.x + 2 * control.x + end.x) / 4,
+        y = (start.y + 2 * control.y + end.y) / 4,
+    )
+    return LineElement(
+        start = start,
+        end = end,
+        strokeColor = defaults.shapeStroke,
+        strokeWidth = LineStrokeWidth,
+        startEnd = startEnd,
+        endEnd = endEnd,
+        bend = if (curved) bend else null,
+    )
+}
 
 /** The box a fresh code block inserts into. */
 const val DefaultCodeBoxWidth: Float = 420f
@@ -350,52 +383,76 @@ fun equationElement(
 )
 
 /**
- * One entry of the shape menu: what to insert, what to call it, and how round.
+ * One entry of the shape menu: what to insert, what to call it, and the box it
+ * inserts into.
  *
- * [cornerRadius] is the entry's own rather than the kind's, which is what lets
- * the plain and the rounded rectangle be two entries over one [ShapeKind]. It
- * means nothing to any other kind, and every other entry leaves it at 0.
- *
- * [width] and [height] are the box the entry inserts into, so a shell can size
- * an insertion without knowing that a line wants a different box to a rectangle.
+ * [width] and [height] are that box, so a shell can size an insertion without
+ * knowing that a line wants a different box to a rectangle.
  */
-data class ShapeCatalogEntry(
-    val kind: ShapeKind,
-    val title: String,
-    val cornerRadius: Float = 0f,
-    val width: Float = DefaultShapeWidth,
-    val height: Float = DefaultShapeHeight,
-)
+sealed interface ShapeCatalogEntry {
+    val title: String
+    val width: Float
+    val height: Float
 
-/** A fresh element for this entry, filling [frame] and dressed in [defaults]. */
-fun ShapeCatalogEntry.element(
-    frame: Frame,
-    defaults: ElementDefaults = ElementDefaults(),
-): ShapeElement = shapeElement(kind, frame, defaults).copy(cornerRadius = cornerRadius)
+    /** A fresh element for this entry, filling [frame] and dressed in [defaults]. */
+    fun element(frame: Frame, defaults: ElementDefaults = ElementDefaults()): Element
+
+    /**
+     * A shape of [kind].
+     *
+     * [cornerRadius] is the entry's own rather than the kind's, which is what lets
+     * the plain and the rounded rectangle be two entries over one [ShapeKind]. It
+     * means nothing to any other kind, and every other entry leaves it at 0.
+     */
+    data class Shape(
+        val kind: ShapeKind,
+        override val title: String,
+        val cornerRadius: Float = 0f,
+        override val width: Float = DefaultShapeWidth,
+        override val height: Float = DefaultShapeHeight,
+    ) : ShapeCatalogEntry {
+        override fun element(frame: Frame, defaults: ElementDefaults): ShapeElement =
+            shapeElement(kind, frame, defaults).copy(cornerRadius = cornerRadius)
+    }
+
+    /** A line across the box, capped with [startEnd] and [endEnd], bulging when [curved]. */
+    data class Line(
+        override val title: String,
+        val startEnd: LineEnd = LineEnd.None,
+        val endEnd: LineEnd = LineEnd.None,
+        val curved: Boolean = false,
+    ) : ShapeCatalogEntry {
+        override val width: Float get() = DefaultLineWidth
+        override val height: Float get() = DefaultLineHeight
+
+        override fun element(frame: Frame, defaults: ElementDefaults): LineElement =
+            lineElement(frame, defaults, startEnd, endEnd, curved)
+    }
+}
 
 /**
- * The shapes a shell offers, in menu order.
- *
- * An object rather than a bare list so the catalog has somewhere to grow: the
- * bundle format brings image fills, and lines want their own dash styles.
+ * The shapes a shell offers, in menu order: the shapes, then Keynote's three
+ * Insert > Line entries and its curve.
  */
 object ShapeCatalog {
     val entries: List<ShapeCatalogEntry> = listOf(
-        ShapeCatalogEntry(ShapeKind.Rectangle, "Rectangle"),
-        ShapeCatalogEntry(ShapeKind.Rectangle, "Rounded Rectangle", RoundedCornerRadius),
-        ShapeCatalogEntry(ShapeKind.Ellipse, "Oval"),
-        ShapeCatalogEntry(ShapeKind.Triangle, "Triangle"),
-        ShapeCatalogEntry(ShapeKind.Arrow, "Arrow"),
-        ShapeCatalogEntry(ShapeKind.Diamond, "Diamond"),
-        ShapeCatalogEntry(ShapeKind.Star, "Star"),
-        ShapeCatalogEntry(ShapeKind.Polygon, "Hexagon"),
-        ShapeCatalogEntry(ShapeKind.QuoteBubble, "Quote Bubble"),
-        ShapeCatalogEntry(ShapeKind.Callout, "Callout"),
-        ShapeCatalogEntry(
-            kind = ShapeKind.Line,
-            title = "Line",
-            width = DefaultLineWidth,
-            height = DefaultLineHeight,
+        ShapeCatalogEntry.Shape(ShapeKind.Rectangle, "Rectangle"),
+        ShapeCatalogEntry.Shape(ShapeKind.Rectangle, "Rounded Rectangle", RoundedCornerRadius),
+        ShapeCatalogEntry.Shape(ShapeKind.Ellipse, "Oval"),
+        ShapeCatalogEntry.Shape(ShapeKind.Triangle, "Triangle"),
+        ShapeCatalogEntry.Shape(ShapeKind.Arrow, "Arrow"),
+        ShapeCatalogEntry.Shape(ShapeKind.Diamond, "Diamond"),
+        ShapeCatalogEntry.Shape(ShapeKind.Star, "Star"),
+        ShapeCatalogEntry.Shape(ShapeKind.Polygon, "Hexagon"),
+        ShapeCatalogEntry.Shape(ShapeKind.QuoteBubble, "Quote Bubble"),
+        ShapeCatalogEntry.Shape(ShapeKind.Callout, "Callout"),
+        ShapeCatalogEntry.Line("Line"),
+        ShapeCatalogEntry.Line("Line with Arrowhead", endEnd = LineEnd.Arrow),
+        ShapeCatalogEntry.Line(
+            title = "Line with Two Arrowheads",
+            startEnd = LineEnd.Arrow,
+            endEnd = LineEnd.Arrow,
         ),
+        ShapeCatalogEntry.Line("Curved Line", curved = true),
     )
 }

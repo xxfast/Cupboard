@@ -6,17 +6,27 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.Point
 import io.github.xxfast.cupboard.document.boundingFrame
 import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.isLocked
 import io.github.xxfast.cupboard.document.rotateVector
 import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.max
 import kotlin.math.roundToInt
 
+/**
+ * What a press grabs on a lone selection: one of a box's eight, or one of a
+ * [LineElement]'s two ends, which move that point alone and pull on no edge, or
+ * a curved line's [Bend], the point the curve passes through halfway along.
+ */
 enum class Handle {
     TopLeft, Top, TopRight,
     Left, Right,
-    BottomLeft, Bottom, BottomRight;
+    BottomLeft, Bottom, BottomRight,
+    Start, End, Bend;
 
     val affectsLeft: Boolean get() = this == TopLeft || this == Left || this == BottomLeft
     val affectsRight: Boolean get() = this == TopRight || this == Right || this == BottomRight
@@ -40,7 +50,8 @@ enum class ResizeDirection { Horizontal, Vertical, DiagonalDown, DiagonalUp }
  */
 fun resizeDirection(handle: Handle, rotation: Float): ResizeDirection {
     val axis = when (handle) {
-        Handle.Left, Handle.Right -> 0f
+        // A line's ends have no axis of their own: see [Element.resizeDirection].
+        Handle.Left, Handle.Right, Handle.Start, Handle.End, Handle.Bend -> 0f
         Handle.TopLeft, Handle.BottomRight -> 45f
         Handle.Top, Handle.Bottom -> 90f
         Handle.TopRight, Handle.BottomLeft -> 135f
@@ -53,6 +64,35 @@ fun resizeDirection(handle: Handle, rotation: Float): ResizeDirection {
         2 -> ResizeDirection.Vertical
         else -> ResizeDirection.DiagonalUp
     }
+}
+
+/** The handles a line has: its ends, and a curve's bend. */
+private val LineHandles: Set<Handle> = setOf(Handle.Start, Handle.End, Handle.Bend)
+
+/**
+ * [resizeDirection] for [handle] on this element: a line's ends (and its bend,
+ * which wears the same cursor) pull along the line, so they take the line's own
+ * angle (counterclockwise, y up) turned into the clockwise, y-down rotation the
+ * box handles are measured in.
+ */
+fun Element.resizeDirection(handle: Handle): ResizeDirection =
+    if (this is LineElement && handle in LineHandles) {
+        resizeDirection(Handle.Right, -angle)
+    } else {
+        resizeDirection(handle, rotation)
+    }
+
+/**
+ * Where this element's handles sit, in its own unrotated space: a line's two
+ * ends and, when it curves, its bend after them, or a box's eight.
+ */
+fun Element.handlePositions(): Map<Handle, Pair<Float, Float>> {
+    if (this !is LineElement) return handlePositions(frame)
+
+    val ends: Map<Handle, Pair<Float, Float>> =
+        mapOf(Handle.Start to (start.x to start.y), Handle.End to (end.x to end.y))
+    val bend: Point = bend ?: return ends
+    return ends + (Handle.Bend to (bend.x to bend.y))
 }
 
 /** Handle center positions for a frame, in doc units. */
@@ -69,6 +109,13 @@ fun handlePositions(frame: Frame): Map<Handle, Pair<Float, Float>> = mapOf(
 
 fun hitTestHandle(frame: Frame, x: Float, y: Float, tolerance: Float = 8f): Handle? =
     handlePositions(frame).entries.firstOrNull { (_, pos) ->
+        val (hx, hy) = pos
+        x in (hx - tolerance)..(hx + tolerance) && y in (hy - tolerance)..(hy + tolerance)
+    }?.key
+
+/** [hitTestHandle] over this element's own handles, a line's two ends included. */
+fun hitTestHandle(element: Element, x: Float, y: Float, tolerance: Float = 8f): Handle? =
+    element.handlePositions().entries.firstOrNull { (_, pos) ->
         val (hx, hy) = pos
         x in (hx - tolerance)..(hx + tolerance) && y in (hy - tolerance)..(hy + tolerance)
     }?.key
@@ -101,13 +148,41 @@ fun Element.toSlide(x: Float, y: Float): Pair<Float, Float> {
  *
  * A group is its children, not its box: the empty space inside a group's bounds
  * is not the group, so a click there falls through to whatever is behind it.
+ *
+ * A line is its stroke, not its box either: a point lands on it within half the
+ * stroke of the segment, or within [tolerance] when that is wider. A curve is
+ * measured against [CurveSegments] chords laid along it. The canvas
+ * passes Keynote's six screen points, in doc units, so a hairline can be hit.
+ * Nothing else reads [tolerance].
  */
-fun Element.contains(x: Float, y: Float): Boolean {
+fun Element.contains(x: Float, y: Float, tolerance: Float = 0f): Boolean {
     val (localX: Float, localY: Float) = if (rotation == 0f) x to y else toLocal(x, y)
     return when (this) {
-        is GroupElement -> children.any { it.contains(localX, localY) }
+        is GroupElement -> children.any { it.contains(localX, localY, tolerance) }
+        is LineElement -> distanceTo(localX, localY) <= max(strokeWidth / 2, tolerance)
         else -> frame.contains(localX, localY)
     }
+}
+
+/** How many chords a curved line is measured against when hit-testing it. */
+private const val CurveSegments: Int = 32
+
+/** How far ([x], [y]) is from the nearest point of this line, along its curve if it has one. */
+private fun LineElement.distanceTo(x: Float, y: Float): Float {
+    if (bend == null) return distanceToSegment(x, y, start, end)
+    val points: List<Point> = (0..CurveSegments).map { pointAt(it.toFloat() / CurveSegments) }
+    return points.zipWithNext().minOf { (a: Point, b: Point) -> distanceToSegment(x, y, a, b) }
+}
+
+/** How far ([x], [y]) is from the nearest point of the segment [a] to [b]. */
+private fun distanceToSegment(x: Float, y: Float, a: Point, b: Point): Float {
+    val dx: Float = b.x - a.x
+    val dy: Float = b.y - a.y
+    val lengthSquared: Float = dx * dx + dy * dy
+    val along: Float =
+        if (lengthSquared == 0f) 0f
+        else (((x - a.x) * dx + (y - a.y) * dy) / lengthSquared).coerceIn(0f, 1f)
+    return hypot(x - (a.x + along * dx), y - (a.y + along * dy))
 }
 
 /** Which edge, or center line, [alignFrames] lines elements up on. */
@@ -317,8 +392,23 @@ data class SpacingMark(val axis: Axis, val from: Float, val to: Float, val at: F
  */
 data class SizeMark(val axis: Axis, val frame: Frame)
 
-/** What a canvas drag knows that its elements don't: where the pointer is, in doc units, and what the gesture is. */
-data class DragSample(val pointerX: Float, val pointerY: Float, val resizing: Boolean)
+/**
+ * What a canvas drag knows that its elements don't: where the pointer is, in doc
+ * units, and what the gesture is.
+ *
+ * [line] is the line as an endpoint drag has left it, null for every other drag:
+ * mid endpoint drag the readout is its angle and length rather than a box's size.
+ *
+ * [bending] is a curved line's bend handle in flight. Keynote marks nothing for
+ * one: no guides, no arrows and no readout, only the end handles hiding.
+ */
+data class DragSample(
+    val pointerX: Float,
+    val pointerY: Float,
+    val resizing: Boolean,
+    val line: LineElement? = null,
+    val bending: Boolean = false,
+)
 
 /**
  * Everything the canvas draws over a move or resize in flight, derived from the
@@ -479,6 +569,8 @@ fun alignmentOverlay(
     others: List<Frame>,
     drag: DragSample,
 ): AlignmentOverlay {
+    if (drag.bending) return AlignmentOverlay(frame, emptyList(), emptyList(), emptyList(), drag)
+
     val xs: List<Float> = listOf(frame.x, frame.centerX, frame.x + frame.width)
     val ys: List<Float> = listOf(frame.y, frame.centerY, frame.y + frame.height)
     val guides: List<SnapLine> = lines

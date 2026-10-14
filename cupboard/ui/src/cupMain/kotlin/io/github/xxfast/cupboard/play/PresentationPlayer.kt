@@ -296,12 +296,14 @@ private fun Player(
                 // earlier slide's, played in the direction of travel.
                 val governing: SlideTransition =
                     (if (state.forward) from.transition else to.transition) ?: return@remember null
+                val fromLayout: Slide? = document.layoutOf(from)
                 PlayTransition(
                     fromSlide = from,
                     toSlide = to,
                     forward = state.forward,
                     transition = governing,
-                    fromBackground = from.effectiveBackground(document.layoutOf(from), document.background),
+                    fromBackground = from.effectiveBackground(fromLayout, document.background),
+                    fromLayout = fromLayout,
                 )
             }
 

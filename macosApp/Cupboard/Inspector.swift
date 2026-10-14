@@ -233,8 +233,16 @@ extension EditorView {
 
                 // Pinned above the scroll area, the way Keynote pins its style
                 // grid: only the sections below it scroll.
-                if ui.activeFormatSegment == "Style", let shape = ui.shape, !shape.isLine {
+                if ui.activeFormatSegment == "Style", ui.shape != nil {
                     styleStrip(ui.objectStyles)
+                        .padding(.horizontal, Layout.panelPadding)
+                        .padding(.bottom, Layout.panelPadding)
+                        .disabled(element.locked)
+                        .opacity(element.locked ? 0.45 : 1)
+                    palette.divider.frame(height: 1)
+                }
+                if ui.activeFormatSegment == "Style", ui.line != nil {
+                    lineStyleStrip(ui.lineStyles)
                         .padding(.horizontal, Layout.panelPadding)
                         .padding(.bottom, Layout.panelPadding)
                         .disabled(element.locked)
@@ -607,11 +615,9 @@ extension EditorView {
     /// the core drops a write that changes nothing.
     @ViewBuilder func shapeSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            // A line is all stroke: there is no inside of it to paint.
-            if !shape.isLine {
-                fillSection(shape, ui)
-                palette.divider.frame(height: 1)
-            }
+            fillSection(shape, ui)
+
+            palette.divider.frame(height: 1)
 
             borderSection(shape, ui)
 
@@ -752,20 +758,23 @@ extension EditorView {
         }
     }
 
-    /// What outlines the shape, which for a line is the line itself, so its two
-    /// arrowheads sit in here rather than in a section of their own.
+    /// What outlines the shape: how it is dashed, its colour and its width.
     func borderSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
-        disclosure("Border", ui, title: shape.isLine ? "Stroke" : "Border") {
+        disclosure("Border", ui) {
             borderPreview(shape)
         } body: {
             VStack(alignment: .leading, spacing: 9) {
+                glyphPopup(ui.strokeStyles, selected: shape.strokeStyle, glyph: LineGlyph.strokeStyle) {
+                    host.setSelectedShapeStrokeStyle(name: $0)
+                }
+
                 HStack(spacing: 8) {
                     // No Border is no width, and a colour picked off none brings
                     // the default width back with it.
                     colorWell(
                         "Colour",
                         argb: shape.strokeColor,
-                        none: shape.isLine ? nil : "No Border",
+                        none: "No Border",
                         isNone: shape.strokeWidth <= 0,
                         onNone: { host.setSelectedShapeStroke(color: shape.strokeColor, width: 0) }
                     ) {
@@ -784,23 +793,6 @@ extension EditorView {
                     .frame(width: 92)
                     .help("Border Width")
                 }
-
-                if shape.isLine {
-                    HStack(spacing: 8) {
-                        checkRow("Start", on: shape.startArrow) {
-                            host.setSelectedShapeArrows(
-                                start: !shape.startArrow,
-                                end: shape.endArrow
-                            )
-                        }
-                        checkRow("End", on: shape.endArrow) {
-                            host.setSelectedShapeArrows(
-                                start: shape.startArrow,
-                                end: !shape.endArrow
-                            )
-                        }
-                    }
-                }
             }
         }
     }
@@ -812,57 +804,175 @@ extension EditorView {
     /// header: the header's job is to say whether there is one, which the
     /// preview does without anything to click.
     func shadowSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
+        shadowControls(
+            ui,
+            on: shape.hasShadow,
+            color: shape.shadowColor,
+            blur: shape.shadowBlur,
+            preview: shadowPreview(shape)
+        ) { host.setSelectedShapeShadow(enabled: $0, color: $1, blur: Float($2)) }
+    }
+
+    /// The Shadow section's body, a shape's or a line's alike: on or off, then
+    /// its colour and blur. [onSet] gets all three every time, the way the
+    /// host's setters take them.
+    func shadowControls<Preview: View>(
+        _ ui: Chrome,
+        on: Bool,
+        color: Int64,
+        blur: Double,
+        preview: Preview,
+        onSet: @escaping (Bool, Int64, Double) -> Void
+    ) -> some View {
         disclosure("Shadow", ui) {
-            shadowPreview(shape)
+            preview
         } body: {
             VStack(alignment: .leading, spacing: 9) {
-                checkRow("Shadow", on: shape.hasShadow) {
-                    host.setSelectedShapeShadow(
-                        enabled: !shape.hasShadow,
-                        color: shape.shadowColor,
-                        blur: Float(shape.shadowBlur)
-                    )
-                }
+                checkRow("Shadow", on: on) { onSet(!on, color, blur) }
 
-                if shape.hasShadow {
+                if on {
                     HStack(spacing: 8) {
                         colorWell(
                             "Colour",
-                            argb: shape.shadowColor,
+                            argb: color,
                             none: "No Shadow",
-                            onNone: {
-                                host.setSelectedShapeShadow(
-                                    enabled: false,
-                                    color: shape.shadowColor,
-                                    blur: Float(shape.shadowBlur)
-                                )
-                            }
-                        ) {
-                            host.setSelectedShapeShadow(
-                                enabled: true,
-                                color: $0,
-                                blur: Float(shape.shadowBlur)
-                            )
-                        }
+                            onNone: { onSet(false, color, blur) }
+                        ) { onSet(true, $0, blur) }
                         Spacer(minLength: 0)
                         ValueField(
                             label: "",
-                            value: shape.shadowBlur,
+                            value: blur,
                             palette: palette,
                             unit: "pt",
                             minimum: 0
-                        ) {
-                            host.setSelectedShapeShadow(
-                                enabled: true,
-                                color: shape.shadowColor,
-                                blur: Float($0)
-                            )
-                        }
+                        ) { onSet(true, color, $0) }
                         .frame(width: 92)
                         .help("Blur")
                     }
                 }
             }
+        }
+    }
+
+    // MARK: Line
+
+    /// A line's look, Keynote's order: its Stroke, then its Shadow. No fill, a
+    /// line has no inside. Read off the primary, written to every unlocked line
+    /// in the selection, like the shape's.
+    func lineSection(_ line: LineFormat, _ ui: Chrome) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            lineStrokeSection(line, ui)
+
+            palette.divider.frame(height: 1)
+
+            shadowControls(
+                ui,
+                on: line.hasShadow,
+                color: line.shadowColor,
+                blur: line.shadowBlur,
+                preview: lineShadowPreview(line)
+            ) { host.setSelectedLineShadow(enabled: $0, color: $1, blur: Float($2)) }
+        }
+    }
+
+    /// The line itself: how it is dashed, its colour and width, then what caps
+    /// each end. The section is the shape's Border under the name Keynote gives
+    /// it here, so it opens and closes with that one.
+    ///
+    /// Width is Keynote's 0.25 to 100pt, two decimals. The left end popup is the
+    /// start and draws its heads pointing left, the way Keynote's does.
+    func lineStrokeSection(_ line: LineFormat, _ ui: Chrome) -> some View {
+        disclosure("Border", ui, title: "Stroke") {
+            strokePreview(color: line.strokeColor, width: line.strokeWidth, style: line.strokeStyle)
+        } body: {
+            VStack(alignment: .leading, spacing: 9) {
+                glyphPopup(ui.strokeStyles, selected: line.strokeStyle, glyph: LineGlyph.strokeStyle) {
+                    host.setSelectedLineStroke(
+                        color: line.strokeColor,
+                        width: Float(line.strokeWidth),
+                        style: $0
+                    )
+                }
+
+                HStack(spacing: 8) {
+                    colorWell("Colour", argb: line.strokeColor) {
+                        host.setSelectedLineStroke(
+                            color: $0,
+                            width: Float(line.strokeWidth),
+                            style: line.strokeStyle
+                        )
+                    }
+                    Spacer(minLength: 0)
+                    ValueField(
+                        label: "",
+                        value: line.strokeWidth,
+                        palette: palette,
+                        unit: "pt",
+                        decimals: 2,
+                        minimum: 0.25,
+                        maximum: 100
+                    ) {
+                        host.setSelectedLineStroke(
+                            color: line.strokeColor,
+                            width: Float($0),
+                            style: line.strokeStyle
+                        )
+                    }
+                    .frame(width: 92)
+                    .help("Stroke Width")
+                }
+
+                rowLabel("End Points")
+
+                HStack(spacing: 8) {
+                    glyphPopup(
+                        ui.lineEnds,
+                        selected: line.startEnd,
+                        glyph: { LineGlyph.lineEnd($0, mirrored: true) }
+                    ) { host.setSelectedLineEnds(start: $0, end: line.endEnd) }
+
+                    glyphPopup(
+                        ui.lineEnds,
+                        selected: line.endEnd,
+                        glyph: { LineGlyph.lineEnd($0, mirrored: false) }
+                    ) { host.setSelectedLineEnds(start: line.startEnd, end: $0) }
+                }
+            }
+        }
+    }
+
+    /// A popup whose picks are pictures: every row draws its glyph beside its
+    /// name, and the face shows the picked one's glyph alone, the way Keynote's
+    /// image-only stroke and end point popups read.
+    func glyphPopup(
+        _ names: [String],
+        selected: String,
+        glyph: @escaping (String) -> NSImage,
+        onPick: @escaping (String) -> Void
+    ) -> some View {
+        let entries = names.map { name in
+            MenuEntry(
+                title: LineGlyph.title(name),
+                checked: name == selected,
+                image: glyph(name),
+                action: { onPick(name) }
+            )
+        }
+        let shape = RoundedRectangle(cornerRadius: Inspect.radius, style: .continuous)
+        return PopUpButton(entries: entries) {
+            HStack(spacing: 6) {
+                Image(nsImage: glyph(selected))
+                    .renderingMode(.template)
+                    .foregroundStyle(palette.text)
+                    .help(LineGlyph.title(selected))
+                Spacer(minLength: 2)
+                chevronPair
+            }
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity)
+            .frame(height: Inspect.control)
+            .background(palette.inspectorControl, in: shape)
+            .contentShape(shape)
         }
     }
 
@@ -916,26 +1026,94 @@ extension EditorView {
                 savingStyle = true
             }
         }
-        // Both verbs that need a name take an alert, the way Save Theme does.
-        // Rename carries the id it was opened on: the menu it came from is gone
-        // by the time the field is typed into.
-        .alert("Save Style", isPresented: $savingStyle) {
-            TextField("Name", text: $saveStyleText)
-            Button("Save") {
-                let typed = saveStyleText.trimmingCharacters(in: .whitespaces)
-                guard !typed.isEmpty else { return }
-                host.saveObjectStyle(name: typed)
+        .modifier(
+            StyleNameAlerts(
+                saving: $savingStyle,
+                saveText: $saveStyleText,
+                renaming: $renamingStyle,
+                renameText: $renameStyleText,
+                onSave: { host.saveObjectStyle(name: $0) },
+                onRename: { host.renameObjectStyle(styleId: renameStyleId, name: $0) }
+            )
+        )
+    }
+
+    /// The deck's saved line looks, Keynote's Line Styles: [styleStrip] for a
+    /// line, with the same affordances. A click sets the stroke and both ends
+    /// on every unlocked line in the selection; the button saves the primary's.
+    ///
+    /// The strip never shows beside the shape one, so the two share the
+    /// window's name alert state.
+    func lineStyleStrip(_ styles: [LineStyleChoice]) -> some View {
+        let column = GridItem(.flexible(), spacing: 8)
+
+        return VStack(spacing: 8) {
+            StylePager(pages: max(1, Int(ceil(Double(styles.count) / 6))), title: "Line Styles", palette: palette) { page in
+                LazyVGrid(columns: Array(repeating: column, count: 3), spacing: 8) {
+                    ForEach(Array(styles.dropFirst(page * 6).prefix(6))) { style in
+                        lineStyleSwatch(style)
+                    }
+                }
             }
-            Button("Cancel", role: .cancel) {}
+
+            panelButton("Save Style...") {
+                saveStyleText = ""
+                savingStyle = true
+            }
         }
-        .alert("Rename Style", isPresented: $renamingStyle) {
-            TextField("Name", text: $renameStyleText)
-            Button("Rename") {
-                let typed = renameStyleText.trimmingCharacters(in: .whitespaces)
-                guard !typed.isEmpty else { return }
-                host.renameObjectStyle(styleId: renameStyleId, name: typed)
+        .modifier(
+            StyleNameAlerts(
+                saving: $savingStyle,
+                saveText: $saveStyleText,
+                renaming: $renamingStyle,
+                renameText: $renameStyleText,
+                onSave: { host.saveLineStyle(name: $0) },
+                onRename: { host.renameLineStyle(styleId: renameStyleId, name: $0) }
+            )
+        )
+    }
+
+    /// One saved line look, drawn: a stretch of its stroke across the tile in its
+    /// colour and dashes, held to 3pt so a heavy style still reads as a line
+    /// rather than a bar. The name is the tooltip.
+    func lineStyleSwatch(_ style: LineStyleChoice) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 4, style: .continuous)
+        let weight = max(1, min(style.strokeWidth, 3))
+        return Button { host.applyLineStyle(styleId: style.id) } label: {
+            shape
+                .fill(palette.inspectorControl)
+                .frame(maxWidth: .infinity, minHeight: 47, maxHeight: 47)
+                .overlay {
+                    GeometryReader { proxy in
+                        Path { path in
+                            path.move(to: CGPoint(x: 8, y: proxy.size.height / 2))
+                            path.addLine(to: CGPoint(x: proxy.size.width - 8, y: proxy.size.height / 2))
+                        }
+                        .stroke(
+                            Color(argb: style.strokeColor),
+                            style: SwiftUI.StrokeStyle(
+                                lineWidth: weight,
+                                lineCap: style.strokeStyle == "RoundDots" ? .round : .butt,
+                                dash: LineGlyph.dashes(style.strokeStyle, weight: weight)
+                            )
+                        )
+                    }
+                }
+                .overlay { shape.inset(by: 0.5).stroke(palette.hairline, lineWidth: 1) }
+                .overlay {
+                    if style.isCurrent { shape.inset(by: -2.5).stroke(palette.accent, lineWidth: 2) }
+                }
+                .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .help(style.name)
+        .contextMenu {
+            Button("Rename...") {
+                renameStyleId = style.id
+                renameStyleText = style.name
+                renamingStyle = true
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Delete") { host.deleteLineStyle(styleId: style.id) }
         }
     }
 
@@ -2570,6 +2748,8 @@ extension EditorView {
                 commitBuild(entry, duration: $0)
             }
 
+            lineDrawFields(entry, ui)
+
             sectionLabel("Trigger")
 
             HStack(spacing: 2) {
@@ -2677,7 +2857,9 @@ extension EditorView {
         dy: Double? = nil,
         opacity: Double? = nil,
         rotation: Double? = nil,
-        scale: Double? = nil
+        scale: Double? = nil,
+        lineDrawDirectionIndex: Int? = nil,
+        lineDrawIncludeEnds: Bool? = nil
     ) {
         host.updateBuild(
             index: Int32(entry.index),
@@ -2692,7 +2874,9 @@ extension EditorView {
             dy: Float(dy ?? entry.dy),
             opacity: Float(opacity ?? entry.opacity),
             rotation: Float(rotation ?? entry.rotation),
-            scale: Float(scale ?? entry.scale)
+            scale: Float(scale ?? entry.scale),
+            lineDrawDirectionIndex: Int32(lineDrawDirectionIndex ?? entry.lineDrawDirectionIndex),
+            lineDrawIncludeEnds: lineDrawIncludeEnds ?? entry.lineDrawIncludeEnds
         )
     }
 

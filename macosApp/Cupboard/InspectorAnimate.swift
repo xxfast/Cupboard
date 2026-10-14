@@ -216,6 +216,23 @@ extension EditorView {
         }
     }
 
+    /// Keynote's Line Draw options, under the Duration they share a section
+    /// with: which way the line grows, and whether its heads ride the tip.
+    /// Nothing at all for any other effect, or for an action.
+    @ViewBuilder func lineDrawFields(_ entry: BuildEntry, _ ui: Chrome) -> some View {
+        if !entry.isAction, Self.effectName(entry, ui) == "Line Draw" {
+            sectionLabel("Direction")
+
+            stylePopup(ui.lineDrawDirections, selected: entry.lineDrawDirectionIndex) {
+                commitBuild(entry, lineDrawDirectionIndex: $0)
+            }
+
+            checkRow("Include end points", on: entry.lineDrawIncludeEnds) {
+                commitBuild(entry, lineDrawIncludeEnds: !entry.lineDrawIncludeEnds)
+            }
+        }
+    }
+
     /// The build order, with the way back at its foot. The list itself is the
     /// same one the panel has always drawn.
     func buildOrderPanel(_ ui: Chrome) -> some View {

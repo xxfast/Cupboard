@@ -2,6 +2,7 @@ package io.github.xxfast.cupboard.export
 
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
+import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
@@ -246,6 +247,8 @@ private fun slideXml(slide: Slide, step: Int, width: Long, height: Long): String
         val shape: String? = when (element) {
             is TextElement -> textBox(element, id)
             is ShapeElement -> shapeBox(element, id)
+            // The raster still covers it. A real connector export is a later item.
+            is LineElement -> null
             // Everything Cupboard draws itself is already in the picture behind:
             // see this file's own note on what the export is and is not.
             else -> null

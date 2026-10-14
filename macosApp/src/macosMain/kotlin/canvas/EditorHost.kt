@@ -75,6 +75,11 @@ import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ImageMask
+import io.github.xxfast.cupboard.document.LineDraw
+import io.github.xxfast.cupboard.document.LineDrawDirection
+import io.github.xxfast.cupboard.document.LineDrawDurationMs
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.LineEnd
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
@@ -90,6 +95,7 @@ import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.StrokeStyle
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
@@ -115,10 +121,10 @@ import io.github.xxfast.cupboard.screens.editor.mediaKind
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.action
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.applyingLineStyle
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
-import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.elementById
 import io.github.xxfast.cupboard.document.isCompoundShape
 import io.github.xxfast.cupboard.document.isLocked
@@ -327,13 +333,17 @@ private val LinkKindTitles: List<String> = listOf(
     "Slide",
 )
 
+/** Keynote's stroke width range for a line, in points. */
+private const val MinLineWidth: Float = 0.25f
+private const val MaxLineWidth: Float = 100f
+
 /**
  * The outlines an image may be cut to, in the order the mask popup offers them,
  * paired with what each is called. A place in these lists is the whole protocol,
  * the way a transition kind's is, and -1 is an image showing all of itself.
  *
- * Not every [ShapeKind]: a line has no inside to keep, so masking to one would
- * hide the picture entirely. The rest of the catalog reads as a window.
+ * Not every [ShapeKind]: only the catalog's outlines, each of which reads as a
+ * window. A free-drawn path is nothing to pick from a list.
  */
 private val MaskKinds: List<ShapeKind> = listOf(
     ShapeKind.Rectangle,
@@ -416,7 +426,21 @@ private const val MAX_TRANSITION_MS: Int = 3000
  * a menu and as one in code.
  */
 private val BuildEffectTitles: List<String> =
-    listOf("Appear", "Fade Up", "Pop", "Dissolve", "Move In", "Scale", "Wipe", "Typewriter")
+    listOf(
+        "Appear",
+        "Fade Up",
+        "Pop",
+        "Dissolve",
+        "Move In",
+        "Scale",
+        "Wipe",
+        "Typewriter",
+        "Line Draw",
+    )
+
+/** Which way a Line Draw grows its line, in [LineDrawDirection]'s order. Same protocol. */
+private val LineDrawDirectionTitles: List<String> =
+    listOf("Start to End", "End to Start", "Middle to Ends")
 
 /** The triggers, in [BuildTrigger]'s order. Same protocol as the effects. */
 private val BuildTriggerTitles: List<String> = listOf("On Click", "With Previous", "After Previous")
@@ -474,6 +498,7 @@ private fun Element.rowTitle(): String {
     val content: String = when (this) {
         is TextElement -> text
         is ShapeElement -> label.ifBlank { kind.name }
+        is LineElement -> ""
         is ImageElement -> placeholder
         is GalleryElement -> "${images.size} images"
         is VideoElement -> title.ifBlank { webUrl.orEmpty() }
@@ -735,15 +760,13 @@ class DeckFontRow(
  * commit if it turned them on, the way the slide background does: [hasGradient]
  * false still carries stops, so switching to a gradient never has to invent one.
  *
- * [isRectangle] and [isLine] are what the panel hides controls by: a corner
- * radius means nothing to any kind but a rectangle, and only a line draws
- * arrowheads.
+ * [isRectangle] is what the panel hides the corner radius by: it means nothing
+ * to any other kind. A line is not a shape at all; see [LineProps].
  */
 class ShapeProps(
     /** What the shape is, spelled the way [ShapeKind] spells it. */
     val kindName: String,
     val isRectangle: Boolean,
-    val isLine: Boolean,
     val cornerRadius: Float,
     /** Packed ARGB, the document model's color format. So is every color below. */
     val fill: Long,
@@ -759,13 +782,43 @@ class ShapeProps(
     val imageFillMode: Int,
     val strokeColor: Long,
     val strokeWidth: Float,
+    /** How the border is dashed, spelled the way [StrokeStyle] spells it, one of `strokeStyleNames()`. */
+    val strokeStyle: String,
     val hasShadow: Boolean,
     val shadowColor: Long,
     val shadowBlur: Float,
-    val startArrow: Boolean,
-    val endArrow: Boolean,
     val label: String,
     val labelSize: Float,
+)
+
+/**
+ * The primary selected element's line, flattened for the native inspector, and
+ * null unless that element is a [LineElement]. [ShapeProps]'s sibling, same
+ * contract: what the panel shows, never a handle onto the document.
+ *
+ * A line has no box to size: its geometry is its two points, slide points from
+ * the top left. [angle] is the start-to-end direction in degrees, counterclockwise
+ * from pointing right, 0 until 360. The style and the two ends are the enums'
+ * names, the way [ShapeProps.kindName] spells its kind, picked from
+ * `strokeStyleNames()` and `lineEndNames()`.
+ */
+class LineProps(
+    val startX: Float,
+    val startY: Float,
+    val endX: Float,
+    val endY: Float,
+    val angle: Float,
+    val length: Float,
+    /** Packed ARGB, the document model's color format. So is the shadow's. */
+    val strokeColor: Long,
+    val strokeWidth: Float,
+    val strokeStyle: String,
+    val startEnd: String,
+    val endEnd: String,
+    val hasShadow: Boolean,
+    val shadowColor: Long,
+    val shadowBlur: Float,
+    val locked: Boolean,
 )
 
 /**
@@ -789,6 +842,26 @@ class ObjectStyleProps(
     val strokeWidth: Float,
     val hasShadow: Boolean,
     val cornerRadius: Float,
+    val current: Boolean,
+)
+
+/**
+ * One saved line look from the deck's library, flattened for the Line Styles
+ * strip: [ObjectStyleProps] for a line, same contract. The style and the two ends
+ * are the enums' names, picked from `strokeStyleNames()` and `lineEndNames()`.
+ *
+ * [current] is the strip's ring: the primary line is already wearing exactly
+ * this look, stroke and ends.
+ */
+class LineStyleProps(
+    val id: String,
+    val name: String,
+    /** Packed ARGB, the document model's color format. */
+    val strokeColor: Long,
+    val strokeWidth: Float,
+    val strokeStyle: String,
+    val startEnd: String,
+    val endEnd: String,
     val current: Boolean,
 )
 
@@ -1161,6 +1234,12 @@ class BuildRow(
     val hasStepTarget: Boolean,
     /** The deliveries this build's element has pieces for, in menu order. */
     val deliveryTitles: List<String>,
+    /**
+     * How a Line Draw grows its line, a place in `lineDrawDirectionTitles()`.
+     * Filled in whatever the effect, the way the action numbers are.
+     */
+    val lineDrawDirectionIndex: Int,
+    val lineDrawIncludeEnds: Boolean,
 )
 
 /**
@@ -3142,7 +3221,6 @@ class EditorHost(
         ShapeProps(
             kindName = shape.kind.name,
             isRectangle = shape.kind == ShapeKind.Rectangle,
-            isLine = shape.kind == ShapeKind.Line,
             cornerRadius = shape.cornerRadius,
             fill = shape.fill,
             fillKind = shape.fillKind.ordinal,
@@ -3153,11 +3231,10 @@ class EditorHost(
             imageFillMode = (shape.imageFill?.mode ?: ImageFillMode.ScaleToFill).ordinal,
             strokeColor = shape.strokeColor,
             strokeWidth = shape.strokeWidth,
+            strokeStyle = shape.strokeStyle.name,
             hasShadow = shape.shadow != null,
             shadowColor = shadow.color,
             shadowBlur = shadow.blur,
-            startArrow = shape.startArrow,
-            endArrow = shape.endArrow,
             label = shape.label,
             labelSize = shape.labelSize,
         )
@@ -3232,9 +3309,15 @@ class EditorHost(
     /** What the Scale popups offer, shapes and backgrounds alike, in [ImageFillMode]'s order. */
     fun imageFillModeTitles(): List<String> = ImageFillModeTitles
 
-    /** The outline, or the whole of a line. Zero width is no outline at all. */
+    /** The outline. Zero width is no outline at all. */
     fun setSelectedShapeStroke(color: Long, width: Float) {
         formatShapes { it.copy(strokeColor = color, strokeWidth = width.coerceAtLeast(0f)) }
+    }
+
+    /** How the outline is dashed, by name from [strokeStyleNames]. An unknown name writes nothing. */
+    fun setSelectedShapeStrokeStyle(name: String) {
+        val style: StrokeStyle = StrokeStyle.entries.firstOrNull { it.name == name } ?: return
+        formatShapes { it.copy(strokeStyle = style) }
     }
 
     /**
@@ -3257,11 +3340,6 @@ class EditorHost(
         formatShapes { it.copy(cornerRadius = radius.coerceAtLeast(0f)) }
     }
 
-    /** Lines only, for the same reason. */
-    fun setSelectedShapeArrows(start: Boolean, end: Boolean) {
-        formatShapes { it.copy(startArrow = start, endArrow = end) }
-    }
-
     /** The text drawn in the middle of the shape. Blank is no label. */
     fun setSelectedShapeLabel(label: String) {
         formatShapes { it.copy(label = label) }
@@ -3279,6 +3357,130 @@ class EditorHost(
         val edits: List<Element> = state.selectedElements.mapNotNull { element ->
             if (element !is ShapeElement || element.locked) return@mapNotNull null
             val formatted: ShapeElement = transform(element)
+            return@mapNotNull if (formatted == element) null else formatted
+        }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    /** What the stroke style popups offer, shapes and lines alike, in [StrokeStyle]'s order. */
+    fun strokeStyleNames(): List<String> = StrokeStyle.entries.map { it.name }
+
+    /** What the End points popups offer, in [LineEnd]'s order, Keynote's. */
+    fun lineEndNames(): List<String> = LineEnd.entries.map { it.name }
+
+    /**
+     * The line the Format inspector shows, null when the primary element is not
+     * a line. Read off the primary alone; the setters below write to every
+     * unlocked line in the selection, the way the shape ones do.
+     *
+     * A line with no shadow still answers with one, filled in with what turning
+     * it on would commit, the way [selectedShape] does.
+     */
+    fun selectedLine(): LineProps? = (state.primaryElement as? LineElement)?.let { line ->
+        val shadow: ShapeShadow = line.shadow ?: ShapeShadow()
+        LineProps(
+            startX = line.start.x,
+            startY = line.start.y,
+            endX = line.end.x,
+            endY = line.end.y,
+            angle = line.angle,
+            length = line.length,
+            strokeColor = line.strokeColor,
+            strokeWidth = line.strokeWidth,
+            strokeStyle = line.strokeStyle.name,
+            startEnd = line.startEnd.name,
+            endEnd = line.endEnd.name,
+            hasShadow = line.shadow != null,
+            shadowColor = shadow.color,
+            shadowBlur = shadow.blur,
+            locked = line.locked,
+        )
+    }
+
+    /**
+     * The whole of a line's look: its colour, its width within Keynote's 0.25 to
+     * 100pt, and how it is dashed, by name from [strokeStyleNames]. An unknown
+     * name keeps each line's own style rather than inventing one.
+     */
+    fun setSelectedLineStroke(color: Long, width: Float, style: String) {
+        val picked: StrokeStyle? = StrokeStyle.entries.firstOrNull { it.name == style }
+        formatLines { line ->
+            line.copy(
+                strokeColor = color,
+                strokeWidth = width.coerceIn(MinLineWidth, MaxLineWidth),
+                strokeStyle = picked ?: line.strokeStyle,
+            )
+        }
+    }
+
+    /** What caps each end, by name from [lineEndNames]. An unknown name leaves that end alone. */
+    fun setSelectedLineEnds(start: String, end: String) {
+        val startEnd: LineEnd? = LineEnd.entries.firstOrNull { it.name == start }
+        val endEnd: LineEnd? = LineEnd.entries.firstOrNull { it.name == end }
+        formatLines { line ->
+            line.copy(startEnd = startEnd ?: line.startEnd, endEnd = endEnd ?: line.endEnd)
+        }
+    }
+
+    /** [setSelectedShapeShadow]'s line half, with its deal: off drops it, on keeps the offset. */
+    fun setSelectedLineShadow(enabled: Boolean, color: Long, blur: Float) {
+        formatLines { line ->
+            val shadow: ShapeShadow? = if (!enabled) null else {
+                (line.shadow ?: ShapeShadow()).copy(color = color, blur = blur.coerceAtLeast(0f))
+            }
+            return@formatLines line.copy(shadow = shadow)
+        }
+    }
+
+    /**
+     * Moves every selected line's start to [x], each keeping its own y and its
+     * end. One axis per setter, so a multi-selection only changes the field that
+     * was typed. Clamps at 1pt, Keynote's floor, and a start typed onto the end
+     * lands 1pt off it (see [LineElement.withStart]).
+     */
+    fun setSelectedLineStartX(x: Float) {
+        formatLines { it.withStart(it.start.copy(x = x.coerceAtLeast(1f))) }
+    }
+
+    /** [setSelectedLineStartX] for y. */
+    fun setSelectedLineStartY(y: Float) {
+        formatLines { it.withStart(it.start.copy(y = y.coerceAtLeast(1f))) }
+    }
+
+    /** [setSelectedLineStartX] for the other end. */
+    fun setSelectedLineEndX(x: Float) {
+        formatLines { it.withEnd(it.end.copy(x = x.coerceAtLeast(1f))) }
+    }
+
+    /** [setSelectedLineEndX] for y. */
+    fun setSelectedLineEndY(y: Float) {
+        formatLines { it.withEnd(it.end.copy(y = y.coerceAtLeast(1f))) }
+    }
+
+    /**
+     * Points every line in the selection at [degrees], counterclockwise from
+     * pointing right, each turned about its midpoint with its length kept.
+     * Anything else selected takes it as a rotation, the way Compose's Angle
+     * field does, so a mixed selection still turns as one edit.
+     */
+    fun setSelectedLineAngle(degrees: Float) {
+        val edits: List<Element> = editable().mapNotNull { element ->
+            val turned: Element =
+                if (element is LineElement) element.withAngle(degrees)
+                else element.update(rotation = degrees)
+            return@mapNotNull if (turned == element) null else turned
+        }
+        if (edits.isEmpty()) return
+        viewModel.onUpdateElements(edits)
+    }
+
+    // [formatShapes] for lines: the unlocked lines of the selection, minus the
+    // ones the change left where they were, as one edit.
+    private fun formatLines(transform: (LineElement) -> LineElement) {
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is LineElement || element.locked) return@mapNotNull null
+            val formatted: LineElement = transform(element)
             return@mapNotNull if (formatted == element) null else formatted
         }
         if (edits.isEmpty()) return
@@ -3339,6 +3541,50 @@ class EditorHost(
 
     fun renameObjectStyle(styleId: String, name: String) {
         viewModel.onRenameObjectStyle(styleId, name)
+    }
+
+    /**
+     * The deck's saved line looks, in library order: [objectStyles] for the Line
+     * Styles strip, with its deal. `current` is measured against the primary
+     * line, and is false for every style while the primary is not a line.
+     */
+    fun lineStyles(): List<LineStyleProps> {
+        val line: LineElement? = state.primaryElement as? LineElement
+        return state.lineStyles.map { style ->
+            LineStyleProps(
+                id = style.id,
+                name = style.name,
+                strokeColor = style.strokeColor,
+                strokeWidth = style.strokeWidth,
+                strokeStyle = style.strokeStyle.name,
+                startEnd = style.startEnd.name,
+                endEnd = style.endEnd.name,
+                current = line != null && line.applyingLineStyle(style) == line,
+            )
+        }
+    }
+
+    /**
+     * Dresses the whole selection in the saved line style [styleId]: stroke and
+     * both ends. What is not an unlocked line in there is the core's to skip.
+     */
+    fun applyLineStyle(styleId: String) {
+        viewModel.onApplyLineStyle(state.selectedElements.map { it.id }, styleId)
+    }
+
+    /** The primary line's look, ends included, saved to the deck's library as [name]. */
+    fun saveLineStyle(name: String) {
+        val line: LineElement = state.primaryElement as? LineElement ?: return
+        viewModel.onSaveLineStyle(line.id, name)
+    }
+
+    /** Drops [styleId] from the library. Lines wearing it keep the look they were given. */
+    fun deleteLineStyle(styleId: String) {
+        viewModel.onDeleteLineStyle(styleId)
+    }
+
+    fun renameLineStyle(styleId: String, name: String) {
+        viewModel.onRenameLineStyle(styleId, name)
     }
 
     /** Whether Use As Default has a text box to take the deck's text look off. */
@@ -4538,6 +4784,7 @@ class EditorHost(
             // What an action control would commit if the build had one, so the
             // fields under an action popup never start from nothing.
             val action: BuildAction = build.action ?: BuildAction(ActionKind.Move)
+            val lineDraw: LineDraw = build.lineDraw ?: LineDraw()
             return@mapIndexed BuildRow(
                 index = index,
                 title = element?.rowTitle() ?: "Missing element",
@@ -4559,12 +4806,17 @@ class EditorHost(
                 scale = action.scale,
                 hasStepTarget = hasSteps(element),
                 deliveryTitles = deliveries.map { BuildDeliveryTitles[it.ordinal] },
+                lineDrawDirectionIndex = lineDraw.direction.ordinal,
+                lineDrawIncludeEnds = lineDraw.includeEnds,
             )
         }
     }
 
     /** The effects a build may play, in the model's order. Positions come back. */
     fun buildEffectTitles(): List<String> = BuildEffectTitles
+
+    /** Which way a Line Draw may grow its line, in the same protocol. */
+    fun lineDrawDirectionTitles(): List<String> = LineDrawDirectionTitles
 
     /** What may start a build, in the same protocol. */
     fun buildTriggerTitles(): List<String> = BuildTriggerTitles
@@ -4631,7 +4883,12 @@ class EditorHost(
             return
         }
         val effect: BuildEffect = BuildEffect.entries.getOrNull(effectIndex) ?: return
-        viewModel.onAddBuild(Build(elementId = element.id, kind = kind, effect = effect))
+        val build = Build(elementId = element.id, kind = kind, effect = effect)
+        // Keynote draws a line over 2s, slower than anything else builds.
+        viewModel.onAddBuild(
+            if (effect == BuildEffect.LineDraw) build.copy(durationMs = LineDrawDurationMs)
+            else build,
+        )
     }
 
     /**
@@ -4642,7 +4899,9 @@ class EditorHost(
      * The kind and the element are the build's own and never change here: what
      * a build plays is edited, what it plays on is not. [actionKindIndex] -1
      * clears the action, and a build that is not an action carries none whatever
-     * the index says. An index the slide has no build at is a no-op.
+     * the index says. The Line Draw pair writes only while the effect is Line
+     * Draw, and any other effect leaves the build's own as it was. An index the
+     * slide has no build at is a no-op.
      */
     fun updateBuild(
         index: Int,
@@ -4658,9 +4917,19 @@ class EditorHost(
         opacity: Float,
         rotation: Float,
         scale: Float,
+        lineDrawDirectionIndex: Int,
+        lineDrawIncludeEnds: Boolean,
     ) {
         val slide: Slide = state.selectedSlide
         val build: Build = slide.builds.getOrNull(index) ?: return
+        val effect: BuildEffect = BuildEffect.entries.getOrNull(effectIndex) ?: build.effect
+        val lineDraw: LineDraw? =
+            if (effect != BuildEffect.LineDraw) build.lineDraw
+            else LineDraw(
+                direction = LineDrawDirection.entries.getOrNull(lineDrawDirectionIndex)
+                    ?: LineDrawDirection.StartToEnd,
+                includeEnds = lineDrawIncludeEnds,
+            )
         val deliveries: List<BuildDelivery> = deliveriesFor(slide.elementById(build.elementId))
         val action: BuildAction? =
             if (build.kind != BuildKind.Action) null
@@ -4678,13 +4947,14 @@ class EditorHost(
         viewModel.onUpdateBuild(
             index,
             build.copy(
-                effect = BuildEffect.entries.getOrNull(effectIndex) ?: build.effect,
+                effect = effect,
                 delivery = deliveries.getOrNull(deliveryIndex) ?: BuildDelivery.All,
                 trigger = BuildTrigger.entries.getOrNull(triggerIndex) ?: build.trigger,
                 durationMs = durationMs.coerceIn(MIN_BUILD_MS, MAX_BUILD_MS),
                 delayMs = delayMs.coerceAtLeast(0),
                 elementStep = elementStep.takeIf { it >= 0 },
                 action = action,
+                lineDraw = lineDraw,
             ),
         )
     }

@@ -64,6 +64,8 @@ data class SlideTransition(
 fun Element.matchKey(): String = when (this) {
     is TextElement -> "text:$text"
     is ShapeElement -> "shape:$kind:$label"
+    // A line says nothing, so what it is capped with is the nearest it has to content.
+    is LineElement -> "line:$startEnd:$endEnd"
     is CodeElement -> "code:$code"
     is TerminalElement -> "terminal:$text"
     is DiagramElement -> "diagram:$source"
@@ -92,15 +94,50 @@ fun Element.matchKey(): String = when (this) {
  * stored rather than fighting over one partner. Top-level elements only, because
  * a group travels as the one object it draws as.
  */
-fun magicMovePairs(from: Slide, to: Slide): List<Pair<Element, Element>> {
-    val available: MutableList<Element> = from.elements.toMutableList()
+fun magicMovePairs(from: Slide, to: Slide): List<Pair<Element, Element>> =
+    magicMovePairs(from.elements, to.elements)
 
-    return to.elements.mapNotNull { arriving ->
+/**
+ * [magicMovePairs] over two lists of elements, which is how the objects two
+ * layouts draw behind their slides pair off as well.
+ *
+ * A name the user gave is the one thing that outranks storage order: elements
+ * that say the same thing and are called the same pair first, and two that are
+ * called different things never pair at all. That is what tells one blank panel
+ * from the next, where the content has nothing to say: a layout's "editor island"
+ * travels to the other layout's "editor island" however many islands sit before it.
+ * A name on one side only says nothing, so those still pair by content.
+ */
+fun magicMovePairs(from: List<Element>, to: List<Element>): List<Pair<Element, Element>> {
+    val available: MutableList<Element> = from.toMutableList()
+
+    fun take(arriving: Element, matches: (String?) -> Boolean): Element? {
         val key: String = arriving.matchKey()
-        val index: Int = available.indexOfFirst { it.matchKey() == key }
-        if (index == -1) null else available.removeAt(index) to arriving
+        val index: Int = available.indexOfFirst { it.matchKey() == key && matches(it.givenName) }
+        return if (index == -1) null else available.removeAt(index)
+    }
+
+    // Named ones first, so nothing unnamed walks off with a partner one was after.
+    val named: Map<String, Element> = to
+        .mapNotNull { arriving ->
+            val name: String = arriving.givenName ?: return@mapNotNull null
+            val leaving: Element = take(arriving) { it == name } ?: return@mapNotNull null
+            return@mapNotNull arriving.id to leaving
+        }
+        .toMap()
+
+    return to.mapNotNull { arriving ->
+        val name: String? = arriving.givenName
+        val leaving: Element = named[arriving.id]
+            ?: take(arriving) { name == null || it == null }
+            ?: return@mapNotNull null
+        return@mapNotNull leaving to arriving
     }
 }
+
+/** The name the user gave this element, null when they gave none worth the word. */
+private val Element.givenName: String?
+    get() = name?.takeIf { it.isNotBlank() }
 
 /**
  * This element [fraction] of the way through travelling from [from], for a Magic
@@ -157,6 +194,15 @@ fun Element.travellingFrom(from: Element, fraction: Float): Element {
             ),
             labelSize = blend(from.labelSize, labelSize, t),
             labelColor = blendColor(from.labelColor, labelColor, t),
+        )
+        // Two lines travel point to point, so one turning as it goes turns rather
+        // than squashing through its box. Anything else coming in as a line moves
+        // its box, which maps both points.
+        is LineElement -> if (from !is LineElement) update(frame = frame) else copy(
+            start = Point(blend(from.start.x, start.x, t), blend(from.start.y, start.y, t)),
+            end = Point(blend(from.end.x, end.x, t), blend(from.end.y, end.y, t)),
+            strokeColor = blendColor(from.strokeColor, strokeColor, t),
+            strokeWidth = blend(from.strokeWidth, strokeWidth, t),
         )
         is CodeElement -> copy(
             frame = frame,

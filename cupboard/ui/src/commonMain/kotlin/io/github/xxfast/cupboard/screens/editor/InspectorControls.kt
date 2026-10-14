@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -892,6 +894,63 @@ internal fun <T> DropdownField(
             for ((option, title) in options) {
                 DropdownMenuItem(
                     text = { Text(title, fontSize = 13.sp) },
+                    leadingIcon = {
+                        Box(Modifier.width(14.dp)) {
+                            if (option == value) {
+                                Text("✓", color = tokens.accent, fontSize = 12.sp)
+                            }
+                        }
+                    },
+                    onClick = {
+                        open = false
+                        onPick(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * [DropdownField] for options that are pictures rather than words: the field and
+ * every menu entry draw their option through [preview], in the colour handed to
+ * it. A line's end point popups, whose eleven heads have no names worth reading.
+ */
+@Composable
+internal fun <T> PreviewDropdownField(
+    label: String,
+    value: T,
+    options: List<T>,
+    enabled: Boolean,
+    onPick: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    preview: DrawScope.(option: T, color: Color) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var open: Boolean by remember { mutableStateOf(false) }
+    val ink: Color = if (enabled) tokens.text else tokens.faint
+
+    Box(modifier) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .border(1.dp, if (enabled) tokens.outline else tokens.div, RoundedCornerShape(4.dp))
+                .clickable(enabled = enabled) { open = true }
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Canvas(Modifier.weight(1f).height(16.dp)) { preview(value, ink) }
+            Spacer(Modifier.width(8.dp))
+            Text("▾", color = if (enabled) tokens.dim else tokens.faint, fontSize = 10.sp)
+        }
+        FieldLabel(label, enabled)
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (option in options) {
+                DropdownMenuItem(
+                    text = {
+                        Canvas(Modifier.width(64.dp).height(16.dp)) { preview(option, tokens.text) }
+                    },
                     leadingIcon = {
                         Box(Modifier.width(14.dp)) {
                             if (option == value) {

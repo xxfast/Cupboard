@@ -53,9 +53,15 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
     val notes: TextLook = look(JetBrainsMono, Weight.Normal, 41f, lineHeight = 1.32f, color = defaults.textColor)
     val caption: TextLook = look(JetBrainsMono, Weight.Normal, 30f, lineHeight = 1.19f, color = Black)
 
-    fun island(id: String, frame: Frame): ShapeElement = ShapeElement(
+    /**
+     * [name] is what a Magic Move tells one island from the next by, since a blank
+     * panel says nothing: an editor island travels to the next layout's editor
+     * island, and the tree's has nowhere to go and fades (see `magicMovePairs`).
+     */
+    fun island(id: String, frame: Frame, name: String? = null): ShapeElement = ShapeElement(
         id = id,
         frame = frame,
+        name = name,
         cornerRadius = IslandRadius,
         fill = White,
         strokeColor = Transparent,
@@ -67,6 +73,7 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
         ShapeElement(
             id = id,
             frame = frame,
+            name = "tab",
             cornerRadius = TabRadius,
             fill = fill,
             strokeColor = stroke,
@@ -137,11 +144,11 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
             *listOfNotNull(
                 logo,
                 textBox("$id-project", Frame(177f, 150f, 420f, 60f), project, heading, role = null),
-                island("$id-tree-island", Frame(89f, 249f, 518f, 698f)),
+                island("$id-tree-island", Frame(89f, 249f, 518f, 698f), "tree island"),
                 tree("$id-tree", Frame(112f, 272f, 472f, 652f)),
                 tabChip("$id-tab", Frame(666f, 124f, 513f, 87f), tabFill, tabStroke),
                 titleBox("$id-file", Frame(690f, 140f, 470f, 55f), file, tab),
-                island("$id-editor-island", Frame(662f, 239f, 1186f, 717f)),
+                island("$id-editor-island", Frame(662f, 239f, 1186f, 717f), "editor island"),
                 code("$id-code", Frame(708f, 285f, 1094f, 625f), language),
             ).toTypedArray(),
             background = background,
@@ -161,10 +168,10 @@ internal fun jetBrainsIslandsLightLayouts(defaults: ElementDefaults): List<Slide
             title,
             tabChip("$id-tab", Frame(41f, 132f, 438f, 91f), tabFill, tabStroke),
             titleBox("$id-file", Frame(65f, 150f, 400f, 55f), file, tab),
-            island("$id-editor-island", Frame(60f, 249f, 1142f, 698f)),
+            island("$id-editor-island", Frame(60f, 249f, 1142f, 698f), "editor island"),
             code("$id-code", Frame(106f, 295f, 1050f, 606f), language),
             textBox("$id-run", Frame(1247f, 150f, 300f, 60f), "⏵ Run", heading, role = null),
-            island("$id-run-island", Frame(1234f, 249f, 628f, 698f)),
+            island("$id-run-island", Frame(1234f, 249f, 628f, 698f), "run island"),
             textBox("$id-output", Frame(1280f, 295f, 536f, 606f), "Output", notes),
             background = background,
         )

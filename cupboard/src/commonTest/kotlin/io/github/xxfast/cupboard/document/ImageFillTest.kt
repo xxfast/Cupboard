@@ -102,13 +102,6 @@ class ImageFillTest {
     }
 
     @Test
-    fun aLineHasNoInsideForAPicture() {
-        val line = ShapeElement(frame = box, kind = ShapeKind.Line).withImageFill("a.png")
-
-        assertEquals(ShapeFillKind.Color, line.fillKind)
-    }
-
-    @Test
     fun switchingToAColourOrAGradientDropsThePicture() {
         val pictured: ShapeElement = ShapeElement(frame = box, gradient = gradient)
             .withImageFill("a.png")

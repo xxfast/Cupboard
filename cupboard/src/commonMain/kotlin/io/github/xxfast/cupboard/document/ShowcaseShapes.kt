@@ -35,10 +35,9 @@ private fun shapeCatalogSlide(): Slide {
         title = "Shape Catalog",
         subtitle = "every ShapeKind, in the deck's default fill and stroke",
         elements = shapes,
-        notes = "Look for: ten shapes, each matching its caption. Triangle points up, " +
+        notes = "Look for: nine shapes, each matching its caption. Triangle points up, " +
             "Arrow points right, Star has five points, Polygon is a regular hexagon, " +
-            "QuoteBubble's tail is bottom-left and Callout's is bottom-centre. Line is " +
-            "the odd one out: a bare diagonal with an arrowhead, no fill at all.",
+            "QuoteBubble's tail is bottom-left and Callout's is bottom-centre.",
     )
 }
 
@@ -220,32 +219,53 @@ private fun shadowsSlide(): Slide {
     )
 }
 
-/** [ShapeKind.Line] and its arrowheads, the one kind that reads both flags. */
+/**
+ * [LineElement]: the end points on the top row, the stroke styles on the bottom.
+ * Top row rises corner to corner across its box, the way a fresh line inserts,
+ * and ends on a curved line ([LineElement.bend]); the bottom row runs flat through
+ * the middle, where a dash pattern reads best.
+ */
 private fun linesAndArrowsSlide(): Slide {
-    val combinations: List<Triple<String, Boolean, Boolean>> = listOf(
-        Triple("no arrowheads", false, false),
-        Triple("endArrow", false, true),
-        Triple("startArrow", true, false),
-        Triple("both ends", true, true),
+    val combinations: List<Triple<String, LineEnd, LineEnd>> = listOf(
+        Triple("None / None", LineEnd.None, LineEnd.None),
+        Triple("None / Arrow", LineEnd.None, LineEnd.Arrow),
+        Triple("Arrow / None", LineEnd.Arrow, LineEnd.None),
+        Triple("Arrow / Arrow", LineEnd.Arrow, LineEnd.Arrow),
     )
 
-    val lines: List<Element> = combinations.flatMapIndexed { index, (label, start, end) ->
-        tile(gridCell(columns = 2, rows = 2, index = index), label) { box ->
-            plainShape(box, ShapeKind.Line).copy(
-                startArrow = start,
-                endArrow = end,
+    val capped: List<Element> = combinations.flatMapIndexed { index, (label, start, end) ->
+        tile(gridCell(columns = 5, rows = 2, index = index), label) { box ->
+            lineElement(box, ShowcaseDefaults, start, end).copy(strokeWidth = 5f)
+        }
+    }
+
+    val curved: List<Element> = tile(gridCell(columns = 5, rows = 2, index = 4), "Curved") { box ->
+        lineElement(box, ShowcaseDefaults, endEnd = LineEnd.Arrow, curved = true)
+            .copy(strokeWidth = 5f)
+    }
+
+    val styled: List<Element> = StrokeStyle.entries.flatMapIndexed { index, style ->
+        tile(gridCell(columns = 5, rows = 2, index = index + 5), style.name) { box ->
+            lineElement(box, ShowcaseDefaults).copy(
+                start = Point(box.x, box.centerY),
+                end = Point(box.x + box.width, box.centerY),
                 strokeWidth = 5f,
+                strokeStyle = style,
             )
         }
     }
 
     return featureSlide(
         title = "Lines and Arrows",
-        subtitle = "startArrow and endArrow, the two flags only a Line reads",
-        elements = lines,
-        notes = "Look for: four diagonals running top-left to bottom-right, with the " +
-            "arrowheads the caption names and no others. None of the four draws a fill, " +
-            "and the heads sit on the ends of the stroke rather than beyond them.",
+        subtitle = "startEnd and endEnd on the top row, strokeStyle on the bottom",
+        elements = capped + curved + styled,
+        notes = "Look for: four diagonals rising left to right, each start / end pair " +
+            "capped as its caption names (start first) and no others. The heads' tips " +
+            "sit on the ends of the line and the stroke stops under them. The fifth bulges " +
+            "up and to the left, leaving its start straight up and arriving level, with " +
+            "its arrowhead along the curve. Selected, it shows a green dot on the curve. " +
+            "On the bottom row five flat lines: solid, square dots, short dashes, long " +
+            "dashes, round dots.",
     )
 }
 

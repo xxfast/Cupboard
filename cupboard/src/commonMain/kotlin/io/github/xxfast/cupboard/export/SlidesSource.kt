@@ -17,6 +17,7 @@ import io.github.xxfast.cupboard.document.GalleryImage
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
+import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
@@ -183,6 +184,8 @@ private fun SourceWriter.body(slide: Slide, element: Element) {
     when (element) {
         is TextElement -> text(element)
         is ShapeElement -> shape(element)
+        // Nothing drawn: the raster under the export still shows it.
+        is LineElement -> line("// TODO(cupboard): the line shape is not exported yet")
         is CodeElement -> code(slide, element)
         is TerminalElement -> terminal(element)
         is DiagramElement -> diagram(element)

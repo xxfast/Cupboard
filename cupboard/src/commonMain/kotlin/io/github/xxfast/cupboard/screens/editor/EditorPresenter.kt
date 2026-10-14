@@ -27,7 +27,9 @@ import io.github.xxfast.cupboard.document.normalized
 import io.github.xxfast.cupboard.document.shiftedLinks
 import io.github.xxfast.cupboard.document.shiftedRange
 import io.github.xxfast.cupboard.document.withLink
+import io.github.xxfast.cupboard.document.LineStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
+import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
@@ -38,9 +40,11 @@ import io.github.xxfast.cupboard.document.addingCodeStep
 import io.github.xxfast.cupboard.document.addingDiagramStep
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.applyingLayout
+import io.github.xxfast.cupboard.document.applyingLineStyle
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.applyingStyle
 import io.github.xxfast.cupboard.document.applyingTheme
+import io.github.xxfast.cupboard.document.asLineStyle
 import io.github.xxfast.cupboard.document.asObjectStyle
 import io.github.xxfast.cupboard.document.asTheme
 import io.github.xxfast.cupboard.document.clampedMedia
@@ -115,6 +119,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BreakApartElement
@@ -142,6 +147,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteUserTheme
@@ -190,11 +196,13 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDiagramStep
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ResizeNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAllSlides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
@@ -379,6 +387,7 @@ private fun Element.linkedTo(target: LinkTarget?): Element? {
     val linked: Element = when (this) {
         is TextElement -> copy(linkTarget = target, link = (target as? LinkTarget.Url)?.url)
         is ShapeElement -> copy(link = target)
+        is LineElement -> copy(link = target)
         is ImageElement -> copy(link = target)
         else -> return null
     }
@@ -2341,6 +2350,56 @@ fun EditorPresenter(
                     undone.push(state.document)
                     redone.clear()
                     state.copy(document = state.document.copy(objectStyles = styles))
+                }
+            }
+
+            // The line-style events, the object-style four over lines.
+            is ApplyLineStyle -> state.document.lineStyles
+                .firstOrNull { it.id == event.styleId }
+                ?.let { style ->
+                    state.unlockedElements(event.ids)
+                        .filterIsInstance<LineElement>()
+                        .map { it.applyingLineStyle(style) }
+                }
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { styled ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.withElements(styled)
+                }
+                ?: state
+
+            is SaveLineStyle -> (state.element(event.lineId) as? LineElement)
+                ?.let { line ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(
+                        document = state.document.copy(
+                            lineStyles = state.document.lineStyles + line.asLineStyle(event.name),
+                        ),
+                    )
+                }
+                ?: state
+
+            is DeleteLineStyle -> state.document.lineStyles
+                .filterNot { it.id == event.styleId }
+                .takeIf { it.size != state.document.lineStyles.size }
+                ?.let { styles ->
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(lineStyles = styles))
+                }
+                ?: state
+
+            is RenameLineStyle -> {
+                val styles: List<LineStyle> = state.document.lineStyles
+                    .map { if (it.id == event.styleId) it.copy(name = event.name) else it }
+
+                if (styles == state.document.lineStyles) state
+                else {
+                    undone.push(state.document)
+                    redone.clear()
+                    state.copy(document = state.document.copy(lineStyles = styles))
                 }
             }
 

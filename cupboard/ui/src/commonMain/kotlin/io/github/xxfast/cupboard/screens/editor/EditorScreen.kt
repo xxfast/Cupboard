@@ -79,7 +79,6 @@ import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
-import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideSizePreset
@@ -283,6 +282,10 @@ fun EditorScreen(
             onSaveObjectStyle = viewModel::onSaveObjectStyle,
             onRenameObjectStyle = viewModel::onRenameObjectStyle,
             onDeleteObjectStyle = viewModel::onDeleteObjectStyle,
+            onApplyLineStyle = viewModel::onApplyLineStyle,
+            onSaveLineStyle = viewModel::onSaveLineStyle,
+            onRenameLineStyle = viewModel::onRenameLineStyle,
+            onDeleteLineStyle = viewModel::onDeleteLineStyle,
             onSetDocumentBackground = viewModel::onSetDocumentBackground,
             onSetSlideSize = viewModel::onSetSlideSize,
             onSetPlayback = viewModel::onSetPlayback,
@@ -408,6 +411,11 @@ fun EditorView(
     onSaveObjectStyle: (shapeId: String, name: String) -> Unit = { _, _ -> },
     onRenameObjectStyle: (styleId: String, name: String) -> Unit = { _, _ -> },
     onDeleteObjectStyle: (styleId: String) -> Unit = {},
+    /** The deck's saved line looks, the line section's strip: the object style four over lines. */
+    onApplyLineStyle: (ids: List<String>, styleId: String) -> Unit = { _, _ -> },
+    onSaveLineStyle: (lineId: String, name: String) -> Unit = { _, _ -> },
+    onRenameLineStyle: (styleId: String, name: String) -> Unit = { _, _ -> },
+    onDeleteLineStyle: (styleId: String) -> Unit = {},
     onSetDocumentBackground: (SlideBackground?) -> Unit = {},
     /** The shape every slide in the deck is laid out at, and whether the content
      * comes across with it. */
@@ -884,6 +892,11 @@ fun EditorView(
                         onSaveObjectStyle = onSaveObjectStyle,
                         onRenameObjectStyle = onRenameObjectStyle,
                         onDeleteObjectStyle = onDeleteObjectStyle,
+                        lineStyles = state.lineStyles,
+                        onApplyLineStyle = onApplyLineStyle,
+                        onSaveLineStyle = onSaveLineStyle,
+                        onRenameLineStyle = onRenameLineStyle,
+                        onDeleteLineStyle = onDeleteLineStyle,
                         selectedElements = state.selectedElements,
                         onUpdateElements = onUpdateElements,
                         onPreviewElements = onPreviewElements,

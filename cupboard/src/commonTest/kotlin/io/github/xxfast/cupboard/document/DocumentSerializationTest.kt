@@ -23,13 +23,14 @@ class DocumentSerializationTest {
     }
 
     @Test
-    fun readsAVersionlessDeckAsVersionOne() {
+    fun readsAVersionlessDeckAndStampsItCurrent() {
         // Every deck written before the field existed. `ignoreUnknownKeys` is
-        // what carries new fields forwards; this is the other direction.
+        // what carries new fields forwards; this is the other direction. Read,
+        // it has been migrated, so it saves as the version it now is.
         val json = """{ "id": "doc", "name": "Old", "slides": [] }"""
 
         val loaded = assertIs<DocumentLoad.Loaded>(decodeDocument(json))
-        assertEquals(1, loaded.document.formatVersion)
+        assertEquals(CURRENT_FORMAT_VERSION, loaded.document.formatVersion)
         assertEquals("Old", loaded.document.name)
     }
 

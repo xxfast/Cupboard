@@ -8,6 +8,7 @@ private fun card(frame: Frame, label: String): ShapeElement =
 /** The build order: how an element arrives, moves and leaves. */
 internal fun buildSlides(): List<Slide> = listOf(
     buildEffectsSlide(),
+    lineDrawSlide(),
     buildOutSlide(),
     textDeliverySlide(),
     codeDeliverySlide(),
@@ -18,10 +19,10 @@ internal fun buildSlides(): List<Slide> = listOf(
 /** Every [BuildEffect], off `entries`, one card each and one click each. */
 private fun buildEffectsSlide(): Slide {
     val cards: List<ShapeElement> = BuildEffect.entries.map { effect ->
-        card(gridCell(columns = 4, rows = 2, index = effect.ordinal).demoBox(), effect.name)
+        card(gridCell(columns = 5, rows = 2, index = effect.ordinal).demoBox(), effect.name)
     }
     val captions: List<Element> = BuildEffect.entries.map { effect ->
-        captionUnder(gridCell(columns = 4, rows = 2, index = effect.ordinal), "BuildEffect.$effect")
+        captionUnder(gridCell(columns = 5, rows = 2, index = effect.ordinal), "BuildEffect.$effect")
     }
 
     return featureSlide(
@@ -36,8 +37,55 @@ private fun buildEffectsSlide(): Slide {
             "caption order. Appear should simply be there with no motion. FadeUp rises " +
             "as it fades, Pop overshoots, Dissolve only fades, MoveIn slides in from the " +
             "leading edge, Scale grows out of nothing and Wipe uncovers top to bottom. " +
-            "Typewriter is a terminal's effect, so on a shape it should fall back to " +
-            "Dissolve rather than doing nothing.",
+            "Typewriter is a terminal's effect and LineDraw a line's, so on a shape both " +
+            "should fall back to Dissolve rather than doing nothing.",
+    )
+}
+
+/**
+ * [BuildEffect.LineDraw]: every [LineDrawDirection], and the one line drawn
+ * without its end points. Arrowheads at both ends, so the heads show which end
+ * is fixed and which one rides the tip.
+ */
+private fun lineDrawSlide(): Slide {
+    val draws: List<Triple<String, LineDraw, Boolean>> = listOf(
+        Triple("StartToEnd", LineDraw(LineDrawDirection.StartToEnd), false),
+        Triple("EndToStart", LineDraw(LineDrawDirection.EndToStart), false),
+        Triple("MiddleToEnds", LineDraw(LineDrawDirection.MiddleToEnds), true),
+        Triple("no end points", LineDraw(includeEnds = false), true),
+    )
+    val lines: List<LineElement> = draws.mapIndexed { index, (_, _, curved) ->
+        lineElement(
+            frame = gridCell(columns = 4, rows = 1, index = index).demoBox(),
+            defaults = ShowcaseDefaults,
+            startEnd = LineEnd.Arrow,
+            endEnd = LineEnd.Arrow,
+            curved = curved,
+        ).copy(strokeWidth = 6f)
+    }
+    val captions: List<Element> = draws.mapIndexed { index, (label, _, _) ->
+        captionUnder(gridCell(columns = 4, rows = 1, index = index), label)
+    }
+
+    return featureSlide(
+        title = "Line Draw",
+        subtitle = "a line drawing itself in, each direction on a click of its own",
+        elements = lines + captions,
+        builds = lines.mapIndexed { index, line ->
+            Build(
+                elementId = line.id,
+                effect = BuildEffect.LineDraw,
+                durationMs = LineDrawDurationMs,
+                lineDraw = draws[index].second,
+            )
+        },
+        notes = "Look for: at rest the captions alone.\n\n" +
+            "In play: four clicks, each line growing over two seconds. StartToEnd grows " +
+            "from its lower-left start with the end's arrowhead riding the tip, the start's " +
+            "there from the first frame. EndToStart is its mirror. MiddleToEnds grows out " +
+            "of the middle of its curve both ways at once, a head on each tip. The last " +
+            "grows like the first but with a bare tip, its end arrowhead landing only " +
+            "once the line is whole.",
     )
 }
 

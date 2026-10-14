@@ -18,6 +18,9 @@ struct MenuEntry: Identifiable {
     /// Menu bar only. A context menu advertising shortcuts would be repeating
     /// what the bar above it already says.
     var shortcut: KeyboardShortcut? = nil
+    /// Drawn beside the title, for a popup whose picks are pictures (a stroke
+    /// style, a line end). Popups only, like `checked`.
+    var image: NSImage? = nil
     var children: [MenuEntry]? = nil
     var action: (() -> Void)? = nil
 
@@ -418,6 +421,7 @@ func nsMenu(_ entries: [MenuEntry]) -> NSMenu {
         let item = NSMenuItem(title: entry.title, action: nil, keyEquivalent: "")
         item.isEnabled = entry.enabled
         item.state = entry.checked ? .on : .off
+        item.image = entry.image
         if let children = entry.children {
             item.submenu = nsMenu(children)
         } else if let action = entry.action {

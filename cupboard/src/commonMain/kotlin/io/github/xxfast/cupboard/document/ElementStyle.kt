@@ -28,9 +28,9 @@ package io.github.xxfast.cupboard.document
  * the solid and the gradient under it take the source's, and show again the day
  * the picture goes.
  *
- * A line's arrowheads travel with the rest of the shape's look: which ends are
- * capped is how the line is drawn, not what it joins. The kind stays behind
- * regardless, so a line's style pasted onto a rectangle leaves a rectangle.
+ * A line's end points travel with the rest of its look: which ends are capped is
+ * how the line is drawn, not what it joins. Its two points are geometry and stay
+ * behind.
  */
 fun Element.applyingStyle(source: Element): Element = when {
     this is TextElement && source is TextElement -> copy(
@@ -56,11 +56,20 @@ fun Element.applyingStyle(source: Element): Element = when {
         gradient = source.gradient,
         strokeColor = source.strokeColor,
         strokeWidth = source.strokeWidth,
+        strokeStyle = source.strokeStyle,
         shadow = source.shadow,
-        startArrow = source.startArrow,
-        endArrow = source.endArrow,
         labelSize = source.labelSize,
         labelColor = source.labelColor,
+    )
+
+    this is LineElement && source is LineElement -> copy(
+        opacity = source.opacity,
+        strokeColor = source.strokeColor,
+        strokeWidth = source.strokeWidth,
+        strokeStyle = source.strokeStyle,
+        startEnd = source.startEnd,
+        endEnd = source.endEnd,
+        shadow = source.shadow,
     )
 
     this is CodeElement && source is CodeElement -> copy(

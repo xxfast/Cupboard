@@ -8,18 +8,21 @@ import io.github.xxfast.cupboard.document.DefaultTextBoxHeight
 import io.github.xxfast.cupboard.document.DefaultTextBoxWidth
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.Point
 import io.github.xxfast.cupboard.document.ShapeCatalog
+import io.github.xxfast.cupboard.document.ShapeCatalogEntry
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TextElement
-import io.github.xxfast.cupboard.document.element
 import io.github.xxfast.cupboard.document.textBoxElement
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /** The shape catalog, and the insert event every shell reaches it through. */
@@ -39,10 +42,26 @@ class EditorShapeCatalogTest {
     @Test
     fun everyCatalogEntryBuildsItsOwnKind() {
         for (entry in ShapeCatalog.entries) {
-            val element: ShapeElement = entry.element(frame)
-            assertEquals(entry.kind, element.kind, entry.title)
-            assertEquals(entry.cornerRadius, element.cornerRadius, entry.title)
-            assertEquals(frame, element.frame, entry.title)
+            when (entry) {
+                is ShapeCatalogEntry.Shape -> {
+                    val element = assertIs<ShapeElement>(entry.element(frame), entry.title)
+                    assertEquals(entry.kind, element.kind, entry.title)
+                    assertEquals(entry.cornerRadius, element.cornerRadius, entry.title)
+                    assertEquals(frame, element.frame, entry.title)
+                }
+
+                // The box's rising diagonal, bottom-left to top-right.
+                is ShapeCatalogEntry.Line -> {
+                    val element = assertIs<LineElement>(entry.element(frame), entry.title)
+                    assertEquals(Point(0f, 100f), element.start, entry.title)
+                    assertEquals(Point(200f, 0f), element.end, entry.title)
+                    assertEquals(entry.startEnd, element.startEnd, entry.title)
+                    assertEquals(entry.endEnd, element.endEnd, entry.title)
+                    assertEquals(entry.curved, element.bend != null, entry.title)
+                    // A curve's control sits in the box's corner, so it stays inside it.
+                    assertEquals(frame, element.frame, entry.title)
+                }
+            }
         }
     }
 
@@ -51,24 +70,27 @@ class EditorShapeCatalogTest {
         assertEquals(
             listOf(
                 "Rectangle", "Rounded Rectangle", "Oval", "Triangle", "Arrow", "Diamond",
-                "Star", "Hexagon", "Quote Bubble", "Callout", "Line",
+                "Star", "Hexagon", "Quote Bubble", "Callout", "Line", "Line with Arrowhead",
+                "Line with Two Arrowheads", "Curved Line",
             ),
             ShapeCatalog.entries.map { it.title },
         )
 
         // The two rectangles are one kind at two radii: square and rounded.
-        val rectangles = ShapeCatalog.entries.filter { it.kind == ShapeKind.Rectangle }
+        val rectangles = ShapeCatalog.entries
+            .filterIsInstance<ShapeCatalogEntry.Shape>()
+            .filter { it.kind == ShapeKind.Rectangle }
         assertEquals(listOf(0f, 10f), rectangles.map { it.cornerRadius })
     }
 
     @Test
     fun aLineInsertsHeavierAndWiderThanAShape() {
-        val line = ShapeCatalog.entries.first { it.kind == ShapeKind.Line }
+        val line = ShapeCatalog.entries.filterIsInstance<ShapeCatalogEntry.Line>().first()
         assertEquals(DefaultLineWidth, line.width)
         assertEquals(DefaultLineHeight, line.height)
         assertEquals(3f, line.element(frame).strokeWidth)
 
-        val rectangle = ShapeCatalog.entries.first()
+        val rectangle = ShapeCatalog.entries.filterIsInstance<ShapeCatalogEntry.Shape>().first()
         assertEquals(DefaultShapeWidth, rectangle.width)
         assertEquals(DefaultShapeHeight, rectangle.height)
         assertEquals(1.5f, rectangle.element(frame).strokeWidth)
@@ -158,6 +180,7 @@ class EditorShapeCatalogTest {
         viewModel.await { it.focusedPane == EditorPane.Navigator && it.selectedElementIds == listOf("a") }
 
         val inserted: ShapeElement = ShapeCatalog.entries
+            .filterIsInstance<ShapeCatalogEntry.Shape>()
             .first { it.kind == ShapeKind.Star }
             .element(Frame(10f, 20f, 30f, 40f))
         viewModel.onInsertElement(inserted)

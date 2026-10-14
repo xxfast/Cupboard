@@ -93,13 +93,12 @@ fun ImageFillMode.imageFrames(
  * follows: an image over a gradient over the solid [ShapeElement.fill].
  *
  * Derived rather than stored, so it can never disagree with the fields under it.
- * A [ShapeKind.Line] has no inside, so its [ShapeElement.imageFill] doesn't count.
  */
 enum class ShapeFillKind { Color, Gradient, Image }
 
 val ShapeElement.fillKind: ShapeFillKind
     get() = when {
-        imageFill != null && kind != ShapeKind.Line -> ShapeFillKind.Image
+        imageFill != null -> ShapeFillKind.Image
         gradient != null -> ShapeFillKind.Gradient
         else -> ShapeFillKind.Color
     }

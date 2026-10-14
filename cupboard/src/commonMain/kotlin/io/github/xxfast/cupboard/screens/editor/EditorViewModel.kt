@@ -45,6 +45,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddPlaceholder
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AlignElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLayout
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ApplyObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddCodeVersion
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.BeginTextEdit
@@ -76,6 +77,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.CutSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.Delete
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteElements
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.DeleteUserTheme
@@ -114,11 +116,13 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.Redo
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveBuild
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveGuide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameDocument
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ResizeNotes
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ReorderElements
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveAsTheme
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveLineStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SaveObjectStyle
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectAnimateSegment
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectElement
@@ -424,6 +428,10 @@ class EditorViewModel(
     fun onSaveObjectStyle(shapeId: String, name: String) { send(SaveObjectStyle(shapeId, name)) }
     fun onDeleteObjectStyle(styleId: String) { send(DeleteObjectStyle(styleId)) }
     fun onRenameObjectStyle(styleId: String, name: String) { send(RenameObjectStyle(styleId, name)) }
+    fun onApplyLineStyle(ids: List<String>, styleId: String) { send(ApplyLineStyle(ids, styleId)) }
+    fun onSaveLineStyle(lineId: String, name: String) { send(SaveLineStyle(lineId, name)) }
+    fun onDeleteLineStyle(styleId: String) { send(DeleteLineStyle(styleId)) }
+    fun onRenameLineStyle(styleId: String, name: String) { send(RenameLineStyle(styleId, name)) }
     fun onUseAsDefaultTextStyle(id: String) { send(UseAsDefaultTextStyle(id)) }
     fun onUseAsDefaultShapeStyle(id: String) { send(UseAsDefaultShapeStyle(id)) }
     fun onSetDocumentBackground(background: SlideBackground?) { send(SetDocumentBackground(background)) }

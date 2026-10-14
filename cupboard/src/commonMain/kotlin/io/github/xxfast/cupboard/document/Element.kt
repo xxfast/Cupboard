@@ -4,7 +4,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 @Serializable
@@ -28,6 +32,10 @@ data class Frame(
         x < other.x + other.width && other.x < x + width &&
             y < other.y + other.height && other.y < y + height
 }
+
+/** A position on the slide, in document units. */
+@Serializable
+data class Point(val x: Float, val y: Float)
 
 /** The smallest frame containing every one of [frames]. Nothing in, nothing out. */
 fun boundingFrame(frames: List<Frame>): Frame {
@@ -298,9 +306,8 @@ data class TextElement(
  *
  * [Triangle] points up, [Arrow] points right, [Star] has five points and
  * [Polygon] is a regular hexagon. [QuoteBubble] and [Callout] are rounded boxes
- * with a tail, bottom-left and bottom-center. [Line] is the odd one out: it runs
- * corner to corner across its frame and draws no fill, only its stroke and
- * whichever arrowheads are on.
+ * with a tail, bottom-left and bottom-center. A line is no shape at all: see
+ * [LineElement].
  *
  * [Path] is the one kind the catalog doesn't offer, because it has no outline of
  * its own: it draws whatever [ShapeElement.path] carries, which is what an
@@ -317,8 +324,34 @@ enum class ShapeKind {
     Polygon,
     QuoteBubble,
     Callout,
-    Line,
     Path,
+}
+
+/**
+ * How a stroke is drawn along its length, Keynote's first five in its order:
+ * solid, then the four dot and dash patterns. Every pattern is measured in
+ * stroke widths, so a heavier line has longer dashes. Keynote's five brush
+ * strokes are not here.
+ */
+enum class StrokeStyle { Solid, SquareDots, ShortDash, LongDash, RoundDots }
+
+/**
+ * What caps one end of a [LineElement], in Keynote's End points order. The tip
+ * of every head sits on the endpoint, and every head grows with the stroke.
+ * [ReversedArrow] points back along the line; [Bar] is a tick across it.
+ */
+enum class LineEnd {
+    None,
+    Arrow,
+    Circle,
+    Diamond,
+    OpenArrow,
+    SweptArrow,
+    Square,
+    OpenSquare,
+    OpenCircle,
+    ReversedArrow,
+    Bar,
 }
 
 /**
@@ -381,7 +414,7 @@ data class ShapeElement(
     /**
      * A picture painted instead of [gradient] and [fill], clipped to the shape's
      * own outline. The stroke, the shadow and the label draw over and around it as
-     * they would over a colour. [ShapeKind.Line] has no inside and ignores it.
+     * they would over a colour.
      *
      * Bytes the store can't read draw whatever is under it instead, and so does
      * the part of the box a [ImageFillMode.ScaleToFit] picture leaves uncovered,
@@ -390,10 +423,9 @@ data class ShapeElement(
     val imageFill: ImageFill? = null,
     val strokeColor: Long = 0xB3A98FFF,
     val strokeWidth: Float = 1.5f,
+    /** How the border is drawn along its length; a [ShapeKind.Path] outline too. */
+    val strokeStyle: StrokeStyle = StrokeStyle.Solid,
     val shadow: ShapeShadow? = null,
-    /** Only [ShapeKind.Line] draws arrowheads; every other kind ignores both. */
-    val startArrow: Boolean = false,
-    val endArrow: Boolean = true,
     val label: String = "",
     val labelSize: Float = 15f,
     val labelColor: Long = 0xFFD9CFFF,
@@ -428,6 +460,243 @@ data class ShapeElement(
 }
 
 /**
+ * A line from [start] to [end], Keynote's: the two points are the whole of its
+ * geometry, so the angle is the endpoints and there is no box to turn.
+ *
+ * [bend] curves it: the line is then one quadratic Bezier that passes through
+ * [bend] halfway along (t = 0.5), Keynote's green handle. Its [control] point is
+ * derived and never shown. Null is a straight line.
+ *
+ * Nothing else is stored. [frame] is derived, the bounding box of the two points
+ * with an axis that would be flat widened to 1pt centred on the line, because
+ * everything that measures frames (overlap, marquee, grouping) wants a box with
+ * some area. [rotation] is always 0 and both flips are always false.
+ *
+ * [update] reads the shared properties as edits to the points (and the [bend],
+ * which goes wherever they go) instead:
+ * - a new frame maps both points from the current frame into it by ratio, which
+ *   is how moves, nudges, align, distribute and a group's resize reach a line;
+ * - a rotation turns both points about the frame's centre by that many degrees
+ *   clockwise, and since the stored rotation is always 0, absolute and delta are
+ *   the same number;
+ * - a horizontal flip mirrors the x's about the centre (swaps them), a vertical
+ *   one the y's. The flags stay false, so flipping again flips back. Given both,
+ *   the flip goes first and the turn after, the way a layer draws them.
+ *
+ * Never zero-length: [withStart] and [withEnd] keep the ends at least
+ * [MinLineLength] apart, the way Keynote refuses to collapse a line.
+ */
+@Serializable
+@SerialName("line")
+data class LineElement(
+    override val id: String = newId(),
+    val start: Point,
+    val end: Point,
+    val strokeColor: Long,
+    val strokeWidth: Float = 3f,
+    val strokeStyle: StrokeStyle = StrokeStyle.Solid,
+    val startEnd: LineEnd = LineEnd.None,
+    val endEnd: LineEnd = LineEnd.None,
+    val shadow: ShapeShadow? = null,
+    override val opacity: Float = 1f,
+    override val locked: Boolean = false,
+    override val name: String? = null,
+    override val hidden: Boolean = false,
+    /** Where clicking the line takes the show. See [LinkTarget]. */
+    val link: LinkTarget? = null,
+    /** The point a curved line passes through halfway along, null for a straight one. */
+    val bend: Point? = null,
+) : Element {
+    /**
+     * The box the line covers: the two points, or for a curve the tight box of
+     * the quadratic, its extremes being where either axis turns back. An axis
+     * that would be flat is widened to 1pt about the line.
+     */
+    override val frame: Frame
+        get() {
+            val control: Point? = control
+            fun span(a: Float, c: Float?, b: Float): Pair<Float, Float> {
+                var low: Float = min(a, b)
+                var high: Float = max(a, b)
+                val turn: Float = if (c == null) 0f else a - 2 * c + b
+                if (c != null && turn != 0f) {
+                    val t: Float = ((a - c) / turn).coerceIn(0f, 1f)
+                    val extreme: Float = (1 - t) * (1 - t) * a + 2 * (1 - t) * t * c + t * t * b
+                    low = min(low, extreme)
+                    high = max(high, extreme)
+                }
+
+                if (high - low >= MinLineLength) return low to high - low
+                return (low + high) / 2 - MinLineLength / 2 to MinLineLength
+            }
+
+            val (x: Float, width: Float) = span(start.x, control?.x, end.x)
+            val (y: Float, height: Float) = span(start.y, control?.y, end.y)
+            return Frame(x, y, width, height)
+        }
+
+    /**
+     * The quadratic's control point, `2 * bend - (start + end) / 2`, so the curve
+     * passes through [bend] at t = 0.5. Null for a straight line.
+     */
+    val control: Point?
+        get() {
+            val bend: Point = bend ?: return null
+            return Point(2 * bend.x - (start.x + end.x) / 2, 2 * bend.y - (start.y + end.y) / 2)
+        }
+
+    /** Where the line is at [t], 0 its start and 1 its end, along the curve when it has one. */
+    fun pointAt(t: Float): Point {
+        val control: Point = control
+            ?: return Point(start.x + (end.x - start.x) * t, start.y + (end.y - start.y) * t)
+
+        val u: Float = 1 - t
+        return Point(
+            x = u * u * start.x + 2 * u * t * control.x + t * t * end.x,
+            y = u * u * start.y + 2 * u * t * control.y + t * t * end.y,
+        )
+    }
+
+    override val rotation: Float get() = 0f
+    override val flippedHorizontally: Boolean get() = false
+    override val flippedVertically: Boolean get() = false
+
+    /**
+     * The start-to-end direction in degrees, counterclockwise from pointing right
+     * with y up, 0 until 360: 90 is straight up, 225 down and to the left.
+     */
+    val angle: Float
+        get() {
+            val degrees: Float =
+                atan2(start.y - end.y, end.x - start.x) * 180f / PI.toFloat()
+            return degrees.mod(360f)
+        }
+
+    val length: Float get() = hypot(end.x - start.x, end.y - start.y)
+
+    val midpoint: Point get() = Point((start.x + end.x) / 2, (start.y + end.y) / 2)
+
+    /** This line turned about its [midpoint] to point at [degrees], its length kept. */
+    fun withAngle(degrees: Float): LineElement {
+        val radians: Float = degrees * PI.toFloat() / 180f
+        val half: Float = length / 2
+        val dx: Float = cos(radians) * half
+        // Slide space is y down, the angle is y up.
+        val dy: Float = -sin(radians) * half
+        val middle: Point = midpoint
+        return rechorded(
+            start = Point(middle.x - dx, middle.y - dy),
+            end = Point(middle.x + dx, middle.y + dy),
+        )
+    }
+
+    /** This line with its start at [point], or [MinLineLength] short of the end. */
+    fun withStart(point: Point): LineElement =
+        rechorded(start = apart(point, from = end, was = start), end = end)
+
+    /** This line with its end at [point], or [MinLineLength] short of the start. */
+    fun withEnd(point: Point): LineElement =
+        rechorded(start = start, end = apart(point, from = start, was = end))
+
+    /**
+     * This line moved onto [start] and [end], its [bend] carried along the way
+     * Keynote does: the bend's offset along the chord scales with the chord, and
+     * its distance off the chord stays as many points as it was, so dragging an
+     * end stretches a curve without deepening it. A turn is the same rule with
+     * the chord's length kept.
+     */
+    private fun rechorded(start: Point, end: Point): LineElement {
+        val bend: Point = bend ?: return copy(start = start, end = end)
+        val chord: Float = length
+        val stretched: Float = hypot(end.x - start.x, end.y - start.y)
+        if (chord == 0f || stretched == 0f) return copy(start = start, end = end)
+
+        // Unit vectors along the old chord and the new one; across is along turned
+        // a quarter, (-y, x), the same way on both.
+        val alongX: Float = (this.end.x - this.start.x) / chord
+        val alongY: Float = (this.end.y - this.start.y) / chord
+        val bendX: Float = bend.x - this.start.x
+        val bendY: Float = bend.y - this.start.y
+        val fraction: Float = (bendX * alongX + bendY * alongY) / chord
+        val depth: Float = bendX * -alongY + bendY * alongX
+
+        val newAlongX: Float = (end.x - start.x) / stretched
+        val newAlongY: Float = (end.y - start.y) / stretched
+        val rebent = Point(
+            x = start.x + fraction * (end.x - start.x) - depth * newAlongY,
+            y = start.y + fraction * (end.y - start.y) + depth * newAlongX,
+        )
+        return copy(start = start, end = end, bend = rebent)
+    }
+
+    override fun update(
+        frame: Frame,
+        opacity: Float,
+        rotation: Float,
+        flippedHorizontally: Boolean,
+        flippedVertically: Boolean,
+        locked: Boolean,
+        name: String?,
+        hidden: Boolean,
+    ): Element {
+        val from: Frame = this.frame
+        fun mapped(point: Point): Point {
+            if (frame == from) return point
+            return Point(
+                x = frame.x + (point.x - from.x) / from.width * frame.width,
+                y = frame.y + (point.y - from.y) / from.height * frame.height,
+            )
+        }
+
+        fun turned(point: Point): Point {
+            if (rotation == 0f) return point
+            val (dx: Float, dy: Float) =
+                rotateVector(point.x - frame.centerX, point.y - frame.centerY, rotation)
+            return Point(frame.centerX + dx, frame.centerY + dy)
+        }
+
+        fun flipped(point: Point): Point = Point(
+            x = if (flippedHorizontally) 2 * frame.centerX - point.x else point.x,
+            y = if (flippedVertically) 2 * frame.centerY - point.y else point.y,
+        )
+
+        // Flipped before turned, the order a graphics layer applies them in, so a
+        // line baked out of a flipped and rotated group lands where it was drawn.
+        return copy(
+            start = turned(flipped(mapped(start))),
+            end = turned(flipped(mapped(end))),
+            bend = bend?.let { turned(flipped(mapped(it))) },
+            opacity = opacity,
+            locked = locked,
+            name = name,
+            hidden = hidden,
+        )
+    }
+}
+
+/** The shortest a [LineElement] gets, in document units: Keynote's 1pt. */
+const val MinLineLength: Float = 1f
+
+/**
+ * [point], or the point [MinLineLength] from [from] in its direction when it
+ * lands closer than that. A point right on top of [from] has no direction of its
+ * own and keeps the one it came from, [was]'s.
+ */
+private fun apart(point: Point, from: Point, was: Point): Point {
+    val distance: Float = hypot(point.x - from.x, point.y - from.y)
+    if (distance >= MinLineLength) return point
+
+    val toward: Point = if (distance > 0f) point else was
+    val reach: Float = hypot(toward.x - from.x, toward.y - from.y)
+    // Nothing to go by at all: a line already collapsed. Lay it flat.
+    if (reach == 0f) return Point(from.x + MinLineLength, from.y)
+    return Point(
+        x = from.x + (toward.x - from.x) / reach * MinLineLength,
+        y = from.y + (toward.y - from.y) / reach * MinLineLength,
+    )
+}
+
+/**
  * The window of an image that is shown, and the outline it is shown through.
  *
  * [frame] is in image-normalised units: x, y, width and height are all fractions
@@ -441,8 +710,7 @@ data class ShapeElement(
  *
  * [kind] is the outline the window is seen through. [ShapeKind.Rectangle] is the
  * plain crop and clips nothing; every other kind clips the box to that shape's
- * path, and the kinds with no sensible inside ([ShapeKind.Line]) read as the
- * rectangle they are boxed by.
+ * path.
  */
 @Serializable
 data class ImageMask(

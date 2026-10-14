@@ -9,8 +9,9 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.Point
 import io.github.xxfast.cupboard.document.ShapeElement
-import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
@@ -51,7 +52,12 @@ class EditorInspectorTest {
                 title = "Everything",
                 elements = listOf(
                     ShapeElement(id = "shape", frame = Frame(0f, 0f, 100f, 100f)),
-                    ShapeElement(id = "line", frame = Frame(0f, 0f, 100f, 1f), kind = ShapeKind.Line),
+                    LineElement(
+                        id = "line",
+                        start = Point(0f, 0f),
+                        end = Point(100f, 0f),
+                        strokeColor = 0xFFFFFFFF,
+                    ),
                     TextElement(id = "text", frame = Frame(0f, 0f, 100f, 100f)),
                     ImageElement(id = "image", frame = Frame(0f, 0f, 100f, 100f)),
                     CodeElement(id = "code", frame = Frame(0f, 0f, 100f, 100f)),

@@ -44,6 +44,7 @@ import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAction
 import io.github.xxfast.cupboard.document.BuildDelivery
+import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.BuildKind
 import io.github.xxfast.cupboard.document.BuildTrigger
 import io.github.xxfast.cupboard.document.CodeElement
@@ -53,6 +54,10 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.LineDraw
+import io.github.xxfast.cupboard.document.LineDrawDirection
+import io.github.xxfast.cupboard.document.LineDrawDurationMs
+import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideTransition
@@ -353,7 +358,14 @@ private fun effectChoices(
     }
 
     else -> BuildEffectNames.map { (effect, title) ->
-        MenuChoice(title) { onPick { id -> Build(elementId = id, kind = kind, effect = effect) } }
+        MenuChoice(title) {
+            onPick { id ->
+                val build = Build(elementId = id, kind = kind, effect = effect)
+                // Keynote draws a line over 2s, slower than anything else builds.
+                if (effect == BuildEffect.LineDraw) build.copy(durationMs = LineDrawDurationMs)
+                else build
+            }
+        }
     }
 }
 
@@ -468,6 +480,28 @@ private fun BuildControls(
                 onPreview(slide.withBuild(index, build.copy(durationMs = value.asDurationMs())))
             },
             onRelease = { value -> edit { it.copy(durationMs = value.asDurationMs()) } },
+        )
+    }
+
+    // Keynote's Line Draw options, under the duration they share a section with.
+    if (build.effect == BuildEffect.LineDraw && build.kind != BuildKind.Action) {
+        val lineDraw: LineDraw = build.lineDraw ?: LineDraw()
+        DropdownField(
+            label = "Direction",
+            value = lineDraw.direction,
+            options = LINE_DRAW_DIRECTIONS,
+            enabled = true,
+            onPick = { direction ->
+                edit { it.copy(lineDraw = lineDraw.copy(direction = direction)) }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        AppearanceRow(
+            label = "Include end points",
+            checked = lineDraw.includeEnds,
+            onToggle = { included ->
+                edit { it.copy(lineDraw = lineDraw.copy(includeEnds = included)) }
+            },
         )
     }
 
@@ -874,6 +908,13 @@ private val BUILD_TRIGGERS: List<Pair<BuildTrigger, String>> = listOf(
 )
 
 /** The duration slider's ends, and the tenth of a second its samples land on. */
+/** Line Draw's Direction popup, in Keynote's order and words. */
+private val LINE_DRAW_DIRECTIONS: List<Pair<LineDrawDirection, String>> = listOf(
+    LineDrawDirection.StartToEnd to "Start to End",
+    LineDrawDirection.EndToStart to "End to Start",
+    LineDrawDirection.MiddleToEnds to "Middle to Ends",
+)
+
 private const val MIN_DURATION_MS: Int = 100
 private const val MAX_DURATION_MS: Int = 3000
 private const val DURATION_STEP_MS: Int = 100
@@ -911,6 +952,7 @@ private fun Slide.withBuild(index: Int, build: Build): Slide =
 private fun Element.buildTitle(): String = when (this) {
     is TextElement -> titled("Text", text)
     is ShapeElement -> titled("Shape", label)
+    is LineElement -> "Line"
     is TerminalElement -> titled("Terminal", title)
     is EquationElement -> titled("Equation", latex)
     is CodeElement -> "Code"

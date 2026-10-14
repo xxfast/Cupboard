@@ -85,6 +85,28 @@ class ThemeTest {
         }
     }
 
+    /**
+     * An editor layout Magic Moves into its "and Run" twin: the tab chip and the
+     * editor island travel, the tree's island and the run pane's have no partner.
+     */
+    @Test
+    fun islandsLightEditorsTravelIntoTheirRunLayouts() {
+        val byTitle: Map<String, Slide> = BuiltInThemes.JetBrainsIslandsLight.layouts.associateBy { it.title }
+
+        for (language in listOf("Kotlin", "Swift", "C#")) {
+            val editor: Slide = byTitle.getValue("$language Editor")
+            val run: Slide = byTitle.getValue("$language Editor and Run")
+
+            val pairs: List<Pair<Element, Element>> =
+                magicMovePairs(editor.inheritedElements(editor), run.inheritedElements(run))
+
+            assertEquals(
+                listOf("${editor.id}-tab" to "${run.id}-tab", "${editor.id}-editor-island" to "${run.id}-editor-island"),
+                pairs.map { (leaving, arriving) -> leaving.id to arriving.id },
+            )
+        }
+    }
+
     /** Islands Light is the "Kotlin to C#" deck's slides as layouts, each on the backdrop that deck gave it. */
     @Test
     fun islandsLightIsOverTheDecksOwnLayouts() {

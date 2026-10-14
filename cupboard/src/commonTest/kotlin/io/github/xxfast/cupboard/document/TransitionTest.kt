@@ -74,6 +74,25 @@ class TransitionTest {
         assertEquals(from.elements.first().id, pairs.single().first.id)
     }
 
+    /** Blank panels all say the same nothing, so a name is what tells them apart. */
+    @Test
+    fun aNameOutranksStorageOrder() {
+        fun panel(name: String?, x: Float): ShapeElement =
+            ShapeElement(frame = Frame(x, 0f, 100f, 100f), name = name)
+
+        val from: List<Element> = listOf(panel("tree", 0f), panel("editor", 100f))
+        val to: List<Element> = listOf(panel("editor", 200f), panel("run", 300f), panel(null, 400f))
+
+        val pairs: List<Pair<Element, Element>> = magicMovePairs(from, to)
+
+        // "editor" goes to its namesake rather than to the first panel stored, "run"
+        // won't take a "tree", and the one nobody named takes whatever is left.
+        assertEquals(
+            listOf(from[1].id to to[0].id, from[0].id to to[2].id),
+            pairs.map { (leaving, arriving) -> leaving.id to arriving.id },
+        )
+    }
+
     @Test
     fun onlyTopLevelElementsTravel() {
         val group = GroupElement(

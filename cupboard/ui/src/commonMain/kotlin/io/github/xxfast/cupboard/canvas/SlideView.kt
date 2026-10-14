@@ -88,7 +88,8 @@ private const val SlideNumberColor: Long = 0x99FFFFFF
  * [LocalPlayTransition] for how a slide learns it is in one. The arriving slide
  * draws all of it, at full opacity: the background crossfading, the leaving
  * slide's unmatched elements fading out, the matched ones travelling and its own
- * unmatched ones fading in. The leaving slide draws nothing, so which of the two
+ * unmatched ones fading in, and the two layouts' own objects doing the same
+ * underneath. The leaving slide draws nothing, so which of the two
  * the player has on top makes no difference and nothing is dimmed by a layer
  * fading the whole slide.
  */
@@ -125,6 +126,17 @@ fun SlideView(
         magicMovePairs(from, magic.toSlide)
     }
 
+    // The two layouts' own objects pair off among themselves, the same way: an
+    // island both layouts draw is one island to the audience, wherever each puts
+    // it. Two slides on one layout pair every object with itself, which is a
+    // journey of no distance.
+    val inherited: List<Element> = slide.inheritedElements(layout)
+    val leavingInherited: List<Element> =
+        arrival?.fromSlide?.inheritedElements(arrival.fromLayout).orEmpty()
+    val travellingInherited: List<Pair<Element, Element>> = remember(magic, layout) {
+        magicMovePairs(leavingInherited, inherited)
+    }
+
     val progress = remember(magic) { Animatable(0f) }
     LaunchedEffect(magic) {
         if (magic == null || !arriving) return@LaunchedEffect
@@ -142,8 +154,36 @@ fun SlideView(
         slideWidth = slideWidth,
         slideHeight = slideHeight,
     ) {
-        for (element in slide.inheritedElements(layout)) {
-            if (!element.hidden) ElementView(element)
+        // What the leaving layout drew that the arriving one doesn't, fading out
+        // under everything else, where it always sat.
+        for (element in leavingInherited) {
+            if (element.hidden) continue
+            if (travellingInherited.any { (origin, _) -> origin.id == element.id }) continue
+
+            ElementView(element, transform = element.fadingTransform(1f - progress.value))
+        }
+
+        for (element in inherited) {
+            if (element.hidden) continue
+
+            if (!arriving) {
+                ElementView(element)
+                continue
+            }
+
+            val origin: Element? =
+                travellingInherited.firstOrNull { (_, to) -> to.id == element.id }?.first
+
+            if (origin == null) {
+                ElementView(element, transform = element.fadingTransform(progress.value))
+                continue
+            }
+
+            ElementView(
+                element = element.travellingFrom(origin, progress.value),
+                transform = magicMoveTransform(origin, element, progress.value),
+                alignment = travellingAlignment(origin, element, progress.value),
+            )
         }
 
         // What the leaving slide is letting go of, fading out where it stood. At

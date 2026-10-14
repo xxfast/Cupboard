@@ -27,7 +27,30 @@ enum class BuildEffect {
      * [Dissolve], so an effect set on the wrong element still reveals it.
      */
     Typewriter,
+
+    /**
+     * Draws the line rather than bringing it in whole, Keynote's Line Draw. Only
+     * [LineElement] honours it: its stroke grows over the build's duration the
+     * way [Build.lineDraw] says. Every other kind treats it as [Dissolve], so an
+     * effect set on the wrong element still reveals it.
+     */
+    LineDraw,
 }
+
+/** Which way a [BuildEffect.LineDraw] grows the line, Keynote's Direction popup. */
+enum class LineDrawDirection { StartToEnd, EndToStart, MiddleToEnds }
+
+/**
+ * How a [BuildEffect.LineDraw] draws its line: which way it grows, and whether
+ * the head at a growing tip rides along with it ([includeEnds], Keynote's
+ * "Include end points") or only lands once the line is whole. A head at an end
+ * that never moves shows from the first frame either way.
+ */
+@Serializable
+data class LineDraw(
+    val direction: LineDrawDirection = LineDrawDirection.StartToEnd,
+    val includeEnds: Boolean = true,
+)
 
 /**
  * Whether a build brings its element on, takes it away, or moves it about while
@@ -130,9 +153,17 @@ data class Build(
      * failure: a deck opens as what it was saved as, whatever a panel left behind.
      */
     val action: BuildAction? = null,
+    /**
+     * How a [BuildEffect.LineDraw] build draws its line, and nothing at all for
+     * any other effect. Null reads as [LineDraw]'s defaults.
+     */
+    val lineDraw: LineDraw? = null,
 ) {
     companion object
 }
+
+/** The [BuildEffect.LineDraw] duration a fresh build gets: Keynote's 2s. */
+const val LineDrawDurationMs: Int = 2000
 
 /**
  * An [BuildKind.Action] build, for the panels that add one.

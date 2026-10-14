@@ -86,7 +86,7 @@ private const val WarningFill: Long = 0x24F5C518
 private const val WarningStroke: Long = 0x99F5C518
 
 /** This colour at half the alpha it carries, the rest of it untouched. */
-private fun Long.halved(): Long {
+internal fun Long.halved(): Long {
     val alpha: Long = (this ushr 24) and 0xFF
     return ((alpha / 2) shl 24) or (this and 0xFFFFFF)
 }

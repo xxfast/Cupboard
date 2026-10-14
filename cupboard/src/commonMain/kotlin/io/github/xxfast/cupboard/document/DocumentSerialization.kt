@@ -2,6 +2,7 @@ package io.github.xxfast.cupboard.document
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
@@ -10,10 +11,14 @@ import kotlinx.serialization.json.jsonObject
 /**
  * The shape of `document.json` this build writes, and the newest it can read.
  *
- * Version 1 is every deck there has ever been: the field is new, and a file
- * without it is a version 1 file. See [Document.formatVersion] for when to bump.
+ * Version 1 is every deck written before the field existed: a file without it
+ * is a version 1 file. Version 2 is the first with a [LineElement], `"type":
+ * "line"`, which an older build would reject as corrupt; the version turns that
+ * into "update to open this" instead. Version 1 lines are shapes, and reading one
+ * rewrites them (see [migrateLegacyLines]). See [Document.formatVersion] for when
+ * to bump.
  */
-const val CURRENT_FORMAT_VERSION: Int = 1
+const val CURRENT_FORMAT_VERSION: Int = 2
 
 val DocumentJson: Json = Json {
     prettyPrint = true
@@ -65,7 +70,12 @@ fun decodeDocument(json: String): DocumentLoad {
     if (version > CURRENT_FORMAT_VERSION) return DocumentLoad.TooNew(version)
 
     return try {
-        DocumentLoad.Loaded(DocumentJson.decodeFromJsonElement(Document.serializer(), root))
+        // Migrated, the deck is a current one, and is stamped as such: saved
+        // under its old number, the lines it now holds would reach an older
+        // build that reads them as corrupt rather than as too new.
+        val migrated: JsonElement = migrateLegacyLines(root)
+        val document: Document = DocumentJson.decodeFromJsonElement(Document.serializer(), migrated)
+        DocumentLoad.Loaded(document.copy(formatVersion = CURRENT_FORMAT_VERSION))
     } catch (e: SerializationException) {
         DocumentLoad.Corrupt(e.message ?: "could not be read as a document")
     } catch (e: IllegalArgumentException) {

@@ -66,6 +66,7 @@ sealed interface LinkTarget {
 fun Element.resolvedLink(): LinkTarget? = when (this) {
     is TextElement -> linkTarget ?: link?.takeIf { it.isNotBlank() }?.let { LinkTarget.Url(it) }
     is ShapeElement -> link
+    is LineElement -> link
     is ImageElement -> link
     else -> null
 }

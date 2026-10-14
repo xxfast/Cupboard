@@ -103,6 +103,13 @@ private fun Element.scaled(scaleX: Float, scaleY: Float, scaleType: Float): Elem
             cornerRadius = cornerRadius * scaleType,
         )
 
+        // Both points scale with the slide, the stroke and its heads with the type.
+        is LineElement -> copy(
+            start = Point(start.x * scaleX, start.y * scaleY),
+            end = Point(end.x * scaleX, end.y * scaleY),
+            strokeWidth = strokeWidth * scaleType,
+        )
+
         is CodeElement -> copy(frame = scaledFrame, fontSize = fontSize * scaleType)
         is TerminalElement -> copy(frame = scaledFrame, fontSize = fontSize * scaleType)
         is DiagramElement -> copy(frame = scaledFrame, fontSize = fontSize * scaleType)

@@ -645,6 +645,7 @@ private fun KindGlyph(kind: String, color: Color) {
     when (kind) {
         "Text" -> TextGlyph(color)
         "Shape" -> ShapeGlyph(color)
+        "Line" -> LineGlyph(color)
         "Image" -> ImageGlyph(color)
         "Gallery" -> GalleryGlyph(color)
         "Group" -> GroupGlyph(color)
@@ -659,6 +660,15 @@ private fun KindGlyph(kind: String, color: Color) {
 }
 
 // Glyphs the toolbar has no use for, drawn by hand the same way (see EditorToolbar).
+
+/** A rising diagonal, the way a fresh line inserts. */
+@Composable
+private fun LineGlyph(color: Color) {
+    Canvas(Modifier.size(15.dp)) {
+        val s: Float = size.width / 14f
+        drawLine(color, Offset(2f * s, 12f * s), Offset(12f * s, 2f * s), 1.4.dp.toPx(), StrokeCap.Round)
+    }
+}
 
 /** Two sheets, one behind the other, which is what a stack of pictures looks like. */
 @Composable

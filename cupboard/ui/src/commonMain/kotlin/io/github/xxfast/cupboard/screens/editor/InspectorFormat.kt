@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
@@ -49,6 +51,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.LocalAssetStore
+import io.github.xxfast.cupboard.canvas.drawLineEndPreview
+import io.github.xxfast.cupboard.canvas.drawStrokeStylePreview
 import io.github.xxfast.cupboard.canvas.gradientStop
 import io.github.xxfast.cupboard.canvas.rememberAssetImage
 import io.github.xxfast.cupboard.canvas.removeBackground
@@ -71,6 +75,9 @@ import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ImageFill
 import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ImageMask
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.LineStyle
+import io.github.xxfast.cupboard.document.LineEnd
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
@@ -81,12 +88,14 @@ import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.StrokeStyle
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
+import io.github.xxfast.cupboard.document.applyingLineStyle
 import io.github.xxfast.cupboard.document.applyingObjectStyle
 import io.github.xxfast.cupboard.document.fillKind
 import io.github.xxfast.cupboard.document.formatCode
@@ -119,9 +128,9 @@ import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 /**
  * The Format tab: Keynote's shape, a full-width segmented control over one
@@ -171,6 +180,11 @@ internal fun ColumnScope.FormatPanel(
     onSaveObjectStyle: (shapeId: String, name: String) -> Unit,
     onRenameObjectStyle: (styleId: String, name: String) -> Unit,
     onDeleteObjectStyle: (styleId: String) -> Unit,
+    lineStyles: List<LineStyle>,
+    onApplyLineStyle: (ids: List<String>, styleId: String) -> Unit,
+    onSaveLineStyle: (lineId: String, name: String) -> Unit,
+    onRenameLineStyle: (styleId: String, name: String) -> Unit,
+    onDeleteLineStyle: (styleId: String) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onReplaceMedia: ((Element) -> Unit)?,
@@ -275,6 +289,20 @@ internal fun ColumnScope.FormatPanel(
         PanelDivider()
     }
 
+    if (activeSegment == FormatSegment.Style && primary is LineElement) PinnedBlock {
+        LineStyleStrip(
+            styles = lineStyles,
+            primary = primary,
+            ids = selectedElements.map { it.id },
+            enabled = !primary.locked,
+            onApply = onApplyLineStyle,
+            onSave = onSaveLineStyle,
+            onRename = onRenameLineStyle,
+            onDelete = onDeleteLineStyle,
+        )
+        PanelDivider()
+    }
+
     PanelBody {
         when (activeSegment) {
             FormatSegment.Style -> StyleBody(
@@ -374,6 +402,14 @@ private fun StyleBody(
             onChooseImage = onChooseImage,
         )
 
+        is LineElement -> LineStyleBody(
+            primary = primary,
+            elements = elements,
+            onUpdate = onUpdate,
+            expandedSections = expandedSections,
+            onToggleSection = onToggleSection,
+        )
+
         is CodeElement -> {
             DropdownField(
                 label = "Theme",
@@ -430,10 +466,6 @@ private fun StyleBody(
  * asks [onChooseImage] for one first, and a cancelled panel leaves the fill be.
  * Under a Scale to Fit picture the solid stays offered, since it is what paints
  * the letterbox.
- *
- * A line takes the same three with different words on them. It has no inside to
- * fill, so the Fill disclosure is absent rather than dead, and its Border is the
- * stroke plus the two ends, which is where Keynote puts them too.
  */
 @Composable
 private fun ShapeStyleBody(
@@ -449,7 +481,6 @@ private fun ShapeStyleBody(
     val gradient: ShapeGradient? = primary.gradient
     val imageFill: ImageFill? = primary.imageFill
     val shadow: ShapeShadow? = primary.shadow
-    val isLine: Boolean = primary.kind == ShapeKind.Line
 
     // False when the transform changed nothing anywhere, so a field that typed
     // its way to the value the document already holds puts itself back.
@@ -461,7 +492,7 @@ private fun ShapeStyleBody(
         return true
     }
 
-    if (!isLine) DisclosureSection(
+    DisclosureSection(
         title = "Fill",
         expanded = InspectorSection.Fill in expandedSections,
         onToggle = { onToggleSection(InspectorSection.Fill) },
@@ -574,11 +605,16 @@ private fun ShapeStyleBody(
     }
 
     DisclosureSection(
-        title = if (isLine) "Stroke" else "Border",
+        title = "Border",
         expanded = InspectorSection.Border in expandedSections,
         onToggle = { onToggleSection(InspectorSection.Border) },
         summary = { BorderSummary(primary.strokeColor, primary.strokeWidth) },
     ) {
+        StrokeStylePicker(
+            selected = primary.strokeStyle,
+            enabled = enabled,
+            onPick = { style -> format { it.copy(strokeStyle = style) } },
+        )
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Bottom,
@@ -596,7 +632,7 @@ private fun ShapeStyleBody(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                none = if (isLine) null else "No Border",
+                none = "No Border",
                 isNone = primary.strokeWidth <= 0f,
                 onNone = { format { it.copy(strokeWidth = 0f) } },
             )
@@ -608,19 +644,6 @@ private fun ShapeStyleBody(
                 modifier = Modifier.width(104.dp),
                 minimum = 0f,
                 fractional = true,
-            )
-        }
-
-        if (isLine) Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            AppearanceRow(
-                label = "Start Arrow",
-                checked = primary.startArrow,
-                onToggle = if (!enabled) null else ({ on -> format { it.copy(startArrow = on) } }),
-            )
-            AppearanceRow(
-                label = "End Arrow",
-                checked = primary.endArrow,
-                onToggle = if (!enabled) null else ({ on -> format { it.copy(endArrow = on) } }),
             )
         }
     }
@@ -672,6 +695,173 @@ private fun ShapeStyleBody(
         modifier = Modifier.width(150.dp),
         minimum = 0f,
     )
+}
+
+/**
+ * A line's looks: its Stroke (style, colour, width, then the two end points) and
+ * its Shadow, Keynote's order. No fill: a line has no inside.
+ *
+ * Width is Keynote's 0.25 to 100pt, two decimals. The left end picker is the
+ * start and draws its heads pointing left, the way Keynote's does.
+ */
+@Composable
+private fun LineStyleBody(
+    primary: LineElement,
+    elements: List<Element>,
+    onUpdate: (List<Element>) -> Unit,
+    expandedSections: Set<InspectorSection>,
+    onToggleSection: (InspectorSection) -> Unit,
+) {
+    val enabled: Boolean = !primary.locked
+    val shadow: ShapeShadow? = primary.shadow
+
+    fun format(transform: (LineElement) -> LineElement): Boolean {
+        val formatted: List<Element> = elements.formatLines(transform)
+        if (formatted.isEmpty()) return false
+
+        onUpdate(formatted)
+        return true
+    }
+
+    DisclosureSection(
+        title = "Stroke",
+        expanded = InspectorSection.Border in expandedSections,
+        onToggle = { onToggleSection(InspectorSection.Border) },
+        summary = { BorderSummary(primary.strokeColor, primary.strokeWidth) },
+    ) {
+        StrokeStylePicker(
+            selected = primary.strokeStyle,
+            enabled = enabled,
+            onPick = { style -> format { it.copy(strokeStyle = style) } },
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            ColourField(
+                color = primary.strokeColor,
+                enabled = enabled,
+                onPick = { color -> format { it.copy(strokeColor = color) } },
+                modifier = Modifier.weight(1f),
+            )
+            NumberField(
+                label = "Width",
+                value = primary.strokeWidth,
+                enabled = enabled,
+                onCommit = { width -> format { it.copy(strokeWidth = width) } },
+                modifier = Modifier.width(104.dp),
+                minimum = MinLineWidth,
+                maximum = MaxLineWidth,
+                fractional = true,
+            )
+        }
+
+        SwatchLabel("End Points")
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            LineEndPicker(
+                label = "Start",
+                selected = primary.startEnd,
+                mirrored = true,
+                enabled = enabled,
+                onPick = { end -> format { it.copy(startEnd = end) } },
+                modifier = Modifier.weight(1f),
+            )
+            LineEndPicker(
+                label = "End",
+                selected = primary.endEnd,
+                mirrored = false,
+                enabled = enabled,
+                onPick = { end -> format { it.copy(endEnd = end) } },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+
+    DisclosureSection(
+        title = "Shadow",
+        expanded = InspectorSection.Shadow in expandedSections,
+        onToggle = { onToggleSection(InspectorSection.Shadow) },
+        summary = { ShadowSummary(shadow) },
+    ) {
+        AppearanceRow(
+            label = "Shadow",
+            checked = shadow != null,
+            onToggle = if (!enabled) null else ({ on ->
+                format { it.copy(shadow = if (on) ShapeShadow() else null) }
+            }),
+        )
+        if (shadow != null) Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            ColourField(
+                label = "Color",
+                color = shadow.color,
+                enabled = enabled,
+                onPick = { color -> format { it.copy(shadow = it.shadow?.copy(color = color)) } },
+                modifier = Modifier.weight(1f),
+                none = "No Shadow",
+                onNone = { format { it.copy(shadow = null) } },
+            )
+            NumberField(
+                label = "Blur",
+                value = shadow.blur,
+                enabled = enabled,
+                onCommit = { blur -> format { it.copy(shadow = it.shadow?.copy(blur = blur)) } },
+                modifier = Modifier.width(104.dp),
+                minimum = 0f,
+            )
+        }
+    }
+}
+
+/** Keynote's stroke width range for a line, in points. */
+private const val MinLineWidth: Float = 0.25f
+private const val MaxLineWidth: Float = 100f
+
+/** The five stroke styles as one segmented row, each segment a drawn sample of itself. */
+@Composable
+private fun StrokeStylePicker(
+    selected: StrokeStyle,
+    enabled: Boolean,
+    onPick: (StrokeStyle) -> Unit,
+) {
+    SegmentedRow(Modifier.fillMaxWidth()) {
+        for ((index, style) in StrokeStyle.entries.withIndex()) {
+            val tint: Color = segmentTint(style == selected, enabled)
+            Segment(
+                selected = style == selected,
+                first = index == 0,
+                onClick = if (enabled) ({ onPick(style) }) else null,
+            ) {
+                Canvas(Modifier.width(30.dp).height(8.dp)) {
+                    drawStrokeStylePreview(style, tint, 3.dp.toPx())
+                }
+            }
+        }
+    }
+}
+
+/** One end's popup: every [LineEnd], each drawn on a short stretch of line. */
+@Composable
+private fun LineEndPicker(
+    label: String,
+    selected: LineEnd,
+    mirrored: Boolean,
+    enabled: Boolean,
+    onPick: (LineEnd) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    PreviewDropdownField(
+        label = label,
+        value = selected,
+        options = LineEnd.entries,
+        enabled = enabled,
+        onPick = onPick,
+        modifier = modifier,
+    ) { end, color ->
+        drawLineEndPreview(end, color, weight = 1.5.dp.toPx(), mirrored = mirrored)
+    }
 }
 
 /** The four colours a chart is made of, as wells: node, outline, label, arrow. */
@@ -1752,10 +1942,6 @@ private val WholeImage: Frame = Frame(0f, 0f, 1f, 1f)
 
 /**
  * What an image can be cut to: the catalog's outlines, plus no mask at all.
- *
- * [ShapeKind.Line] is not offered. It is a stroke between two corners with no
- * inside to show a picture through, which is why the renderer never asks it for
- * an outline either.
  */
 private val MASK_CHOICES: List<Pair<ShapeKind?, String>> = listOf(
     null to "None",
@@ -2280,48 +2466,70 @@ private fun ArrangeBody(
 
     PanelDivider()
 
-    SectionLabel("SIZE")
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        NumberField(
-            label = "W",
-            value = frame.width,
-            enabled = enabled,
-            onCommit = { width -> onUpdate(frames { it.copy(width = width) }) },
-            modifier = Modifier.weight(1f),
-            minimum = 1f,
-        )
-        NumberField(
-            label = "H",
-            value = frame.height,
-            enabled = enabled,
-            onCommit = { height -> onUpdate(frames { it.copy(height = height) }) },
-            modifier = Modifier.weight(1f),
-            minimum = 1f,
-        )
-    }
+    // A line has no box of its own to size: its geometry is its two points.
+    if (primary is LineElement) {
+        LineGeometry(primary, elements, enabled, onUpdate)
+    } else {
+        SectionLabel("SIZE")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            NumberField(
+                label = "W",
+                value = frame.width,
+                enabled = enabled,
+                onCommit = { width -> onUpdate(frames { it.copy(width = width) }) },
+                modifier = Modifier.weight(1f),
+                minimum = 1f,
+            )
+            NumberField(
+                label = "H",
+                value = frame.height,
+                enabled = enabled,
+                onCommit = { height -> onUpdate(frames { it.copy(height = height) }) },
+                modifier = Modifier.weight(1f),
+                minimum = 1f,
+            )
+        }
 
-    SectionLabel("POSITION")
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        NumberField(
-            label = "X",
-            value = frame.x,
-            enabled = enabled,
-            onCommit = { x -> onUpdate(frames { it.copy(x = x) }) },
-            modifier = Modifier.weight(1f),
-        )
-        NumberField(
-            label = "Y",
-            value = frame.y,
-            enabled = enabled,
-            onCommit = { y -> onUpdate(frames { it.copy(y = y) }) },
-            modifier = Modifier.weight(1f),
-        )
+        SectionLabel("POSITION")
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            NumberField(
+                label = "X",
+                value = frame.x,
+                enabled = enabled,
+                onCommit = { x -> onUpdate(frames { it.copy(x = x) }) },
+                modifier = Modifier.weight(1f),
+            )
+            NumberField(
+                label = "Y",
+                value = frame.y,
+                enabled = enabled,
+                onCommit = { y -> onUpdate(frames { it.copy(y = y) }) },
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 
     PanelDivider()
 
     SectionLabel("ROTATE")
-    NumberField(
+    // A line's angle is its direction, Keynote's: turning it turns the points
+    // about their midpoint, to one decimal.
+    if (primary is LineElement) NumberField(
+        label = "Angle",
+        value = (primary.angle * 10).roundToInt() / 10f,
+        enabled = enabled,
+        onCommit = { angle ->
+            onUpdate(
+                elements.map { element ->
+                    if (element is LineElement) element.withAngle(angle)
+                    else element.update(rotation = angle)
+                },
+            )
+        },
+        modifier = Modifier.width(150.dp),
+        fractional = true,
+        unit = Units.Degrees,
+    ) else NumberField(
         label = "Angle",
         value = primary.rotation,
         enabled = enabled,
@@ -2376,6 +2584,67 @@ private fun ArrangeBody(
             enabled = primary is GroupElement && elements.size == 1 && enabled,
             onClick = { onUngroup(primary.id) },
             modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
+ * A line's place on the slide, Keynote's: where it starts and where it ends, each
+ * pair moving that end alone. Values clamp at 1pt, Keynote's floor, and an end
+ * typed onto the other lands 1pt off it (see [LineElement.withEnd]).
+ *
+ * Every selected line takes the same coordinates; anything else selected is left
+ * where it is, since a box has no start to put anywhere.
+ */
+@Composable
+private fun LineGeometry(
+    primary: LineElement,
+    elements: List<Element>,
+    enabled: Boolean,
+    onUpdate: (List<Element>) -> Unit,
+) {
+    fun lines(edit: (LineElement) -> LineElement) {
+        val edited: List<Element> = elements.formatLines(edit)
+        if (edited.isNotEmpty()) onUpdate(edited)
+    }
+
+    SectionLabel("START")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberField(
+            label = "X",
+            value = primary.start.x,
+            enabled = enabled,
+            onCommit = { x -> lines { it.withStart(it.start.copy(x = x)) } },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+        NumberField(
+            label = "Y",
+            value = primary.start.y,
+            enabled = enabled,
+            onCommit = { y -> lines { it.withStart(it.start.copy(y = y)) } },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+    }
+
+    SectionLabel("END")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        NumberField(
+            label = "X",
+            value = primary.end.x,
+            enabled = enabled,
+            onCommit = { x -> lines { it.withEnd(it.end.copy(x = x)) } },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
+        )
+        NumberField(
+            label = "Y",
+            value = primary.end.y,
+            enabled = enabled,
+            onCommit = { y -> lines { it.withEnd(it.end.copy(y = y)) } },
+            modifier = Modifier.weight(1f),
+            minimum = 1f,
         )
     }
 }
@@ -2973,6 +3242,142 @@ private fun ObjectStyleSwatch(
     }
 }
 
+/** Keynote's Line Styles grid is three across. */
+private const val LineStylesPerRow: Int = 3
+
+/** A line swatch is wider than tall, so the stroke has room to show its pattern. */
+private val LineStyleSwatchWidth: Dp = 64.dp
+
+/**
+ * The deck's saved line looks, Keynote's Line Styles: [ObjectStyleStrip] for a
+ * line, with the same affordances. Applying one sets the stroke and both ends;
+ * the presenter drops whatever in the selection isn't an unlocked line.
+ */
+@Composable
+private fun LineStyleStrip(
+    styles: List<LineStyle>,
+    primary: LineElement,
+    ids: List<String>,
+    enabled: Boolean,
+    onApply: (ids: List<String>, styleId: String) -> Unit,
+    onSave: (lineId: String, name: String) -> Unit,
+    onRename: (styleId: String, name: String) -> Unit,
+    onDelete: (styleId: String) -> Unit,
+) {
+    var saving: Boolean by remember { mutableStateOf(false) }
+    var renaming: LineStyle? by remember { mutableStateOf(null) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        for (row in styles.chunked(LineStylesPerRow)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (style in row) LineStyleSwatch(
+                    style = style,
+                    selected = primary.applyingLineStyle(style) == primary,
+                    enabled = enabled,
+                    onApply = { onApply(ids, style.id) },
+                    onRename = { renaming = style },
+                    onDelete = { onDelete(style.id) },
+                )
+            }
+        }
+    }
+
+    TonalButton(
+        label = "Save Style...",
+        enabled = true,
+        onClick = { saving = true },
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (saving) NameDialog(
+        title = "Save Style",
+        confirmLabel = "Save",
+        name = "",
+        onDismiss = { saving = false },
+        onCommit = { name ->
+            saving = false
+            onSave(primary.id, name)
+        },
+    )
+
+    renaming?.let { style ->
+        NameDialog(
+            title = "Rename Style",
+            confirmLabel = "Rename",
+            name = style.name,
+            onDismiss = { renaming = null },
+            onCommit = { name ->
+                renaming = null
+                onRename(style.id, name)
+            },
+        )
+    }
+}
+
+/**
+ * One line style, drawn: a short stretch of its stroke across a framed tile,
+ * capped at [StyleStrokeCap] so a heavy style doesn't fill the tile, with the
+ * accent ring on the one the line is wearing.
+ */
+@Composable
+private fun LineStyleSwatch(
+    style: LineStyle,
+    selected: Boolean,
+    enabled: Boolean,
+    onApply: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    var menuOpen: Boolean by remember { mutableStateOf(false) }
+
+    Box {
+        Canvas(
+            modifier = Modifier
+                .size(LineStyleSwatchWidth, StyleSwatchSize)
+                .pointerInput(style.id, enabled) {
+                    detectTapGestures(
+                        onLongPress = { menuOpen = true },
+                        onTap = { if (enabled) onApply() },
+                    )
+                },
+        ) {
+            val corner: CornerRadius = CornerRadius(StyleCorner.toPx())
+            val weight: Float = minOf(style.strokeWidth.dp, StyleStrokeCap).toPx()
+            val margin: Float = 8.dp.toPx()
+            inset(horizontal = margin, vertical = 0f) {
+                drawStrokeStylePreview(style.strokeStyle, Color(style.strokeColor), weight)
+            }
+
+            val ring: Float = if (selected) 2.dp.toPx() else 1.dp.toPx()
+            drawRoundRect(
+                color = if (selected) tokens.accent else tokens.outline,
+                topLeft = Offset(ring / 2f, ring / 2f),
+                size = Size(size.width - ring, size.height - ring),
+                cornerRadius = corner,
+                style = Stroke(ring),
+            )
+        }
+
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Rename...", fontSize = 13.sp) },
+                onClick = {
+                    menuOpen = false
+                    onRename()
+                },
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", fontSize = 13.sp) },
+                onClick = {
+                    menuOpen = false
+                    onDelete()
+                },
+            )
+        }
+    }
+}
+
 /** What a style paints its swatch with: its gradient over [size] when it has
  * one, its solid fill otherwise. The angle is the canvas's, so a swatch leans
  * the way the shape will. */
@@ -3001,6 +3406,14 @@ private fun List<Element>.formatShapes(
 ): List<Element> = mapNotNull { element ->
     if (element !is ShapeElement || element.locked) return@mapNotNull null
     val formatted: ShapeElement = transform(element)
+    return@mapNotNull if (formatted == element) null else formatted
+}
+
+private fun List<Element>.formatLines(
+    transform: (LineElement) -> LineElement,
+): List<Element> = mapNotNull { element ->
+    if (element !is LineElement || element.locked) return@mapNotNull null
+    val formatted: LineElement = transform(element)
     return@mapNotNull if (formatted == element) null else formatted
 }
 

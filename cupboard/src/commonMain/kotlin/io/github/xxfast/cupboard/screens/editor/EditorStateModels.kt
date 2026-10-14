@@ -22,12 +22,13 @@ import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.Guide
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.ImageElement
+import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.LinkTarget
+import io.github.xxfast.cupboard.document.LineStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShapeElement
-import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.VideoElement
@@ -507,6 +508,9 @@ data class EditorState(
 
     /** What every colour well's popover offers: the swatches [defaults] imply. */
     val palette: ColourPalette get() = defaults.palette()
+
+    /** The line looks a line style picker offers, which are the deck's. */
+    val lineStyles: List<LineStyle> get() = document.lineStyles
 
     /**
      * The families the deck carries in its bundle, once each and sorted: the
@@ -1140,14 +1144,12 @@ enum class AnimateSegment { BuildIn, Action, BuildOut }
 enum class InspectorSection { Fill, Border, Shadow, Spacing, Lists }
 
 /**
- * The Format segments this element alone would offer. A line is a shape with no
- * inside and no label, so it offers neither Style's fill nor Text; a group has
- * nothing of its own to format.
+ * The Format segments this element alone would offer. A line has no label, so it
+ * offers no Text; a group has nothing of its own to format.
  */
 private fun Element.formatSegments(): List<FormatSegment> = when (this) {
-    is ShapeElement ->
-        if (kind == ShapeKind.Line) listOf(FormatSegment.Style, FormatSegment.Arrange)
-        else listOf(FormatSegment.Style, FormatSegment.Text, FormatSegment.Arrange)
+    is ShapeElement -> listOf(FormatSegment.Style, FormatSegment.Text, FormatSegment.Arrange)
+    is LineElement -> listOf(FormatSegment.Style, FormatSegment.Arrange)
 
     is TextElement -> listOf(FormatSegment.Style, FormatSegment.Text, FormatSegment.Arrange)
     is ImageElement -> listOf(FormatSegment.Style, FormatSegment.Image, FormatSegment.Arrange)
@@ -1824,6 +1826,18 @@ sealed interface EditorEvent {
     /** Renames the saved style [styleId]. One history entry, and a style already
      * called this is a no-op. */
     data class RenameObjectStyle(val styleId: String, val name: String) : EditorEvent
+    /**
+     * Dresses the unlocked lines [ids] resolves to in the saved line style
+     * [styleId]: stroke colour, width and style, and both ends. [ApplyObjectStyle]
+     * for lines, skipping everything else in the selection the same way.
+     */
+    data class ApplyLineStyle(val ids: List<String>, val styleId: String) : EditorEvent
+    /** Saves the line [lineId]'s look, ends included, under [name]. See [SaveObjectStyle]. */
+    data class SaveLineStyle(val lineId: String, val name: String) : EditorEvent
+    /** Drops the saved line style [styleId]. See [DeleteObjectStyle]. */
+    data class DeleteLineStyle(val styleId: String) : EditorEvent
+    /** Renames the saved line style [styleId]. See [RenameObjectStyle]. */
+    data class RenameLineStyle(val styleId: String, val name: String) : EditorEvent
     /**
      * Use As Default: writes the text element [id]'s look into the deck's
      * [ElementDefaults], so the next fresh text box arrives set that way.

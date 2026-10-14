@@ -55,10 +55,20 @@ struct Chrome {
     let text: TextFormat?
     /// The primary's shape style, nil unless the primary is a shape.
     let shape: ShapeFormat?
+    /// The primary's line, nil unless the primary is a line. A line is not a
+    /// shape, so the two are never both set.
+    let line: LineFormat?
+    /// What a stroke style popup offers, shapes and lines alike, and what an End
+    /// points popup offers: the enums' names in their order, Kotlin's to state.
+    let strokeStyles: [String]
+    let lineEnds: [String]
     /// The deck's saved shape looks, what the Shape section's style strip shows.
     /// The whole library whatever is selected: one of them may be marked as the
     /// one the primary shape is wearing, but none of them go away.
     let objectStyles: [ObjectStyleChoice]
+    /// The deck's saved line looks, the Line Styles strip's. The same deal as
+    /// the shape ones: the whole library, one maybe ringed.
+    let lineStyles: [LineStyleChoice]
     /// The primary's code style, nil unless the primary is a code block.
     let code: CodeFormat?
     /// The primary's terminal style, nil unless the primary is a terminal.
@@ -154,6 +164,8 @@ struct Chrome {
     /// Kotlin's order. Positions are what go back, like the transition kinds.
     let buildEffects: [String]
     let buildTriggers: [String]
+    /// Which way a Line Draw may grow its line, in Kotlin's order.
+    let lineDrawDirections: [String]
     let actionKinds: [String]
 
     init(_ host: EditorHost) {
@@ -181,7 +193,11 @@ struct Chrome {
         element = host.selectedElement().map(Selection.init)
         text = host.selectedText().map(TextFormat.init)
         shape = host.selectedShape().map(ShapeFormat.init)
+        line = host.selectedLine().map(LineFormat.init)
+        strokeStyles = host.strokeStyleNames()
+        lineEnds = host.lineEndNames()
         objectStyles = host.objectStyles().map(ObjectStyleChoice.init)
+        lineStyles = host.lineStyles().map(LineStyleChoice.init)
         code = host.selectedCode().map(CodeFormat.init)
         terminal = host.selectedTerminal().map(TerminalFormat.init)
         diagram = host.selectedDiagram().map(DiagramFormat.init)
@@ -223,6 +239,7 @@ struct Chrome {
         builds = host.buildRows().map(BuildEntry.init)
         buildEffects = host.buildEffectTitles()
         buildTriggers = host.buildTriggerTitles()
+        lineDrawDirections = host.lineDrawDirectionTitles()
         actionKinds = host.actionKindTitles()
     }
 
@@ -458,6 +475,10 @@ struct BuildEntry: Identifiable, Equatable {
     let hasStepTarget: Bool
     /// The deliveries this build's element has pieces for, in menu order.
     let deliveryTitles: [String]
+    /// How a Line Draw grows its line, a place in `Chrome.lineDrawDirections`,
+    /// and whether the heads ride along. Filled in whatever the effect.
+    let lineDrawDirectionIndex: Int
+    let lineDrawIncludeEnds: Bool
 
     /// Whether this build brings its element on or takes it away, and so shows
     /// an effect and a delivery rather than an action's own controls.
@@ -484,6 +505,8 @@ struct BuildEntry: Identifiable, Equatable {
         scale = Double(row.scale)
         hasStepTarget = row.hasStepTarget
         deliveryTitles = row.deliveryTitles
+        lineDrawDirectionIndex = Int(row.lineDrawDirectionIndex)
+        lineDrawIncludeEnds = row.lineDrawIncludeEnds
     }
 }
 
@@ -564,9 +587,8 @@ struct TextFormat {
 struct ShapeFormat {
     /// What the shape is, the way the document model spells it.
     let kind: String
-    /// Only a rectangle rounds, and only a line caps its ends.
+    /// Only a rectangle rounds.
     let isRectangle: Bool
-    let isLine: Bool
     let cornerRadius: Double
     /// Packed ARGB, the document model's colour format. So is every colour below.
     let fill: Int64
@@ -580,11 +602,11 @@ struct ShapeFormat {
     let imageMode: Int
     let strokeColor: Int64
     let strokeWidth: Double
+    /// How the border is dashed, one of `Chrome.strokeStyles`.
+    let strokeStyle: String
     let hasShadow: Bool
     let shadowColor: Int64
     let shadowBlur: Double
-    let startArrow: Bool
-    let endArrow: Bool
     /// "" is no label: the field has no null to spell, the way the link field has none.
     let label: String
     let labelSize: Double
@@ -600,7 +622,6 @@ struct ShapeFormat {
     init(_ props: ShapeProps) {
         kind = props.kindName
         isRectangle = props.isRectangle
-        isLine = props.isLine
         cornerRadius = Double(props.cornerRadius)
         fill = props.fill
         fillKind = FillKind(rawValue: Int(props.fillKind)) ?? .color
@@ -610,13 +631,57 @@ struct ShapeFormat {
         imageMode = Int(props.imageFillMode)
         strokeColor = props.strokeColor
         strokeWidth = Double(props.strokeWidth)
+        strokeStyle = props.strokeStyle
         hasShadow = props.hasShadow
         shadowColor = props.shadowColor
         shadowBlur = Double(props.shadowBlur)
-        startArrow = props.startArrow
-        endArrow = props.endArrow
         label = props.label
         labelSize = Double(props.labelSize)
+    }
+}
+
+/// The primary selected line as a Swift value: what the Style and Arrange
+/// segments show for one. Read off the primary, written to every unlocked line
+/// in the selection, like the shape's.
+///
+/// No box: a line's geometry is its two points, in slide points from the top
+/// left. The angle is its direction, counterclockwise from pointing right.
+/// The style and the ends are names out of `Chrome.strokeStyles` and
+/// `Chrome.lineEnds`, so no Kotlin enum crosses over.
+struct LineFormat {
+    let startX: Double
+    let startY: Double
+    let endX: Double
+    let endY: Double
+    let angle: Double
+    let length: Double
+    /// Packed ARGB, the document model's colour format. So is the shadow's.
+    let strokeColor: Int64
+    let strokeWidth: Double
+    let strokeStyle: String
+    let startEnd: String
+    let endEnd: String
+    let hasShadow: Bool
+    let shadowColor: Int64
+    let shadowBlur: Double
+    let locked: Bool
+
+    init(_ props: LineProps) {
+        startX = Double(props.startX)
+        startY = Double(props.startY)
+        endX = Double(props.endX)
+        endY = Double(props.endY)
+        angle = Double(props.angle)
+        length = Double(props.length)
+        strokeColor = props.strokeColor
+        strokeWidth = Double(props.strokeWidth)
+        strokeStyle = props.strokeStyle
+        startEnd = props.startEnd
+        endEnd = props.endEnd
+        hasShadow = props.hasShadow
+        shadowColor = props.shadowColor
+        shadowBlur = Double(props.shadowBlur)
+        locked = props.locked
     }
 }
 
@@ -655,6 +720,33 @@ struct ObjectStyleChoice: Identifiable {
         strokeWidth = Double(props.strokeWidth)
         hasShadow = props.hasShadow
         cornerRadius = Double(props.cornerRadius)
+        isCurrent = props.current
+    }
+}
+
+/// One saved line look as a Swift value: [ObjectStyleChoice] for the Line
+/// Styles strip. The style and the ends are names out of `Chrome.strokeStyles`
+/// and `Chrome.lineEnds`, so no Kotlin enum crosses over.
+struct LineStyleChoice: Identifiable {
+    let id: String
+    let name: String
+    /// Packed ARGB, the document model's colour format.
+    let strokeColor: Int64
+    let strokeWidth: Double
+    let strokeStyle: String
+    let startEnd: String
+    let endEnd: String
+    /// Whether the primary line is already wearing exactly this look.
+    let isCurrent: Bool
+
+    init(_ props: LineStyleProps) {
+        id = props.id
+        name = props.name
+        strokeColor = props.strokeColor
+        strokeWidth = Double(props.strokeWidth)
+        strokeStyle = props.strokeStyle
+        startEnd = props.startEnd
+        endEnd = props.endEnd
         isCurrent = props.current
     }
 }
