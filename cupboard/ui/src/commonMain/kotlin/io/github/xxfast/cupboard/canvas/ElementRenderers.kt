@@ -767,7 +767,7 @@ private fun ImagePlaceholder(text: String, width: Float, height: Float) {
     }
 }
 
-/** The dots' size and spacing, and how far off the bottom edge the row sits. */
+/** The dots' size and spacing, and how far off the picture's bottom edge the row sits. */
 private const val GalleryDotSize: Float = 7f
 private const val GalleryDotGap: Float = 7f
 private const val GalleryDotInset: Float = 10f
@@ -818,14 +818,18 @@ private fun GalleryElementView(element: GalleryElement, imageIndex: Int, indicat
         }
         GalleryImageLayer(element, to, element.frame.width, height, progress.value)
 
+        // The dots sit on the bottom of the picture, in the box above the caption's band,
+        // so they never reach the caption.
         if (indicators && element.images.size > 1) {
-            GalleryDots(
-                count = element.images.size,
-                current = to,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = GalleryDotInset.dp),
-            )
+            Box(modifier = Modifier.size(element.frame.width.dp, height.dp)) {
+                GalleryDots(
+                    count = element.images.size,
+                    current = to,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = GalleryDotInset.dp),
+                )
+            }
         }
     }
 }
