@@ -52,6 +52,22 @@ class GalleryRenderTest {
         assertEquals(blue, render(second, imageIndex = null).getColor(100, 80))
     }
 
+    @Test
+    fun theDotsStayOutOfTheCaption() {
+        val captioned: GalleryElement = element.copy(
+            images = element.images.map { it.copy(caption = "By night, long enough to run wide") },
+        )
+        val single: GalleryElement = captioned.copy(images = captioned.images.take(1))
+
+        val withDots: Bitmap = render(captioned, imageIndex = 0)
+        val without: Bitmap = render(single, imageIndex = 0)
+
+        // The caption's band is the bottom 24 of the 120 tall frame at y 20.
+        for (y in 116 until 140) for (x in 20 until 180) {
+            assertEquals(without.getColor(x, y), withDots.getColor(x, y), "pixel $x,$y")
+        }
+    }
+
     /**
      * [element] drawn on a 200x200 slide at native size, so one document unit is
      * one pixel of the result and the assertions can name coordinates.
