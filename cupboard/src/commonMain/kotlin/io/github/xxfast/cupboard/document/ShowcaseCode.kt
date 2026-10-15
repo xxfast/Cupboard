@@ -15,6 +15,7 @@ internal fun codeSlides(): List<Slide> = listOf(
     codeLanguagesSlide(),
     codeStepsSlide(),
     codeMagicMoveSlide(),
+    codeTypewriterSlide(),
     codeTokenTravelSlide(),
 )
 
@@ -213,6 +214,60 @@ private fun codeMagicMoveSlide(): Slide {
             "into a `withContext`. Watch `canvas`, `slide.size` and the closing brace: " +
             "those tokens travel rather than fading out and back in. Anything that flies " +
             "across the block to a place it does not belong is a diff bug worth noting.",
+    )
+}
+
+/**
+ * The Magic Move's walk typed rather than morphed: [BuildEffect.Typewriter] step
+ * builds over two versions, one step that only reveals a line of the version
+ * already showing, and one that only moves the spotlight.
+ */
+private fun codeTypewriterSlide(): Slide {
+    val code = CodeElement(
+        frame = ShowcaseStage.copy(height = 560f),
+        language = "kotlin",
+        fontSize = 34f,
+        code = """
+            fun greet(name: String): String {
+                return "Hello, ${'$'}name"
+            }
+        """.trimIndent(),
+        versions = listOf(
+            """
+                fun greet(name: String, loud: Boolean): String {
+                    val greeting = "Hello, ${'$'}name"
+                    return if (loud) greeting.uppercase() else greeting
+                }
+            """.trimIndent(),
+        ),
+        steps = listOf(
+            CodeStep(version = 0),
+            // The rewrite with its new return line held back, so the next step
+            // is a reveal within one version: typed in, nothing else touched.
+            CodeStep(version = 1, reveal = listOf(LineRange(1, 2), LineRange(4, 4))),
+            CodeStep(version = 1),
+            CodeStep(version = 1, highlight = listOf(LineRange(3, 3))),
+        ),
+    )
+
+    return featureSlide(
+        title = "Code Typewriter",
+        subtitle = "BuildEffect.Typewriter on the step builds: erase, move, then type",
+        elements = listOf(code),
+        builds = listOf(
+            Build(code.id),
+            Build(code.id, elementStep = 1, effect = BuildEffect.Typewriter),
+            Build(code.id, elementStep = 2, effect = BuildEffect.Typewriter),
+            Build(code.id, elementStep = 3, effect = BuildEffect.Typewriter),
+        ),
+        notes = "Look for: at rest, a three-line `greet`.\n\n" +
+            "In play: click 3 times. First `return` backspaces out with a block caret, " +
+            "then the end of the signature slides right to make room, then " +
+            "`, loud: Boolean` and `val greeting =` type in, the string staying put. " +
+            "Second, the closing brace drops a row and the new return line types into " +
+            "the gap, nothing erased. Third, " +
+            "nothing is typed: line 3 stays bright and the rest dims in one short move. " +
+            "Click back: each step plays the plain transition, never retyped.",
     )
 }
 

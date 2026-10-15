@@ -42,6 +42,7 @@ import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.actionBuildAt
 import io.github.xxfast.cupboard.document.actionStateAt
 import io.github.xxfast.cupboard.document.codeStepFor
+import io.github.xxfast.cupboard.document.elementStepBuildAt
 import io.github.xxfast.cupboard.document.diagramStepFor
 import io.github.xxfast.cupboard.document.backgroundCascade
 import io.github.xxfast.cupboard.document.effectiveBackground
@@ -281,6 +282,9 @@ fun SlideView(
                         originY = drawn.frame.y,
                         codeStep = if (element is CodeElement) {
                             slide.codeStepFor(element, step) ?: deliveredStep(reveal)
+                        } else null,
+                        codeStepBuild = if (element is CodeElement) {
+                            slide.elementStepBuildAt(element.id, step)
                         } else null,
                         diagramStep = if (element is DiagramElement) {
                             slide.diagramStepFor(element, step)

@@ -20,11 +20,15 @@ enum class BuildEffect {
     Wipe,
 
     /**
-     * Types the element in rather than bringing it in whole. Only
-     * [TerminalElement] honours it: its command lines type out character by
+     * Types the element in rather than bringing it in whole. Two builds honour
+     * it. A [TerminalElement]'s entry: its command lines type out character by
      * character over the build's duration, and each block of output lands the
-     * moment the command above it has finished. Every other kind treats it as
-     * [Dissolve], so an effect set on the wrong element still reveals it.
+     * moment the command above it has finished. And a [CodeElement]'s step build
+     * (one with a [Build.elementStep]): moving forward onto it, what the old step
+     * showed and the new one doesn't is backspaced out, what both show slides
+     * into place, and what only the new one shows is typed in. Everything else,
+     * diagrams and galleries included, treats it as [Dissolve], so an effect set
+     * on the wrong element or build still reveals it.
      */
     Typewriter,
 
@@ -416,10 +420,21 @@ fun Slide.isVisibleAt(elementId: String, step: Int): Boolean {
  * element reads that as step 0, since a stepped element shows its first state
  * from the moment it is visible; an element with no steps isn't stepped at all.
  */
-fun Slide.elementStepAt(elementId: String, step: Int): Int? = buildTimeline()
+fun Slide.elementStepAt(elementId: String, step: Int): Int? =
+    elementStepBuildAt(elementId, step)?.build?.elementStep
+
+/**
+ * The build [elementStepAt] reads its answer off: the last build for [elementId]
+ * that carries a [Build.elementStep] and lands at or before [step], with where it
+ * landed. Null exactly when [elementStepAt] is.
+ *
+ * A renderer wants the whole build rather than the index alone when how a step
+ * arrives depends on the build that brought it: a code block types its way onto
+ * a [BuildEffect.Typewriter] step, and only when the build order is moving
+ * forward onto it, which [BuildAt.firstStep] is what tells.
+ */
+fun Slide.elementStepBuildAt(elementId: String, step: Int): BuildAt? = buildTimeline()
     .lastOrNull { it.firstStep <= step && it.build.elementId == elementId && it.build.elementStep != null }
-    ?.build
-    ?.elementStep
 
 /**
  * How much of [elementId] is out at [step], null when it shows whole.

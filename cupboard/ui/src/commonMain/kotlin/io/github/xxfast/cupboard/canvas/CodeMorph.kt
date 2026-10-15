@@ -23,6 +23,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
@@ -224,6 +225,13 @@ private data class MorphPlan(
  * line path: one translation of the glyphs and of both gutters, between the two
  * places [codeScroll] rests each side at.
  *
+ * [typing] plays the same plan as a keyboard instead, for a step a
+ * [io.github.xxfast.cupboard.document.BuildEffect.Typewriter] build moves forward
+ * onto: what only [from] shows backspaces out, what both show then slides and
+ * recolours, and what only [to] shows types in, each a phase of [typing] on the
+ * same [progress]. Nothing slides in or out vertically there; the scroll and the
+ * gutter's crossfade ride the move phase alone. Null is the morph.
+ *
  * At rest the caller draws the line path again, so what is on screen when this
  * stops is the static render of [to] to the pixel rather than this pass's
  * approximation of it.
@@ -235,6 +243,7 @@ internal fun MorphedCodeLines(
     to: CodeStep,
     progress: Animatable<Float, AnimationVector1D>,
     modifier: Modifier = Modifier,
+    typing: TypewriterTimeline? = null,
 ) {
     val chrome: CodeChrome = element.theme.chrome
     val measurer: TextMeasurer = rememberTextMeasurer()
@@ -263,6 +272,10 @@ internal fun MorphedCodeLines(
     // read it where they read their alpha: in their layer, never in composition.
     var scroll: MorphScroll by remember { mutableStateOf(MorphScroll(from = 0, to = 0)) }
 
+    // How far between the two sides the things that travel are: the whole clock
+    // for a morph, and only its move phase for a typed change.
+    val travel: (Float) -> Float = { fraction -> typing?.moveAt(fraction) ?: fraction }
+
     Row(modifier.fillMaxSize()) {
         // Crossfaded where the lines are morphed: the numbering changes wholesale
         // between two versions, and a number chasing its line reads as noise
@@ -273,15 +286,15 @@ internal fun MorphedCodeLines(
                     numbers = was.numbers,
                     element = element,
                     chrome = chrome,
-                    alpha = { 1f - progress.value },
-                    scroll = { scroll.at(progress.value) },
+                    alpha = { 1f - travel(progress.value) },
+                    scroll = { scroll.at(travel(progress.value)) },
                 )
                 GutterNumbers(
                     numbers = now.numbers,
                     element = element,
                     chrome = chrome,
-                    alpha = { progress.value },
-                    scroll = { scroll.at(progress.value) },
+                    alpha = { travel(progress.value) },
+                    scroll = { scroll.at(travel(progress.value)) },
                 )
             }
         }
@@ -294,17 +307,26 @@ internal fun MorphedCodeLines(
             }
             SideEffect { scroll = plan.scroll }
 
+            val keys: TypedKeys? = remember(plan, typing != null, style) {
+                if (typing == null) null else plan.typedKeys(measurer, style)
+            }
+
             Canvas(Modifier.fillMaxSize()) {
                 val fraction: Float = progress.value
                 val slide: Float = plan.rowHeight * CodeStepSlide
-                val scrolled: Float = plan.scroll.at(fraction)
+                val scrolled: Float = plan.scroll.at(travel(fraction))
                 // Code slides under the block's padding before its edge cuts it.
                 val margin: Float = CodePadding.toPx()
                 val visible: ClosedFloatingPointRange<Float> =
                     scrolled - margin..scrolled + size.height + margin
                 translate(top = -scrolled) {
-                    for (run in plan.runs) drawGlyphRun(run, fraction, slide, visible)
-                    for (mark in plan.marks) drawMorphMark(mark, fraction, slide, chrome, em)
+                    if (typing == null || keys == null) {
+                        for (run in plan.runs) drawGlyphRun(run, fraction, slide, visible)
+                    } else {
+                        drawTypedRuns(plan, keys, typing, fraction, chrome.text, visible)
+                    }
+                    // A typed change moves its marks in its move phase, with the tokens.
+                    for (mark in plan.marks) drawMorphMark(mark, travel(fraction), slide, chrome, em)
                 }
             }
         }
@@ -502,41 +524,59 @@ private fun MorphSide.rows(layout: TextLayoutResult): List<CodeScrollRow> {
     }
 }
 
+/** [placements] in the one [layout] this side was set in: where the static render puts each token. */
+private fun MorphSide.placements(
+    layout: TextLayoutResult,
+    fallback: Color,
+): (CodeToken) -> TokenPlacement? = placements(fallback) { _, _, at ->
+    Offset(
+        x = layout.getHorizontalPosition(at, usePrimaryDirection = true),
+        y = layout.getLineTop(layout.getLineForOffset(at)),
+    )
+}
+
+/**
+ * [placements] without a font: a token sits at its column and its row among the
+ * lines this side shows, one unit each. Exact about everything a typed step
+ * change needs to know before anything is laid out: which tokens a side shows,
+ * the colour each draws in, and whether a token both sides show has changed row,
+ * column or colour between them.
+ */
+private fun MorphSide.gridPlacements(fallback: Color): (CodeToken) -> TokenPlacement? =
+    placements(fallback) { row, column, _ -> Offset(column.toFloat(), row.toFloat()) }
+
 /**
  * Where each of this side's tokens sits and what colour it is, or null for one
- * on a line this step doesn't show.
+ * on a line this step doesn't show. [position] turns a token's row among the
+ * shown lines, its column and its offset into [MorphSide.text] into a place.
  *
  * A token is found by walking from the start of its row, which is why the lines
  * are carried: the tokenizer numbers lines in the whole version, and the text on
  * screen is only the ones the step reveals, joined back up.
  */
 private fun MorphSide.placements(
-    layout: TextLayoutResult,
     fallback: Color,
+    position: (row: Int, column: Int, at: Int) -> Offset,
 ): (CodeToken) -> TokenPlacement? {
-    val starts = HashMap<Int, Int>(lines.size)
+    val rows = HashMap<Int, Int>(lines.size)
+    val starts = IntArray(lines.size)
     var offset = 0
-    for (line in lines) {
-        starts[line.number] = offset
+    for ((row, line) in lines.withIndex()) {
+        rows[line.number] = row
+        starts[row] = offset
         offset += line.text.length + 1
     }
 
     return placements@{ token ->
         // [CodeToken.line] counts from 0, [SteppedLine.number] from 1.
-        val start: Int = starts[token.line + 1] ?: return@placements null
-        val at: Int = (start + token.start).coerceIn(0, (text.length - 1).coerceAtLeast(0))
+        val row: Int = rows[token.line + 1] ?: return@placements null
+        val at: Int = (starts[row] + token.start).coerceIn(0, (text.length - 1).coerceAtLeast(0))
         val color: Color = text.spanStyles
             .lastOrNull { at >= it.start && at < it.end && it.item.color.isSpecified }
             ?.item?.color
             ?: fallback
 
-        TokenPlacement(
-            position = Offset(
-                x = layout.getHorizontalPosition(at, usePrimaryDirection = true),
-                y = layout.getLineTop(layout.getLineForOffset(at)),
-            ),
-            color = color,
-        )
+        TokenPlacement(position = position(row, token.start, at), color = color)
     }
 }
 
@@ -568,6 +608,44 @@ private fun DrawScope.drawMorphMark(
     val moved: Float = if (mark.leaving) fraction else 1f - fraction
     val shift: Offset = mark.travel?.times(moved) ?: Offset(0f, moved * slide)
     drawDiagnostic(mark.mark, chrome, em, alpha = (1f - moved) * mark.strength, shift = shift)
+}
+
+/**
+ * The [TypewriterTimeline] for this block typing its way from [from] to [to], a
+ * [durationMs] build asking for its length.
+ *
+ * Worked out on [gridPlacements], so the clock can be set the moment the step
+ * changes rather than a frame later, once something has been laid out. The runs
+ * come out of the same [morphGlyphs] the drawn frame is planned on, and what
+ * decides which runs there are is whether a side shows a token at all, never
+ * where: so the counts here, taken in [typingOrder], are the drawn plan's counts
+ * run for run.
+ */
+internal fun CodeElement.typewriterTimeline(
+    from: CodeStep,
+    to: CodeStep,
+    durationMs: Int,
+): TypewriterTimeline {
+    val was: MorphSide = morphSide(from)
+    val now: MorphSide = morphSide(to)
+    val fallback: Color = theme.chrome.text
+    val runs: List<GlyphRun> = morphGlyphs(
+        previous = tokenizeCode(was.source, language),
+        current = tokenizeCode(now.source, language),
+        previousPlacement = was.gridPlacements(fallback),
+        currentPlacement = now.gridPlacements(fallback),
+    )
+
+    // A step that only moves its Scroll To line moves no token on the grid, but
+    // still has a scroll to ride, and the move phase is the only one that does.
+    val shifts: Boolean = runs.any { it is GlyphRun.Moved && (it.from != it.to || it.fromColor != it.toColor) }
+    val order: TypingOrder = typingOrder(runs)
+    return typewriterTimeline(
+        departing = order.departing.map { runs[it].text.drawnCount() },
+        arriving = order.arriving.map { runs[it].text.drawnCount() },
+        moves = shifts || from.scrollTo != to.scrollTo,
+        durationMs = durationMs,
+    )
 }
 
 /**
@@ -615,3 +693,123 @@ private fun DrawScope.drawGlyphRun(
         )
     }
 }
+
+/**
+ * What a typed frame needs on top of the plan: the runs in [TypingOrder], each
+ * run's slot in its list, and the caret measured once.
+ */
+private class TypedKeys(
+    val order: TypingOrder,
+    val slots: IntArray,
+    val caret: TextLayoutResult,
+)
+
+/** This plan's runs put in reading order for the keyboard, measured once per step change. */
+private fun MorphPlan.typedKeys(measurer: TextMeasurer, style: TextStyle): TypedKeys {
+    val order: TypingOrder = typingOrder(runs.map { it.glyph })
+    val slots = IntArray(runs.size) { -1 }
+    order.departing.forEachIndexed { slot, run -> slots[run] = slot }
+    order.arriving.forEachIndexed { slot, run -> slots[run] = slot }
+    return TypedKeys(
+        order = order,
+        slots = slots,
+        caret = measurer.measure(AnnotatedString(TerminalCursor), style, softWrap = false),
+    )
+}
+
+/**
+ * One frame of a typed step change at [fraction] of the way through [timeline].
+ *
+ * A run both sides show sits where the old side put it until the move phase
+ * carries it to the new one. A departing run shows what the backspace hasn't
+ * reached yet, an arriving one what has been typed so far, and neither moves:
+ * a keyboard doesn't slide anything. The caret, when [timeline] has one, is
+ * drawn in [caretColor] after the last character showing of the run it is on.
+ */
+private fun DrawScope.drawTypedRuns(
+    plan: MorphPlan,
+    keys: TypedKeys,
+    timeline: TypewriterTimeline,
+    fraction: Float,
+    caretColor: Color,
+    visible: ClosedFloatingPointRange<Float>,
+) {
+    val move: Float = timeline.moveAt(fraction)
+    val departing: List<Int> = timeline.departingAt(fraction)
+    val arriving: List<Int> = timeline.arrivingAt(fraction)
+
+    for ((index, run) in plan.runs.withIndex()) {
+        when (val glyph: GlyphRun = run.glyph) {
+            is GlyphRun.Moved -> {
+                val topLeft: Offset = lerp(glyph.from, glyph.to, move)
+                if (!run.isVisibleAt(topLeft, visible)) continue
+                drawText(run.layout, lerp(glyph.fromColor, glyph.toColor, move), topLeft)
+            }
+
+            is GlyphRun.Left -> drawTypedRun(
+                run = run,
+                position = glyph.position,
+                color = glyph.color,
+                drawn = departing.getOrElse(keys.slots[index]) { 0 },
+                visible = visible,
+            )
+
+            is GlyphRun.Arrived -> drawTypedRun(
+                run = run,
+                position = glyph.position,
+                color = glyph.color,
+                drawn = arriving.getOrElse(keys.slots[index]) { 0 },
+                visible = visible,
+            )
+        }
+    }
+
+    val caret: TypewriterCaret = timeline.caretAt(fraction) ?: return
+    val list: List<Int> = if (caret.departing) keys.order.departing else keys.order.arriving
+    val run: MorphRun = plan.runs.getOrNull(list.getOrNull(caret.run) ?: return) ?: return
+    val position: Offset = when (val glyph: GlyphRun = run.glyph) {
+        is GlyphRun.Left -> glyph.position
+        is GlyphRun.Arrived -> glyph.position
+        is GlyphRun.Moved -> return
+    }
+    val x: Float = run.layout.getHorizontalPosition(
+        offset = run.glyph.text.drawnPrefix(caret.drawn),
+        usePrimaryDirection = true,
+    )
+    drawText(keys.caret, caretColor, position + Offset(x, 0f))
+}
+
+/**
+ * A departing or arriving run with only its first [drawn] inked characters
+ * showing: the run's own measured layout, cut at the edge of the last of them,
+ * so a frame of typing costs a clip rather than a fresh layout of the prefix.
+ */
+private fun DrawScope.drawTypedRun(
+    run: MorphRun,
+    position: Offset,
+    color: Color,
+    drawn: Int,
+    visible: ClosedFloatingPointRange<Float>,
+) {
+    val text: String = run.glyph.text
+    val shown: Int = text.drawnPrefix(drawn)
+    if (shown <= 0 || !run.isVisibleAt(position, visible)) return
+    if (shown >= text.length) {
+        drawText(run.layout, color, position)
+        return
+    }
+
+    val edge: Float = run.layout.getHorizontalPosition(shown, usePrimaryDirection = true)
+    clipRect(
+        left = 0f,
+        top = position.y,
+        right = position.x + edge,
+        bottom = position.y + run.layout.size.height,
+    ) {
+        drawText(run.layout, color, position)
+    }
+}
+
+/** Whether a run set at [topLeft] reaches into the [visible] band at all. */
+private fun MorphRun.isVisibleAt(topLeft: Offset, visible: ClosedFloatingPointRange<Float>): Boolean =
+    topLeft.y <= visible.endInclusive && topLeft.y + layout.size.height >= visible.start

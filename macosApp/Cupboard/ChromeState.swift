@@ -167,6 +167,9 @@ struct Chrome {
     /// Which way a Line Draw may grow its line, in Kotlin's order.
     let lineDrawDirections: [String]
     let actionKinds: [String]
+    /// How a code block's step build may play, "Magic Move" then "Typewriter".
+    /// A row with `codeStep` picks from these instead of `actionKinds`.
+    let codeStepEffects: [String]
 
     init(_ host: EditorHost) {
         documentTitle = host.title()
@@ -241,6 +244,7 @@ struct Chrome {
         buildTriggers = host.buildTriggerTitles()
         lineDrawDirections = host.lineDrawDirectionTitles()
         actionKinds = host.actionKindTitles()
+        codeStepEffects = host.codeStepEffectTitles()
     }
 
     /// Everything but the unlock needs something unlocked, the same rule the
@@ -439,8 +443,9 @@ struct TransitionFormat: Equatable {
 ///
 /// The enums travel as positions: `kind` in `BuildKind`, `effectIndex` in
 /// `buildEffects`, `triggerIndex` in `buildTriggers`, `actionKindIndex` in
-/// `actionKinds` and nil for a build with no action, and `deliveryIndex` in this
-/// row's own `deliveryTitles`, which is what its element allows.
+/// `actionKinds` and nil for a build with no action, `deliveryIndex` in this
+/// row's own `deliveryTitles`, which is what its element allows, and
+/// `codeStepEffectIndex` in `codeStepEffects`.
 ///
 /// Seconds here, milliseconds on the model, the way the transition reads: the
 /// panel is a slider and a field, and both read in the unit people say out loud.
@@ -479,6 +484,10 @@ struct BuildEntry: Identifiable, Equatable {
     /// and whether the heads ride along. Filled in whatever the effect.
     let lineDrawDirectionIndex: Int
     let lineDrawIncludeEnds: Bool
+    /// The build moves a code block onto one of its steps, so it plays Magic
+    /// Move or Typewriter rather than an action: `codeStepEffects` is its popup.
+    let codeStep: Bool
+    let codeStepEffectIndex: Int
 
     /// Whether this build brings its element on or takes it away, and so shows
     /// an effect and a delivery rather than an action's own controls.
@@ -507,6 +516,8 @@ struct BuildEntry: Identifiable, Equatable {
         deliveryTitles = row.deliveryTitles
         lineDrawDirectionIndex = Int(row.lineDrawDirectionIndex)
         lineDrawIncludeEnds = row.lineDrawIncludeEnds
+        codeStep = row.codeStep
+        codeStepEffectIndex = Int(row.codeStepEffectIndex)
     }
 }
 

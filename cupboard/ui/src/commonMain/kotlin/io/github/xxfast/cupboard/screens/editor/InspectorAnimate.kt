@@ -38,6 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import io.github.xxfast.cupboard.canvas.BuildEffectNames
+import io.github.xxfast.cupboard.canvas.CodeStepEffectNames
+import io.github.xxfast.cupboard.canvas.codeStepTitle
+import io.github.xxfast.cupboard.canvas.isCodeStep
 import io.github.xxfast.cupboard.canvas.title
 import io.github.xxfast.cupboard.document.ActionKind
 import io.github.xxfast.cupboard.document.AudioElement
@@ -267,7 +270,7 @@ private fun BuildsBody(
 
     for ((index, build) in mine) {
         Text(
-            text = build.effectTitle(),
+            text = build.effectTitle(primary),
             color = tokens.text,
             fontSize = 15.sp,
             fontWeight = FontWeight.SemiBold,
@@ -275,6 +278,7 @@ private fun BuildsBody(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ChangeEffectButton(
                 build = build,
+                element = primary,
                 onPick = { changed -> onUpdate(index, changed) },
                 modifier = Modifier.weight(1f),
             )
@@ -317,18 +321,29 @@ private fun AddEffectButton(kind: BuildKind, elementId: String, onAdd: (Build) -
     )
 }
 
-/** Change: the same catalog, landing on the build that is already there. */
+/**
+ * Change: the same catalog, landing on the build that is already there.
+ *
+ * A code block's step build has no action to change, only how its step plays,
+ * so it offers exactly that: Magic Move or Typewriter, and nothing else on the
+ * build moves.
+ */
 @Composable
 private fun ChangeEffectButton(
     build: Build,
+    element: Element,
     onPick: (Build) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     MenuButton(
         label = "Change",
         enabled = true,
-        choices = when (build.kind) {
-            BuildKind.Action -> ActionKind.entries.map { kind ->
+        choices = when {
+            build.isCodeStep(element) -> CodeStepEffectNames.map { (effect, title) ->
+                MenuChoice(title) { onPick(build.copy(effect = effect)) }
+            }
+
+            build.kind == BuildKind.Action -> ActionKind.entries.map { kind ->
                 MenuChoice(kind.name) {
                     onPick(build.copy(action = (build.action ?: BuildAction(kind)).copy(kind = kind)))
                 }
@@ -369,9 +384,15 @@ private fun effectChoices(
     }
 }
 
-/** What a configured build is headed with: its effect, or what its action does. */
-private fun Build.effectTitle(): String =
-    if (kind == BuildKind.Action) action?.kind?.name ?: "None" else effect.title()
+/**
+ * What a configured build is headed with: its effect, what its action does, or
+ * for a code block's step, how the step plays.
+ */
+private fun Build.effectTitle(element: Element?): String = when {
+    isCodeStep(element) -> effect.codeStepTitle()
+    kind == BuildKind.Action -> action?.kind?.name ?: "None"
+    else -> effect.title()
+}
 
 /**
  * The controls for one build: how much of its element it hands over at a time,
@@ -638,7 +659,7 @@ private fun BuildOrderList(
             BuildOrderRow(
                 order = index + 1,
                 title = slide.elementById(build.elementId)?.buildTitle() ?: "Missing element",
-                meta = build.meta(index),
+                meta = build.meta(index, slide.elementById(build.elementId)),
                 active = build.elementId in activeIds,
                 onClick = { onPick(index) },
                 modifier = Modifier
@@ -973,8 +994,9 @@ private fun titled(kind: String, content: String): String {
 /**
  * The row's second line: what the build does, how long it takes, and what starts
  * it. [index] is the build's place in the order, which is what "after 2" counts.
+ * A code block's step reads the way its inspector header does.
  */
-private fun Build.meta(index: Int): String {
+private fun Build.meta(index: Int, element: Element?): String {
     val start: String = when (trigger) {
         BuildTrigger.OnClick -> "on click"
         // The first build has nothing ahead of it, so both of these land with
@@ -985,7 +1007,9 @@ private fun Build.meta(index: Int): String {
     val what: String = when (kind) {
         BuildKind.In -> effect.title()
         BuildKind.Out -> "Out · ${effect.title()}"
-        BuildKind.Action -> "Action · ${action.title()}"
+        BuildKind.Action ->
+            if (isCodeStep(element)) "Action · ${effect.codeStepTitle()}"
+            else "Action · ${action.title()}"
     }
     return "$what · ${durationMs.asSeconds()} · $start"
 }

@@ -517,13 +517,17 @@ private fun Element.rowTitle(): String {
     return "$kindName: $short"
 }
 
-/** The line under a row's title: what plays, how long it takes, what starts it. */
-private fun Build.rowMeta(): String {
+/**
+ * The line under a row's title: what plays, how long it takes, what starts it.
+ * A [codeStep] build says how the step plays rather than the action it lacks.
+ */
+private fun Build.rowMeta(codeStep: Boolean): String {
     val effectTitle: String = BuildEffectTitles.getOrElse(effect.ordinal) { effect.name }
-    val head: String = when (kind) {
-        BuildKind.In -> effectTitle
-        BuildKind.Out -> "Out · $effectTitle"
-        BuildKind.Action -> "Action · ${action?.summary() ?: "None"}"
+    val head: String = when {
+        codeStep -> effect.codeStepTitle()
+        kind == BuildKind.In -> effectTitle
+        kind == BuildKind.Out -> "Out · $effectTitle"
+        else -> "Action · ${action?.summary() ?: "None"}"
     }
     val triggerTitle: String = BuildTriggerTitles.getOrElse(trigger.ordinal) { trigger.name }
     return "$head · ${seconds(durationMs)} · $triggerTitle"
@@ -1240,6 +1244,14 @@ class BuildRow(
      */
     val lineDrawDirectionIndex: Int,
     val lineDrawIncludeEnds: Boolean,
+    /**
+     * The build moves a code block onto one of its steps, so it plays a morph or
+     * types the change rather than an action: its popup is
+     * `codeStepEffectTitles()`, not the action kinds.
+     */
+    val codeStep: Boolean,
+    /** Where the step's effect sits in `codeStepEffectTitles()`. 0 for a build that is no code step. */
+    val codeStepEffectIndex: Int,
 )
 
 /**
@@ -4785,10 +4797,11 @@ class EditorHost(
             // fields under an action popup never start from nothing.
             val action: BuildAction = build.action ?: BuildAction(ActionKind.Move)
             val lineDraw: LineDraw = build.lineDraw ?: LineDraw()
+            val codeStep: Boolean = build.isCodeStep(element)
             return@mapIndexed BuildRow(
                 index = index,
                 title = element?.rowTitle() ?: "Missing element",
-                meta = build.rowMeta(),
+                meta = build.rowMeta(codeStep),
                 elementId = build.elementId,
                 active = build.elementId in selected,
                 kindIndex = build.kind.ordinal,
@@ -4808,6 +4821,9 @@ class EditorHost(
                 deliveryTitles = deliveries.map { BuildDeliveryTitles[it.ordinal] },
                 lineDrawDirectionIndex = lineDraw.direction.ordinal,
                 lineDrawIncludeEnds = lineDraw.includeEnds,
+                codeStep = codeStep,
+                codeStepEffectIndex = CodeStepEffectNames.indexOfFirst { (effect, _) -> effect == build.effect }
+                    .coerceAtLeast(0),
             )
         }
     }
@@ -4823,6 +4839,26 @@ class EditorHost(
 
     /** What an action may do to its element, in the same protocol. */
     fun actionKindTitles(): List<String> = ActionKindTitles
+
+    /** How a code block's step build may play: "Magic Move", "Typewriter". Positions come back. */
+    fun codeStepEffectTitles(): List<String> = CodeStepEffectNames.map { (_, title) -> title }
+
+    /**
+     * Sets how the code step build at [index] plays, a place in
+     * `codeStepEffectTitles()`: Magic Move writes [BuildEffect.Dissolve],
+     * Typewriter [BuildEffect.Typewriter], and every other field stays the
+     * build's own. One pick is one [EditorViewModel.onUpdateBuild], so one undo
+     * entry. A build that is no code step, or an index past either list, is a
+     * no-op.
+     */
+    fun setCodeStepEffect(index: Int, effectIndex: Int) {
+        val slide: Slide = state.selectedSlide
+        val build: Build = slide.builds.getOrNull(index) ?: return
+        if (!build.isCodeStep(slide.elementById(build.elementId))) return
+        val effect: BuildEffect = CodeStepEffectNames.getOrNull(effectIndex)?.first ?: return
+        if (effect == build.effect) return
+        viewModel.onUpdateBuild(index, build.copy(effect = effect))
+    }
 
     /**
      * Appends a build that brings the primary element on, which is where a new

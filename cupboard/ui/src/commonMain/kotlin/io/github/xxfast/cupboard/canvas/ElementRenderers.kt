@@ -80,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.AudioElement
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
@@ -145,6 +146,12 @@ fun Long.toComposeColor(): Color = Color(this)
  * top-level element gets one: a stepped element inside a group draws whole, since
  * a build names an element the slide holds.
  *
+ * [codeStepBuild] is the build that put a [CodeElement] on [codeStep], resolved
+ * by the caller the same way (`Slide.elementStepBuildAt`). A code block reads it
+ * for [BuildEffect.Typewriter] alone, typing its way onto a step that build
+ * moves forward onto. Null the same way [codeStep] is, and then a step change
+ * plays as it always has.
+ *
  * [entry] is the build that brings the element in, for the kinds that animate
  * themselves rather than being faded in from outside: [TerminalElement] reads it
  * for [BuildEffect.Typewriter], [LineElement] for [BuildEffect.LineDraw]. Null the
@@ -184,6 +191,7 @@ fun ElementView(
     originX: Float = 0f,
     originY: Float = 0f,
     codeStep: CodeStep? = null,
+    codeStepBuild: BuildAt? = null,
     diagramStep: DiagramStep? = null,
     galleryIndex: Int? = null,
     entry: Build? = null,
@@ -230,7 +238,7 @@ fun ElementView(
 
             is VideoElement -> VideoElementView(element, playing)
             is AudioElement -> AudioElementView(element, playing)
-            is CodeElement -> CodeElementView(element, codeStep)
+            is CodeElement -> CodeElementView(element, codeStep, codeStepBuild)
             is TerminalElement -> TerminalElementView(element, entry, pieces?.linesShown())
             is DiagramElement -> DiagramElementView(element, diagramStep)
             is EquationElement -> EquationElementView(element)
@@ -1302,9 +1310,16 @@ internal fun Modifier.codeChrome(element: CodeElement): Modifier {
  * nobody is stepping through. A step draws through [AnimatedCodeLines] instead,
  * which lays each line out as its own row: that is what it takes to move a line
  * from one row to another, and it keeps the column honest under wrap for free.
+ *
+ * [landing] is the build that put the block on [step], passed through for
+ * [AnimatedCodeLines] to type its way onto a [BuildEffect.Typewriter] step.
  */
 @Composable
-private fun CodeElementView(element: CodeElement, step: CodeStep? = null) {
+private fun CodeElementView(
+    element: CodeElement,
+    step: CodeStep? = null,
+    landing: BuildAt? = null,
+) {
     val chrome: CodeChrome = element.theme.chrome
     Box(
         modifier = Modifier
@@ -1312,7 +1327,7 @@ private fun CodeElementView(element: CodeElement, step: CodeStep? = null) {
             .codeChrome(element),
     ) {
         if (step != null) {
-            AnimatedCodeLines(element, step)
+            AnimatedCodeLines(element, step, landing)
         } else {
             val stepped: SteppedCode = remember(element.code, element.language, element.theme) {
                 steppedCode(element.code, element.language, element.theme, step = null)

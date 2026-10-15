@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.canvas
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.draw.drawWithContent
@@ -33,13 +34,19 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
+import io.github.xxfast.cupboard.document.BuildAt
+import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.sourceAt
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 
-/** How long a block takes to walk from one step to the next. */
-private const val CodeStepDuration: Int = 350
+/**
+ * How long a block takes to walk from one step to the next, and how long a typed
+ * step change spends moving what both steps show ([typewriterTimeline]).
+ */
+internal const val CodeStepDuration: Int = 350
 
 /**
  * How far, in rows, a line arrives from and leaves towards. Shared with
@@ -178,29 +185,60 @@ private fun SteppedLine?.strength(): Float = if (this?.dimmed == true) CodeDimAl
  * A row is laid out rather than set as one string because the two orderings have
  * to be measured against each other, which is also what makes wrap behave: a line
  * that reflows is measured taller and everything under it stacks below that.
+ *
+ * [landing] is the build that put the block on [step], null in the editor and
+ * wherever no build has. Moving forward onto one whose effect is
+ * [BuildEffect.Typewriter] types the change instead ([typesOnto]): it goes the
+ * token path whatever the two versions are, and plays it as a keyboard
+ * ([TypewriterTimeline]) on the same clock, run out over however long the typing
+ * takes. Backwards, or onto any other effect, is everything above, unchanged.
  */
 @Composable
 internal fun AnimatedCodeLines(
     element: CodeElement,
     step: CodeStep,
+    landing: BuildAt? = null,
     modifier: Modifier = Modifier,
 ) {
     var from: CodeStep by remember { mutableStateOf(step) }
     var to: CodeStep by remember { mutableStateOf(step) }
+    var landed: BuildAt? by remember { mutableStateOf(landing) }
+    var typing: TypewriterTimeline? by remember { mutableStateOf(null) }
     val progress: Animatable<Float, AnimationVector1D> = remember { Animatable(0f) }
 
     // The first composition has nothing to come from, so it draws [step] at rest.
     // Both ends are held here rather than read from the parameter, so the frame
     // between a step change and this effect still draws the block as it was.
+    // Keyed on the step alone: a build landing on the step already showing
+    // changes nothing on screen, and restarting here would cut a change short.
     LaunchedEffect(step) {
-        if (step == to) return@LaunchedEffect
+        if (step == to) {
+            landed = landing
+            return@LaunchedEffect
+        }
+
+        val typed: Boolean = typesOnto(landing, previous = landed)
         from = to
         to = step
+        landed = landing
+        typing = if (!typed || landing == null) null
+        else element.typewriterTimeline(from, to, landing.build.durationMs)
         progress.snapTo(0f)
-        progress.animateTo(1f, tween(CodeStepDuration, easing = FastOutSlowInEasing))
+
+        val timeline: TypewriterTimeline? = typing
+        if (timeline == null) {
+            progress.animateTo(1f, tween(CodeStepDuration, easing = FastOutSlowInEasing))
+        } else {
+            // Linear over the whole of it: the move phase eases itself inside
+            // its own slice, and a keyboard's keys land at an even pace.
+            val durationMs: Int = ceil(timeline.totalMs).toInt()
+            progress.animateTo(1f, tween(durationMs, easing = LinearEasing))
+        }
+
         // Settled, so the lines this step dropped stop being composed at all
         // rather than sitting under the block at zero alpha.
         from = to
+        typing = null
     }
 
     // A step names the version of the block it plays, so the lines a step shows
@@ -211,8 +249,10 @@ internal fun AnimatedCodeLines(
     // Two versions are not one text with rows added and taken away, so nothing
     // here can carry a line from one to the other: the token morph does that
     // instead, and hands back at rest, where both ends are one version again.
-    if (fromSource != toSource) {
-        MorphedCodeLines(element, from, to, progress, modifier)
+    // A typed change goes the same way even within one version, since a
+    // keyboard works a character at a time and a row is the line path's unit.
+    if (fromSource != toSource || typing != null) {
+        MorphedCodeLines(element, from, to, progress, modifier, typing)
         return
     }
 
@@ -407,4 +447,16 @@ internal fun AnimatedCodeLines(
             }
         }
     }
+}
+
+/**
+ * Whether landing on [landing], having last landed on [previous], types the
+ * change: only a [BuildEffect.Typewriter] step build, and only on the way
+ * forward, which is a build later in the order than the one before it (or the
+ * first one there has been). Walking back through a typed step plays the plain
+ * transition, the way Keynote reverses a build without replaying it.
+ */
+internal fun typesOnto(landing: BuildAt?, previous: BuildAt?): Boolean {
+    if (landing == null || landing.build.effect != BuildEffect.Typewriter) return false
+    return previous == null || landing.firstStep > previous.firstStep
 }

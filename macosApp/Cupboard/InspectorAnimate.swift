@@ -102,9 +102,13 @@ extension EditorView {
         }
     }
 
-    /// What a build is called in the heading: its action for an action, its
-    /// effect otherwise.
+    /// What a build is called in the heading: how the step plays for a code
+    /// step, its action for an action, its effect otherwise.
     static func effectName(_ entry: BuildEntry, _ ui: Chrome) -> String {
+        if entry.codeStep {
+            guard ui.codeStepEffects.indices.contains(entry.codeStepEffectIndex) else { return "Step" }
+            return ui.codeStepEffects[entry.codeStepEffectIndex]
+        }
         if entry.isAction {
             guard let index = entry.actionKindIndex, ui.actionKinds.indices.contains(index) else {
                 return "Action"
@@ -131,6 +135,9 @@ extension EditorView {
     /// The same catalog, pointed at a build that already exists: picking one
     /// dresses it rather than adding another.
     func changeChoices(_ entry: BuildEntry, _ ui: Chrome) -> [MenuEntry] {
+        if entry.codeStep {
+            return codeStepChoices(entry, ui)
+        }
         if entry.isAction {
             return ui.actionKinds.enumerated().map { index, name in
                 MenuEntry(title: name) { commitBuild(entry, actionKindIndex: index) }
@@ -138,6 +145,15 @@ extension EditorView {
         }
         return ui.buildEffects.enumerated().map { index, name in
             MenuEntry(title: name) { commitBuild(entry, effectIndex: index) }
+        }
+    }
+
+    /// Magic Move or Typewriter for a code step build. One pick is one edit.
+    func codeStepChoices(_ entry: BuildEntry, _ ui: Chrome) -> [MenuEntry] {
+        ui.codeStepEffects.enumerated().map { index, name in
+            MenuEntry(title: name) {
+                host.setCodeStepEffect(index: Int32(entry.index), effectIndex: Int32(index))
+            }
         }
     }
 

@@ -2716,7 +2716,16 @@ extension EditorView {
         withPickers: Bool = true
     ) -> some View {
         VStack(alignment: .leading, spacing: 9) {
-            if entry.isAction {
+            if entry.codeStep {
+                // A code step plays no action: it morphs or types, and there
+                // are no action numbers for it to change.
+                if withPickers {
+                    sectionLabel("Effect")
+                    stylePopup(ui.codeStepEffects, selected: entry.codeStepEffectIndex) {
+                        host.setCodeStepEffect(index: Int32(entry.index), effectIndex: Int32($0))
+                    }
+                }
+            } else if entry.isAction {
                 if withPickers {
                     sectionLabel("Action")
                     stylePopup(ui.actionKinds, selected: entry.actionKindIndex ?? 0) {

@@ -106,6 +106,8 @@ import io.github.xxfast.cupboard.canvas.codeChrome
 import io.github.xxfast.cupboard.canvas.highlightCode
 import io.github.xxfast.cupboard.canvas.textStyle
 import io.github.xxfast.cupboard.canvas.title
+import io.github.xxfast.cupboard.canvas.codeStepTitle
+import io.github.xxfast.cupboard.canvas.isCodeStep
 import io.github.xxfast.cupboard.canvas.toComposeColor
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
@@ -2382,7 +2384,13 @@ private fun Slide.buildBadges(): List<BuildBadge> {
             numbers = numbers.joinToString(","),
             label = builds[first - 1]
                 .takeIf { first == 1 }
-                ?.let { "${it.effect.title()} · ${it.durationMs.asSeconds()}" },
+                ?.let { build ->
+                    // A code step plays a morph or types, whatever effect name it carries.
+                    val effect: String =
+                        if (build.isCodeStep(element)) build.effect.codeStepTitle()
+                        else build.effect.title()
+                    "$effect · ${build.durationMs.asSeconds()}"
+                },
         )
     }
 }

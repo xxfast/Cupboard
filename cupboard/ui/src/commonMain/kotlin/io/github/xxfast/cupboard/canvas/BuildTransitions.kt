@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
+import io.github.xxfast.cupboard.document.BuildKind
+import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.TerminalElement
@@ -45,6 +47,30 @@ val BuildEffectNames: List<Pair<BuildEffect, String>> = listOf(
 /** This effect's name, per [BuildEffectNames]. */
 fun BuildEffect.title(): String =
     BuildEffectNames.firstOrNull { (effect, _) -> effect == this }?.second ?: name
+
+/**
+ * The two ways a code block's step build plays, as the effect each one writes:
+ * the token morph, which every effect but [BuildEffect.Typewriter] plays, and
+ * the typing. What the inspector's Change offers on one, in one place for the
+ * same reason [BuildEffectNames] is.
+ */
+val CodeStepEffectNames: List<Pair<BuildEffect, String>> = listOf(
+    BuildEffect.Dissolve to "Magic Move",
+    BuildEffect.Typewriter to "Typewriter",
+)
+
+/**
+ * Whether [build] steps a code block: an action with nothing of its own to do
+ * but move [element] onto [Build.elementStep]. A gallery's or a diagram's step
+ * build isn't one, since neither plays its steps any way but the one.
+ */
+fun Build.isCodeStep(element: Element?): Boolean =
+    kind == BuildKind.Action && action == null && elementStep != null && element is CodeElement
+
+/** How a code block's step build plays this effect, per [CodeStepEffectNames]. */
+fun BuildEffect.codeStepTitle(): String =
+    CodeStepEffectNames.firstOrNull { (effect, _) -> effect == this }?.second
+        ?: CodeStepEffectNames.first().second
 
 /** How far a [BuildEffect.FadeUp] travels, as a fraction of the element's own height. */
 private const val FadeUpRise: Float = 0.08f

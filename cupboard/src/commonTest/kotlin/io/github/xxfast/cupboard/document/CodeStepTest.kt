@@ -104,6 +104,36 @@ class CodeStepTest {
     }
 
     @Test
+    fun theStepBuildBehindTheStepIsTheOneThatLandedLast() {
+        val typed = Build("code", elementStep = 2, effect = BuildEffect.Typewriter)
+        val slide = Slide(
+            elements = listOf(steppedBlock(CodeStep(), CodeStep(), CodeStep())),
+            builds = listOf(
+                Build("code"),
+                Build("code", elementStep = 1),
+                Build("other"),
+                typed,
+            ),
+        )
+
+        // The entry carries no step, so nothing is behind step 1 yet.
+        assertNull(slide.elementStepBuildAt("code", step = 1))
+
+        val first: BuildAt? = slide.elementStepBuildAt("code", step = 2)
+        assertEquals(1, first?.index)
+        assertEquals(2, first?.firstStep)
+
+        // The unrelated element's click leaves the block's build where it was.
+        assertEquals(first, slide.elementStepBuildAt("code", step = 3))
+
+        val last: BuildAt? = slide.elementStepBuildAt("code", step = 99)
+        assertEquals(typed, last?.build)
+        assertEquals(4, last?.firstStep)
+        assertEquals(slide.elementStepAt("code", step = 99), last?.build?.elementStep)
+        assertNull(slide.elementStepBuildAt("missing", step = 99))
+    }
+
+    @Test
     fun aWithPreviousCodeBuildLandsOnTheStepBeforeIt() {
         val slide = Slide(
             elements = listOf(steppedBlock(CodeStep(), CodeStep())),

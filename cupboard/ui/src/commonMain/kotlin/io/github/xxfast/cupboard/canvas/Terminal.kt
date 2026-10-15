@@ -129,8 +129,12 @@ internal fun List<TypedLine>.stillTyping(lines: List<TerminalLine>): Boolean =
 internal fun typewriterDurationMs(lines: List<TerminalLine>, build: Build): Int =
     maxOf(build.durationMs, TypewriterMsPerChar * lines.commandCharCount())
 
-/** The pace a command types at, which is about as fast as a person does. */
-private const val TypewriterMsPerChar: Int = 25
+/**
+ * The pace a command types at, which is about as fast as a person does. Internal
+ * because a code block typing its way onto a step types at the same pace
+ * ([typewriterTimeline]): one keyboard, whichever element it is typing into.
+ */
+internal const val TypewriterMsPerChar: Int = 25
 
 /**
  * The chrome, and the half of it that is internal rather than private for the
@@ -157,8 +161,11 @@ private val TerminalLightsInset = 12.dp
 internal val TerminalPadding = 12.dp
 internal const val TerminalLineHeight: Float = 1.45f
 
-/** What a caret looks like when the shell owns it. */
-private const val TerminalCursor: String = "▍"
+/**
+ * What a caret looks like when the shell owns it, and when a code block types
+ * itself onto a step: the same block caret either way.
+ */
+internal const val TerminalCursor: String = "▍"
 
 /**
  * A terminal block: its chrome, and its transcript coloured a line at a time.
