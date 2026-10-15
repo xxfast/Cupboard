@@ -2010,34 +2010,28 @@ fun EditorPresenter(
                 }
                 ?: state
 
-            // Equal to our own last write is that write coming back round
-            // through the watcher; equal to what is showing is a write that
-            // changed nothing. Structural equality either way: what comes
-            // off disk is never the instance that went on.
-            //
-            // Anything else is somebody else's deck now, so history goes the
-            // way it goes on a fresh open: an undo past it would put back an
-            // edit made to a file that is no longer there. Element ids are
-            // pruned rather than left to dangle the way undo leaves them, since
-            // no redo is ever bringing them back.
-            is Reload ->
-                if (event.document == onDisk.written || event.document == state.document) state
-                else {
-                    undone.clear()
-                    redone.clear()
-                    gestureBase = null
-                    // The file is this deck now, not our last write: a checkout
-                    // back to that one is a change like any other.
-                    onDisk.opened = event.document
-                    onDisk.written = null
-                    val reloaded: EditorState =
-                        state.restoring(event.document, state.selectedSlideIndex())
-                    reloaded.copy(
-                        selectedElementIds = reloaded.selectedElementIds
-                            .filter { id -> reloaded.selectedSlide.elementById(id) != null },
-                        isPreviewing = false,
-                    )
-                }
+            // Somebody else's deck by now: the event loop turned away the ones
+            // that were ours. So history goes the way it goes on a fresh open:
+            // an undo past it would put back an edit made to a file that is no
+            // longer there. Element ids are pruned rather than left to dangle
+            // the way undo leaves them, since no redo is ever bringing them back.
+            is Reload -> {
+                undone.clear()
+                redone.clear()
+                gestureBase = null
+                // The file is this deck now, not our writes: a checkout back to
+                // one of those is a change like any other.
+                onDisk.opened = event.document
+                onDisk.landed = event.document
+                onDisk.unheard.clear()
+                val reloaded: EditorState =
+                    state.restoring(event.document, state.selectedSlideIndex())
+                reloaded.copy(
+                    selectedElementIds = reloaded.selectedElementIds
+                        .filter { id -> reloaded.selectedSlide.elementById(id) != null },
+                    isPreviewing = false,
+                )
+            }
 
             RefreshAssets -> state.copy(assetGeneration = state.assetGeneration + 1)
 
@@ -2495,6 +2489,16 @@ fun EditorPresenter(
         }
 
         events.collect { event ->
+            // One of our own writes coming back round through the watcher, or a
+            // write that changed nothing. Neither is news, so neither gets as
+            // far as the guards below: closing the caret on it pulls the focus
+            // out from under whoever is typing, a second after every pause, and
+            // the post-step would take down the save flag of an edit still on
+            // its way to disk.
+            if (event is Reload &&
+                (onDisk.heard(event.document) || event.document == state.document)
+            ) return@collect
+
             // The one guard the caret needs, rather than a branch in every
             // reduction: an event that isn't on the keep-editing list closes the
             // session before it lands, so the typed text is committed as its own
@@ -2603,8 +2607,11 @@ fun EditorPresenter(
             return@LaunchedEffect
         }
         delay(AutosaveDebounce)
+        // On the list before the write, not after: the next keystroke restarts
+        // this effect, the store finishes the file regardless, and nothing after
+        // the write would run. The watcher can hand the write back before then.
+        onDisk.unheard += document
         documentStore.set(document)
-        onDisk.written = document
         if (state.document === document) state = state.copy(savePending = false)
     }
 
@@ -2635,13 +2642,44 @@ fun EditorPresenter(
 }
 
 /**
- * The two decks the presenter knows to be on disk already, so neither is written
- * back nor read back in as news.
+ * The decks the presenter knows to be on disk already, so none is written back
+ * nor read back in as news.
  *
  * [opened] is the deck the editor was opened on or last reloaded from: writing it
  * back would rewrite the file on a plain open, which is how a good file turns
- * into a bad one after a crash. [written] is the deck autosave last put down,
- * null before the first write and after a reload: the watcher hands that one
- * straight back, and it is our own edit, not someone else's.
+ * into a bad one after a crash.
+ *
+ * [unheard] is what autosave has put down, or is putting down, that the watcher
+ * hasn't handed back yet, oldest first, and cleared by a reload. More than one, because the watcher
+ * reads late: it sits out its debounce, then decodes the whole deck, and a pause
+ * in typing long enough for one autosave is long enough for the next one to land
+ * before the first comes back. Only the last write would then take that echo for
+ * somebody else's deck, and reload it over everything typed since.
+ *
+ * [landed] is the deck the file held last time we knew: the one opened, or the
+ * write the watcher handed back most recently. The watcher can also read early:
+ * the store writes a temporary file and moves it over the deck, the folder
+ * watch fires on the temporary file, and a debounce later the watcher reads a
+ * `document.json` the move hasn't reached yet. What comes back is the deck as
+ * it was before this write, ours and old news, not a checkout to go back to.
  */
-private class OnDisk(var opened: Document, var written: Document? = null)
+private class OnDisk(var opened: Document) {
+    var landed: Document = opened
+    val unheard: MutableList<Document> = mutableListOf()
+
+    /**
+     * Whether [document] is one of our own writes coming back. Structural
+     * equality: what comes off disk is never the instance that went on. Hearing
+     * one hears everything written before it too, since the file is past those,
+     * so a checkout back to one of them later on is news again. The one heard
+     * last is the exception, see [landed].
+     */
+    fun heard(document: Document): Boolean {
+        if (document == landed) return true
+        val index: Int = unheard.indexOfFirst { written -> written == document }
+        if (index < 0) return false
+        landed = unheard[index]
+        repeat(index + 1) { unheard.removeAt(0) }
+        return true
+    }
+}

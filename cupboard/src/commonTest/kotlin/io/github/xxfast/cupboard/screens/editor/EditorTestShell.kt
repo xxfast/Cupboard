@@ -4,6 +4,7 @@ import io.github.xxfast.cupboard.document.BundleChange
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.inMemoryDocumentStore
 import io.github.xxfast.cupboard.document.sampleDocument
+import io.github.xxfast.kstore.KStore
 import kotlinx.coroutines.CoroutineStart.UNDISPATCHED
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -26,10 +27,11 @@ import kotlin.time.Duration.Companion.seconds
 internal fun TestScope.editor(
     document: Document = sampleDocument(),
     changes: Flow<BundleChange> = emptyFlow(),
+    documentStore: KStore<Document> = inMemoryDocumentStore(document),
 ): EditorViewModel {
     val viewModel = EditorViewModel(
         initialDocument = document,
-        documentStore = inMemoryDocumentStore(document),
+        documentStore = documentStore,
         changes = changes,
     )
     backgroundScope.launch(Dispatchers.Unconfined, start = UNDISPATCHED) {

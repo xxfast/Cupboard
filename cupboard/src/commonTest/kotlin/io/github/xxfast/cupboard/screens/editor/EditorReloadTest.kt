@@ -10,7 +10,12 @@ import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.decodeDocument
 import io.github.xxfast.cupboard.document.encodeToString
 import io.github.xxfast.cupboard.document.updateSlide
+import io.github.xxfast.kstore.Codec
+import io.github.xxfast.kstore.KStore
+import io.github.xxfast.kstore.storeOf
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -247,5 +252,200 @@ class EditorReloadTest {
         assertNull(reloaded.editingElementId)
         assertFalse(reloaded.isPreviewing)
         assertFalse(reloaded.canUndo)
+    }
+
+    @Test
+    fun aReloadOfWhatIsShowingKeepsTheTextEditOpen() = runTest {
+        val changes = watched()
+        val viewModel = editor(document(), changes)
+        changes.awaitWatched()
+        viewModel.onBeginTextEdit("text")
+        val editing = viewModel.await { it.isEditingText }
+        val text = editing.selectedSlide.elements.first { it.id == "text" } as TextElement
+        viewModel.onPreviewElements(listOf(text.copy(text = "Hello, wor")))
+        val previewing = viewModel.await { it.isPreviewing }
+
+        changes.emit(BundleChange.Deck(previewing.document.roundTripped()))
+        changes.emit(BundleChange.Assets)
+
+        val after = viewModel.await { it.assetGeneration == 1 }
+        assertEquals("text", after.editingElementId)
+        assertTrue(after.isPreviewing)
+    }
+
+    /**
+     * Notes are written as they are typed, so autosave lands mid-session and the
+     * watcher hands it straight back. The caret has to still be there after.
+     */
+    @Test
+    fun aReloadOfWhatAutosaveWroteKeepsTheNotesEditOpen() = runTest {
+        val changes = watched()
+        val viewModel = editor(document(), changes)
+        changes.awaitWatched()
+        viewModel.onBeginNotesEdit()
+        viewModel.onEditNotes("Written")
+        viewModel.await { it.selectedSlide.notes == "Written" && it.savePending }
+        val written: Document = viewModel.await { !it.savePending }.document
+
+        viewModel.onEditNotes("Written, then more")
+        viewModel.await { it.selectedSlide.notes == "Written, then more" }
+        changes.emit(BundleChange.Deck(written.roundTripped()))
+        changes.emit(BundleChange.Assets)
+
+        val after = viewModel.await { it.assetGeneration == 1 }
+        assertTrue(after.isEditingNotes)
+        assertTrue(after.savePending)
+        assertEquals("Written, then more", after.selectedSlide.notes)
+    }
+
+    /**
+     * The watcher reads late, so a second autosave can land before the first
+     * one's echo does. That echo is still ours, not a deck to go back to.
+     */
+    @Test
+    fun anEchoThatComesBackAfterTheNextWriteIsIgnored() = runTest {
+        val changes = watched()
+        val viewModel = editor(document(), changes)
+        changes.awaitWatched()
+        viewModel.onBeginNotesEdit()
+        viewModel.onEditNotes("First")
+        viewModel.await { it.selectedSlide.notes == "First" && it.savePending }
+        val first: Document = viewModel.await { !it.savePending }.document
+        viewModel.onEditNotes("First, second")
+        viewModel.await { it.selectedSlide.notes == "First, second" && it.savePending }
+        val second: Document = viewModel.await { !it.savePending }.document
+
+        viewModel.onEditNotes("First, second, third")
+        viewModel.await { it.selectedSlide.notes == "First, second, third" }
+        changes.emit(BundleChange.Deck(first.roundTripped()))
+        changes.emit(BundleChange.Deck(second.roundTripped()))
+        changes.emit(BundleChange.Assets)
+
+        val after = viewModel.await { it.assetGeneration == 1 }
+        assertTrue(after.isEditingNotes)
+        assertEquals("First, second, third", after.selectedSlide.notes)
+        assertTrue(after.savePending)
+    }
+
+    /**
+     * The store writes a temporary file and moves it over the deck, and the
+     * folder watch fires on the first of those. Read before the move, the file
+     * still holds the deck opened on: ours, not somebody else's.
+     */
+    @Test
+    fun theOpenedDeckReadBackMidWriteKeepsTheNotesEditOpen() = runTest {
+        val opened: Document = document()
+        val changes = watched()
+        val viewModel = editor(opened, changes)
+        changes.awaitWatched()
+        viewModel.onBeginNotesEdit()
+        viewModel.onEditNotes("First")
+        viewModel.await { it.selectedSlide.notes == "First" && it.savePending }
+
+        changes.emit(BundleChange.Deck(opened.roundTripped()))
+        changes.emit(BundleChange.Assets)
+
+        val after = viewModel.await { it.assetGeneration == 1 }
+        assertTrue(after.isEditingNotes)
+        assertEquals("First", after.selectedSlide.notes)
+    }
+
+    /**
+     * The same early read on a later write: the file still holds the write heard
+     * before it, which is ours too.
+     */
+    @Test
+    fun theLastHeardWriteReadBackMidWriteIsIgnored() = runTest {
+        val changes = watched()
+        val viewModel = editor(document(), changes)
+        changes.awaitWatched()
+        viewModel.onBeginNotesEdit()
+        viewModel.onEditNotes("First")
+        viewModel.await { it.selectedSlide.notes == "First" && it.savePending }
+        val first: Document = viewModel.await { !it.savePending }.document
+        changes.emit(BundleChange.Deck(first.roundTripped()))
+        viewModel.onEditNotes("First, second")
+        viewModel.await { it.selectedSlide.notes == "First, second" && it.savePending }
+
+        changes.emit(BundleChange.Deck(first.roundTripped()))
+        changes.emit(BundleChange.Assets)
+
+        val after = viewModel.await { it.assetGeneration == 1 }
+        assertTrue(after.isEditingNotes)
+        assertEquals("First, second", after.selectedSlide.notes)
+        assertTrue(after.savePending)
+    }
+
+    /**
+     * Autosave restarts on the next keystroke, and a write under way when it does
+     * still reaches the file. The watcher hands that write back, often before
+     * the store has returned: ours, with the typing since it kept.
+     */
+    @Test
+    fun aWriteStillUnderWayIsOursWhenItComesBack() = runTest {
+        val changes = watched()
+        val store = HeldStore(document())
+        val viewModel = editor(document(), changes, store.store)
+        changes.awaitWatched()
+        viewModel.onBeginNotesEdit()
+        viewModel.onEditNotes("First")
+        val written: Document = store.awaitWrite()
+        viewModel.onEditNotes("First, second")
+        viewModel.await { it.selectedSlide.notes == "First, second" }
+
+        changes.emit(BundleChange.Deck(written.roundTripped()))
+        changes.emit(BundleChange.Assets)
+
+        val after = viewModel.await { it.assetGeneration == 1 }
+        assertTrue(after.isEditingNotes)
+        assertEquals("First, second", after.selectedSlide.notes)
+        assertTrue(after.savePending)
+    }
+
+    /**
+     * Once a write has been heard back, the file is past it: the same deck
+     * turning up again is somebody putting it back, a checkout say.
+     */
+    @Test
+    fun aWriteThatWasHeardIsNewsWhenItComesBackAgain() = runTest {
+        val changes = watched()
+        val viewModel = editor(document(), changes)
+        changes.awaitWatched()
+        viewModel.onUpdateSlide(viewModel.states.value.selectedSlide.copy(title = "First"))
+        viewModel.await { it.selectedSlide.title == "First" && it.savePending }
+        val first: Document = viewModel.await { !it.savePending }.document
+        changes.emit(BundleChange.Deck(first.roundTripped()))
+        viewModel.onUpdateSlide(viewModel.states.value.selectedSlide.copy(title = "Second"))
+        viewModel.await { it.selectedSlide.title == "Second" && it.savePending }
+        val second: Document = viewModel.await { !it.savePending }.document
+        changes.emit(BundleChange.Deck(second.roundTripped()))
+
+        changes.emit(BundleChange.Deck(first.roundTripped()))
+
+        val reloaded = viewModel.await { it.document == first }
+        assertEquals("First", reloaded.selectedSlide.title)
+        assertFalse(reloaded.canUndo)
+    }
+}
+
+/**
+ * A store whose write never finishes: what is handed to it is the write under
+ * way, the way a file half written is.
+ */
+private class HeldStore(initial: Document) {
+    private val writing = CompletableDeferred<Document>()
+    private val codec = object : Codec<Document> {
+        private var stored: Document? = initial
+        override suspend fun encode(value: Document?) {
+            writing.complete(value!!)
+            awaitCancellation()
+        }
+
+        override suspend fun decode(): Document? = stored
+    }
+    val store: KStore<Document> = storeOf(codec = codec, default = initial)
+
+    suspend fun awaitWrite(): Document = withContext(Dispatchers.Default) {
+        withTimeout(5.seconds) { writing.await() }
     }
 }
