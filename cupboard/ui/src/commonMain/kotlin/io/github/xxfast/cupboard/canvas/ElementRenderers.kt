@@ -71,6 +71,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
@@ -114,14 +115,19 @@ import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.StrokeStyle
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
+import io.github.xxfast.cupboard.document.TextBaseline
+import io.github.xxfast.cupboard.document.TextCapitalization
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.colorMatrix
 import io.github.xxfast.cupboard.document.dx
 import io.github.xxfast.cupboard.document.dy
 import io.github.xxfast.cupboard.document.imageSourceRect
+import io.github.xxfast.cupboard.document.largestFontSize
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
+import io.github.xxfast.cupboard.document.VerticalAlign
+import io.github.xxfast.cupboard.document.lineHeightPoints
 import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.pieces
 import io.github.xxfast.cupboard.document.resolvedLink
@@ -440,6 +446,11 @@ private const val ListMarkerGap: Float = 6f
  * Internal rather than private: the editor's in-place text field styles itself
  * from this too, so the text under the caret is the same text that was there
  * before it, to the pixel.
+ *
+ * Small capitals are in here, as the face's own feature; all caps and title
+ * case are not, since they change the letters themselves (see [TextCasing]). A
+ * raised or dropped box draws at [drawnFontSize] while its lines stay as tall as
+ * its size, so lifting it moves nothing around it.
  */
 internal fun TextElement.textStyle(deckFonts: DeckFontFamilies): TextStyle {
     // Any target, not just the URL string: a box linked to a slide is as much a
@@ -456,27 +467,64 @@ internal fun TextElement.textStyle(deckFonts: DeckFontFamilies): TextStyle {
 
     return TextStyle(
         color = drawn.toComposeColor(),
-        fontSize = fontSize.sp,
+        fontSize = drawnFontSize(fontSize, baseline).sp,
         fontWeight = FontWeight(fontWeight),
         fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
         fontFamily = fontFamilyOf(this, deckFonts),
+        fontFeatureSettings = fontFeatures(capitalization == TextCapitalization.SmallCaps, ligatures),
+        baselineShift = baseline.takeIf { it != TextBaseline.Normal }?.shift,
         textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
-        lineHeight = (fontSize * lineHeight).sp,
+        lineHeight = drawnLineHeight.sp,
         letterSpacing = letterSpacing.sp,
         textAlign = when (align) {
             TextAlign.Start -> androidx.compose.ui.text.style.TextAlign.Start
             TextAlign.Center -> androidx.compose.ui.text.style.TextAlign.Center
             TextAlign.End -> androidx.compose.ui.text.style.TextAlign.End
+            TextAlign.Justify -> androidx.compose.ui.text.style.TextAlign.Justify
         },
     )
 }
 
-/** Where in its frame the text sits. Shared with the editor for the same reason. */
-internal fun TextElement.alignment(): Alignment = BiasAlignment(align.bias(), -1f)
+/**
+ * How far apart, in points, this box's lines draw: its spacing
+ * ([lineHeightPoints], against the largest size in the box, so a run set bigger
+ * than it gets lines tall enough to hold it), and its paragraph spacing on top
+ * of that once there is more than one paragraph.
+ *
+ * Compose has no space between paragraphs, and one paragraph has one line
+ * height whatever sizes its spans are, so the spacing goes into every line: two
+ * neighbouring paragraphs' baselines sit exactly [TextElement.paragraphSpacingAfter]
+ * plus [TextElement.paragraphSpacingBefore] further apart than they would, and
+ * the box's first and last lines are trimmed the way they always were, so
+ * nothing moves above the first or below the last. What this approximates is a
+ * paragraph that wraps: the lines it wraps onto are spaced as paragraphs are,
+ * rather than at the line spacing alone. The renderer and the editor's field
+ * both lay out by this, so a box opened for typing draws exactly as it did.
+ */
+internal val TextElement.drawnLineHeight: Float
+    get() {
+        val spacing: Float = lineHeightPoints()
+        if ('\n' !in text) return spacing
+        return spacing + paragraphSpacingBefore + paragraphSpacingAfter
+    }
 
-/** The alignment as a horizontal bias, -1 at the start edge and 1 at the end. */
+/** Where in its frame the text sits, across and down. Shared with the editor for the same reason. */
+internal fun TextElement.alignment(): Alignment = BiasAlignment(align.bias(), verticalAlign.bias())
+
+/** The vertical alignment as a bias, -1 at the top of the frame and 1 at the bottom. */
+internal fun VerticalAlign.bias(): Float = when (this) {
+    VerticalAlign.Top -> -1f
+    VerticalAlign.Middle -> 0f
+    VerticalAlign.Bottom -> 1f
+}
+
+/**
+ * The alignment as a horizontal bias, -1 at the start edge and 1 at the end.
+ * Justified text sits at the start: its lines span the box, and its paragraphs'
+ * last lines start where a start-aligned line does.
+ */
 internal fun TextAlign.bias(): Float = when (this) {
-    TextAlign.Start -> -1f
+    TextAlign.Start, TextAlign.Justify -> -1f
     TextAlign.Center -> 0f
     TextAlign.End -> 1f
 }
@@ -513,27 +561,31 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
     }
 
     // The text as it is set, one run for plain text and one per line for a
-    // list, and each run's share of the range links in its own offsets.
-    val runs: List<TextRun> = remember(element.text, element.listStyle) {
-        textRuns(element.text, element.listStyle)
+    // list, and each run's share of the styles and range links in its own
+    // offsets.
+    // Cased first, which keeps every offset where it was, so the runs, their
+    // styles and the delivery all still land on their own letters.
+    val casing: TextCasing = element.casing
+    val runs: List<DrawnRun> = remember(element.text, element.listStyle, casing) {
+        drawnRuns(casing.cased(element.text), element.listStyle)
     }
-    val linkStyle: SpanStyle = element.linkSpanStyle()
+    val styles: List<AnnotatedString.Range<SpanStyle>> = element.spanStyles(LocalDeckFonts.current)
 
-    // Links first and the delivery over them, so words still to come stay
-    // hidden however they are linked.
-    fun set(body: String, at: Int, spans: List<LinkSpan>): AnnotatedString {
-        val linked: AnnotatedString = linkedText(body, spans, linkStyle)
-        return if (ranges.isEmpty()) linked
-        else deliveredText(linked, at, ranges, shown, fade.value, style.color)
+    // Styles first and the delivery over them, so words still to come stay
+    // hidden however they are styled or linked.
+    fun set(run: DrawnRun): AnnotatedString {
+        val styled: AnnotatedString = run.styled(styles)
+        return if (ranges.isEmpty()) styled
+        else deliveredText(styled, run.start, ranges, shown, fade.value, style.color)
     }
 
     // Plain text is one Text, exactly as it always was: only a list pays for the
     // row-per-line layout its markers need.
     if (element.listStyle == ListStyle.None) {
-        val run: TextRun = runs.single()
+        val run: DrawnRun = runs.single()
         val spans: List<LinkSpan> = run.spans(element.links)
         RunText(
-            text = set(run.body, run.start, spans),
+            text = set(run),
             spans = spans,
             style = style,
             modifier = Modifier.align(alignment),
@@ -546,28 +598,49 @@ private fun androidx.compose.foundation.layout.BoxScope.TextElementView(
 
     Column(modifier = Modifier.align(alignment).fillMaxWidth()) {
         for ((index, line) in lines.withIndex()) {
+            val lineStyle: TextStyle = style.forListLine(index, lines.size)
             val indent: Float = line.listIndentLevel() * ListIndent
             // Where this line's own text begins, which is what both its marker
             // and its body are styled against: a marker arrives with its line.
-            val run: TextRun = runs[index]
+            val run: DrawnRun = runs[index]
             val spans: List<LinkSpan> = run.spans(element.links)
             Row(modifier = Modifier.fillMaxWidth().padding(start = indent.dp)) {
                 Text(
                     text =
                         if (ranges.isEmpty()) AnnotatedString(markers[index])
                         else deliveredText(markers[index], run.start, ranges, shown, fade.value, style.color),
-                    style = style.copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
+                    style = lineStyle.copy(textAlign = androidx.compose.ui.text.style.TextAlign.End),
                     modifier = Modifier.width(ListIndent.dp).padding(end = ListMarkerGap.dp),
                 )
                 RunText(
-                    text = set(run.body, run.start, spans),
+                    text = set(run),
                     spans = spans,
-                    style = style,
+                    style = lineStyle,
                     modifier = Modifier.weight(1f),
                 )
             }
         }
     }
+}
+
+/**
+ * This style for the [index]th of [count] lines of a list, each drawn as a
+ * paragraph of its own where the editor's field sets them all as one.
+ *
+ * Compose trims the line spacing off a paragraph's first line's top and its
+ * last line's bottom, so a list drawn a line at a time would lose the spacing
+ * between every two of its lines. Trimmed only at the box's own edges, the
+ * lines stack exactly as the field sets them, and the caret opening moves none
+ * of them.
+ */
+internal fun TextStyle.forListLine(index: Int, count: Int): TextStyle {
+    val trim: LineHeightStyle.Trim = when {
+        count == 1 -> LineHeightStyle.Trim.Both
+        index == 0 -> LineHeightStyle.Trim.FirstLineTop
+        index == count - 1 -> LineHeightStyle.Trim.LastLineBottom
+        else -> LineHeightStyle.Trim.None
+    }
+    return copy(lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Proportional, trim))
 }
 
 /**

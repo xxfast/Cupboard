@@ -25,6 +25,9 @@ enum BuildSpace {
 /// so the controls cannot drift apart: the panel is a column of things that all
 /// have to line up with each other.
 enum Inspect {
+    /// What a control reads while the text it speaks for disagrees with itself,
+    /// Keynote's word for it.
+    static let multiple = "Multiple"
     /// The column's side padding, and so the width every full-width control runs to.
     static let side: CGFloat = 16
     /// Popups, fields, joined segment groups and the small buttons.
@@ -36,6 +39,9 @@ enum Inspect {
     /// A numeric field, and the stepper that sits outside its right edge.
     static let field: CGFloat = 60
     static let stepper: CGFloat = 20
+    /// A popup at a row's right, beside its label or a disclosure's title:
+    /// Character Styles, Spacing, Bullets & Lists.
+    static let rowPopup: CGFloat = 124
     /// The well a disclosure header shows its summary in.
     static let wellWidth: CGFloat = 65
     static let wellHeight: CGFloat = 22
@@ -267,155 +273,32 @@ extension EditorView {
         }
     }
 
-    // MARK: Text
+    // MARK: Popups
 
-    /// The text box's own style, above Position & Size. Every control writes to
-    /// the whole selection and reads back off the primary, so what it shows is
-    /// what the document holds and never a local copy.
-    ///
-    /// Whole-box, all of it: a list, a weight and a colour are properties of the
-    /// element, not of a range, which is what the document model says and what
-    /// keeps the caret's text one plain string.
-    func textSection(_ text: TextFormat, _ ui: Chrome) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            textStyleRows(text)
-
-            palette.divider.frame(height: 1)
-
-            // Collapsible from here down, the way Keynote's Spacing and
-            // Bullets & Lists are: the header alone says what they are set to.
-            spacingSection(text, ui)
-
-            palette.divider.frame(height: 1)
-
-            listsSection(text, ui)
-        }
-    }
-
-    /// The rows that are always out: what the text is set in, how it is dressed,
-    /// what colour it is and which edge it lines up on.
-    func textStyleRows(_ text: TextFormat) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            sectionLabel("Font")
-
-            fontPicker(text)
-
-            HStack(spacing: 8) {
-                stylePopup(Self.weightTitles, selected: Self.weightIndex(text.weight)) { index in
-                    host.setSelectedTextWeight(weight: Int32(Self.weights[index]))
-                }
-
-                ValueField(
-                    label: "",
-                    value: text.size,
-                    palette: palette,
-                    unit: "pt",
-                    minimum: 1
-                ) { host.setSelectedTextSize(size: Float($0)) }
-                .frame(width: Inspect.field + Inspect.stepper + 5)
-            }
-
-            // One joined group, the way Keynote draws them, rather than four
-            // squares with air between.
-            joinedIcons([
-                IconCell(symbol: "bold", on: text.isBold, help: "Bold") {
-                    host.toggleSelectedTextBold()
-                },
-                IconCell(symbol: "italic", on: text.italic, help: "Italic") {
-                    host.toggleSelectedTextItalic()
-                },
-                IconCell(symbol: "underline", on: text.underline, help: "Underline") {
-                    host.toggleSelectedTextUnderline()
-                },
-                IconCell(symbol: "strikethrough", on: text.strikethrough, help: "Strikethrough") {
-                    host.toggleSelectedTextStrikethrough()
-                },
-            ])
-
-            // The system colour panel is live: it commits on every sample it
-            // sends, so a slow drag through it spends an undo entry per sample.
-            // Same-colour writes cost nothing (the core drops an edit that
-            // changes nothing), which takes the worst of it off.
-            colorWell("Text Colour", argb: text.color) {
-                host.setSelectedTextColor(argb: $0)
-            }
-
-            joinedIcons([
-                IconCell(
-                    symbol: "text.alignleft",
-                    on: text.align == TextAlign.start,
-                    help: "Align Left"
-                ) { host.setSelectedTextAlign(align: TextAlign.start) },
-                IconCell(
-                    symbol: "text.aligncenter",
-                    on: text.align == TextAlign.center,
-                    help: "Align Centre"
-                ) { host.setSelectedTextAlign(align: TextAlign.center) },
-                IconCell(
-                    symbol: "text.alignright",
-                    on: text.align == TextAlign.end,
-                    help: "Align Right"
-                ) { host.setSelectedTextAlign(align: TextAlign.end) },
-            ])
-        }
-    }
-
-    /// How far apart the lines sit, as a multiple of the type size. Collapsed,
-    /// the header says the multiple, which is the whole of what is in here.
-    func spacingSection(_ text: TextFormat, _ ui: Chrome) -> some View {
-        disclosure("Spacing", ui) {
-            Text(String(format: "%.2f", text.lineHeight))
-                .font(.system(size: Inspect.text))
-                .foregroundStyle(palette.inspectorCaption)
-        } body: {
-            HStack(spacing: 8) {
-                rowLabel("Lines")
-                Spacer(minLength: 0)
-                ValueField(
-                    label: "",
-                    value: text.lineHeight,
-                    palette: palette,
-                    decimals: 2,
-                    step: 0.1,
-                    minimum: 0.5
-                ) { host.setSelectedTextLineHeight(lineHeight: Float($0)) }
-                .frame(width: 92)
-            }
-        }
-    }
-
-    /// What marks each paragraph. Collapsed, the header names the kind.
-    func listsSection(_ text: TextFormat, _ ui: Chrome) -> some View {
-        disclosure("Lists", ui) {
-            Text(Self.listTitles[Self.listIndex(text.list)])
-                .font(.system(size: Inspect.text))
-                .foregroundStyle(palette.inspectorCaption)
-        } body: {
-            stylePopup(Self.listTitles, selected: Self.listIndex(text.list)) { index in
-                host.setSelectedTextList(style: Self.lists[index])
-            }
-        }
-    }
-
-    /// An AppKit popup button over a fixed list. Indices rather than the Kotlin
-    /// enums: a tag has to be Hashable, and what these pick from is a list this
-    /// file states anyway.
+    /// An AppKit popup button over a fixed list, the current pick ticked.
+    /// Indices rather than the Kotlin enums: a tag has to be Hashable, and what
+    /// these pick from is a list this file states anyway. `pullDown` is the face
+    /// with the one chevron.
     func stylePopup(
         _ titles: [String],
         selected: Int,
+        placeholder: String = "",
+        pullDown: Bool = false,
         onPick: @escaping (Int) -> Void
     ) -> some View {
         let entries = titles.enumerated().map { index, title in
-            MenuEntry(title: title) { onPick(index) }
+            MenuEntry(title: title, checked: index == selected) { onPick(index) }
         }
         return PopUpButton(entries: entries) {
-            popupFace(titles.indices.contains(selected) ? titles[selected] : "")
+            popupFace(titles.indices.contains(selected) ? titles[selected] : placeholder, pullDown: pullDown)
         }
     }
 
     /// A popup's face: the pick at the left, the up/down chevron pair at the
-    /// right, in a grey filled rounded rect at control height.
-    func popupFace(_ title: String) -> some View {
+    /// right, in a grey filled rounded rect at control height. `pullDown` swaps
+    /// the pair for the single chevron Keynote gives the popups that sit at a
+    /// row's right: Character Styles, Bullets & Lists.
+    func popupFace(_ title: String, pullDown: Bool = false) -> some View {
         let shape = RoundedRectangle(cornerRadius: Inspect.radius, style: .continuous)
         return HStack(spacing: 6) {
             Text(title)
@@ -424,7 +307,13 @@ extension EditorView {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 2)
-            chevronPair
+            if pullDown {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.inspectorTitle)
+            } else {
+                chevronPair
+            }
         }
         .padding(.horizontal, 9)
         .frame(maxWidth: .infinity)
@@ -452,17 +341,6 @@ extension EditorView {
     /// something rather than leaving the popup blank.
     static func weightIndex(_ weight: Int) -> Int {
         weights.indices.min { abs(weights[$0] - weight) < abs(weights[$1] - weight) } ?? 1
-    }
-
-    static let lists: [CupboardCanvas.ListStyle] = [
-        CupboardCanvas.ListStyle.none,
-        CupboardCanvas.ListStyle.bullet,
-        CupboardCanvas.ListStyle.numbered,
-    ]
-    static let listTitles = ["No List", "Bullet List", "Numbered List"]
-
-    static func listIndex(_ style: CupboardCanvas.ListStyle) -> Int {
-        lists.firstIndex { $0 == style } ?? 0
     }
 
     // MARK: Link
@@ -2555,6 +2433,9 @@ extension EditorView {
         /// Set, 0 reads as an empty field wearing this, and emptying the field
         /// commits 0: a movie's trim end, where 0 is no end at all.
         var placeholder: String? = nil
+        /// Text with more than one value in it: the field reads Multiple, any
+        /// number typed in commits, and the arrows step from `value`.
+        var mixed: Bool = false
         let onCommit: (Double) -> Void
 
         @State private var text: String = ""
@@ -2587,7 +2468,7 @@ extension EditorView {
                 // The value and its unit share the field, hard against its
                 // right edge: "5 pt", "100%", "270\u{00B0}".
                 HStack(spacing: Self.unitGap(unit)) {
-                    TextField(placeholder ?? "", text: $text)
+                    TextField(placeholder ?? (mixed ? Inspect.multiple : ""), text: $text)
                         .textFieldStyle(.plain)
                         .font(.system(size: Inspect.text))
                         .foregroundStyle(palette.text)
@@ -2596,7 +2477,7 @@ extension EditorView {
                         .onSubmit { commit() }
                         .onChange(of: focused) { _, now in if !now { commit() } }
 
-                    if let unit, placeholder == nil || !text.isEmpty {
+                    if let unit, (placeholder == nil && !mixed) || !text.isEmpty {
                         Text(unit)
                             .font(.system(size: Inspect.text))
                             .foregroundStyle(palette.text)
@@ -2613,6 +2494,7 @@ extension EditorView {
             // A canvas drag or an undo moves the element under the field. The
             // one being typed in is left alone until it loses focus.
             .onChange(of: value) { _, latest in if !focused { text = formatted(latest) } }
+            .onChange(of: mixed) { _, _ in if !focused { text = formatted(value) } }
         }
 
         /// The two arrows, in their own well outside the field's right edge.
@@ -2655,6 +2537,7 @@ extension EditorView {
 
         private func commit() {
             let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if mixed, trimmed.isEmpty { return }
             if placeholder != nil, trimmed.isEmpty {
                 onCommit(0)
                 return
@@ -2668,6 +2551,7 @@ extension EditorView {
         }
 
         private func formatted(_ value: Double) -> String {
+            if mixed { return "" }
             if placeholder != nil, value == 0 { return "" }
             if decimals == 0 { return String(Int(value.rounded())) }
             return String(format: "%.\(decimals)f", value)

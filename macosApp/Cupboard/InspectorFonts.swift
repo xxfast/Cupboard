@@ -10,11 +10,13 @@ import CupboardCanvas
 /// it wants to travel with, and everything else is whatever this Mac has.
 extension EditorView {
     /// The picker, and under it the line that says when the face it names is
-    /// nowhere to be had. Reads off the primary like every other Text control.
+    /// nowhere to be had. Reads the selected words, else the primary, like the
+    /// rest of the Text section's character controls; text in more than one face
+    /// reads Multiple and ticks nothing.
     func fontPicker(_ text: TextFormat) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            PopUpButton(building: { fontEntries(selected: text.fontName) }) {
-                popupFace(text.fontName)
+            PopUpButton(building: { fontEntries(selected: text.fontName ?? "") }) {
+                popupFace(text.fontName ?? Inspect.multiple)
             }
 
             if let fallback = text.missingFontFallback {

@@ -145,7 +145,41 @@ val Element.placeholderRole: PlaceholderRole?
         else -> null
     }
 
-enum class TextAlign { Start, Center, End }
+/**
+ * Where each line of a box sits across it. [Justify] stretches every line but a
+ * paragraph's last to both edges, and sits the last one at the start.
+ */
+enum class TextAlign { Start, Center, End, Justify }
+
+/**
+ * Where a box's text sits down its frame when the frame is taller than the text:
+ * Keynote's three vertical alignments. A box that grows to its text never shows
+ * the difference.
+ */
+enum class VerticalAlign { Top, Middle, Bottom }
+
+/**
+ * How letters are cased as they draw, whatever was typed: the text itself is
+ * never rewritten, so switching back to [None] gives back what was typed.
+ *
+ * [Title] capitalises the first letter of every word and leaves the rest as
+ * typed. [SmallCaps] asks the face for its small capitals, which a face without
+ * them draws as it was typed.
+ */
+enum class TextCapitalization { None, AllCaps, SmallCaps, Title }
+
+/** Whether characters sit on the line, or raised or dropped and smaller, as an exponent or an index. */
+enum class TextBaseline { Normal, Superscript, Subscript }
+
+/**
+ * What [TextElement.lineHeight] measures, Keynote's Spacing popup.
+ *
+ * [Lines] is a multiple of the font size, which is all a line height ever was
+ * before the others existed. [Exactly] and [AtLeast] are points, the latter
+ * never squeezing a line tighter than one font size tall. [Between] is points
+ * of air added under a line one font size tall.
+ */
+enum class LineSpacingMode { Lines, AtLeast, Exactly, Between }
 
 /**
  * The face a text box is set in: three generic families, and the handful of
@@ -209,8 +243,24 @@ enum class TextFont {
  * [TextElement.text] is one item, and its nesting is the count of leading tabs.
  * That keeps the text one plain string, so typing, undo and the file format all
  * stay as they were.
+ *
+ * [Bullet] and [Numbered] alternate their markers as a list nests (see
+ * `listMarkers`); the rest draw the one marker at every level. The names are the
+ * file format, so the first three keep theirs.
  */
-enum class ListStyle { None, Bullet, Numbered }
+enum class ListStyle {
+    None,
+    Bullet,
+    Numbered,
+    /** An en dash at every level. */
+    Dash,
+    /** `1)`, `2)`, `3)`. */
+    NumberedParenthesis,
+    /** `I.`, `II.`, `III.`. */
+    UpperRoman,
+    /** `a.`, `b.`, `c.`. */
+    LowerAlpha,
+}
 
 @Serializable
 @SerialName("text")
@@ -228,10 +278,13 @@ data class TextElement(
     val fontSize: Float = 15f,
     /** Bold is a point on this scale rather than a flag of its own; see `isBold`. */
     val fontWeight: Int = 400,
+    /** Read by [lineSpacingMode]: a multiple of the font size, or points. See `lineHeightPoints`. */
     val lineHeight: Float = 1.3f,
+    /** Keynote's Character Spacing: extra points between every two characters. */
     val letterSpacing: Float = 0f,
     val color: Long = 0xFFFFFFFF,
     val align: TextAlign = TextAlign.Start,
+    val verticalAlign: VerticalAlign = VerticalAlign.Top,
     val fontFamily: TextFont = TextFont.Sans,
     /**
      * A family by the name the system or the deck knows it as (see
@@ -246,6 +299,15 @@ data class TextElement(
     val italic: Boolean = false,
     val underline: Boolean = false,
     val strikethrough: Boolean = false,
+    val capitalization: TextCapitalization = TextCapitalization.None,
+    val baseline: TextBaseline = TextBaseline.Normal,
+    /** Whether the face may join letters it has ligatures for (fi, fl). The box's alone, never a run's. */
+    val ligatures: Boolean = true,
+    val lineSpacingMode: LineSpacingMode = LineSpacingMode.Lines,
+    /** Points of air above every paragraph but the box's first. */
+    val paragraphSpacingBefore: Float = 0f,
+    /** Points of air below every paragraph but the box's last. */
+    val paragraphSpacingAfter: Float = 0f,
     val listStyle: ListStyle = ListStyle.None,
     /**
      * The whole box as one hyperlink, as a bare URL. A run of words inside the
@@ -272,6 +334,16 @@ data class TextElement(
      * it through `withText`.
      */
     val links: List<TextLink> = emptyList(),
+    /**
+     * The runs of [text] set in a style of their own, in order and never
+     * overlapping (see [TextRun] and `normalisedRuns`). Whatever a run leaves
+     * unset is the box's, and everywhere outside one the box answers alone, so
+     * a deck written before these existed reads as it always did.
+     *
+     * Anchored to [text] the way [links] are, and carried through `withText`
+     * with them.
+     */
+    val runs: List<TextRun> = emptyList(),
     /** See [PlaceholderRole]: set, this is a placeholder on a layout or an instance on a slide. */
     val role: PlaceholderRole? = null,
 ) : Element {

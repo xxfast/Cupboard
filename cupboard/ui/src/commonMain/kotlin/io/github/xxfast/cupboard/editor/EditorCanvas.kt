@@ -88,10 +88,11 @@ import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.LocalDeckFonts
 import io.github.xxfast.cupboard.canvas.SlideSurface
-import io.github.xxfast.cupboard.canvas.TextRun
-import io.github.xxfast.cupboard.canvas.linkSpanStyle
-import io.github.xxfast.cupboard.canvas.linkedText
-import io.github.xxfast.cupboard.canvas.textRuns
+import io.github.xxfast.cupboard.canvas.DrawnRun
+import io.github.xxfast.cupboard.canvas.TextCasing
+import io.github.xxfast.cupboard.canvas.casing
+import io.github.xxfast.cupboard.canvas.drawnRuns
+import io.github.xxfast.cupboard.canvas.spanStyles
 import io.github.xxfast.cupboard.canvas.TerminalBackground
 import io.github.xxfast.cupboard.canvas.TerminalBorder
 import io.github.xxfast.cupboard.canvas.TerminalCommand
@@ -130,7 +131,6 @@ import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
-import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.ancestorIds
 import io.github.xxfast.cupboard.document.backgroundCascade
 import io.github.xxfast.cupboard.document.boundingFrame
@@ -1592,14 +1592,17 @@ private fun TextEditor(
     val focusRequester: FocusRequester = remember { FocusRequester() }
     LaunchedEffect(element.id) { focusRequester.requestFocus() }
 
-    // The range links draw here the way the renderer draws them, so opening
-    // a box for typing changes nothing about how its words look. They come
-    // from the element, which is the loop's, and land on the field's own text
-    // through the same runs the renderer sets.
-    val linkStyle: SpanStyle = element.linkSpanStyle()
-    val markers: VisualTransformation = remember(element.listStyle, element.links, linkStyle) {
-        if (element.listStyle == ListStyle.None) LinkTransformation(element.links, linkStyle)
-        else ListMarkerTransformation(element.listStyle, element.links, linkStyle)
+    // The styled runs and range links draw here the way the renderer draws
+    // them, so opening a box for typing changes nothing about how its words
+    // look. They come from the element, which is the loop's, and land on the
+    // field's own text through the same runs the renderer sets.
+    // Casing too, on the field's own text and ahead of the markers, so the
+    // letters under the caret are the ones that were drawn there.
+    val styles: List<AnnotatedString.Range<SpanStyle>> = element.spanStyles(LocalDeckFonts.current)
+    val casing: TextCasing = element.casing
+    val markers: VisualTransformation = remember(element.listStyle, styles, casing) {
+        if (element.listStyle == ListStyle.None) SpanTransformation(styles, casing)
+        else ListMarkerTransformation(element.listStyle, styles, casing)
     }
 
     // Every move of the caret or the selection goes out through the loop, for
@@ -2176,24 +2179,25 @@ private fun EquationEditor(
 }
 
 /**
- * A plain text box's range links drawn into its field, the characters left
+ * A plain text box's styled runs and range links ([spanStyles]) drawn into its
+ * field, and its letters cased as they draw ([casing]), the characters left
  * exactly where they are. [ListMarkerTransformation] does the same for a list,
  * on top of its markers.
  */
-internal class LinkTransformation(
-    private val links: List<TextLink>,
-    private val linkStyle: SpanStyle,
+internal class SpanTransformation(
+    private val styles: List<AnnotatedString.Range<SpanStyle>>,
+    private val casing: TextCasing = TextCasing.None,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        if (links.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
-        val run: TextRun = textRuns(text.text, ListStyle.None).single()
-        return TransformedText(linkedText(text.text, run.spans(links), linkStyle), OffsetMapping.Identity)
+        if (styles.isEmpty() && casing.isIdentity) return TransformedText(text, OffsetMapping.Identity)
+        val run: DrawnRun = drawnRuns(casing.cased(text.text), ListStyle.None).single()
+        return TransformedText(run.styled(styles), OffsetMapping.Identity)
     }
 
     override fun equals(other: Any?): Boolean =
-        other is LinkTransformation && other.links == links && other.linkStyle == linkStyle
+        other is SpanTransformation && other.styles == styles && other.casing == casing
 
-    override fun hashCode(): Int = 31 * links.hashCode() + linkStyle.hashCode()
+    override fun hashCode(): Int = 31 * styles.hashCode() + casing.hashCode()
 }
 
 /**
@@ -2211,12 +2215,16 @@ internal class LinkTransformation(
  */
 internal class ListMarkerTransformation(
     private val style: ListStyle,
-    private val links: List<TextLink> = emptyList(),
-    private val linkStyle: SpanStyle = SpanStyle(),
+    private val styles: List<AnnotatedString.Range<SpanStyle>> = emptyList(),
+    private val casing: TextCasing = TextCasing.None,
 ) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val lines: List<String> = text.text.split("\n")
-        val markers: List<String> = listMarkers(text.text, style)
+        // Casing changes a letter for a letter and never a tab or a line break,
+        // so the lines, their nesting and every offset below read the same off
+        // the cased text as off the typed one.
+        val cased: String = casing.cased(text.text)
+        val lines: List<String> = cased.split("\n")
+        val markers: List<String> = listMarkers(cased, style)
 
         // Per line: where it starts in each string, how many tabs it opens with,
         // and how long everything before its body is once drawn.
@@ -2253,15 +2261,15 @@ internal class ListMarkerTransformation(
             }
         }
 
-        // Each line's share of the links, measured from its body, lands after
+        // Each line's share of the styles, measured from its body, lands after
         // that line's indent and marker: the renderer's runs, moved over by
         // what the field draws in front of them.
-        val runs: List<TextRun> = textRuns(text.text, style)
+        val runs: List<DrawnRun> = drawnRuns(cased, style)
         val styled: AnnotatedString = buildAnnotatedString {
             append(drawn.joinToString("\n"))
             for ((index, run) in runs.withIndex()) {
                 val at: Int = drawnStarts[index] + prefixes[index].length
-                for (span in run.spans(links)) addStyle(linkStyle, at + span.start, at + span.end)
+                for (span in run.styled(styles).spanStyles) addStyle(span.item, at + span.start, at + span.end)
             }
         }
 

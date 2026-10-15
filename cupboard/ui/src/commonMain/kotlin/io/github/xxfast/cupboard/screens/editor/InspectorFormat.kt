@@ -80,7 +80,6 @@ import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.LineStyle
 import io.github.xxfast.cupboard.document.LineEnd
 import io.github.xxfast.cupboard.document.LinkTarget
-import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.ShadowKind
@@ -94,6 +93,8 @@ import io.github.xxfast.cupboard.document.StrokeStyle
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextRangeStyle
+import io.github.xxfast.cupboard.document.TextRun
 import io.github.xxfast.cupboard.document.TextLink
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
@@ -104,6 +105,11 @@ import io.github.xxfast.cupboard.document.formatCode
 import io.github.xxfast.cupboard.document.formatLineRanges
 import io.github.xxfast.cupboard.document.formatNodeIds
 import io.github.xxfast.cupboard.document.formatText
+import io.github.xxfast.cupboard.document.styleOf
+import io.github.xxfast.cupboard.document.boldToggled
+import io.github.xxfast.cupboard.document.italicToggled
+import io.github.xxfast.cupboard.document.strikethroughToggled
+import io.github.xxfast.cupboard.document.underlineToggled
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.parseNodeIds
@@ -116,17 +122,27 @@ import io.github.xxfast.cupboard.document.CodeDiagnostic
 import io.github.xxfast.cupboard.document.DiagnosticSeverity
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sources
-import io.github.xxfast.cupboard.document.toggleBold
-import io.github.xxfast.cupboard.document.toggleItalic
-import io.github.xxfast.cupboard.document.toggleStrikethrough
-import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.document.withFillMode
-import io.github.xxfast.cupboard.document.withFont
-import io.github.xxfast.cupboard.document.withGenericFont
 import io.github.xxfast.cupboard.document.withGradient
 import io.github.xxfast.cupboard.document.withImageFill
 import io.github.xxfast.cupboard.document.withKind
 import io.github.xxfast.cupboard.document.withSolidFill
+import io.github.xxfast.cupboard.canvas.LocalDeckFonts
+import io.github.xxfast.cupboard.canvas.fontFamilyOf
+import io.github.xxfast.cupboard.document.CharacterStyle
+import io.github.xxfast.cupboard.document.LineSpacingMode
+import io.github.xxfast.cupboard.document.ListStyles
+import io.github.xxfast.cupboard.document.ParagraphStyle
+import io.github.xxfast.cupboard.document.TextBaseline
+import io.github.xxfast.cupboard.document.TextCapitalization
+import io.github.xxfast.cupboard.document.VerticalAlign
+import io.github.xxfast.cupboard.document.canOutdent
+import io.github.xxfast.cupboard.document.characterStyle
+import io.github.xxfast.cupboard.document.indented
+import io.github.xxfast.cupboard.document.outdented
+import io.github.xxfast.cupboard.document.title
+import io.github.xxfast.cupboard.document.withCharacterStyle
+import io.github.xxfast.cupboard.document.withLineSpacingMode
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -179,6 +195,22 @@ internal fun ColumnScope.FormatPanel(
     selectionLink: TextLink?,
     textLinkRows: List<TextLinkRow>,
     onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
+    /**
+     * The Text section's character styles: what the text shows
+     * ([EditorState.inspectedTextStyle]), and where a change to it goes
+     * (`EditorViewModel.onStyleText`), the selected words or the whole boxes.
+     */
+    textStyle: TextRangeStyle?,
+    onStyleText: (change: (TextRangeStyle) -> TextRun) -> Unit,
+    /**
+     * The paragraph style card: the slide's styles ([EditorState.paragraphStyles]),
+     * the one the primary text box is in ([EditorState.inspectedParagraphStyle]),
+     * and the verb that puts the selection's text boxes in another
+     * (`EditorViewModel.onSetParagraphStyle`).
+     */
+    paragraphStyles: List<ParagraphStyle>,
+    inspectedParagraphStyle: PlaceholderRole?,
+    onSetParagraphStyle: (PlaceholderRole) -> Unit,
     objectStyles: List<ObjectStyle>,
     onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit,
     onSaveObjectStyle: (shapeId: String, name: String) -> Unit,
@@ -347,6 +379,11 @@ internal fun ColumnScope.FormatPanel(
                 selectionLink = selectionLink,
                 textLinkRows = textLinkRows,
                 onSetTextLink = onSetTextLink,
+                textStyle = textStyle,
+                onStyleText = onStyleText,
+                paragraphStyles = paragraphStyles,
+                inspectedParagraphStyle = inspectedParagraphStyle,
+                onSetParagraphStyle = onSetParagraphStyle,
                 onReplaceImage = onReplaceImage,
                 onAddGalleryImages = onAddGalleryImages,
                 onReplaceMedia = onReplaceMedia,
@@ -1157,6 +1194,11 @@ private fun KindBody(
     selectionLink: TextLink?,
     textLinkRows: List<TextLinkRow>,
     onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
+    textStyle: TextRangeStyle?,
+    onStyleText: (change: (TextRangeStyle) -> TextRun) -> Unit,
+    paragraphStyles: List<ParagraphStyle>,
+    inspectedParagraphStyle: PlaceholderRole?,
+    onSetParagraphStyle: (PlaceholderRole) -> Unit,
     onReplaceImage: ((ImageElement) -> Unit)?,
     onAddGalleryImages: ((GalleryElement) -> Unit)?,
     onReplaceMedia: ((Element) -> Unit)?,
@@ -1188,6 +1230,11 @@ private fun KindBody(
             primary = primary,
             elements = elements,
             onUpdate = onUpdate,
+            style = textStyle ?: primary.styleOf(0, primary.text.length),
+            onStyleText = onStyleText,
+            paragraphStyles = paragraphStyles,
+            paragraphStyle = inspectedParagraphStyle,
+            onSetParagraphStyle = onSetParagraphStyle,
             expandedSections = expandedSections,
             onToggleSection = onToggleSection,
             deckFontFamilies = deckFontFamilies,
@@ -1330,26 +1377,71 @@ private val TEXT_WEIGHTS: List<Pair<Int, String>> = listOf(
     700 to "Bold",
 )
 
-/** Keynote's three titles for [ListStyle], which read better in a menu than the enum does. */
-private val TextListStyles: List<Pair<ListStyle, String>> = listOf(
-    ListStyle.None to "None",
-    ListStyle.Bullet to "Bullet",
-    ListStyle.Numbered to "Numbered",
-)
-
 /** [value] appended under its own name where the list doesn't already carry it. */
 private fun List<Pair<Int, String>>.withEntry(value: Int): List<Pair<Int, String>> =
     if (any { (weight, _) -> weight == value }) this else this + (value to "$value")
 
+/** Keynote's Character Styles popup, in its order. Null is the text in more than one. */
+private val CharacterStyles: List<Pair<CharacterStyle?, String>> =
+    CharacterStyle.entries.map { style -> style to style.name }
+
+/** Keynote's names for the three [TextBaseline]s. */
+private val TextBaselines: List<Pair<TextBaseline?, String>> = listOf(
+    TextBaseline.Normal to "Normal",
+    TextBaseline.Superscript to "Superscript",
+    TextBaseline.Subscript to "Subscript",
+)
+
+/** Keynote's names for the four [TextCapitalization]s. */
+private val TextCapitalizations: List<Pair<TextCapitalization?, String>> = listOf(
+    TextCapitalization.None to "None",
+    TextCapitalization.AllCaps to "All Caps",
+    TextCapitalization.SmallCaps to "Small Caps",
+    TextCapitalization.Title to "Title Case",
+)
+
+/** Keynote's Ligatures popup over the box's one switch: the face's own, or none at all. */
+private val TextLigatures: List<Pair<Boolean, String>> = listOf(true to "Use Default", false to "Use None")
+
+/** What the collapsed Spacing header offers, all of them [LineSpacingMode.Lines]. */
+private val LineSpacingPresets: List<Float> = listOf(1f, 1.2f, 1.5f, 2f)
+
+/** A popup riding in a section header: as tall as the header, half the panel wide. */
+private val HeaderPopupWidth: Dp = 112.dp
+private val HeaderPopupHeight: Dp = 30.dp
+
+/** The paragraph style card's name is set no bigger than this, whatever its style's size. */
+private const val CardFontSize: Float = 22f
+
+/** The Text segment's two panes. */
+private enum class TextPane { Style, Layout }
+
+/** What the Spacing header reads: a multiple in Lines, points in the other three. */
+private fun TextElement.spacingSummary(): String =
+    if (lineSpacingMode == LineSpacingMode.Lines) lineHeight.asMultiplier()
+    else "${lineHeight.asWholeNumber()} ${Units.Points}"
+
 /**
- * A text box's text: the font, the four toggles, the colour, the alignment, then
- * Spacing and Bullets as the two disclosures Keynote gives them.
+ * A text box's Text segment, Keynote's Format > Text: the paragraph style card,
+ * then Style and Layout. Style is the font, the character styles, the colour,
+ * the three rows of alignment, then Spacing and Bullets & Lists as the two
+ * disclosures Keynote gives them. Layout has nothing of its own yet.
  *
- * Every control reads [primary] and writes the whole selection through
- * [formatText], so a mixed selection styles its text boxes and leaves the shapes
- * and images in it alone. Formatting is whole-box, not per-range: the document
- * holds one style per element, so a caret sitting in the text makes no
- * difference to what any of this does.
+ * The character controls (font, weight, size, the four toggles, the advanced
+ * options, the character style, the colour) read [style] and write through
+ * [onStyleText], which puts a change where [style] came from: the words selected
+ * in the box being edited, the caret left on them, or else the whole of every
+ * text box in the selection, so a mixed selection styles its text boxes and
+ * leaves the shapes and images in it alone. [style] reads [MULTIPLE] wherever
+ * the text it speaks for disagrees.
+ *
+ * Alignment, indents, spacing, lists and ligatures belong to a whole line or a
+ * whole box, so they are always the box's, read off [primary] and written whole.
+ * So is the paragraph style, which [onSetParagraphStyle] puts every text box in
+ * the selection in.
+ *
+ * Which pane is showing is the panel's own, like a menu's open flag: it is no
+ * fact about the document, and nothing on the canvas draws from it.
  *
  * Nothing here previews. Each of these is one settled edit, so each is one
  * history entry and one autosave write, and there is no gesture to stream.
@@ -1359,12 +1451,18 @@ private fun TextBody(
     primary: TextElement,
     elements: List<Element>,
     onUpdate: (List<Element>) -> Unit,
+    style: TextRangeStyle,
+    onStyleText: (change: (TextRangeStyle) -> TextRun) -> Unit,
+    paragraphStyles: List<ParagraphStyle>,
+    paragraphStyle: PlaceholderRole?,
+    onSetParagraphStyle: (PlaceholderRole) -> Unit,
     expandedSections: Set<InspectorSection>,
     onToggleSection: (InspectorSection) -> Unit,
     deckFontFamilies: List<String>,
     onAddFontFile: (() -> Unit)?,
 ) {
     val enabled: Boolean = !primary.locked
+    var pane: TextPane by remember { mutableStateOf(TextPane.Style) }
 
     // False when the transform changed nothing anywhere: no event, and no field
     // left holding a value the document never took.
@@ -1376,103 +1474,416 @@ private fun TextBody(
         return true
     }
 
-    FontPicker(
-        primary = primary,
-        deckFamilies = deckFontFamilies,
+    fun restyle(change: TextRun) = onStyleText { change }
+
+    ParagraphStyleCard(
+        styles = paragraphStyles,
+        current = paragraphStyle,
         enabled = enabled,
-        onPickName = { name -> format { it.withFont(name) } },
-        onPickGeneric = { font -> format { it.withGenericFont(font) } },
-        onAddFontFile = onAddFontFile,
+        onPick = onSetParagraphStyle,
     )
-    MissingFontNotice(primary = primary, deckFamilies = deckFontFamilies)
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    PanelDivider()
+
+    SegmentPicker(
+        options = TextPane.entries.map { option -> option to option.name },
+        selected = pane,
+        onPick = { picked -> pane = picked },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    PanelDivider()
+
+    if (pane == TextPane.Layout) {
+        Text(
+            text = "Columns, insets, indents, tabs, borders and backgrounds aren't here yet.",
+            color = LocalChromeTokens.current.subtle,
+            fontSize = 11.5.sp,
+        )
+        return
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionLabel("FONT")
+        FontPicker(
+            style = style,
+            deckFamilies = deckFontFamilies,
+            enabled = enabled,
+            onPickName = { name -> restyle(TextRun(fontName = name)) },
+            onPickGeneric = { font -> restyle(TextRun(fontFamily = font)) },
+            onAddFontFile = onAddFontFile,
+            label = "",
+        )
+        MissingFontNotice(style = style, deckFamilies = deckFontFamilies)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            DropdownField(
+                label = "",
+                // A weight the list has no name for still shows: an imported 450
+                // reads as 450 rather than as an empty field.
+                value = style.fontWeight,
+                options = style.fontWeight?.let { TEXT_WEIGHTS.withEntry(it) } ?: TEXT_WEIGHTS,
+                enabled = enabled,
+                onPick = { weight -> weight?.let { restyle(TextRun(fontWeight = it)) } },
+                modifier = Modifier.weight(1f),
+                display = if (style.fontWeight == null) MULTIPLE else null,
+            )
+            NumberField(
+                label = "",
+                value = style.fontSize ?: primary.fontSize,
+                enabled = enabled,
+                onCommit = { size -> restyle(TextRun(fontSize = size)) },
+                modifier = Modifier.width(104.dp),
+                minimum = 1f,
+                mixed = style.fontSize == null,
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Mixed reads as off, and a click turns it on all the way through,
+            // the way Keynote's buttons do.
+            SegmentedRow(Modifier.weight(1f)) {
+                StyleSegment("B", style.isBold == true, enabled, first = true) { onStyleText { it.boldToggled() } }
+                StyleSegment("I", style.italic == true, enabled, style = FontStyle.Italic) {
+                    onStyleText { it.italicToggled() }
+                }
+                StyleSegment("U", style.underline == true, enabled, decoration = TextDecoration.Underline) {
+                    onStyleText { it.underlineToggled() }
+                }
+                StyleSegment("S", style.strikethrough == true, enabled, decoration = TextDecoration.LineThrough) {
+                    onStyleText { it.strikethroughToggled() }
+                }
+            }
+            TextOptionsButton(
+                primary = primary,
+                style = style,
+                enabled = enabled,
+                onStyleText = onStyleText,
+                onFormat = { transform -> format(transform) },
+            )
+        }
+    }
+
+    LabeledRow("Character Styles", enabled) {
         DropdownField(
-            label = "Weight",
-            // A weight the list has no name for still shows: an imported 450
-            // reads as 450 rather than as an empty field.
-            value = primary.fontWeight,
-            options = TEXT_WEIGHTS.withEntry(primary.fontWeight),
+            label = "",
+            value = style.characterStyle,
+            options = CharacterStyles,
             enabled = enabled,
-            onPick = { weight -> format { it.copy(fontWeight = weight) } },
-            modifier = Modifier.weight(1f),
-        )
-        NumberField(
-            label = "Size",
-            value = primary.fontSize,
-            enabled = enabled,
-            onCommit = { size -> format { it.copy(fontSize = size) } },
-            modifier = Modifier.width(104.dp),
-            minimum = 1f,
+            onPick = { picked -> picked?.let { character -> onStyleText { it.withCharacterStyle(character) } } },
+            modifier = Modifier.width(130.dp),
+            display = if (style.characterStyle == null) MULTIPLE else null,
         )
     }
+    PanelDivider()
 
-    SegmentedRow {
-        StyleSegment("B", primary.isBold, enabled, first = true) { format { it.toggleBold() } }
-        StyleSegment("I", primary.italic, enabled, style = FontStyle.Italic) {
-            format { it.toggleItalic() }
-        }
-        StyleSegment("U", primary.underline, enabled, decoration = TextDecoration.Underline) {
-            format { it.toggleUnderline() }
-        }
-        StyleSegment("S", primary.strikethrough, enabled, decoration = TextDecoration.LineThrough) {
-            format { it.toggleStrikethrough() }
-        }
+    LabeledRow("Text Colour", enabled) {
+        ColourField(
+            color = style.color ?: primary.color,
+            enabled = enabled,
+            onPick = { color -> restyle(TextRun(color = color)) },
+            modifier = Modifier.width(150.dp),
+            mixed = style.color == null,
+        )
     }
+    PanelDivider()
 
-    SwatchLabel("Color")
-    ColourField(
-        color = primary.color,
-        enabled = enabled,
-        onPick = { color -> format { it.copy(color = color) } },
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SegmentedRow {
+            for ((index, align) in TextAlign.entries.withIndex()) {
+                Segment(
+                    selected = primary.align == align,
+                    first = index == 0,
+                    onClick = if (enabled) ({ format { it.copy(align = align) } }) else null,
+                ) {
+                    AlignGlyph(color = segmentTint(primary.align == align, enabled), variant = index)
+                }
+            }
+        }
 
-    SegmentedRow {
-        for ((index, align) in TextAlign.entries.withIndex()) {
+        // Momentary rather than toggles: each press is one level, in or out,
+        // for every line of every box, and out is dead with nothing nested.
+        val outdentable: Boolean = enabled && primary.canOutdent
+        SegmentedRow {
             Segment(
-                selected = primary.align == align,
-                first = index == 0,
-                onClick = if (enabled) ({ format { it.copy(align = align) } }) else null,
+                selected = false,
+                first = true,
+                onClick = if (outdentable) ({ format { it.outdented() } }) else null,
             ) {
-                AlignGlyph(color = segmentTint(primary.align == align, enabled), variant = index)
+                IndentGlyph(color = segmentTint(false, outdentable), outdent = true)
+            }
+            Segment(
+                selected = false,
+                first = false,
+                onClick = if (enabled) ({ format { it.indented() } }) else null,
+            ) {
+                IndentGlyph(color = segmentTint(false, enabled), outdent = false)
+            }
+        }
+
+        SegmentedRow {
+            for ((index, align) in VerticalAlign.entries.withIndex()) {
+                Segment(
+                    selected = primary.verticalAlign == align,
+                    first = index == 0,
+                    onClick = if (enabled) ({ format { it.copy(verticalAlign = align) } }) else null,
+                ) {
+                    VerticalAlignGlyph(color = segmentTint(primary.verticalAlign == align, enabled), align = align)
+                }
             }
         }
     }
+    PanelDivider()
 
+    // Collapsed, the header carries the line spacing and a few common ones to
+    // pick from; open, the section carries the whole of it and the header
+    // popup would only say it twice.
+    val spacingOpen: Boolean = InspectorSection.Spacing in expandedSections
     DisclosureSection(
         title = "Spacing",
-        expanded = InspectorSection.Spacing in expandedSections,
+        expanded = spacingOpen,
         onToggle = { onToggleSection(InspectorSection.Spacing) },
-        summary = { ValueSummary(primary.lineHeight.asMultiplier()) },
+        summary = {
+            if (!spacingOpen) DropdownField(
+                label = "",
+                value = primary.lineHeight.takeIf { primary.lineSpacingMode == LineSpacingMode.Lines },
+                options = LineSpacingPresets.map { lines -> lines to lines.asMultiplier() },
+                enabled = enabled,
+                onPick = { picked ->
+                    picked?.let { lines ->
+                        format { it.copy(lineSpacingMode = LineSpacingMode.Lines, lineHeight = lines) }
+                    }
+                },
+                modifier = Modifier.width(HeaderPopupWidth),
+                display = primary.spacingSummary(),
+                height = HeaderPopupHeight,
+            )
+        },
     ) {
-        NumberField(
-            label = "Line Spacing",
-            value = primary.lineHeight,
-            enabled = enabled,
-            onCommit = { spacing -> format { it.copy(lineHeight = spacing) } },
-            modifier = Modifier.width(150.dp),
-            minimum = 0.5f,
-            fractional = true,
-            unit = Units.Times,
-            step = 0.1f,
-        )
+        val lines: Boolean = primary.lineSpacingMode == LineSpacingMode.Lines
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Switching mode converts the value, so nothing moves until one is typed.
+            DropdownField(
+                label = "",
+                value = primary.lineSpacingMode,
+                options = LineSpacingMode.entries.map { mode -> mode to mode.title },
+                enabled = enabled,
+                onPick = { mode -> format { it.withLineSpacingMode(mode) } },
+                modifier = Modifier.weight(1f),
+            )
+            NumberField(
+                label = "",
+                value = primary.lineHeight,
+                enabled = enabled,
+                onCommit = { spacing -> format { it.copy(lineHeight = spacing) } },
+                modifier = Modifier.width(104.dp),
+                minimum = when {
+                    lines -> 0.5f
+                    primary.lineSpacingMode == LineSpacingMode.Between -> 0f
+                    else -> 1f
+                },
+                fractional = lines,
+                unit = if (lines) Units.None else Units.Points,
+                step = if (lines) 0.1f else 1f,
+            )
+        }
+        LabeledRow("Before Paragraph", enabled) {
+            NumberField(
+                label = "",
+                value = primary.paragraphSpacingBefore,
+                enabled = enabled,
+                onCommit = { points -> format { it.copy(paragraphSpacingBefore = points) } },
+                modifier = Modifier.width(104.dp),
+                minimum = 0f,
+            )
+        }
+        LabeledRow("After Paragraph", enabled) {
+            NumberField(
+                label = "",
+                value = primary.paragraphSpacingAfter,
+                enabled = enabled,
+                onCommit = { points -> format { it.copy(paragraphSpacingAfter = points) } },
+                modifier = Modifier.width(104.dp),
+                minimum = 0f,
+            )
+        }
     }
+    PanelDivider()
 
+    // The list style rides in the header whether or not the section is open,
+    // the way Keynote's does; the rest of the section is still to come.
     DisclosureSection(
         title = "Bullets & Lists",
         expanded = InspectorSection.Lists in expandedSections,
         onToggle = { onToggleSection(InspectorSection.Lists) },
         summary = {
-            ValueSummary(TextListStyles.first { (style, _) -> style == primary.listStyle }.second)
+            DropdownField(
+                label = "",
+                value = primary.listStyle,
+                options = ListStyles.map { list -> list to list.title },
+                enabled = enabled,
+                onPick = { list -> format { it.copy(listStyle = list) } },
+                modifier = Modifier.width(HeaderPopupWidth),
+                height = HeaderPopupHeight,
+            )
         },
-    ) {
-        DropdownField(
-            label = "List",
-            value = primary.listStyle,
-            options = TextListStyles,
-            enabled = enabled,
-            onPick = { style -> format { it.copy(listStyle = style) } },
-            modifier = Modifier.fillMaxWidth(),
-        )
+    ) {}
+}
+
+/**
+ * The card on top of the Text segment: the paragraph style the box is in, set
+ * in that style's own face and weight the way Keynote's is, over a menu of the
+ * slide's styles ([EditorState.paragraphStyles]). A pick puts the whole box in
+ * it.
+ *
+ * The name is set no bigger than [CardFontSize]: a title is a hundred points on
+ * the slide, and the card is there to say which face, not to be a slide.
+ */
+@Composable
+private fun ParagraphStyleCard(
+    styles: List<ParagraphStyle>,
+    current: PlaceholderRole?,
+    enabled: Boolean,
+    onPick: (PlaceholderRole) -> Unit,
+) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+    val shown: ParagraphStyle? = styles.firstOrNull { it.role == current } ?: styles.lastOrNull()
+    val look: TextElement? = shown?.look
+    val active: Boolean = enabled && styles.isNotEmpty()
+    var open: Boolean by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(tokens.rowBg)
+                .border(1.dp, tokens.outline, RoundedCornerShape(10.dp))
+                .clickable(enabled = active) { open = true }
+                .padding(start = 16.dp, end = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = shown?.name ?: PlaceholderRole.Body.name,
+                color = if (active) tokens.text else tokens.faint,
+                fontSize = minOf(look?.fontSize ?: CardFontSize, CardFontSize).sp,
+                fontFamily = look?.let { fontFamilyOf(it, LocalDeckFonts.current) },
+                fontWeight = look?.let { FontWeight(it.fontWeight.coerceIn(1, 1000)) },
+                fontStyle = if (look?.italic == true) FontStyle.Italic else FontStyle.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            PopupChevron(if (active) tokens.dim else tokens.faint)
+        }
+
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for (paragraph in styles) {
+                DropdownMenuItem(
+                    text = { Text(paragraph.name, fontSize = 13.sp) },
+                    leadingIcon = {
+                        Box(Modifier.width(14.dp)) {
+                            if (paragraph.role == shown?.role) Text("✓", color = tokens.accent, fontSize = 12.sp)
+                        }
+                    },
+                    onClick = {
+                        open = false
+                        onPick(paragraph.role)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The gear beside B / I / U / S: Keynote's advanced options, the character
+ * settings too rare to earn a row of the panel.
+ *
+ * Baseline, capitalisation and character spacing are the text's, through
+ * [onStyleText] like every other character control, and each reads [MULTIPLE]
+ * where the text disagrees. Ligatures are the box's alone, through [onFormat],
+ * read off [primary].
+ */
+@Composable
+private fun TextOptionsButton(
+    primary: TextElement,
+    style: TextRangeStyle,
+    enabled: Boolean,
+    onStyleText: (change: (TextRangeStyle) -> TextRun) -> Unit,
+    onFormat: ((TextElement) -> TextElement) -> Unit,
+) {
+    var open: Boolean by remember { mutableStateOf(false) }
+
+    Box {
+        SegmentedRow(Modifier.width(72.dp)) {
+            Segment(selected = open, first = true, onClick = if (enabled) ({ open = true }) else null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    GearGlyph(segmentTint(open, enabled))
+                    PopupChevron(segmentTint(open, enabled), Modifier.size(width = 7.dp, height = 4.dp))
+                }
+            }
+        }
+
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Column(
+                modifier = Modifier
+                    .width(260.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                LabeledRow("Baseline", enabled) {
+                    DropdownField(
+                        label = "",
+                        value = style.baseline,
+                        options = TextBaselines,
+                        enabled = enabled,
+                        onPick = { picked -> picked?.let { baseline -> onStyleText { TextRun(baseline = baseline) } } },
+                        modifier = Modifier.weight(1f),
+                        display = if (style.baseline == null) MULTIPLE else null,
+                    )
+                }
+                LabeledRow("Capitalisation", enabled) {
+                    DropdownField(
+                        label = "",
+                        value = style.capitalization,
+                        options = TextCapitalizations,
+                        enabled = enabled,
+                        onPick = { picked ->
+                            picked?.let { capitalization -> onStyleText { TextRun(capitalization = capitalization) } }
+                        },
+                        modifier = Modifier.weight(1f),
+                        display = if (style.capitalization == null) MULTIPLE else null,
+                    )
+                }
+                LabeledRow("Ligatures", enabled) {
+                    DropdownField(
+                        label = "",
+                        value = primary.ligatures,
+                        options = TextLigatures,
+                        enabled = enabled,
+                        onPick = { ligatures -> onFormat { it.copy(ligatures = ligatures) } },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                LabeledRow("Character Spacing", enabled) {
+                    NumberField(
+                        label = "",
+                        value = style.letterSpacing ?: primary.letterSpacing,
+                        enabled = enabled,
+                        onCommit = { points -> onStyleText { TextRun(letterSpacing = points) } },
+                        modifier = Modifier.width(104.dp),
+                        fractional = true,
+                        step = 0.5f,
+                        mixed = style.letterSpacing == null,
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -201,6 +201,7 @@ func formatEntries(_ host: EditorHost, enabled: Bool) -> [MenuEntry] {
         align("Align Left", TextAlign.start),
         align("Align Center", TextAlign.center),
         align("Align Right", TextAlign.end),
+        align("Justify", TextAlign.justify),
 
         .separator(),
 

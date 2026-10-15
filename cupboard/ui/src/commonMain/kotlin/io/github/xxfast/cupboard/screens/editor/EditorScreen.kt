@@ -74,6 +74,8 @@ import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
+import io.github.xxfast.cupboard.document.TextRangeStyle
+import io.github.xxfast.cupboard.document.TextRun
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -291,6 +293,8 @@ fun EditorScreen(
             onSetPlayback = viewModel::onSetPlayback,
             onSetElementLinks = viewModel::onSetElementLinks,
             onSetTextLink = viewModel::onSetTextLink,
+            onStyleText = viewModel::onStyleText,
+            onSetParagraphStyle = viewModel::onSetParagraphStyle,
             onPreviewGuide = viewModel::onPreviewGuide,
             onCommitGuide = viewModel::onCommitGuide,
             onRemoveGuide = viewModel::onRemoveGuide,
@@ -426,6 +430,9 @@ fun EditorView(
     onSetElementLinks: (ids: List<String>, target: LinkTarget?) -> Unit = { _, _ -> },
     /** Where a run of a text box's words points, null for nowhere. */
     onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit = { _, _, _, _ -> },
+    onStyleText: (change: (TextRangeStyle) -> TextRun) -> Unit = {},
+    /** The Text section's paragraph style card: puts the selection's text boxes in a style. */
+    onSetParagraphStyle: (PlaceholderRole) -> Unit = {},
     /** A guide drag on the canvas: its samples, its drop, the guide it throws
      * away off the slide, and its cancel. What the drag draws is
      * [EditorState.guideDrag], which these four feed. */
@@ -887,6 +894,11 @@ fun EditorView(
                         selectionLink = state.selectionLink,
                         textLinkRows = state.textLinkRows,
                         onSetTextLink = onSetTextLink,
+                        textStyle = state.inspectedTextStyle,
+                        onStyleText = onStyleText,
+                        paragraphStyles = state.paragraphStyles,
+                        inspectedParagraphStyle = state.inspectedParagraphStyle,
+                        onSetParagraphStyle = onSetParagraphStyle,
                         objectStyles = state.objectStyles,
                         onApplyObjectStyle = onApplyObjectStyle,
                         onSaveObjectStyle = onSaveObjectStyle,

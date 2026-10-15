@@ -1,20 +1,32 @@
 package io.github.xxfast.cupboard.export
 
+import io.github.xxfast.cupboard.document.BoldThreshold
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.LineSpacingMode
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.TextAlign
+import io.github.xxfast.cupboard.document.RegularWeight
+import io.github.xxfast.cupboard.document.TextBaseline
+import io.github.xxfast.cupboard.document.TextCapitalization
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextRun
+import io.github.xxfast.cupboard.document.VerticalAlign
+import io.github.xxfast.cupboard.document.capitalized
 import io.github.xxfast.cupboard.document.hidesNumberIn
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.isVisibleAt
+import io.github.xxfast.cupboard.document.lineHeightPoints
+import io.github.xxfast.cupboard.document.resolved
+import io.github.xxfast.cupboard.document.runsOver
 import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.stepCount
 import io.github.xxfast.cupboard.document.withFields
+import kotlin.math.roundToInt
 
 /**
  * The deck as a `.pptx`, best-effort and openly so.
@@ -284,29 +296,124 @@ private fun Element.xfrm(): String =
     "<a:xfrm><a:off x=\"${frame.x.toEmu()}\" y=\"${frame.y.toEmu()}\"/>" +
         "<a:ext cx=\"${frame.width.toEmu()}\" cy=\"${frame.height.toEmu()}\"/></a:xfrm>"
 
+/**
+ * A run's `<a:rPr>`, from [style] with every field filled in (`TextElement.resolved`).
+ *
+ * The casing PowerPoint has goes over as its own (`cap`), so the words stay as
+ * typed and an edit there cases the same way; title case has no `cap` of its
+ * own and goes over in the words instead (see [textBox]). A raised or dropped
+ * run keeps its size: PowerPoint shrinks it itself. Attributes left at
+ * PowerPoint's own default are left out.
+ */
+private fun runProperties(style: TextRun): String {
+    val bold: Boolean = (style.fontWeight ?: RegularWeight) >= BoldThreshold
+    val cap: String? = when (style.capitalization) {
+        TextCapitalization.AllCaps -> "all"
+        TextCapitalization.SmallCaps -> "small"
+        else -> null
+    }
+    val spacing: Int = ((style.letterSpacing ?: 0f) * TypeScale).roundToInt()
+    val baseline: String? = when (style.baseline) {
+        TextBaseline.Superscript -> SuperscriptOffset
+        TextBaseline.Subscript -> SubscriptOffset
+        else -> null
+    }
+    return """<a:rPr lang="en-US" sz="${((style.fontSize ?: 0f) * TypeScale).toInt()}"""" +
+        """ b="${if (bold) 1 else 0}" i="${if (style.italic == true) 1 else 0}"""" +
+        """ u="${if (style.underline == true) "sng" else "none"}"""" +
+        """ strike="${if (style.strikethrough == true) "sngStrike" else "noStrike"}"""" +
+        (cap?.let { """ cap="$it"""" } ?: "") +
+        (if (spacing != 0) """ spc="$spacing"""" else "") +
+        (baseline?.let { """ baseline="$it"""" } ?: "") +
+        ">" + fill(style.color ?: 0xFFFFFFFF) + "</a:rPr>"
+}
+
+/** How far a superscript run is raised, in thousandths of a percent of its size: PowerPoint's own. */
+private const val SuperscriptOffset: String = "30000"
+
+/** How far a subscript run is dropped, the same way. */
+private const val SubscriptOffset: String = "-25000"
+
+/**
+ * The box's line spacing as an `<a:lnSpc>`: a percentage for [LineSpacingMode.Lines]
+ * and points for the rest, at what the canvas draws ([lineHeightPoints]), since
+ * PowerPoint has no "at least" or "between" of its own.
+ *
+ * PowerPoint measures a percentage against its own single spacing, which is
+ * the face's line gap (about 1.2 of the size) rather than the size itself, so a
+ * box in [LineSpacingMode.Lines] reopens a touch looser there than it draws here.
+ */
+private fun TextElement.lineSpacing(): String {
+    val spacing: String = when (lineSpacingMode) {
+        LineSpacingMode.Lines -> """<a:spcPct val="${(lineHeight * 100_000).roundToInt()}"/>"""
+        LineSpacingMode.Exactly -> spacingPoints(lineHeight)
+        LineSpacingMode.AtLeast, LineSpacingMode.Between -> spacingPoints(lineHeightPoints())
+    }
+    return "<a:lnSpc>$spacing</a:lnSpc>"
+}
+
+/** [points] of spacing as DrawingML sets it, in hundredths of a point. */
+private fun spacingPoints(points: Float): String = """<a:spcPts val="${(points * TypeScale).roundToInt()}"/>"""
+
 private fun textBox(element: TextElement, id: Int): String = buildString {
     append("""<p:sp><p:nvSpPr><p:cNvPr id="$id" name="Text $id"/>""")
     append("""<p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>""")
     append("<p:spPr>${element.xfrm()}")
     append("""<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>""")
-    append("""<p:txBody><a:bodyPr wrap="square"><a:spAutoFit/></a:bodyPr><a:lstStyle/>""")
+
+    // A top-anchored box may grow to its text the way it does here; one
+    // anchored anywhere else keeps its frame, or growing would move its words.
+    val anchor: String = when (element.verticalAlign) {
+        VerticalAlign.Top -> "t"
+        VerticalAlign.Middle -> "ctr"
+        VerticalAlign.Bottom -> "b"
+    }
+    val fit: String = if (element.verticalAlign == VerticalAlign.Top) "<a:spAutoFit/>" else ""
+    append("""<p:txBody><a:bodyPr wrap="square" anchor="$anchor">$fit</a:bodyPr><a:lstStyle/>""")
 
     val align: String = when (element.align) {
         TextAlign.Start -> "l"
         TextAlign.Center -> "ctr"
         TextAlign.End -> "r"
+        TextAlign.Justify -> "just"
     }
-    val run: String = """<a:rPr lang="en-US" sz="${(element.fontSize * TypeScale).toInt()}"""" +
-        """ b="${if (element.isBold) 1 else 0}" i="${if (element.italic) 1 else 0}"""" +
-        """ u="${if (element.underline) "sng" else "none"}"""" +
-        """ strike="${if (element.strikethrough) "sngStrike" else "noStrike"}">""" +
-        fill(element.color) + "</a:rPr>"
 
-    // One run per line in the box's one style: the words go over, the range
-    // links (TextElement.links) on them don't, and neither does a whole-box link.
-    for (line in element.text.split("\n")) {
-        append("""<a:p><a:pPr algn="$align"/>""")
-        append("<a:r>$run<a:t>${line.xmlEscaped()}</a:t></a:r></a:p>")
+    // Title case has no `cap` in PowerPoint, so a run in it goes over cased.
+    // Cased over the whole text and cut after, so a word is told apart where it
+    // starts rather than where its run does.
+    val titled: String = element.text.capitalized(TextCapitalization.Title)
+    val lines: List<String> = element.text.split("\n")
+
+    // One paragraph per line and one run per stretch of it in one style
+    // (TextElement.runs), each set the way the box is with the run's own fields
+    // over it. The range links (TextElement.links) on the words don't go over,
+    // and neither does a whole-box link.
+    //
+    // The spacing goes on every paragraph in the schema's order (lnSpc, spcBef,
+    // spcAft), the space before left off the first and the space after off the
+    // last, which is where the canvas leaves them too.
+    var at = 0
+    for ((index, line) in lines.withIndex()) {
+        append("""<a:p><a:pPr algn="$align">""")
+        append(element.lineSpacing())
+        if (index > 0 && element.paragraphSpacingBefore != 0f) {
+            append("<a:spcBef>${spacingPoints(element.paragraphSpacingBefore)}</a:spcBef>")
+        }
+        if (index < lines.lastIndex && element.paragraphSpacingAfter != 0f) {
+            append("<a:spcAft>${spacingPoints(element.paragraphSpacingAfter)}</a:spcAft>")
+        }
+        append("</a:pPr>")
+
+        // An empty line is still one run long, so it keeps the box's size.
+        val pieces: List<TextRun> = element.runsOver(at, at + line.length).ifEmpty { listOf(TextRun(at, at)) }
+        for (piece in pieces) {
+            val drawn: TextRun = element.resolved(piece)
+            val source: String = if (drawn.capitalization == TextCapitalization.Title) titled else element.text
+            val words: String = source.substring(piece.start, piece.end)
+            append("<a:r>${runProperties(drawn)}<a:t>${words.xmlEscaped()}</a:t></a:r>")
+        }
+        append("</a:p>")
+        at += line.length + 1
     }
     append("</p:txBody></p:sp>")
 }

@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,13 +84,17 @@ import io.github.xxfast.cupboard.document.ImageFillMode
 import io.github.xxfast.cupboard.document.ShadowKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.VerticalAlign
 import io.github.xxfast.cupboard.document.dx
 import io.github.xxfast.cupboard.document.dy
 import io.github.xxfast.cupboard.document.palette
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * The inspector's shared controls: fields, buttons, segments, swatches, the
@@ -365,12 +370,21 @@ internal fun ValueSummary(text: String) {
 internal val LocalColourPalette: ProvidableCompositionLocal<ColourPalette> =
     compositionLocalOf { ElementDefaults().palette() }
 
+/**
+ * What a field reads while the text it speaks for disagrees with itself, Keynote's
+ * word for it: a selection with two sizes in it has no one size to show.
+ */
+internal const val MULTIPLE: String = "Multiple"
+
 /** What a well commits for "No Fill": nothing shows through a colour with no alpha. */
 internal const val NO_COLOUR: Long = 0x00000000
 
 /**
  * A colour as a well and its hex, side by side: the well for the theme's
  * swatches, the hex for anything off them. [label] is the hex field's.
+ *
+ * [mixed] is a selection in more than one colour: the hex reads [MULTIPLE] and
+ * the well shows [color], which is one of them.
  */
 @Composable
 internal fun ColourField(
@@ -382,6 +396,7 @@ internal fun ColourField(
     none: String? = null,
     isNone: Boolean = false,
     onNone: () -> Unit = {},
+    mixed: Boolean = false,
 ) {
     Row(
         modifier = modifier,
@@ -402,6 +417,7 @@ internal fun ColourField(
             enabled = enabled,
             onCommit = onPick,
             modifier = Modifier.weight(1f),
+            mixed = mixed,
         )
     }
 }
@@ -589,6 +605,8 @@ internal fun OutlinedField(
                 color = if (enabled) tokens.text else tokens.faint,
                 fontSize = if (monospace) 13.sp else 14.sp,
                 fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             if (trailing != null) {
@@ -599,10 +617,14 @@ internal fun OutlinedField(
     }
 }
 
-/** The floating label, sitting on the border and masking it with the panel. */
+/**
+ * The floating label, sitting on the border and masking it with the panel. An
+ * empty one is no label at all, for a field whose row already names it.
+ */
 @Composable
 private fun FieldLabel(label: String, enabled: Boolean) {
     val tokens: ChromeTokens = LocalChromeTokens.current
+    if (label.isEmpty()) return
 
     Text(
         text = label,
@@ -818,6 +840,10 @@ private fun StepperArrow(up: Boolean, enabled: Boolean, onClick: () -> Unit) {
  * than document units. [step] is what one click of the stepper is worth, and it
  * lands on [onCommit] exactly as a typed value would: one step is one edit, one
  * history entry and one autosave write.
+ *
+ * [mixed] is a selection with more than one value in it: the field reads
+ * [MULTIPLE], any number typed in commits, even [value], and the stepper steps
+ * from [value].
  */
 @Composable
 internal fun NumberField(
@@ -831,8 +857,13 @@ internal fun NumberField(
     fractional: Boolean = false,
     unit: String = Units.Points,
     step: Float = 1f,
+    mixed: Boolean = false,
 ) {
-    val display: String = if (fractional) value.asMultiplier() else value.asWholeNumber()
+    val display: String = when {
+        mixed -> ""
+        fractional -> value.asMultiplier()
+        else -> value.asWholeNumber()
+    }
 
     EntryField(
         label = label,
@@ -840,6 +871,7 @@ internal fun NumberField(
         enabled = enabled,
         modifier = modifier,
         unit = unit,
+        placeholder = if (mixed) MULTIPLE else "",
         trailing = {
             Stepper(
                 upEnabled = enabled && value < maximum,
@@ -852,14 +884,14 @@ internal fun NumberField(
         },
     ) { text ->
         val entered: Float? = text.trim().toFloatOrNull()?.coerceIn(minimum, maximum)
-        if (entered == null || entered == value) return@EntryField false
+        if (entered == null || (!mixed && entered == value)) return@EntryField false
 
         onCommit(entered)
         return@EntryField true
     }
 }
 
-/** An [EntryField] over a packed ARGB colour, typed as hex. */
+/** An [EntryField] over a packed ARGB colour, typed as hex. [mixed] as [NumberField] has it. */
 @Composable
 internal fun HexField(
     label: String,
@@ -867,15 +899,17 @@ internal fun HexField(
     enabled: Boolean,
     onCommit: (Long) -> Unit,
     modifier: Modifier = Modifier,
+    mixed: Boolean = false,
 ) {
     EntryField(
         label = label,
-        display = color.asHex(),
+        display = if (mixed) "" else color.asHex(),
         enabled = enabled,
         modifier = modifier,
+        placeholder = if (mixed) MULTIPLE else "",
     ) { text ->
         val entered: Long? = text.toArgbOrNull()
-        if (entered == null || entered == color) return@EntryField false
+        if (entered == null || (!mixed && entered == color)) return@EntryField false
 
         onCommit(entered)
         return@EntryField true
@@ -889,6 +923,9 @@ internal fun HexField(
  * [display] overrides what the field reads, for the one picker whose value says
  * more than the option it sits on: a custom slide size is picked as "Custom..."
  * but shown as the size it actually is.
+ *
+ * [height] is the field's own: a popup that rides in a section header is drawn
+ * as tall as the header rather than as tall as a field.
  */
 @Composable
 internal fun <T> DropdownField(
@@ -899,6 +936,7 @@ internal fun <T> DropdownField(
     onPick: (T) -> Unit,
     modifier: Modifier = Modifier,
     display: String? = null,
+    height: Dp = FieldHeight,
 ) {
     val tokens: ChromeTokens = LocalChromeTokens.current
     var open: Boolean by remember { mutableStateOf(false) }
@@ -908,6 +946,7 @@ internal fun <T> DropdownField(
             label = label,
             value = display ?: options.firstOrNull { (option, _) -> option == value }?.second.orEmpty(),
             trailing = "▾",
+            height = height,
             enabled = enabled,
             modifier = Modifier.clickable(enabled = enabled) { open = true },
         )
@@ -1235,6 +1274,150 @@ internal fun AlignGlyph(color: Color, variant: Int) {
                 strokeWidth = stroke,
             )
         }
+    }
+}
+
+/**
+ * The outdent and indent buttons' glyph: four rules pushed aside for a small
+ * triangle pointing the way the lines go, back to the margin for [outdent].
+ */
+@Composable
+internal fun IndentGlyph(color: Color, outdent: Boolean) {
+    Canvas(Modifier.size(width = 16.dp, height = 11.dp)) {
+        val s: Float = size.width / 16f
+        val stroke: Float = 1.3.dp.toPx()
+        val rules: ClosedFloatingPointRange<Float> = if (outdent) 0f..10f else 6f..16f
+        for (y in listOf(0.7f, 3.8f, 6.9f, 10f)) {
+            drawLine(
+                color = color,
+                start = Offset(rules.start * s, y * s),
+                end = Offset(rules.endInclusive * s, y * s),
+                strokeWidth = stroke,
+            )
+        }
+
+        val base: Float = if (outdent) 16f else 0f
+        val tip: Float = if (outdent) 12.5f else 3.5f
+        val triangle: Path = Path().apply {
+            moveTo(base * s, size.height / 2f - 2.5f * s)
+            lineTo(tip * s, size.height / 2f)
+            lineTo(base * s, size.height / 2f + 2.5f * s)
+            close()
+        }
+        drawPath(triangle, color)
+    }
+}
+
+/**
+ * Vertical alignment glyph: a bar where the text sits, top, middle or bottom,
+ * and arrows driving into it from the side the text comes from.
+ */
+@Composable
+internal fun VerticalAlignGlyph(color: Color, align: VerticalAlign) {
+    Canvas(Modifier.size(12.dp)) {
+        val s: Float = size.width / 12f
+        val stroke: Float = 1.3.dp.toPx()
+
+        fun line(x1: Float, y1: Float, x2: Float, y2: Float) = drawLine(
+            color = color,
+            start = Offset(x1 * s, y1 * s),
+            end = Offset(x2 * s, y2 * s),
+            strokeWidth = stroke,
+            cap = StrokeCap.Round,
+        )
+
+        // An arrow down the middle from [from] to the head at [to], pointing
+        // whichever way that is.
+        fun arrow(from: Float, to: Float) {
+            val back: Float = if (to > from) -2.5f else 2.5f
+            line(6f, from, 6f, to)
+            line(3.5f, to + back, 6f, to)
+            line(8.5f, to + back, 6f, to)
+        }
+
+        when (align) {
+            VerticalAlign.Top -> {
+                line(1f, 0.7f, 11f, 0.7f)
+                arrow(from = 11.5f, to = 3.2f)
+            }
+
+            VerticalAlign.Middle -> {
+                line(1f, 6f, 11f, 6f)
+                arrow(from = 0.3f, to = 4f)
+                arrow(from = 11.7f, to = 8f)
+            }
+
+            VerticalAlign.Bottom -> {
+                line(1f, 11.3f, 11f, 11.3f)
+                arrow(from = 0.5f, to = 8.8f)
+            }
+        }
+    }
+}
+
+/** The advanced-options button's gear: a toothed ring round a hole. */
+@Composable
+internal fun GearGlyph(color: Color) {
+    Canvas(Modifier.size(14.dp)) {
+        val radius: Float = size.minDimension / 2f
+        val ring: Float = radius * 0.62f
+        drawCircle(color = color, radius = ring, style = Stroke(1.5.dp.toPx()))
+        drawCircle(color = color, radius = radius * 0.22f, style = Stroke(1.2.dp.toPx()))
+        for (tooth in 0 until 8) {
+            val angle: Double = tooth * PI / 4
+            val direction = Offset(cos(angle).toFloat(), sin(angle).toFloat())
+            drawLine(
+                color = color,
+                start = center + direction * ring,
+                end = center + direction * radius,
+                strokeWidth = 2.2.dp.toPx(),
+            )
+        }
+    }
+}
+
+/**
+ * The chevron a popup wears at its trailing edge, pointing down at the menu it
+ * drops: the paragraph style card's, and the gear's.
+ */
+@Composable
+internal fun PopupChevron(color: Color, modifier: Modifier = Modifier.size(width = 12.dp, height = 7.dp)) {
+    Canvas(modifier) {
+        val chevron: Path = Path().apply {
+            moveTo(0f, size.height * 0.1f)
+            lineTo(size.width / 2f, size.height * 0.9f)
+            lineTo(size.width, size.height * 0.1f)
+        }
+        drawPath(
+            path = chevron,
+            color = color,
+            style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+    }
+}
+
+/**
+ * A label at the left and its control at the right, Keynote's shape for a
+ * setting that is one value: Character Styles, Text Colour, Before Paragraph.
+ * [content] sizes itself, and the label takes whatever it leaves.
+ */
+@Composable
+internal fun LabeledRow(label: String, enabled: Boolean, content: @Composable RowScope.() -> Unit) {
+    val tokens: ChromeTokens = LocalChromeTokens.current
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (enabled) tokens.text else tokens.faint,
+            fontSize = 13.sp,
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        content()
     }
 }
 

@@ -16,6 +16,7 @@ import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GuideAxis
 import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.LinkTarget
+import io.github.xxfast.cupboard.document.TextRun
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.Slide
@@ -146,6 +147,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.AddDeckFont
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RemoveDeckFont
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetTextLink
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.StyleTextRange
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetPlayback
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSlideSkipped
@@ -396,6 +398,7 @@ class EditorViewModel(
     fun onSetPlayback(settings: PlaybackSettings) { send(SetPlayback(settings)) }
     fun onSetElementLinks(ids: List<String>, target: LinkTarget?) { send(SetElementLinks(ids, target)) }
     fun onSetTextLink(elementId: String, start: Int, end: Int, target: LinkTarget?) { send(SetTextLink(elementId, start, end, target)) }
+    fun onStyleTextRange(elementId: String, start: Int, end: Int, style: TextRun) { send(StyleTextRange(elementId, start, end, style)) }
     fun onAddBuild(build: Build) { send(AddBuild(build)) }
     fun onAddElementSteps(elementId: String) { send(AddElementSteps(elementId)) }
     fun onUpdateBuild(index: Int, build: Build) { send(UpdateBuild(index, build)) }

@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard.canvas
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -33,9 +34,9 @@ internal fun deliveredText(
 ): AnnotatedString = deliveredText(AnnotatedString(body), offset, pieces, shown, alpha, color)
 
 /**
- * [deliveredText] over a body that is already styled (its range links): the
- * delivery goes on top, so a link still to come is as hidden as the words
- * around it.
+ * [deliveredText] over a body that is already styled (its styled runs and range
+ * links): the delivery goes on top, so a link still to come is as hidden as the
+ * words around it.
  */
 internal fun deliveredText(
     body: AnnotatedString,
@@ -57,7 +58,17 @@ internal fun deliveredText(
 
     if (newest == null) return@buildAnnotatedString
     val from: Int = (newest.first - offset).coerceIn(0, body.length)
-    if (from < tail) addStyle(SpanStyle(color = color.copy(alpha = color.alpha * alpha)), from, tail)
+    if (from >= tail) return@buildAnnotatedString
+    addStyle(SpanStyle(color = color.copy(alpha = color.alpha * alpha)), from, tail)
+
+    // Words with an ink of their own (a styled run's colour, a link's) fade in
+    // as themselves rather than as the box's colour and then snap to theirs.
+    for (span in body.spanStyles) {
+        val ink: Color = span.item.color.takeIf { it.isSpecified } ?: continue
+        val start: Int = maxOf(span.start, from)
+        val end: Int = minOf(span.end, tail)
+        if (start < end) addStyle(SpanStyle(color = ink.copy(alpha = ink.alpha * alpha)), start, end)
+    }
 }
 
 /**

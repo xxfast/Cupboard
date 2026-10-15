@@ -34,6 +34,7 @@ import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.LineStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
+import io.github.xxfast.cupboard.document.ParagraphStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.PlaybackSettings
 import io.github.xxfast.cupboard.document.Slide
@@ -41,6 +42,8 @@ import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TextLink
+import io.github.xxfast.cupboard.document.TextRangeStyle
+import io.github.xxfast.cupboard.document.TextRun
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.ZOrderMove
@@ -141,6 +144,14 @@ fun EditorInspector(
     selectionLink: TextLink?,
     textLinkRows: List<TextLinkRow>,
     onSetTextLink: (elementId: String, start: Int, end: Int, target: LinkTarget?) -> Unit,
+    /** The Text section's character styles: what the text shows, and where a change goes. */
+    textStyle: TextRangeStyle?,
+    onStyleText: (change: (TextRangeStyle) -> TextRun) -> Unit,
+    /** The Text section's paragraph style card: the slide's styles, the one the
+     * primary text box is in, and the verb that puts the selection in another. */
+    paragraphStyles: List<ParagraphStyle> = emptyList(),
+    inspectedParagraphStyle: PlaceholderRole? = null,
+    onSetParagraphStyle: (PlaceholderRole) -> Unit = {},
     /** The deck's saved shape looks: what the Style segment's strip offers. */
     objectStyles: List<ObjectStyle>,
     onApplyObjectStyle: (ids: List<String>, styleId: String) -> Unit,
@@ -297,6 +308,11 @@ fun EditorInspector(
                     selectionLink = selectionLink,
                     textLinkRows = textLinkRows,
                     onSetTextLink = onSetTextLink,
+                    textStyle = textStyle,
+                    onStyleText = onStyleText,
+                    paragraphStyles = paragraphStyles,
+                    inspectedParagraphStyle = inspectedParagraphStyle,
+                    onSetParagraphStyle = onSetParagraphStyle,
                     objectStyles = objectStyles,
                     onApplyObjectStyle = onApplyObjectStyle,
                     onSaveObjectStyle = onSaveObjectStyle,

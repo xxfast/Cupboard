@@ -23,17 +23,17 @@ import io.github.xxfast.cupboard.document.ZOrderMove.Forward
 import io.github.xxfast.cupboard.document.ZOrderMove.ToBack
 import io.github.xxfast.cupboard.document.ZOrderMove.ToFront
 import io.github.xxfast.cupboard.document.allSlides
+import io.github.xxfast.cupboard.document.boldToggled
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.diagramElement
 import io.github.xxfast.cupboard.document.equationElement
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.isCompoundShape
+import io.github.xxfast.cupboard.document.italicToggled
+import io.github.xxfast.cupboard.document.strikethroughToggled
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
-import io.github.xxfast.cupboard.document.toggleBold
-import io.github.xxfast.cupboard.document.toggleItalic
-import io.github.xxfast.cupboard.document.toggleStrikethrough
-import io.github.xxfast.cupboard.document.toggleUnderline
+import io.github.xxfast.cupboard.document.underlineToggled
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 
@@ -190,13 +190,14 @@ private fun alignItem(
 
 /**
  * The text verbs, separator by separator: the four style toggles, Add Link, the
- * three alignments, then the list styles.
+ * four alignments, then the list styles.
  *
- * Formatting is a property of the whole box, so these apply to the selection's
- * text elements and to nothing else in it: `formatText` drops the shapes, the
- * images and anything locked, and an empty result is an edit that changed
- * nothing, which is no event and no history entry. That is also why a caret
- * sitting in the text makes no difference to what any of these do.
+ * The four toggles go through `onStyleText`, so with words selected in the box
+ * being edited they style those words, and otherwise the whole of the
+ * selection's text boxes. The rest belong to a whole line, so they are always
+ * the box's. Either way only text elements take them: `formatText` drops the
+ * shapes, the images and anything locked, and an empty result is an edit that
+ * changed nothing, which is no event and no history entry.
  *
  * Nothing carries a checkmark. The state these would show is the primary box's,
  * which is a lie the moment two boxes disagree, and neither renderer has a mixed
@@ -214,14 +215,12 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
     return listOf(
         EditorMenuSection(
             listOf(
-                EditorMenuItem("Bold", formattable, onPick = format { it.toggleBold() }),
-                EditorMenuItem("Italic", formattable, onPick = format { it.toggleItalic() }),
-                EditorMenuItem("Underline", formattable, onPick = format { it.toggleUnderline() }),
-                EditorMenuItem(
-                    label = "Strikethrough",
-                    enabled = formattable,
-                    onPick = format { it.toggleStrikethrough() },
-                ),
+                EditorMenuItem("Bold", formattable) { viewModel.onStyleText { it.boldToggled() } },
+                EditorMenuItem("Italic", formattable) { viewModel.onStyleText { it.italicToggled() } },
+                EditorMenuItem("Underline", formattable) { viewModel.onStyleText { it.underlineToggled() } },
+                EditorMenuItem("Strikethrough", formattable) {
+                    viewModel.onStyleText { it.strikethroughToggled() }
+                },
             ),
         ),
         // A run of words rather than the whole box, so it reads the selection
@@ -240,6 +239,7 @@ fun formatSections(state: EditorState, viewModel: EditorViewModel): List<EditorM
                 TextAlign.Start to "Align Left",
                 TextAlign.Center to "Align Center",
                 TextAlign.End to "Align Right",
+                TextAlign.Justify to "Justify",
             ).map { (align, label) ->
                 EditorMenuItem(label, formattable, onPick = format { it.copy(align = align) })
             },

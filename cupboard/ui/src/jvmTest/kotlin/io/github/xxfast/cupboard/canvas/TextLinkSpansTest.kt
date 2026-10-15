@@ -38,8 +38,8 @@ class TextLinkSpansTest {
 
     @Test
     fun plainTextIsOneRunAndTheLinksPassStraightThrough() {
-        val runs: List<TextRun> = textRuns("Hello world", ListStyle.None)
-        assertEquals(listOf(TextRun(0, "Hello world")), runs)
+        val runs: List<DrawnRun> = drawnRuns("Hello world", ListStyle.None)
+        assertEquals(listOf(DrawnRun(0, "Hello world")), runs)
         assertEquals(listOf(LinkSpan(6, 11, home)), runs.single().spans(listOf(TextLink(6, 11, home))))
     }
 
@@ -47,8 +47,8 @@ class TextLinkSpansTest {
     fun aListsRunsDropTheirNestingTabsAndKeepTheirPlaceInTheText() {
         // "Alpha" at 0, "\tBeta" at 6 with its body at 7, "\t\tGamma" at 12 with
         // its body at 14.
-        val runs: List<TextRun> = textRuns("Alpha\n\tBeta\n\t\tGamma", ListStyle.Bullet)
-        assertEquals(listOf(TextRun(0, "Alpha"), TextRun(7, "Beta"), TextRun(14, "Gamma")), runs)
+        val runs: List<DrawnRun> = drawnRuns("Alpha\n\tBeta\n\t\tGamma", ListStyle.Bullet)
+        assertEquals(listOf(DrawnRun(0, "Alpha"), DrawnRun(7, "Beta"), DrawnRun(14, "Gamma")), runs)
         assertEquals(15, runs[2].textOffset(1))
     }
 
@@ -56,7 +56,7 @@ class TextLinkSpansTest {
     fun aLinkAcrossLinesIsCutToEachLinesBody() {
         // From "ha" through "Beta" and the tabs, into "Ga".
         val links: List<TextLink> = listOf(TextLink(3, 16, home))
-        val runs: List<TextRun> = textRuns("Alpha\n\tBeta\n\t\tGamma", ListStyle.Numbered)
+        val runs: List<DrawnRun> = drawnRuns("Alpha\n\tBeta\n\t\tGamma", ListStyle.Numbered)
         assertEquals(listOf(LinkSpan(3, 5, home)), runs[0].spans(links))
         assertEquals(listOf(LinkSpan(0, 4, home)), runs[1].spans(links))
         assertEquals(listOf(LinkSpan(0, 2, home)), runs[2].spans(links))
@@ -64,7 +64,7 @@ class TextLinkSpansTest {
 
     @Test
     fun aLinkOnlyOverANestingTabDrawsNothing() {
-        val runs: List<TextRun> = textRuns("Alpha\n\tBeta", ListStyle.Bullet)
+        val runs: List<DrawnRun> = drawnRuns("Alpha\n\tBeta", ListStyle.Bullet)
         assertEquals(emptyList(), runs[1].spans(listOf(TextLink(6, 7, home))))
     }
 
@@ -73,7 +73,7 @@ class TextLinkSpansTest {
         val text = "Alpha\n\tBeta"
         val element = box(text, ListStyle.Bullet, TextLink(7, 11, home))
         val transformed: TransformedText =
-            ListMarkerTransformation(ListStyle.Bullet, element.links, element.linkSpanStyle())
+            ListMarkerTransformation(ListStyle.Bullet, element.spanStyles(DeckFontFamilies.None))
                 .filter(AnnotatedString(text))
 
         val drawn: AnnotatedString = transformed.text
@@ -101,7 +101,8 @@ class TextLinkSpansTest {
         val coloured = box("Hello world", ListStyle.None).copy(color = 0xFF30A46C)
         val linked = coloured.copy(links = listOf(TextLink(0, 11, home)))
         assertFalse(pixels { ElementView(coloured) }.contentEquals(pixels { ElementView(linked) }))
-        assertEquals(androidx.compose.ui.graphics.Color.Unspecified, linked.linkSpanStyle().color)
+        val ink: androidx.compose.ui.graphics.Color = linked.spanStyles(DeckFontFamilies.None).single().item.color
+        assertEquals(androidx.compose.ui.graphics.Color(0xFF30A46C), ink)
     }
 
     @Test

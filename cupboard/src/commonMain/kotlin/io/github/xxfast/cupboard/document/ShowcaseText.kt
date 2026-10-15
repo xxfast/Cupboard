@@ -13,10 +13,13 @@ internal fun textSlides(): List<Slide> = listOf(
     textEmphasisSlide(),
     textSpacingSlide(),
     textAlignmentSlide(),
+    verticalAlignmentSlide(),
+    casingAndBaselineSlide(),
     textFontsSlide(),
     namedFontsSlide(),
     bulletListSlide(),
     numberedListSlide(),
+    listStylesSlide(),
     textColorsSlide(),
 )
 
@@ -185,8 +188,9 @@ private fun textAlignmentSlide(): Slide {
         subtitle = "every TextAlign, each inside a box that shows its full width",
         elements = boxes,
         notes = "Look for: Start hard against the left edge of its box, Center on the box's " +
-            "middle, End against the right edge. The three boxes are the same width, so " +
-            "the three lines must not start in the same place.",
+            "middle, End against the right edge. The boxes are the same width, so those " +
+            "three lines must not start in the same place. Justify sits at the start: a " +
+            "lone line is its paragraph's last, which justifying never stretches.",
     )
 }
 
@@ -329,6 +333,113 @@ private fun numberedListSlide(): Slide {
         notes = "Look for: 1. and 2. at the top level, a. and b. under the first, i. under " +
             "those, and the nested list under item 2. starting back at a. rather than " +
             "carrying on from b.",
+    )
+}
+
+/** Every [VerticalAlign], each box taller than its line so the line has somewhere to go. */
+private fun verticalAlignmentSlide(): Slide {
+    val boxes: List<Element> = VerticalAlign.entries.flatMapIndexed { index, align ->
+        val cell: Frame = gridCell(columns = VerticalAlign.entries.size, rows = 1, index = index)
+        listOf(
+            ShapeElement(
+                frame = cell.demoBox(),
+                fill = 0x14FFFFFF,
+                strokeColor = 0x33FFFFFF,
+                strokeWidth = 1f,
+                cornerRadius = 12f,
+            ),
+            TextElement(
+                frame = cell.demoBox(),
+                text = "VerticalAlign.$align",
+                fontSize = 40f,
+                align = TextAlign.Center,
+                verticalAlign = align,
+                color = ShowcaseDefaults.textColor,
+            ),
+            captionUnder(cell, "the box behind is the text box's own frame"),
+        )
+    }
+
+    return featureSlide(
+        title = "Vertical Alignment",
+        subtitle = "every VerticalAlign, in boxes much taller than their text",
+        elements = boxes,
+        notes = "Look for: Top against the top edge of its box, Middle on the box's middle, " +
+            "Bottom against the bottom edge. Open each for editing: the caret's line must " +
+            "not jump.",
+    )
+}
+
+/** Casing and baseline on whole boxes and on single words, and air between paragraphs. */
+private fun casingAndBaselineSlide(): Slide {
+    val tiles: List<Pair<String, TextElement>> = listOf(
+        "capitalization = AllCaps" to TextElement(
+            frame = Frame(0f, 0f, 0f, 0f),
+            text = ShortSpecimen,
+            capitalization = TextCapitalization.AllCaps,
+        ),
+        "capitalization = Title" to TextElement(
+            frame = Frame(0f, 0f, 0f, 0f),
+            text = ShortSpecimen.lowercase(),
+            capitalization = TextCapitalization.Title,
+        ),
+        "a run raised and a run dropped" to TextElement(
+            frame = Frame(0f, 0f, 0f, 0f),
+            text = "E = mc2 and H2O",
+            runs = listOf(
+                TextRun(6, 7, baseline = TextBaseline.Superscript),
+                TextRun(13, 14, baseline = TextBaseline.Subscript),
+            ),
+        ),
+        "paragraphSpacingBefore = 24" to TextElement(
+            frame = Frame(0f, 0f, 0f, 0f),
+            text = "First paragraph\nSecond, with air above it",
+            paragraphSpacingBefore = 24f,
+        ),
+    )
+    val elements: List<Element> = tiles.flatMapIndexed { index, (caption, tile) ->
+        val cell: Frame = gridCell(columns = 2, rows = 2, index = index)
+        listOf(
+            tile.copy(frame = cell.demoBox(), fontSize = 40f, color = ShowcaseDefaults.textColor),
+            captionUnder(cell, caption),
+        )
+    }
+
+    return featureSlide(
+        title = "Casing and Baseline",
+        subtitle = "capitalization and baseline, on the box and on a run; paragraph spacing",
+        elements = elements,
+        notes = "Look for: the first tile in capitals and the second with every word " +
+            "capitalised, though both were typed otherwise. The 2 of mc2 raised and smaller, " +
+            "the 2 of H2O dropped and smaller. The two paragraphs of the last tile further " +
+            "apart than two lines of one paragraph would be.",
+    )
+}
+
+/** The list styles past bullets and numbers: one marker each at every level. */
+private fun listStylesSlide(): Slide {
+    val styles: List<ListStyle> = ListStyle.entries - setOf(ListStyle.None, ListStyle.Bullet, ListStyle.Numbered)
+    val elements: List<Element> = styles.flatMapIndexed { index, style ->
+        val cell: Frame = gridCell(columns = 2, rows = (styles.size + 1) / 2, index = index)
+        listOf(
+            TextElement(
+                frame = cell.demoBox(),
+                text = "First\n\tNested\nSecond",
+                fontSize = 32f,
+                listStyle = style,
+                color = ShowcaseDefaults.bodyColor,
+            ),
+            captionUnder(cell, "ListStyle.$style"),
+        )
+    }
+
+    return featureSlide(
+        title = "List Styles",
+        subtitle = "every other ListStyle: one marker at every level, counted per level",
+        elements = elements,
+        notes = "Look for: an en dash on every Dash line; 1) 1) 2) for NumberedParenthesis; " +
+            "I. I. II. for UpperRoman; a. a. b. for LowerAlpha. The nested line restarts " +
+            "its count and is indented further than its parent.",
     )
 }
 

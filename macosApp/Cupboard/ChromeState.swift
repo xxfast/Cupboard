@@ -557,44 +557,106 @@ struct SlideProps: Equatable {
 }
 
 /// The primary selected element's text style as a Swift value: what the Text
-/// section of the Format panel shows. Read off the primary, written to the whole
+/// section of the Format panel shows. The character half is the words selected
+/// in the box being edited, else the whole box, and the setters write back to
+/// the same place; the paragraph half is the box's, written to the whole
 /// selection, the way every other Format control works.
+///
+/// Text that disagrees with itself shows Multiple: nil for the font, the weight
+/// and the character style, a flag beside the size, the colour, the casing, the
+/// baseline and the character spacing.
 ///
 /// `ListStyle` is spelled out: SwiftUI has one of its own, and the document
 /// model's is the one meant here.
 struct TextFormat {
-    /// What the font picker shows: the box's font name, or its generic family's.
-    let fontName: String
+    /// The paragraph style the top card names, "" where the slide offers none.
+    let paragraphStyle: String
+    let paragraphStyleNames: [String]
+    /// The face the card draws its name in: a family the system knows, nil for
+    /// a generic one, which `paragraphStyleFont` then is.
+    let paragraphStyleFontName: String?
+    let paragraphStyleFont: TextFont
+    let paragraphStyleWeight: Int
+    let paragraphStyleItalic: Bool
+    /// What the font picker shows: the font name, or its generic family's. Nil for Multiple.
+    let fontName: String?
     /// What the box draws in instead, when the face it names is neither in the
     /// deck nor on this Mac. Nil when it is there.
     let missingFontFallback: String?
-    /// The raw weight the popup marks. `isBold` is the same number read as a flag.
-    let weight: Int
+    /// The raw weight the popup marks, nil for Multiple. `isBold` is the same number read as a flag.
+    let weight: Int?
     let isBold: Bool
     let italic: Bool
     let underline: Bool
     let strikethrough: Bool
     let size: Double
+    let isSizeMixed: Bool
     /// Packed ARGB, the document model's colour format.
     let color: Int64
+    let isColorMixed: Bool
+    /// Nil for Multiple.
+    let characterStyle: CharacterStyle?
+    let capitalization: TextCapitalization
+    let isCapitalizationMixed: Bool
+    let baseline: TextBaseline
+    let isBaselineMixed: Bool
+    /// Points between every two characters.
+    let letterSpacing: Double
+    let isLetterSpacingMixed: Bool
+    let ligatures: Bool
     let align: TextAlign
-    /// A multiple of the font size, not points.
+    let verticalAlign: VerticalAlign
+    let lineSpacingMode: LineSpacingMode
+    /// A multiple of the font size in `LineSpacingMode.lines`, points otherwise.
     let lineHeight: Double
+    let lineSpacingModes: [LineSpacingMode]
+    let lineSpacingModeTitles: [String]
+    /// Points.
+    let spacingBefore: Double
+    let spacingAfter: Double
     let list: CupboardCanvas.ListStyle
+    let lists: [CupboardCanvas.ListStyle]
+    let listTitles: [String]
+    let canOutdent: Bool
 
     init(_ props: TextProps) {
+        paragraphStyle = props.paragraphStyle
+        paragraphStyleNames = props.paragraphStyleNames
+        paragraphStyleFontName = props.paragraphStyleFontName
+        paragraphStyleFont = props.paragraphStyleFont
+        paragraphStyleWeight = Int(props.paragraphStyleWeight)
+        paragraphStyleItalic = props.paragraphStyleItalic
         fontName = props.fontDisplayName
         missingFontFallback = props.missingFontFallback
-        weight = Int(props.weightValue)
+        weight = props.weightValue.map { Int($0.int32Value) }
         isBold = props.isBold
         italic = props.italic
         underline = props.underline
         strikethrough = props.strikethrough
         size = Double(props.size)
+        isSizeMixed = props.isSizeMixed
         color = props.color
+        isColorMixed = props.isColorMixed
+        characterStyle = props.characterStyle
+        capitalization = props.capitalization
+        isCapitalizationMixed = props.isCapitalizationMixed
+        baseline = props.baseline
+        isBaselineMixed = props.isBaselineMixed
+        letterSpacing = Double(props.letterSpacing)
+        isLetterSpacingMixed = props.isLetterSpacingMixed
+        ligatures = props.ligatures
         align = props.align
+        verticalAlign = props.verticalAlign
+        lineSpacingMode = props.lineSpacingMode
         lineHeight = Double(props.lineHeight)
+        lineSpacingModes = props.lineSpacingModes
+        lineSpacingModeTitles = props.lineSpacingModeTitles
+        spacingBefore = Double(props.paragraphSpacingBefore)
+        spacingAfter = Double(props.paragraphSpacingAfter)
         list = props.listStyle
+        lists = props.listStyles
+        listTitles = props.listStyleTitles
+        canOutdent = props.canOutdent
     }
 }
 

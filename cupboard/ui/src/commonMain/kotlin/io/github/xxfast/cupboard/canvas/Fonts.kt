@@ -14,9 +14,16 @@ import io.github.xxfast.cupboard.document.TextFont
  * of them. [deck] is [LocalDeckFonts] at the call site.
  */
 internal fun fontFamilyOf(element: TextElement, deck: DeckFontFamilies): FontFamily =
-    element.fontName
-        ?.let { name -> deck[name] ?: systemFontFamily(name) }
-        ?: fontFamilyOf(element.fontFamily)
+    fontFamilyOf(element.fontName, element.fontFamily, deck)
+
+/**
+ * The face a [name] and the [font] it falls back to draw in, by [fontFamilyOf]'s
+ * rule: what a styled run with a face of its own resolves through.
+ */
+internal fun fontFamilyOf(name: String?, font: TextFont, deck: DeckFontFamilies): FontFamily =
+    name
+        ?.let { deck[it] ?: systemFontFamily(it) }
+        ?: fontFamilyOf(font)
 
 /**
  * The face [font] draws in on this platform: the system's own face for a named

@@ -36,6 +36,12 @@ import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextLink
+import io.github.xxfast.cupboard.document.TextRangeStyle
+import io.github.xxfast.cupboard.document.ParagraphStyle
+import io.github.xxfast.cupboard.document.paragraphStyleIn
+import io.github.xxfast.cupboard.document.paragraphStyles
+import io.github.xxfast.cupboard.document.TextRun
+import io.github.xxfast.cupboard.document.styleOf
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.ZOrderMove
 import io.github.xxfast.cupboard.document.allSlides
@@ -449,7 +455,8 @@ data class EditorState(
      * Where the caret and its selection are in the text being edited, null with
      * no session open. The field's own, reported through
      * [EditorEvent.EditSelectionChanged] on every move; nothing here is drawn
-     * from it, it is only what the inspector asks about the link under the caret.
+     * from it, it is only what the inspector asks about the link under the caret
+     * and the words a style goes on ([styleSelection]).
      *
      * Transient for the same reason as [editingElementId].
      */
@@ -794,6 +801,47 @@ data class EditorState(
      * inspector keeps showing the link it was showing when the click on it
      * ended the session.
      */
+    /**
+     * The stretch of the box being edited that the Text inspector styles: the
+     * caret's live [textSelection], when it selects something. Null with a bare
+     * caret or no session open, and the inspector styles whole boxes then.
+     *
+     * The live one rather than [linkSelection], which outlives the session: a
+     * style goes on what is selected now, and a box clicked out of is a box
+     * styled whole.
+     */
+    val styleSelection: TextSelection? get() = textSelection
+        ?.takeIf { !it.isCollapsed && it.elementId == editingElementId }
+
+    /**
+     * What the Text inspector shows: [styleSelection]'s stretch of the box being
+     * edited, else the whole text of the primary text box, property by property
+     * and null for Multiple (see [TextRangeStyle]). Null when the primary
+     * element is no text box.
+     */
+    val inspectedTextStyle: TextRangeStyle? get() {
+        val selection: TextSelection? = styleSelection
+        val editing: TextElement? = editingElement as? TextElement
+        if (selection != null && editing != null) return editing.styleOf(selection.start, selection.end)
+
+        val primary: TextElement = primaryElement as? TextElement ?: return null
+        return primary.styleOf(0, primary.text.length)
+    }
+
+    /**
+     * The paragraph styles the Text inspector's top card offers for a box on the
+     * selected slide, Title then Body (see `paragraphStyles`).
+     */
+    val paragraphStyles: List<ParagraphStyle> get() = document.paragraphStyles(selectedSlide)
+
+    /**
+     * Which of [paragraphStyles] the primary text box is in, what the card
+     * shows: its role, else the style it matches, else Body (see
+     * `paragraphStyleIn`). Null when the primary element is no text box.
+     */
+    val inspectedParagraphStyle: PlaceholderRole? get() =
+        (primaryElement as? TextElement)?.paragraphStyleIn(paragraphStyles)
+
     val selectionLink: TextLink? get() {
         val element: TextElement = selectedTextElement ?: return null
         val selection: TextSelection = (textSelection ?: linkSelection)
@@ -1445,6 +1493,23 @@ sealed interface EditorEvent {
         val start: Int,
         val end: Int,
         val target: LinkTarget?,
+    ) : EditorEvent
+    /**
+     * Sets whatever [style] sets over `[start, end)` of text box [elementId]'s
+     * text and leaves the rest to the box: `styled`, so the runs there are split
+     * around it and merged where they come out alike. [style]'s own range is not
+     * read. One history entry, and one that changes nothing is none.
+     *
+     * Unlike [SetTextLink], it may land mid-edit: the typing so far is settled
+     * into an entry of its own first and the session stays open, so the caret,
+     * and the selection that was styled, are still there for the next control.
+     * A locked box refuses it.
+     */
+    data class StyleTextRange(
+        val elementId: String,
+        val start: Int,
+        val end: Int,
+        val style: TextRun,
     ) : EditorEvent
     /**
      * Appends a build to the selected slide's build order, which is where a new

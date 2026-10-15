@@ -27,14 +27,22 @@ import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
+import io.github.xxfast.cupboard.document.TextBaseline
+import io.github.xxfast.cupboard.document.TextCapitalization
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.TextRun
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.buildTimeline
+import io.github.xxfast.cupboard.document.capitalized
 import io.github.xxfast.cupboard.document.codeStepFor
 import io.github.xxfast.cupboard.document.highlightedLines
+import io.github.xxfast.cupboard.document.lineHeightPoints
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listMarkers
+import io.github.xxfast.cupboard.document.normalisedRuns
+import io.github.xxfast.cupboard.document.resolved
+import io.github.xxfast.cupboard.document.runsOver
 import io.github.xxfast.cupboard.document.sourceAt
 import io.github.xxfast.cupboard.document.stepCount
 import io.github.xxfast.cupboard.document.visibleLines
@@ -200,7 +208,7 @@ private fun SourceWriter.body(slide: Slide, element: Element) {
     }
 }
 
-private fun SourceWriter.text(element: TextElement) {
+private fun SourceWriter.text(box: TextElement) {
     import(
         "androidx.compose.foundation.layout.fillMaxWidth",
         "androidx.compose.material3.Text",
@@ -210,10 +218,39 @@ private fun SourceWriter.text(element: TextElement) {
         "androidx.compose.ui.unit.sp",
     )
 
-    // One plain string in one style: range links (TextElement.links) are left
-    // behind, and their words read the same without them.
+    // The words in the box's style, and where a run (TextElement.runs) sets
+    // its own, an AnnotatedString with that stretch styled the way the canvas
+    // styles it. Range links (TextElement.links) are left behind, and their
+    // words read the same without them.
+    //
+    // All caps and title case go over in the words, which is all they are on
+    // the canvas too, so the runs let go of their casing. A run raised or
+    // dropped goes over as a SpanStyle; the box's own baseline, small caps,
+    // ligatures and vertical alignment are left behind, since Text takes none
+    // of them as a parameter and the words read the same without them.
+    val unshifted: List<TextRun> = box.runs.map { run ->
+        run.copy(capitalization = null, baseline = run.baseline?.takeIf { it != TextBaseline.Normal })
+    }
+    val element: TextElement =
+        box.copy(text = box.casedText(), runs = normalisedRuns(unshifted, box.text.length))
+    val pieces: List<Pair<String, TextRun>> = element.displayPieces()
     block("Text(", ")") {
-        line("text = ${kotlinString(element.displayText())},")
+        if (pieces.all { (_, run) -> run.isPlain }) line("text = ${kotlinString(element.displayText())},")
+        else {
+            import(
+                "androidx.compose.ui.text.SpanStyle",
+                "androidx.compose.ui.text.buildAnnotatedString",
+                "androidx.compose.ui.text.withStyle",
+            )
+            block("text = buildAnnotatedString {", "},") {
+                for ((words, run) in pieces) {
+                    if (run.isPlain) line("append(${kotlinString(words)})")
+                    else block("withStyle(${spanStyle(element, run)}) {") {
+                        line("append(${kotlinString(words)})")
+                    }
+                }
+            }
+        }
         line("color = ${element.color.colorLiteral()}.argb(),")
         line("fontSize = ${element.fontSize.literal()}.sp,")
         if (element.fontWeight != 400) {
@@ -229,13 +266,108 @@ private fun SourceWriter.text(element: TextElement) {
             line("textDecoration = $decoration,")
         }
         line("textAlign = TextAlign.${element.align.compose()},")
-        line("lineHeight = ${(element.fontSize * element.lineHeight).literal()}.sp,")
+        line("lineHeight = ${element.drawnLineHeight().literal()}.sp,")
         if (element.letterSpacing != 0f) {
             line("letterSpacing = ${element.letterSpacing.literal()}.sp,")
         }
         line("fontFamily = FontFamily.${element.fontFamily.compose()},")
         line("modifier = Modifier.fillMaxWidth(),")
     }
+}
+
+/**
+ * [displayText] cut where its style changes, each piece with the run it is set
+ * in: a plain run for the box's own style, which a marker and the line breaks
+ * always are.
+ */
+private fun TextElement.displayPieces(): List<Pair<String, TextRun>> {
+    if (listStyle == ListStyle.None) {
+        return runsOver(0, text.length).map { piece -> text.substring(piece.start, piece.end) to piece }
+    }
+
+    val markers: List<String> = listMarkers(text, listStyle)
+    var at = 0
+    return text.split("\n").flatMapIndexed { index, line ->
+        val body: String = line.listBody()
+        val start: Int = at + line.length - body.length
+        at += line.length + 1
+
+        val marker: String = markers.getOrElse(index) { "" }
+        buildList {
+            if (index > 0) add("\n" to TextRun())
+            if (marker.isNotEmpty()) add("$marker " to TextRun())
+            for (piece in runsOver(start, start + body.length)) {
+                add(text.substring(piece.start, piece.end) to piece)
+            }
+        }
+    }
+}
+
+/**
+ * The SpanStyle a run draws in over the box's style: only what it sets, bar
+ * the decorations, which are one property between them and so are written
+ * whole once the run touches either.
+ */
+private fun SourceWriter.spanStyle(element: TextElement, run: TextRun): String {
+    val drawn: TextRun = element.resolved(run)
+    val fields: List<String> = buildList {
+        run.color?.let { add("color = ${it.colorLiteral()}.argb()") }
+        // A raised or dropped run draws smaller, the way the canvas draws it.
+        val size: Float? =
+            if (run.baseline != null) (drawn.fontSize ?: element.fontSize) * ShiftedBaselineScale
+            else run.fontSize
+        size?.let { add("fontSize = ${it.literal()}.sp") }
+        run.baseline?.let {
+            import("androidx.compose.ui.text.style.BaselineShift")
+            add("baselineShift = BaselineShift.${it.name}")
+        }
+        run.fontWeight?.let {
+            import("androidx.compose.ui.text.font.FontWeight")
+            add("fontWeight = FontWeight($it)")
+        }
+        run.italic?.let {
+            import("androidx.compose.ui.text.font.FontStyle")
+            add("fontStyle = FontStyle.${if (it) "Italic" else "Normal"}")
+        }
+        if (run.underline != null || run.strikethrough != null) {
+            import("androidx.compose.ui.text.style.TextDecoration")
+            val decoration: String? = decoration(drawn.underline == true, drawn.strikethrough == true)
+            add("textDecoration = ${decoration ?: "TextDecoration.None"}")
+        }
+        run.letterSpacing?.let { add("letterSpacing = ${it.literal()}.sp") }
+        if (run.setsFont) add("fontFamily = FontFamily.${(drawn.fontFamily ?: element.fontFamily).compose()}")
+    }
+    return "SpanStyle(${fields.joinToString(", ")})"
+}
+
+/** How much smaller a raised or dropped run draws: the canvas's `ShiftedBaselineScale`. */
+private const val ShiftedBaselineScale: Float = 2f / 3f
+
+/**
+ * [text] cased as the canvas draws it: by the box's casing, and by its own
+ * wherever a run names one. A character for a character, so the runs' offsets
+ * still hold over it.
+ */
+private fun TextElement.casedText(): String {
+    val drawn: CharArray = text.capitalized(capitalization).toCharArray()
+    for (run in runs) {
+        val casing: TextCapitalization = run.capitalization ?: continue
+        val from: Int = run.start.coerceIn(0, text.length)
+        val to: Int = run.end.coerceIn(from, text.length)
+        text.capitalized(casing).toCharArray().copyInto(drawn, from, from, to)
+    }
+    return drawn.concatToString()
+}
+
+/**
+ * How far apart the lines draw, the way the canvas spaces them: the box's
+ * spacing ([lineHeightPoints]), and its paragraph spacing in every line once
+ * there is more than one paragraph, since Compose has no space between
+ * paragraphs of its own.
+ */
+private fun TextElement.drawnLineHeight(): Float {
+    if ('\n' !in text) return lineHeightPoints()
+    return lineHeightPoints() + paragraphSpacingBefore + paragraphSpacingAfter
 }
 
 /** The text as it draws: each line behind its list marker, with the nesting tabs gone. */
@@ -248,7 +380,9 @@ private fun TextElement.displayText(): String {
     }.joinToString("\n")
 }
 
-private fun TextElement.decoration(): String? = when {
+private fun TextElement.decoration(): String? = decoration(underline, strikethrough)
+
+private fun decoration(underline: Boolean, strikethrough: Boolean): String? = when {
     underline && strikethrough ->
         "TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough))"
     underline -> "TextDecoration.Underline"
@@ -260,6 +394,7 @@ private fun TextAlign.compose(): String = when (this) {
     TextAlign.Start -> "Start"
     TextAlign.Center -> "Center"
     TextAlign.End -> "End"
+    TextAlign.Justify -> "Justify"
 }
 
 /** A named face exports as the generic family it falls back to: the exported project bundles no fonts. */

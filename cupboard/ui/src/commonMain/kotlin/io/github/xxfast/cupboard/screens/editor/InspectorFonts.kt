@@ -56,7 +56,7 @@ import androidx.compose.ui.window.PopupProperties
 import io.github.xxfast.cupboard.canvas.isFontAvailable
 import io.github.xxfast.cupboard.canvas.systemFontFamilies
 import io.github.xxfast.cupboard.document.DeckFont
-import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.TextRangeStyle
 import io.github.xxfast.cupboard.document.TextFont
 import io.github.xxfast.cupboard.document.fontDisplayName
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -80,7 +80,8 @@ private sealed interface FontRow {
 }
 
 /**
- * The Text section's font field: what the box is set in, and the list of
+ * The Text section's font field: what the text is set in ([style], the selected
+ * words or the whole box, [MULTIPLE] when they disagree), and the list of
  * everything it could be set in under it.
  *
  * The list is the deck's families, the three generic ones, then every family the
@@ -93,23 +94,25 @@ private sealed interface FontRow {
  * and a box still carrying the entry just reads as it.
  *
  * The open flag and the filter are view-local, like every other menu here: what
- * the user is typing into a list is no fact about the document.
+ * the user is typing into a list is no fact about the document. [label] is the
+ * field's floating one, empty under a header that already says Font.
  */
 @Composable
 internal fun FontPicker(
-    primary: TextElement,
+    style: TextRangeStyle,
     deckFamilies: List<String>,
     enabled: Boolean,
     onPickName: (String) -> Unit,
     onPickGeneric: (TextFont) -> Unit,
     onAddFontFile: (() -> Unit)?,
+    label: String = "Font",
 ) {
     var open: Boolean by remember { mutableStateOf(false) }
 
     Box {
         OutlinedField(
-            label = "Font",
-            value = primary.fontDisplayName,
+            label = label,
+            value = style.fontDisplayName ?: MULTIPLE,
             trailing = "▾",
             enabled = enabled,
             modifier = Modifier.fillMaxWidth().clickable(enabled = enabled) { open = true },
@@ -121,10 +124,11 @@ internal fun FontPicker(
             properties = PopupProperties(focusable = true),
         ) {
             FontMenu(
-                // The name a pick of a named face ticks: the box's own, else the
-                // system name of the entry it carries. The generic three have none.
-                tickedName = primary.fontName ?: primary.fontFamily.familyName,
-                tickedGeneric = primary.fontFamily.takeIf { primary.fontName == null },
+                // The name a pick of a named face ticks: the text's own, else the
+                // system name of the entry it carries. The generic three have
+                // none, and text in more than one face ticks nothing.
+                tickedName = style.fontName ?: style.fontFamily?.familyName,
+                tickedGeneric = style.fontFamily.takeIf { style.fontName == null },
                 deckFamilies = deckFamilies,
                 onPick = { row ->
                     open = false
@@ -332,15 +336,16 @@ private object BelowOrAbove : PopupPositionProvider {
  *
  * The fallback named is what actually draws: the box's [TextFont] entry where
  * the system has that face, its generic family otherwise. Nothing for a box set
- * by its entry alone, which always draws in something it names.
+ * by its entry alone, which always draws in something it names, and nothing
+ * for text in more than one face.
  */
 @Composable
-internal fun MissingFontNotice(primary: TextElement, deckFamilies: List<String>) {
-    val name: String = primary.fontName ?: return
+internal fun MissingFontNotice(style: TextRangeStyle, deckFamilies: List<String>) {
+    val name: String = style.fontName ?: return
     val available: Boolean = remember(name, deckFamilies) { isFontAvailable(name, deckFamilies) }
     if (available) return
 
-    val entry: TextFont = primary.fontFamily
+    val entry: TextFont = style.fontFamily ?: return
     val fallback: String = remember(entry) {
         val entryInstalled: Boolean = entry.familyName?.let { isFontAvailable(it, emptyList()) } ?: false
         if (entryInstalled) entry.displayName else entry.generic.displayName

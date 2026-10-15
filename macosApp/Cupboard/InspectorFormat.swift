@@ -560,13 +560,7 @@ extension EditorView {
         return VStack(alignment: .leading, spacing: 9) {
             Button { host.toggleInspectorSection(name: section) } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: open ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(palette.subtle)
-                        .frame(width: 10)
-                    Text(title ?? section)
-                        .font(.system(size: Inspect.text, weight: .semibold))
-                        .foregroundStyle(palette.inspectorTitle)
+                    disclosureTitle(title ?? section, open: open)
                     Spacer(minLength: 8)
                     summary()
                 }
@@ -576,6 +570,50 @@ extension EditorView {
             .buttonStyle(.plain)
 
             if open { body() }
+        }
+    }
+
+    /// A collapsible section whose header holds a control of its own rather
+    /// than a summary: Spacing's line popup, Bullets & Lists' list popup. The
+    /// control sits beside the toggle rather than inside it, so a click on it
+    /// opens its menu and leaves the section as it was.
+    func popupDisclosure<Control: View, Content: View>(
+        _ section: String,
+        _ ui: Chrome,
+        title: String? = nil,
+        @ViewBuilder control: () -> Control,
+        @ViewBuilder body: () -> Content
+    ) -> some View {
+        let open = ui.expandedSections.contains(section)
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Button { host.toggleInspectorSection(name: section) } label: {
+                    HStack(spacing: 8) {
+                        disclosureTitle(title ?? section, open: open)
+                        Spacer(minLength: 8)
+                    }
+                    .frame(height: Inspect.control)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                control()
+            }
+
+            if open { body() }
+        }
+    }
+
+    /// The chevron and the title, every disclosure header's left half.
+    func disclosureTitle(_ title: String, open: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: open ? "chevron.down" : "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.subtle)
+                .frame(width: 10)
+            Text(title)
+                .font(.system(size: Inspect.text, weight: .semibold))
+                .foregroundStyle(palette.inspectorTitle)
         }
     }
 

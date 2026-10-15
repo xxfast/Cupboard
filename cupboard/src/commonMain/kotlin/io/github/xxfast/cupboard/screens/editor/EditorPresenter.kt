@@ -22,6 +22,10 @@ import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.TextLink
+import io.github.xxfast.cupboard.document.TextRun
+import io.github.xxfast.cupboard.document.normalisedRuns
+import io.github.xxfast.cupboard.document.shiftedRuns
+import io.github.xxfast.cupboard.document.styled
 import io.github.xxfast.cupboard.document.normalisedLinks
 import io.github.xxfast.cupboard.document.normalized
 import io.github.xxfast.cupboard.document.shiftedLinks
@@ -219,6 +223,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SelectSlideAt
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetDocumentBackground
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementLinks
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetTextLink
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.StyleTextRange
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.EditSelectionChanged
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RenameElement
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetElementsHidden
@@ -408,28 +413,35 @@ private fun Element.linkedTo(target: LinkTarget?): Element? {
 private fun EditorState.withElements(elements: List<Element>): EditorState =
     copy(
         document = document.updateSlide(
-            selectedSlide.updateElements(elements.map { it.clampedMedia().anchoringLinks(element(it.id)) }),
+            selectedSlide.updateElements(elements.map { it.clampedMedia().anchoringSpans(element(it.id)) }),
         ),
     )
 
 /**
- * This text box's range links kept on the words they were put on, against
- * [stored], the box as the document holds it before this edit lands.
+ * This text box's range links and styled runs kept on the words they were put
+ * on, against [stored], the box as the document holds it before this edit lands.
  *
  * A box that comes in with [stored]'s links and other text is a text edit (a
  * keystroke, a paste, a placeholder filled in) from a shell that knows nothing
  * of ranges, so the links are carried across the edit by `shiftedLinks`. One
  * that comes in with links of its own has said where they go, and only has them
- * tidied. Here rather than in each reduction, because every edit that rewrites
- * a box's text lands through [withElements].
+ * tidied. The runs are judged the same way on their own, through `shiftedRuns`.
+ * Here rather than in each reduction, because every edit that rewrites a box's
+ * text lands through [withElements].
  */
-private fun Element.anchoringLinks(stored: Element?): Element {
+private fun Element.anchoringSpans(stored: Element?): Element {
     if (this !is TextElement) return this
-    if (stored is TextElement && stored.text != text && stored.links == links) {
-        return copy(links = shiftedLinks(stored.text, text, links))
-    }
-    val tidied: List<TextLink> = normalisedLinks(links, text.length)
-    return if (tidied == links) this else copy(links = tidied)
+
+    val edited: TextElement? = (stored as? TextElement)?.takeIf { it.text != text }
+    val anchoredLinks: List<TextLink> =
+        if (edited != null && edited.links == links) shiftedLinks(edited.text, text, links)
+        else normalisedLinks(links, text.length)
+    val anchoredRuns: List<TextRun> =
+        if (edited != null && edited.runs == runs) shiftedRuns(edited.text, text, runs)
+        else normalisedRuns(runs, text.length)
+
+    return if (anchoredLinks == links && anchoredRuns == runs) this
+    else copy(links = anchoredLinks, runs = anchoredRuns)
 }
 
 /**
@@ -747,6 +759,9 @@ private fun EditorEvent.isChrome(): Boolean = when (this) {
 private fun EditorEvent.keepsTextEditing(): Boolean = when (this) {
     is BeginTextEdit, EndTextEdit, is PreviewElements, CancelPreview, is EditSelectionChanged,
         -> true
+
+    // A style on the selected words, which the caret stays on for the next one.
+    is StyleTextRange -> true
 
     // An arrow that slipped past the shell: turned away below, never a reason
     // to close the caret it belongs to.
@@ -1588,6 +1603,23 @@ fun EditorPresenter(
                     undone.push(state.document)
                     redone.clear()
                     state.withElements(listOf(linked))
+                }
+                ?: state
+
+            // A style on part of a box may land mid-session, so the caret and
+            // the selection it styled outlive the click on the inspector. The
+            // typing so far is settled into an entry of its own first, and
+            // the style is the next one.
+            is StyleTextRange -> (state.unlockedElement(event.elementId) as? TextElement)
+                ?.let { element ->
+                    element.styled(event.start, event.end, event.style)
+                        .takeIf { it != element }
+                }
+                ?.let { styled ->
+                    val typed: EditorState = settled()
+                    undone.push(typed.document)
+                    redone.clear()
+                    typed.withElements(listOf(styled))
                 }
                 ?: state
 

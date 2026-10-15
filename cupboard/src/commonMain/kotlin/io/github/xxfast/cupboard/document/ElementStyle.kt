@@ -24,6 +24,10 @@ package io.github.xxfast.cupboard.document
  * slide must not move anything. A link is where the box points, which is what it
  * says rather than how it looks, however much of its look follows from it.
  *
+ * A text box's styled runs ([TextElement.runs]) stay behind on both sides: the
+ * source's are anchored to its own words, and the target's would go on
+ * overriding the style it was just handed, so it comes out one style throughout.
+ *
  * A shape's picture is its bytes the way an image's is, so it stays behind too:
  * the solid and the gradient under it take the source's, and show again the day
  * the picture goes.
@@ -47,6 +51,7 @@ fun Element.applyingStyle(source: Element): Element = when {
         underline = source.underline,
         strikethrough = source.strikethrough,
         listStyle = source.listStyle,
+        runs = emptyList(),
     )
 
     this is ShapeElement && source is ShapeElement -> copy(

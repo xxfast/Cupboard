@@ -102,15 +102,19 @@ fun magicMoveTransform(from: Element, to: Element, progress: Float): ElementTran
 
 /**
  * Where a travelling text's words sit in its box at [progress]: the from side's
- * alignment sliding to the to side's, as a bias, since the words themselves are
- * what the audience tracks and a box realigning under them in one frame reads as
- * a jump. Null for anything that is not text on both sides, or that keeps its
- * alignment, so the element draws where it always would.
+ * alignment sliding to the to side's, across and down, as a bias, since the
+ * words themselves are what the audience tracks and a box realigning under them
+ * in one frame reads as a jump. Null for anything that is not text on both
+ * sides, or that keeps its alignment, so the element draws where it always would.
  */
 fun travellingAlignment(from: Element, to: Element, progress: Float): Alignment? {
-    if (from !is TextElement || to !is TextElement || from.align == to.align) return null
-    val bias: Float = lerp(from.align.bias(), to.align.bias(), progress.coerceIn(0f, 1f))
-    return BiasAlignment(bias, -1f)
+    if (from !is TextElement || to !is TextElement) return null
+    if (from.align == to.align && from.verticalAlign == to.verticalAlign) return null
+
+    val fraction: Float = progress.coerceIn(0f, 1f)
+    val across: Float = lerp(from.align.bias(), to.align.bias(), fraction)
+    val down: Float = lerp(from.verticalAlign.bias(), to.verticalAlign.bias(), fraction)
+    return BiasAlignment(across, down)
 }
 
 /**

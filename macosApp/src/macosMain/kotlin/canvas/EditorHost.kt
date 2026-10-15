@@ -105,6 +105,26 @@ import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextFont
+import io.github.xxfast.cupboard.document.TextRangeStyle
+import io.github.xxfast.cupboard.document.TextRun
+import io.github.xxfast.cupboard.document.CharacterStyle
+import io.github.xxfast.cupboard.document.LineSpacingMode
+import io.github.xxfast.cupboard.document.ListStyles
+import io.github.xxfast.cupboard.document.ParagraphStyle
+import io.github.xxfast.cupboard.document.TextBaseline
+import io.github.xxfast.cupboard.document.TextCapitalization
+import io.github.xxfast.cupboard.document.VerticalAlign
+import io.github.xxfast.cupboard.document.canOutdent
+import io.github.xxfast.cupboard.document.characterStyle
+import io.github.xxfast.cupboard.document.indented
+import io.github.xxfast.cupboard.document.outdented
+import io.github.xxfast.cupboard.document.title
+import io.github.xxfast.cupboard.document.withCharacterStyle
+import io.github.xxfast.cupboard.document.withLineSpacingMode
+import io.github.xxfast.cupboard.document.boldToggled
+import io.github.xxfast.cupboard.document.italicToggled
+import io.github.xxfast.cupboard.document.strikethroughToggled
+import io.github.xxfast.cupboard.document.underlineToggled
 import io.github.xxfast.cupboard.document.TransitionDirection
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.TransitionTrigger
@@ -142,12 +162,8 @@ import io.github.xxfast.cupboard.document.formatNodeIds
 import io.github.xxfast.cupboard.document.formatText
 import io.github.xxfast.cupboard.document.galleryElement
 import io.github.xxfast.cupboard.document.imageElement
-import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.kindName
 import io.github.xxfast.cupboard.document.DeckFont
-import io.github.xxfast.cupboard.document.fontDisplayName
-import io.github.xxfast.cupboard.document.withFont
-import io.github.xxfast.cupboard.document.withGenericFont
 import io.github.xxfast.cupboard.screens.editor.addDeckFont
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.readsFields
@@ -168,14 +184,10 @@ import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.slideSizePreset
 import io.github.xxfast.cupboard.document.terminalElement
 import io.github.xxfast.cupboard.document.textBoxElement
-import io.github.xxfast.cupboard.document.toggleBold
 import io.github.xxfast.cupboard.document.withFillMode
 import io.github.xxfast.cupboard.document.withGradient
 import io.github.xxfast.cupboard.document.withImageFill
 import io.github.xxfast.cupboard.document.withSolidFill
-import io.github.xxfast.cupboard.document.toggleItalic
-import io.github.xxfast.cupboard.document.toggleStrikethrough
-import io.github.xxfast.cupboard.document.toggleUnderline
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.editor.EditorCanvas
@@ -196,6 +208,8 @@ import io.github.xxfast.cupboard.screens.editor.EditorPane
 import io.github.xxfast.cupboard.screens.editor.AnimateSegment
 import io.github.xxfast.cupboard.screens.editor.CanvasViewport
 import io.github.xxfast.cupboard.screens.editor.EditorState
+import io.github.xxfast.cupboard.screens.editor.onStyleText
+import io.github.xxfast.cupboard.screens.editor.onSetParagraphStyle
 import io.github.xxfast.cupboard.screens.editor.EditorViewModel
 import io.github.xxfast.cupboard.screens.editor.FlipAxis
 import io.github.xxfast.cupboard.screens.editor.FormatSegment
@@ -726,31 +740,80 @@ class ElementProps(
  * the same "what the panel shows" contract, for the controls that only a text
  * box has.
  *
- * The setters it feeds edit every unlocked text box in the selection, so a mixed
- * selection shows the primary's style and formats all of them.
+ * The character half is [EditorState.inspectedTextStyle]: the words selected in
+ * the box being edited, else the primary's whole text. Where that text disagrees
+ * with itself the panel shows Multiple: a null for the two menus, a flag for the
+ * two fields, which still need a number to step from and a colour to show. The
+ * four toggles read mixed as off. The paragraph half is the primary box's own.
+ *
+ * The setters it feeds style those selected words, or with none selected every
+ * unlocked text box in the selection, so a mixed selection shows the primary's
+ * style and formats all of them.
+ *
+ * The popups' picks travel with their titles, in the order the core lists them,
+ * so Swift never words a [ListStyle] or a [LineSpacingMode] of its own.
  */
 class TextProps(
-    /** What the font picker's face reads: the box's font name, or its [TextFont]'s. */
-    val fontDisplayName: String,
+    /** The paragraph style the top card names, "" where the slide offers none. */
+    val paragraphStyle: String,
+    /** Every paragraph style the card's menu offers, Title then Body. */
+    val paragraphStyleNames: List<String>,
     /**
-     * What the box is drawing in instead, when it asks for a face by name that
+     * The face the card draws [paragraphStyle] in: the name the system knows it
+     * by, null for a generic family, which [paragraphStyleFont] then is.
+     */
+    val paragraphStyleFontName: String?,
+    val paragraphStyleFont: TextFont,
+    val paragraphStyleWeight: Int,
+    val paragraphStyleItalic: Boolean,
+    /** What the font picker's face reads: the font name, or its [TextFont]'s. Null for Multiple. */
+    val fontDisplayName: String?,
+    /**
+     * What the text is drawing in instead, when it asks for a face by name that
      * neither the deck nor this Mac has. Null is a face that is there, which is
-     * also every box set in a [TextFont] alone.
+     * also all text set in a [TextFont] alone, and text in more than one face.
      */
     val missingFontFallback: String?,
-    /** The raw weight, for the popup. [isBold] is the same number read as a flag. */
-    val weightValue: Int,
+    /** The raw weight, for the popup, null for Multiple. [isBold] is the same number read as a flag. */
+    val weightValue: Int?,
     val isBold: Boolean,
     val italic: Boolean,
     val underline: Boolean,
     val strikethrough: Boolean,
+    /** The size, or the box's own when [isSizeMixed]. */
     val size: Float,
-    /** Packed ARGB, the document model's color format. */
+    val isSizeMixed: Boolean,
+    /** Packed ARGB, the document model's color format. The box's own when [isColorMixed]. */
     val color: Long,
+    val isColorMixed: Boolean,
+    /** Which of the four switches the text wears alone, null for Multiple (see `characterStyle`). */
+    val characterStyle: CharacterStyle?,
+    /** The casing, or the box's own when [isCapitalizationMixed]. */
+    val capitalization: TextCapitalization,
+    val isCapitalizationMixed: Boolean,
+    /** The baseline, or the box's own when [isBaselineMixed]. */
+    val baseline: TextBaseline,
+    val isBaselineMixed: Boolean,
+    /** Points between every two characters, or the box's own when [isLetterSpacingMixed]. */
+    val letterSpacing: Float,
+    val isLetterSpacingMixed: Boolean,
+    /** The box's alone, never a run's, so never Multiple. */
+    val ligatures: Boolean,
     val align: TextAlign,
-    /** A multiple of the font size, not points. */
+    val verticalAlign: VerticalAlign,
+    val lineSpacingMode: LineSpacingMode,
+    /** Read by [lineSpacingMode]: a multiple of the font size for Lines, points otherwise. */
     val lineHeight: Float,
+    val lineSpacingModes: List<LineSpacingMode>,
+    val lineSpacingModeTitles: List<String>,
+    /** Points of air above and below each paragraph. */
+    val paragraphSpacingBefore: Float,
+    val paragraphSpacingAfter: Float,
     val listStyle: ListStyle,
+    val listStyles: List<ListStyle>,
+    val listStyleTitles: List<String>,
+    /** Whether any line is nested, so the outdent button has something to do. */
+    val canOutdent: Boolean,
 )
 
 /**
@@ -3124,32 +3187,62 @@ class EditorHost(
 
     /**
      * The text style the Format inspector shows, null when the primary element
-     * is not a text box. Read off the primary alone; the setters below write to
-     * the whole selection.
+     * is not a text box. The character half is the core's
+     * [EditorState.inspectedTextStyle]; the paragraph half is the primary's.
      */
-    fun selectedText(): TextProps? = (state.primaryElement as? TextElement)?.let { text ->
-        TextProps(
-            fontDisplayName = text.fontDisplayName,
-            missingFontFallback = text.missingFontFallback(),
-            weightValue = text.fontWeight,
-            isBold = text.isBold,
-            italic = text.italic,
-            underline = text.underline,
-            strikethrough = text.strikethrough,
-            size = text.fontSize,
-            color = text.color,
+    fun selectedText(): TextProps? {
+        val text: TextElement = state.primaryElement as? TextElement ?: return null
+        val style: TextRangeStyle = state.inspectedTextStyle ?: return null
+        val styles: List<ParagraphStyle> = state.paragraphStyles
+        val paragraph: ParagraphStyle? = styles.firstOrNull { it.role == state.inspectedParagraphStyle }
+        val look: TextElement = paragraph?.look ?: text
+        return TextProps(
+            paragraphStyle = paragraph?.name ?: "",
+            paragraphStyleNames = styles.map { it.name },
+            paragraphStyleFontName = look.fontName ?: look.fontFamily.familyName,
+            paragraphStyleFont = look.fontFamily.generic,
+            paragraphStyleWeight = look.fontWeight,
+            paragraphStyleItalic = look.italic,
+            fontDisplayName = style.fontDisplayName,
+            missingFontFallback = style.missingFontFallback(),
+            weightValue = style.fontWeight,
+            isBold = style.isBold == true,
+            italic = style.italic == true,
+            underline = style.underline == true,
+            strikethrough = style.strikethrough == true,
+            size = style.fontSize ?: text.fontSize,
+            isSizeMixed = style.fontSize == null,
+            color = style.color ?: text.color,
+            isColorMixed = style.color == null,
+            characterStyle = style.characterStyle,
+            capitalization = style.capitalization ?: text.capitalization,
+            isCapitalizationMixed = style.capitalization == null,
+            baseline = style.baseline ?: text.baseline,
+            isBaselineMixed = style.baseline == null,
+            letterSpacing = style.letterSpacing ?: text.letterSpacing,
+            isLetterSpacingMixed = style.letterSpacing == null,
+            ligatures = text.ligatures,
             align = text.align,
+            verticalAlign = text.verticalAlign,
+            lineSpacingMode = text.lineSpacingMode,
             lineHeight = text.lineHeight,
+            lineSpacingModes = LineSpacingMode.entries,
+            lineSpacingModeTitles = LineSpacingMode.entries.map { it.title },
+            paragraphSpacingBefore = text.paragraphSpacingBefore,
+            paragraphSpacingAfter = text.paragraphSpacingAfter,
             listStyle = text.listStyle,
+            listStyles = ListStyles,
+            listStyleTitles = ListStyles.map { it.title },
+            canOutdent = text.canOutdent,
         )
     }
 
     /**
      * Whether the Format menu has anything to act on: one unlocked text box in
-     * the selection is enough, even one whose caret is up. Formatting is a
-     * property of the whole box, so it applies mid-edit the same as it does
-     * from the canvas, which is why this doesn't consult `isEditingText` the
-     * way the clipboard verbs do.
+     * the selection is enough, even one whose caret is up. Mid-edit the
+     * character verbs style the selected words, and with none selected, like
+     * the paragraph ones, the whole box, which is why this doesn't consult
+     * `isEditingText` the way the clipboard verbs do.
      */
     fun canFormatText(): Boolean =
         state.selectedElements.any { it is TextElement && !it.locked }
@@ -3160,23 +3253,24 @@ class EditorHost(
     /**
      * Set in the family [name], from the deck's own or the installed list. A
      * named [TextFont] picked out of the installed list lands here too, as a
-     * name, which is what the core's `withFont` wants.
+     * name, which is how a box or a run asks for any face by name.
      */
     fun setSelectedTextFontName(name: String) {
-        formatSelection { it.withFont(name) }
+        viewModel.onStyleText { TextRun(fontName = name) }
     }
 
     /** One of the generic families, Sans, Serif or Monospace. Clears any name. */
     fun setSelectedTextGenericFont(font: TextFont) {
-        formatSelection { it.withGenericFont(font) }
+        viewModel.onStyleText { TextRun(fontFamily = font) }
     }
 
-    /** What the box draws in when its name resolves nowhere, null when it resolves. */
-    private fun TextElement.missingFontFallback(): String? {
+    /** What the text draws in when its name resolves nowhere, null when it resolves or is mixed. */
+    private fun TextRangeStyle.missingFontFallback(): String? {
         val name: String = fontName ?: return null
+        val entry: TextFont = fontFamily ?: return null
         if (isFontAvailable(name, state.deckFontFamilies)) return null
-        val named: String? = fontFamily.familyName?.takeIf { isFontAvailable(it, emptyList()) }
-        return named ?: fontFamily.generic.displayName
+        val named: String? = entry.familyName?.takeIf { isFontAvailable(it, emptyList()) }
+        return named ?: entry.generic.displayName
     }
 
     /** The deck's families, once each and sorted: the font picker's first section. */
@@ -3207,50 +3301,137 @@ class EditorHost(
         viewModel.onRemoveDeckFont(assetId)
     }
 
+    // The character setters below go through the core's onStyleText: onto the
+    // selected words mid-edit, onto the whole of every text box otherwise.
+
     /** The raw weight the popup picked. Bold is a point on this scale, not a flag. */
     fun setSelectedTextWeight(weight: Int) {
-        formatSelection { it.copy(fontWeight = weight.coerceIn(100, 900)) }
+        viewModel.onStyleText { TextRun(fontWeight = weight.coerceIn(100, 900)) }
     }
 
     /** Floors at a point: text with no size has nothing left to click back into. */
     fun setSelectedTextSize(size: Float) {
-        formatSelection { it.copy(fontSize = size.coerceIn(1f, 400f)) }
+        viewModel.onStyleText { TextRun(fontSize = size.coerceIn(1f, 400f)) }
     }
 
     fun toggleSelectedTextBold() {
-        formatSelection { it.toggleBold() }
+        viewModel.onStyleText { it.boldToggled() }
     }
 
     fun toggleSelectedTextItalic() {
-        formatSelection { it.toggleItalic() }
+        viewModel.onStyleText { it.italicToggled() }
     }
 
     fun toggleSelectedTextUnderline() {
-        formatSelection { it.toggleUnderline() }
+        viewModel.onStyleText { it.underlineToggled() }
     }
 
     fun toggleSelectedTextStrikethrough() {
-        formatSelection { it.toggleStrikethrough() }
+        viewModel.onStyleText { it.strikethroughToggled() }
     }
 
     fun setSelectedTextColor(argb: Long) {
-        formatSelection { it.copy(color = argb) }
+        viewModel.onStyleText { TextRun(color = argb) }
+    }
+
+    /** One of the four switches alone, or with [CharacterStyle.None] all four off. */
+    fun setSelectedTextCharacterStyle(style: CharacterStyle) {
+        viewModel.onStyleText { it.withCharacterStyle(style) }
+    }
+
+    fun setSelectedTextCapitalization(capitalization: TextCapitalization) {
+        viewModel.onStyleText { TextRun(capitalization = capitalization) }
+    }
+
+    fun setSelectedTextBaseline(baseline: TextBaseline) {
+        viewModel.onStyleText { TextRun(baseline = baseline) }
+    }
+
+    /** Points, either way: a negative spacing draws the letters closer. */
+    fun setSelectedTextLetterSpacing(points: Float) {
+        viewModel.onStyleText { TextRun(letterSpacing = points.coerceIn(-100f, 100f)) }
+    }
+
+    // The paragraph setters below are the box's: every line of it, through
+    // formatSelection.
+
+    /** Whether the face may join the letters it has ligatures for. */
+    fun setSelectedTextLigatures(ligatures: Boolean) {
+        formatSelection { it.copy(ligatures = ligatures) }
     }
 
     fun setSelectedTextAlign(align: TextAlign) {
         formatSelection { it.copy(align = align) }
     }
 
-    /** A multiple of the font size. Floors where the lines stop being readable. */
+    fun setSelectedTextVerticalAlign(align: VerticalAlign) {
+        formatSelection { it.copy(verticalAlign = align) }
+    }
+
+    /** Every line one level deeper. */
+    fun indentSelectedText() {
+        formatSelection { it.indented() }
+    }
+
+    /** Every nested line one level back out; a box with none sends nothing. */
+    fun outdentSelectedText() {
+        formatSelection { it.outdented() }
+    }
+
+    /** The paragraph style at [index] in [TextProps.paragraphStyleNames], the whole box put in it. */
+    fun setSelectedTextParagraphStyle(index: Int) {
+        val style: ParagraphStyle = state.paragraphStyles.getOrNull(index) ?: return
+        viewModel.onSetParagraphStyle(style.role)
+    }
+
+    /**
+     * Spaced by [mode] from here on, each box's value worked over so its lines
+     * draw as tall as they did (see `withLineSpacingMode`).
+     */
+    fun setSelectedTextLineSpacingMode(mode: LineSpacingMode) {
+        formatSelection { it.withLineSpacingMode(mode) }
+    }
+
+    /**
+     * [lineHeight] in the primary's spacing mode, which is the one the field
+     * reads in: a box in another takes that mode with it, so the number means
+     * the same thing on all of them.
+     */
     fun setSelectedTextLineHeight(lineHeight: Float) {
-        formatSelection { it.copy(lineHeight = lineHeight.coerceIn(0.5f, 5f)) }
+        val primary: TextElement? = state.primaryElement as? TextElement
+        val mode: LineSpacingMode = primary?.lineSpacingMode ?: LineSpacingMode.Lines
+        spaceSelection(mode, lineHeight)
+    }
+
+    /** One of the Spacing header's presets, which are all in lines. */
+    fun setSelectedTextLines(lines: Float) {
+        spaceSelection(LineSpacingMode.Lines, lines)
+    }
+
+    // A multiple floors where the lines stop being readable; points floor at
+    // none at all, and Exactly at a point, where a line still draws.
+    private fun spaceSelection(mode: LineSpacingMode, value: Float) {
+        val held: Float = when (mode) {
+            LineSpacingMode.Lines -> value.coerceIn(0.5f, 5f)
+            LineSpacingMode.Exactly -> value.coerceIn(1f, 1000f)
+            LineSpacingMode.AtLeast, LineSpacingMode.Between -> value.coerceIn(0f, 1000f)
+        }
+        formatSelection { it.withLineSpacingMode(mode).copy(lineHeight = held) }
+    }
+
+    fun setSelectedTextParagraphSpacingBefore(points: Float) {
+        formatSelection { it.copy(paragraphSpacingBefore = points.coerceIn(0f, 1000f)) }
+    }
+
+    fun setSelectedTextParagraphSpacingAfter(points: Float) {
+        formatSelection { it.copy(paragraphSpacingAfter = points.coerceIn(0f, 1000f)) }
     }
 
     fun setSelectedTextList(style: ListStyle) {
         formatSelection { it.copy(listStyle = style) }
     }
 
-    // Every text setter goes through here: the core decides which of the
+    // Every paragraph setter goes through here: the core decides which of the
     // selection can take the change, and hands back only what actually moved.
     // Nothing back is nothing to commit, and so no history entry for a control
     // that was set to what it already said.

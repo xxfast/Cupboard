@@ -4,6 +4,7 @@ import androidx.compose.ui.BiasAlignment
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.VerticalAlign
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -53,6 +54,13 @@ class MagicMoveTest {
         assertEquals(BiasAlignment(0f, -1f), travellingAlignment(start, end, 0.5f))
         assertEquals(BiasAlignment(-1f, -1f), travellingAlignment(start, end, 0f))
         assertNull(travellingAlignment(start, start, 0.5f))
+    }
+
+    @Test
+    fun aRealignedTextSlidesItsWordsDownTheBox() {
+        val top: TextElement = to.copy(align = TextAlign.Start, verticalAlign = VerticalAlign.Top)
+        val bottom: TextElement = top.copy(verticalAlign = VerticalAlign.Bottom)
+        assertEquals(BiasAlignment(-1f, 0f), travellingAlignment(top, bottom, 0.5f))
     }
 
     @Test
