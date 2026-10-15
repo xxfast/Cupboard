@@ -15,10 +15,13 @@ import kotlinx.serialization.json.jsonObject
  * is a version 1 file. Version 2 is the first with a [LineElement], `"type":
  * "line"`, which an older build would reject as corrupt; the version turns that
  * into "update to open this" instead. Version 1 lines are shapes, and reading one
- * rewrites them (see [migrateLegacyLines]). See [Document.formatVersion] for when
- * to bump.
+ * rewrites them (see [migrateLegacyLines]). Version 3 stores a shadow as an
+ * offset along an angle with an opacity of its own, where version 2 stored a
+ * step and folded the opacity into the colour; an older build would read the
+ * new one as its default shadow, so reading a version 2 one rewrites it (see
+ * [migrateLegacyShadows]). See [Document.formatVersion] for when to bump.
  */
-const val CURRENT_FORMAT_VERSION: Int = 2
+const val CURRENT_FORMAT_VERSION: Int = 3
 
 val DocumentJson: Json = Json {
     prettyPrint = true
@@ -73,7 +76,9 @@ fun decodeDocument(json: String): DocumentLoad {
         // Migrated, the deck is a current one, and is stamped as such: saved
         // under its old number, the lines it now holds would reach an older
         // build that reads them as corrupt rather than as too new.
-        val migrated: JsonElement = migrateLegacyLines(root)
+        val lines: JsonElement = migrateLegacyLines(root)
+        val migrated: JsonElement =
+            if (version < SHADOW_ANGLE_VERSION) migrateLegacyShadows(lines) else lines
         val document: Document = DocumentJson.decodeFromJsonElement(Document.serializer(), migrated)
         DocumentLoad.Loaded(document.copy(formatVersion = CURRENT_FORMAT_VERSION))
     } catch (e: SerializationException) {
@@ -84,3 +89,6 @@ fun decodeDocument(json: String): DocumentLoad {
 }
 
 private const val FORMAT_VERSION_KEY: String = "formatVersion"
+
+/** The first version whose shadows are an offset along an angle rather than a step. */
+private const val SHADOW_ANGLE_VERSION: Int = 3

@@ -196,7 +196,7 @@ class TravellingElementTest {
             strokeWidth = 0f,
             labelColor = 0xFF000000,
             gradient = ShapeGradient(start = 0xFF000000, end = 0xFF000000, angle = 0f),
-            shadow = ShapeShadow(color = 0x00000000, blur = 0f, dx = 0f, dy = 0f),
+            shadow = ShapeShadow(color = 0x00000000, blur = 0f, offset = 0f, angle = 350f, opacity = 0f),
         )
         val b = ShapeElement(
             frame = to.frame,
@@ -205,7 +205,7 @@ class TravellingElementTest {
             strokeWidth = 4f,
             labelColor = 0xFFFFFFFF,
             gradient = ShapeGradient(start = 0xFFFFFFFF, end = 0xFFFFFFFF, angle = 180f),
-            shadow = ShapeShadow(color = 0xFF000000, blur = 10f, dx = 2f, dy = 8f),
+            shadow = ShapeShadow(color = 0xFF000000, blur = 10f, offset = 8f, angle = 30f, opacity = 1f),
         )
         val at: ShapeElement = b.travellingFrom(a, 0.5f) as ShapeElement
         assertEquals(0x80808080, at.fill)
@@ -213,7 +213,11 @@ class TravellingElementTest {
         assertEquals(2f, at.strokeWidth)
         assertEquals(0xFF808080, at.labelColor)
         assertEquals(ShapeGradient(start = 0xFF808080, end = 0xFF808080, angle = 90f), at.gradient)
-        assertEquals(ShapeShadow(color = 0x80000000, blur = 5f, dx = 1f, dy = 4f), at.shadow)
+        // The angle goes the short way round the dial, through 0 rather than 180.
+        assertEquals(
+            ShapeShadow(color = 0x80000000, blur = 5f, offset = 4f, angle = 10f, opacity = 0.5f),
+            at.shadow,
+        )
     }
 
     /** A flat fill has no gradient to blend against, so the arriving one is drawn as is. */

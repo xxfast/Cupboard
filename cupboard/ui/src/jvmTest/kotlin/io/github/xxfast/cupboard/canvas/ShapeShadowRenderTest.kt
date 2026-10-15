@@ -11,9 +11,13 @@ import androidx.compose.ui.unit.Density
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.LineElement
+import io.github.xxfast.cupboard.document.Point
+import io.github.xxfast.cupboard.document.ShadowKind
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.shadow
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Image
 import kotlin.test.Test
@@ -99,6 +103,67 @@ class ShapeShadowRenderTest {
 
         assertTrue(without.lastFilled() < box.x, "still off to the left")
         assertEquals(without.lastFilled(), with.lastFilled())
+    }
+
+    /** A drop shadow falls along its angle: at 0 it is off to the right and nowhere under. */
+    @Test
+    fun aDropShadowFallsAlongItsAngle() {
+        val right: ShapeElement =
+            plain.copy(shadow = ShapeShadow(color = 0xFFFFFFFF, blur = 0f, offset = 20f, angle = 0f))
+
+        val with: Bitmap = onSlide { ElementView(right) }
+        val without: Bitmap = onSlide { ElementView(plain) }
+
+        assertNotEquals(without.getColor(150, 100), with.getColor(150, 100), "to the right")
+        assertEquals(without.getColor(100, 150), with.getColor(100, 150), "underneath")
+    }
+
+    /** The dial is the slide's: a shape turned a quarter still drops its shadow straight down. */
+    @Test
+    fun aTurnedShapesShadowStillFallsDownTheSlide() {
+        val turned: ShapeElement = plain.copy(
+            rotation = 90f,
+            shadow = ShapeShadow(color = 0xFFFFFFFF, blur = 0f, offset = 20f, angle = 270f),
+        )
+
+        val with: Bitmap = onSlide { ElementView(turned) }
+        val without: Bitmap = onSlide { ElementView(plain.copy(rotation = 90f)) }
+
+        assertNotEquals(without.getColor(100, 150), with.getColor(100, 150), "underneath")
+        assertEquals(without.getColor(150, 100), with.getColor(150, 100), "to the right")
+        assertEquals(without.getColor(50, 100), with.getColor(50, 100), "to the left")
+    }
+
+    /** A contact shadow is the ellipse the shape stands on: under its base, not beside it. */
+    @Test
+    fun aContactShadowLiesUnderTheBase() {
+        val standing: ShapeElement =
+            plain.copy(shadow = ShadowKind.Contact.shadow(0xFFFFFFFF).copy(blur = 0f))
+
+        val with: Bitmap = onSlide { ElementView(standing) }
+        val without: Bitmap = onSlide { ElementView(plain) }
+
+        assertNotEquals(without.getColor(100, 144), with.getColor(100, 144), "under the base")
+        assertEquals(without.getColor(146, 100), with.getColor(146, 100), "beside it")
+    }
+
+    /** A line has no outline to fill, so it casts its stroke. */
+    @Test
+    fun aLineCastsItsStroke() {
+        val line = LineElement(
+            start = Point(60f, 100f),
+            end = Point(140f, 100f),
+            strokeColor = 0xFF3E63DD,
+            strokeWidth = 4f,
+        )
+        val cast: LineElement = line.copy(
+            shadow = ShapeShadow(color = 0xFFFFFFFF, blur = 0f, offset = 10f, angle = 270f),
+        )
+
+        val with: Bitmap = onSlide { ElementView(cast) }
+        val without: Bitmap = onSlide { ElementView(line) }
+
+        assertNotEquals(without.getColor(100, 110), with.getColor(100, 110))
     }
 
     /** The last column of the middle row the shape's fill reaches. */

@@ -62,6 +62,9 @@ struct Chrome {
     /// points popup offers: the enums' names in their order, Kotlin's to state.
     let strokeStyles: [String]
     let lineEnds: [String]
+    /// What the Shadow kind popup offers after No Shadow, Kotlin's names in
+    /// Keynote's order.
+    let shadowKinds: [String]
     /// The deck's saved shape looks, what the Shape section's style strip shows.
     /// The whole library whatever is selected: one of them may be marked as the
     /// one the primary shape is wearing, but none of them go away.
@@ -201,6 +204,7 @@ struct Chrome {
         line = host.selectedLine().map(LineFormat.init)
         strokeStyles = host.strokeStyleNames()
         lineEnds = host.lineEndNames()
+        shadowKinds = host.shadowKindNames()
         objectStyles = host.objectStyles().map(ObjectStyleChoice.init)
         lineStyles = host.lineStyles().map(LineStyleChoice.init)
         code = host.selectedCode().map(CodeFormat.init)
@@ -598,9 +602,10 @@ struct TextFormat {
 /// section of the Format panel shows. Read off the primary, written to the whole
 /// selection, like every other Format control.
 ///
-/// A shape with no gradient and no shadow still carries both sets of numbers:
-/// they are what turning one on would commit, so a segment or a checkbox never
-/// has to invent a colour. Same trick the slide background uses.
+/// A shape with no gradient still carries its stops: they are what turning one
+/// on would commit, so a segment never has to invent a colour. Same trick the
+/// slide background uses. A shadow needs none, since picking a kind brings its
+/// own defaults.
 struct ShapeFormat {
     /// What the shape is, the way the document model spells it.
     let kind: String
@@ -615,15 +620,16 @@ struct ShapeFormat {
     let gradientEnd: Int64
     /// CSS degrees: 0 points up and the angle turns clockwise.
     let gradientAngle: Double
+    /// Out from the centre rather than along the angle, which it then ignores.
+    let gradientRadial: Bool
     /// How the picture is laid in, a place in `imageFillModes`.
     let imageMode: Int
     let strokeColor: Int64
     let strokeWidth: Double
     /// How the border is dashed, one of `Chrome.strokeStyles`.
     let strokeStyle: String
-    let hasShadow: Bool
-    let shadowColor: Int64
-    let shadowBlur: Double
+    /// nil is No Shadow.
+    let shadow: ShadowFormat?
     /// "" is no label: the field has no null to spell, the way the link field has none.
     let label: String
     let labelSize: Double
@@ -645,13 +651,12 @@ struct ShapeFormat {
         gradientStart = props.gradientStart
         gradientEnd = props.gradientEnd
         gradientAngle = Double(props.gradientAngle)
+        gradientRadial = props.gradientRadial
         imageMode = Int(props.imageFillMode)
         strokeColor = props.strokeColor
         strokeWidth = Double(props.strokeWidth)
         strokeStyle = props.strokeStyle
-        hasShadow = props.hasShadow
-        shadowColor = props.shadowColor
-        shadowBlur = Double(props.shadowBlur)
+        shadow = props.shadow.map(ShadowFormat.init)
         label = props.label
         labelSize = Double(props.labelSize)
     }
@@ -678,9 +683,8 @@ struct LineFormat {
     let strokeStyle: String
     let startEnd: String
     let endEnd: String
-    let hasShadow: Bool
-    let shadowColor: Int64
-    let shadowBlur: Double
+    /// nil is No Shadow.
+    let shadow: ShadowFormat?
     let locked: Bool
 
     init(_ props: LineProps) {
@@ -695,10 +699,46 @@ struct LineFormat {
         strokeStyle = props.strokeStyle
         startEnd = props.startEnd
         endEnd = props.endEnd
-        hasShadow = props.hasShadow
-        shadowColor = props.shadowColor
-        shadowBlur = Double(props.shadowBlur)
+        shadow = props.shadow.map(ShadowFormat.init)
         locked = props.locked
+    }
+}
+
+/// A shape's or a line's shadow as a Swift value: what the Shadow section shows.
+/// Every dial whichever the kind reads, so the host's setter can be handed all
+/// of them with one changed.
+///
+/// The dials are `var` so the panel can hand the host a copy with one moved.
+/// The kind is Kotlin's name, one of `Chrome.shadowKinds`. The angle is
+/// Keynote's dial in degrees, 0 right, 90 up, 270 straight down; the opacity a
+/// fraction, the colour's alpha left at FF beside it.
+struct ShadowFormat {
+    let kind: String
+    /// Packed ARGB, the document model's colour format.
+    var color: Int64
+    var blur: Double
+    var offset: Double
+    var angle: Double
+    var opacity: Double
+    var perspective: Double
+    var curve: Double
+
+    init(_ props: ShadowProps) {
+        kind = props.kindName
+        color = props.color
+        blur = Double(props.blur)
+        offset = Double(props.offset)
+        angle = Double(props.angle)
+        opacity = Double(props.opacity)
+        perspective = Double(props.perspective)
+        curve = Double(props.curve)
+    }
+
+    /// The step the shadow falls by, a unit long, in SwiftUI's y-down space: what
+    /// a header swatch nudges its shadow along.
+    var direction: CGVector {
+        let radians = angle * .pi / 180
+        return CGVector(dx: cos(radians), dy: -sin(radians))
     }
 }
 

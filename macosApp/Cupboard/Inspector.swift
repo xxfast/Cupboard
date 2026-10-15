@@ -689,13 +689,24 @@ extension EditorView {
                         Spacer(minLength: 0)
                         colorWell("End", argb: shape.gradientEnd) { setGradient(shape, end: $0) }
                     }
+                    // Each kind keeps the other's numbers, so switching is the kind alone.
                     HStack(spacing: 8) {
-                        rowLabel("Angle")
+                        rowLabel("Type")
                         Spacer(minLength: 0)
-                        ValueField(label: "", value: shape.gradientAngle, palette: palette, unit: "\u{00B0}") {
-                            setGradient(shape, angle: $0)
+                        stylePopup(["Linear", "Radial"], selected: shape.gradientRadial ? 1 : 0) {
+                            host.setSelectedShapeGradientKind(radial: $0 == 1)
                         }
-                        .frame(width: 92)
+                        .frame(width: Inspect.field * 2 + 20)
+                    }
+                    if !shape.gradientRadial {
+                        HStack(spacing: 8) {
+                            rowLabel("Angle")
+                            Spacer(minLength: 0)
+                            ValueField(label: "", value: shape.gradientAngle, palette: palette, unit: "\u{00B0}") {
+                                setGradient(shape, angle: $0)
+                            }
+                            .frame(width: 92)
+                        }
                     }
                 case .color:
                     fillWell(shape)
@@ -800,59 +811,186 @@ extension EditorView {
     /// What a border picked off No Border comes back at: the shape's own default.
     static let defaultStrokeWidth: Double = 1.5
 
-    /// What the shape drops behind it. The checkbox is inside rather than on the
-    /// header: the header's job is to say whether there is one, which the
-    /// preview does without anything to click.
+    /// What the shape drops behind it. The header's swatch says whether there is
+    /// one and which way it falls, with nothing to click; the popup inside picks
+    /// the kind.
     func shadowSection(_ shape: ShapeFormat, _ ui: Chrome) -> some View {
         shadowControls(
             ui,
-            on: shape.hasShadow,
-            color: shape.shadowColor,
-            blur: shape.shadowBlur,
-            preview: shadowPreview(shape)
-        ) { host.setSelectedShapeShadow(enabled: $0, color: $1, blur: Float($2)) }
+            shadow: shape.shadow,
+            kinds: ui.shadowKinds,
+            preview: shadowPreview(shape),
+            live: { host.selectedShape()?.shadow.map(ShadowFormat.init) },
+            onKind: { host.setSelectedShapeShadowKind(name: $0) }
+        ) { shadow, commit in
+            host.setSelectedShapeShadow(
+                color: shadow.color,
+                blur: Float(shadow.blur),
+                offset: Float(shadow.offset),
+                angle: Float(shadow.angle),
+                opacity: Float(shadow.opacity),
+                perspective: Float(shadow.perspective),
+                curve: Float(shadow.curve),
+                commit: commit
+            )
+        }
     }
 
-    /// The Shadow section's body, a shape's or a line's alike: on or off, then
-    /// its colour and blur. [onSet] gets all three every time, the way the
-    /// host's setters take them.
+    /// The Shadow section's body, a shape's or a line's alike, Keynote's order:
+    /// the kind, that kind's dials, then the colour.
+    ///
+    /// No Shadow is "" to [onKind]; a new kind lands on Keynote's defaults for
+    /// it, which the host owns. [onSet] gets every dial with one moved, and
+    /// whether it commits: a slider under the thumb previews, its release and a
+    /// typed number commit. [live] reads the shadow back off the document, so a
+    /// release commits what the previews left rather than this pass's snapshot.
     func shadowControls<Preview: View>(
         _ ui: Chrome,
-        on: Bool,
-        color: Int64,
-        blur: Double,
+        shadow: ShadowFormat?,
+        kinds: [String],
         preview: Preview,
-        onSet: @escaping (Bool, Int64, Double) -> Void
+        live: @escaping () -> ShadowFormat?,
+        onKind: @escaping (String) -> Void,
+        onSet: @escaping (ShadowFormat, Bool) -> Void
     ) -> some View {
         disclosure("Shadow", ui) {
             preview
         } body: {
             VStack(alignment: .leading, spacing: 9) {
-                checkRow("Shadow", on: on) { onSet(!on, color, blur) }
+                let picked = shadow.flatMap { kinds.firstIndex(of: $0.kind) }.map { $0 + 1 } ?? 0
+                stylePopup(["No Shadow"] + kinds.map(Self.shadowKindTitle), selected: picked) { index in
+                    onKind(index == 0 ? "" : kinds[index - 1])
+                }
 
-                if on {
-                    HStack(spacing: 8) {
-                        colorWell(
-                            "Colour",
-                            argb: color,
-                            none: "No Shadow",
-                            onNone: { onSet(false, color, blur) }
-                        ) { onSet(true, $0, blur) }
-                        Spacer(minLength: 0)
-                        ValueField(
-                            label: "",
-                            value: blur,
-                            palette: palette,
-                            unit: "pt",
-                            minimum: 0
-                        ) { onSet(true, color, $0) }
-                        .frame(width: 92)
-                        .help("Blur")
+                if let shadow {
+                    shadowDials(shadow, live: live, onSet: onSet)
+
+                    // The well keeps the alpha at FF: the opacity is a dial of its own.
+                    colorWell(
+                        "Colour",
+                        argb: shadow.color,
+                        none: "No Shadow",
+                        onNone: { onKind("") }
+                    ) { argb in
+                        var edited = shadow
+                        edited.color = argb | Self.opaque
+                        onSet(edited, true)
                     }
                 }
             }
         }
     }
+
+    /// The dials one kind reads, in Keynote's order for it: a drop shadow's blur,
+    /// offset, opacity and angle; a contact shadow's perspective in the angle's
+    /// place; a curved shadow's curve in the blur's.
+    func shadowDials(
+        _ shadow: ShadowFormat,
+        live: @escaping () -> ShadowFormat?,
+        onSet: @escaping (ShadowFormat, Bool) -> Void
+    ) -> some View {
+        // One dial's value written into the rest, and read back off the document.
+        func dial(
+            _ label: String,
+            _ field: WritableKeyPath<ShadowFormat, Double>,
+            in range: ClosedRange<Double>,
+            unit: String,
+            scale: Double = 1,
+            snap: @escaping (Double) -> Double = { $0.rounded() }
+        ) -> some View {
+            shadowDial(
+                label,
+                value: shadow[keyPath: field],
+                in: range,
+                unit: unit,
+                scale: scale,
+                snap: snap,
+                live: { live()?[keyPath: field] }
+            ) { value, commit in
+                var edited = shadow
+                edited[keyPath: field] = value
+                onSet(edited, commit)
+            }
+        }
+
+        return Group {
+            if shadow.kind == "Curved" {
+                // Inwards to Outwards, with a detent at flat so the middle is
+                // somewhere a drag can land.
+                dial("Curve", \.curve, in: -1...1, unit: "%", scale: 100) { value in
+                    let hundredths = (value * 100).rounded() / 100
+                    return abs(hundredths) < Self.curveDetent ? 0 : hundredths
+                }
+            } else {
+                dial("Blur", \.blur, in: 0...Self.maxShadowBlur, unit: "pt")
+            }
+            dial("Offset", \.offset, in: 0...Self.maxShadowOffset, unit: "pt")
+            dial("Opacity", \.opacity, in: 0...1, unit: "%", scale: 100) { ($0 * 100).rounded() / 100 }
+            if shadow.kind == "Contact" {
+                dial("Perspective", \.perspective, in: 0...Self.maxShadowPerspective, unit: "\u{00B0}")
+            } else {
+                dial("Angle", \.angle, in: 0...360, unit: "\u{00B0}") { $0.rounded().truncatingRemainder(dividingBy: 360) }
+            }
+        }
+    }
+
+    /// One shadow dial: its name, then a slider across [range] and the stepper
+    /// beside it, the opacity section's pair. The drag previews through the
+    /// loop and the release commits what the previews left, read back through
+    /// [live], so the whole drag is one undo entry. The field commits as typed.
+    /// [scale] is what the field reads the value at: a hundred for a fraction
+    /// shown as a percentage.
+    func shadowDial(
+        _ label: String,
+        value: Double,
+        in range: ClosedRange<Double>,
+        unit: String,
+        scale: Double,
+        snap: @escaping (Double) -> Double,
+        live: @escaping () -> Double?,
+        onSet: @escaping (Double, Bool) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            rowLabel(label)
+
+            HStack(spacing: 8) {
+                Slider(
+                    value: Binding(get: { value }, set: { onSet(snap($0), false) }),
+                    in: range,
+                    onEditingChanged: { editing in
+                        guard !editing, let latest = live() else { return }
+                        onSet(latest, true)
+                    }
+                )
+                .controlSize(.small)
+                .tint(palette.accent)
+
+                ValueField(
+                    label: "",
+                    value: (value * scale).rounded(),
+                    palette: palette,
+                    unit: unit,
+                    minimum: range.lowerBound * scale,
+                    maximum: range.upperBound * scale
+                ) { onSet($0 / scale, true) }
+                .frame(width: Inspect.field + Inspect.stepper + 5)
+            }
+        }
+    }
+
+    /// What the kind popup reads for one of Kotlin's names.
+    static func shadowKindTitle(_ kind: String) -> String { "\(kind) Shadow" }
+
+    /// The alpha the colour well keeps.
+    static let opaque: Int64 = 0xFF00_0000
+
+    /// Where the dials stop, Keynote's.
+    static let maxShadowBlur: Double = 100
+    static let maxShadowOffset: Double = 100
+    static let maxShadowPerspective: Double = 45
+
+    /// How near flat a curve snaps to flat.
+    static let curveDetent: Double = 0.05
 
     // MARK: Line
 
@@ -865,13 +1003,27 @@ extension EditorView {
 
             palette.divider.frame(height: 1)
 
+            // A line has no base to stand on and no bottom edge to bow, so it
+            // casts its stroke and nothing else: Drop Shadow is the one kind.
             shadowControls(
                 ui,
-                on: line.hasShadow,
-                color: line.shadowColor,
-                blur: line.shadowBlur,
-                preview: lineShadowPreview(line)
-            ) { host.setSelectedLineShadow(enabled: $0, color: $1, blur: Float($2)) }
+                shadow: line.shadow,
+                kinds: Array(ui.shadowKinds.prefix(1)),
+                preview: lineShadowPreview(line),
+                live: { host.selectedLine()?.shadow.map(ShadowFormat.init) },
+                onKind: { host.setSelectedLineShadowKind(name: $0) }
+            ) { shadow, commit in
+                host.setSelectedLineShadow(
+                    color: shadow.color,
+                    blur: Float(shadow.blur),
+                    offset: Float(shadow.offset),
+                    angle: Float(shadow.angle),
+                    opacity: Float(shadow.opacity),
+                    perspective: Float(shadow.perspective),
+                    curve: Float(shadow.curve),
+                    commit: commit
+                )
+            }
         }
     }
 

@@ -267,7 +267,7 @@ private fun verdict(id: String, name: String, stroke: Long): ObjectStyle = Objec
     fill = White,
     strokeColor = stroke,
     strokeWidth = 4f,
-    shadow = ShapeShadow(color = 0x6B000000, blur = 11f, dy = 2f),
+    shadow = ShapeShadow(blur = 11f, offset = 2f, opacity = 0.42f),
     cornerRadius = 20f,
 )
 
@@ -286,7 +286,7 @@ private val Mist: SlideBackground = SlideBackground.Gradient(start = White, end 
 private val Pink: SlideBackground = SlideBackground.Color(0xFFDC4065)
 
 /** An island: Keynote's drop shadow at 11% black, blur 22, 2 down. */
-private val IslandShadow: ShapeShadow = ShapeShadow(color = 0x1B000000, blur = 22f, dy = 2f)
+private val IslandShadow: ShapeShadow = ShapeShadow(blur = 22f, offset = 2f, opacity = 0.11f)
 
 private const val IslandRadius: Float = 34f
 private const val TabRadius: Float = 24f

@@ -69,6 +69,7 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GalleryImage
+import io.github.xxfast.cupboard.document.GradientKind
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageAdjust
 import io.github.xxfast.cupboard.document.ImageElement
@@ -82,6 +83,7 @@ import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.ObjectStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
+import io.github.xxfast.cupboard.document.ShadowKind
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeFillKind
 import io.github.xxfast.cupboard.document.ShapeGradient
@@ -123,11 +125,13 @@ import io.github.xxfast.cupboard.document.withFont
 import io.github.xxfast.cupboard.document.withGenericFont
 import io.github.xxfast.cupboard.document.withGradient
 import io.github.xxfast.cupboard.document.withImageFill
+import io.github.xxfast.cupboard.document.withKind
 import io.github.xxfast.cupboard.document.withSolidFill
 import io.github.xxfast.cupboard.editor.AlignEdge
 import io.github.xxfast.cupboard.editor.Axis
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -397,6 +401,7 @@ private fun StyleBody(
             primary = primary,
             elements = elements,
             onUpdate = onUpdate,
+            onPreview = onPreview,
             expandedSections = expandedSections,
             onToggleSection = onToggleSection,
             onChooseImage = onChooseImage,
@@ -406,6 +411,7 @@ private fun StyleBody(
             primary = primary,
             elements = elements,
             onUpdate = onUpdate,
+            onPreview = onPreview,
             expandedSections = expandedSections,
             onToggleSection = onToggleSection,
         )
@@ -472,6 +478,7 @@ private fun ShapeStyleBody(
     primary: ShapeElement,
     elements: List<Element>,
     onUpdate: (List<Element>) -> Unit,
+    onPreview: (List<Element>) -> Unit,
     expandedSections: Set<InspectorSection>,
     onToggleSection: (InspectorSection) -> Unit,
     onChooseImage: ((onChosen: (assetId: String) -> Unit) -> Unit)?,
@@ -490,6 +497,22 @@ private fun ShapeStyleBody(
 
         onUpdate(formatted)
         return true
+    }
+
+    fun preview(transform: (ShapeElement) -> ShapeElement) {
+        val formatted: List<Element> = elements.formatShapes(transform)
+        if (formatted.isNotEmpty()) onPreview(formatted)
+    }
+
+    // The release commits what the drag left even where the last sample already
+    // put it there, which [format] would read as nothing to do: the previews are
+    // not history until an update says so.
+    fun release(transform: (ShapeElement) -> ShapeElement) {
+        val released: List<Element> = elements
+            .filterIsInstance<ShapeElement>()
+            .filterNot { it.locked }
+            .map(transform)
+        if (released.isNotEmpty()) onUpdate(released)
     }
 
     DisclosureSection(
@@ -584,7 +607,22 @@ private fun ShapeStyleBody(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                NumberField(
+                // Each kind keeps the other's numbers, so switching is the kind alone.
+                SegmentedRow(Modifier.fillMaxWidth()) {
+                    GRADIENT_KINDS.forEachIndexed { at, (kind, title) ->
+                        val selected: Boolean = gradient.kind == kind
+                        Segment(
+                            selected = selected,
+                            first = at == 0,
+                            onClick = if (enabled) ({
+                                format { it.copy(gradient = it.gradient?.copy(kind = kind)) }
+                            }) else null,
+                        ) {
+                            SegmentLabel(title, selected = selected, enabled = enabled)
+                        }
+                    }
+                }
+                if (gradient.kind == GradientKind.Linear) NumberField(
                     label = "Angle",
                     value = gradient.angle,
                     enabled = enabled,
@@ -654,37 +692,14 @@ private fun ShapeStyleBody(
         onToggle = { onToggleSection(InspectorSection.Shadow) },
         summary = { ShadowSummary(shadow) },
     ) {
-        // Off is no shadow at all rather than a transparent one, so switching it
-        // back on lands on the document's own default every time.
-        AppearanceRow(
-            label = "Shadow",
-            checked = shadow != null,
-            onToggle = if (!enabled) null else ({ on ->
-                format { it.copy(shadow = if (on) ShapeShadow() else null) }
-            }),
+        ShadowControls(
+            shadow = shadow,
+            kinds = SHAPE_SHADOW_KINDS,
+            enabled = enabled,
+            onSet = { edit -> format { it.copy(shadow = edit(it.shadow)) } },
+            onDrag = { edit -> preview { it.copy(shadow = it.shadow?.let(edit)) } },
+            onRelease = { edit -> release { it.copy(shadow = it.shadow?.let(edit)) } },
         )
-        if (shadow != null) Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            ColourField(
-                label = "Color",
-                color = shadow.color,
-                enabled = enabled,
-                onPick = { color -> format { it.copy(shadow = it.shadow?.copy(color = color)) } },
-                modifier = Modifier.weight(1f),
-                none = "No Shadow",
-                onNone = { format { it.copy(shadow = null) } },
-            )
-            NumberField(
-                label = "Blur",
-                value = shadow.blur,
-                enabled = enabled,
-                onCommit = { blur -> format { it.copy(shadow = it.shadow?.copy(blur = blur)) } },
-                modifier = Modifier.width(104.dp),
-                minimum = 0f,
-            )
-        }
     }
 
     if (primary.kind == ShapeKind.Rectangle) NumberField(
@@ -709,6 +724,7 @@ private fun LineStyleBody(
     primary: LineElement,
     elements: List<Element>,
     onUpdate: (List<Element>) -> Unit,
+    onPreview: (List<Element>) -> Unit,
     expandedSections: Set<InspectorSection>,
     onToggleSection: (InspectorSection) -> Unit,
 ) {
@@ -721,6 +737,21 @@ private fun LineStyleBody(
 
         onUpdate(formatted)
         return true
+    }
+
+    fun preview(transform: (LineElement) -> LineElement) {
+        val formatted: List<Element> = elements.formatLines(transform)
+        if (formatted.isNotEmpty()) onPreview(formatted)
+    }
+
+    // [ShapeStyleBody]'s release: what the drag left, committed whether or not
+    // the last sample already put it there.
+    fun release(transform: (LineElement) -> LineElement) {
+        val released: List<Element> = elements
+            .filterIsInstance<LineElement>()
+            .filterNot { it.locked }
+            .map(transform)
+        if (released.isNotEmpty()) onUpdate(released)
     }
 
     DisclosureSection(
@@ -783,41 +814,189 @@ private fun LineStyleBody(
         onToggle = { onToggleSection(InspectorSection.Shadow) },
         summary = { ShadowSummary(shadow) },
     ) {
-        AppearanceRow(
-            label = "Shadow",
-            checked = shadow != null,
-            onToggle = if (!enabled) null else ({ on ->
-                format { it.copy(shadow = if (on) ShapeShadow() else null) }
-            }),
+        ShadowControls(
+            shadow = shadow,
+            kinds = LINE_SHADOW_KINDS,
+            enabled = enabled,
+            onSet = { edit -> format { it.copy(shadow = edit(it.shadow)) } },
+            onDrag = { edit -> preview { it.copy(shadow = it.shadow?.let(edit)) } },
+            onRelease = { edit -> release { it.copy(shadow = it.shadow?.let(edit)) } },
         )
-        if (shadow != null) Row(
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            ColourField(
-                label = "Color",
-                color = shadow.color,
-                enabled = enabled,
-                onPick = { color -> format { it.copy(shadow = it.shadow?.copy(color = color)) } },
-                modifier = Modifier.weight(1f),
-                none = "No Shadow",
-                onNone = { format { it.copy(shadow = null) } },
-            )
-            NumberField(
-                label = "Blur",
-                value = shadow.blur,
-                enabled = enabled,
-                onCommit = { blur -> format { it.copy(shadow = it.shadow?.copy(blur = blur)) } },
-                modifier = Modifier.width(104.dp),
-                minimum = 0f,
-            )
-        }
     }
 }
 
 /** Keynote's stroke width range for a line, in points. */
 private const val MinLineWidth: Float = 0.25f
 private const val MaxLineWidth: Float = 100f
+
+/**
+ * The Shadow section's body, a shape's or a line's alike, Keynote's order: the
+ * kind, that kind's dials, then the colour.
+ *
+ * Picking a kind lands on Keynote's defaults for it, in the colour already
+ * there (see [withKind]); No Shadow drops it, the one way the model
+ * spells none. [onSet] is a one-off edit like that. The dials are gestures:
+ * [onDrag] streams every sample through the loop and [onRelease] commits once,
+ * so a drag is one undo entry and one autosave write.
+ *
+ * The colour well keeps the alpha at FF, since the opacity is a dial of its own.
+ */
+@Composable
+private fun ShadowControls(
+    shadow: ShapeShadow?,
+    kinds: List<Pair<ShadowKind?, String>>,
+    enabled: Boolean,
+    onSet: ((ShapeShadow?) -> ShapeShadow?) -> Unit,
+    onDrag: ((ShapeShadow) -> ShapeShadow) -> Unit,
+    onRelease: ((ShapeShadow) -> ShapeShadow) -> Unit,
+) {
+    DropdownField(
+        label = "Kind",
+        value = shadow?.kind,
+        options = kinds,
+        enabled = enabled,
+        onPick = { kind -> onSet { it.withKind(kind) } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (shadow == null) return
+
+    @Composable
+    fun dial(
+        label: String,
+        value: Float,
+        range: ClosedFloatingPointRange<Float>,
+        valueLabel: String,
+        write: ShapeShadow.(Float) -> ShapeShadow,
+    ) = ShadowDial(
+        label = label,
+        value = value,
+        range = range,
+        valueLabel = valueLabel,
+        enabled = enabled,
+        onDrag = { value -> onDrag { it.write(value) } },
+        onRelease = { value -> onRelease { it.write(value) } },
+    )
+
+    when (shadow.kind) {
+        ShadowKind.Drop, ShadowKind.Contact -> dial(
+            label = "Blur",
+            value = shadow.blur,
+            range = 0f..MaxShadowBlur,
+            valueLabel = "${shadow.blur.roundToInt()} pt",
+        ) { copy(blur = it.roundToInt().toFloat()) }
+
+        // Keynote's Inwards to Outwards, with a detent at flat so the middle is
+        // somewhere a drag can land on.
+        ShadowKind.Curved -> dial(
+            label = "Curve",
+            value = shadow.curve,
+            range = -1f..1f,
+            valueLabel = shadow.curve.curveLabel(),
+        ) { value ->
+            val curve: Float = (value * 100).roundToInt() / 100f
+            copy(curve = if (abs(curve) < CurveDetent) 0f else curve)
+        }
+    }
+    dial(
+        label = "Offset",
+        value = shadow.offset,
+        range = 0f..MaxShadowOffset,
+        valueLabel = "${shadow.offset.roundToInt()} pt",
+    ) { copy(offset = it.roundToInt().toFloat()) }
+    dial(
+        label = "Opacity",
+        value = shadow.opacity,
+        range = 0f..1f,
+        valueLabel = "${(shadow.opacity * 100).roundToInt()}%",
+    ) { copy(opacity = (it * 100).roundToInt() / 100f) }
+    if (shadow.kind == ShadowKind.Contact) dial(
+        label = "Perspective",
+        value = shadow.perspective,
+        range = 0f..MaxShadowPerspective,
+        valueLabel = "${shadow.perspective.roundToInt()}°",
+    ) { copy(perspective = it.roundToInt().toFloat()) }
+    else dial(
+        label = "Angle",
+        value = shadow.angle,
+        range = 0f..360f,
+        valueLabel = "${shadow.angle.roundToInt()}°",
+    ) { copy(angle = it.roundToInt().toFloat() % 360f) }
+
+    ColourField(
+        label = "Color",
+        color = shadow.color,
+        enabled = enabled,
+        onPick = { color -> onSet { it?.copy(color = color or ShadowBlack) } },
+        modifier = Modifier.fillMaxWidth(),
+        none = "No Shadow",
+        onNone = { onSet { null } },
+    )
+}
+
+/** One of a shadow's dials: its name over a slider across [range], its value beside it. */
+@Composable
+private fun ShadowDial(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    valueLabel: String,
+    enabled: Boolean,
+    onDrag: (Float) -> Unit,
+    onRelease: (Float) -> Unit,
+) {
+    val span: Float = range.endInclusive - range.start
+    fun at(fraction: Float): Float = range.start + fraction.coerceIn(0f, 1f) * span
+
+    SwatchLabel(label)
+    SliderRow(
+        fraction = (value - range.start) / span,
+        valueLabel = valueLabel,
+        enabled = enabled,
+        onDrag = { fraction -> onDrag(at(fraction)) },
+        onRelease = { fraction -> onRelease(at(fraction)) },
+    )
+}
+
+/** Which way a curved shadow bows and by how much, the way Keynote's slider ends read. */
+private fun Float.curveLabel(): String {
+    val percent: Int = (abs(this) * 100).roundToInt()
+    return when {
+        percent == 0 -> "Flat"
+        this < 0f -> "In $percent%"
+        else -> "Out $percent%"
+    }
+}
+
+/** The gradient fill's two kinds, Keynote's order. */
+private val GRADIENT_KINDS: List<Pair<GradientKind, String>> = listOf(
+    GradientKind.Linear to "Linear",
+    GradientKind.Radial to "Radial",
+)
+
+/** The kind popup, in Keynote's order. No Shadow is a null shadow. */
+private val SHAPE_SHADOW_KINDS: List<Pair<ShadowKind?, String>> = listOf(
+    null to "No Shadow",
+    ShadowKind.Drop to "Drop Shadow",
+    ShadowKind.Contact to "Contact Shadow",
+    ShadowKind.Curved to "Curved Shadow",
+)
+
+/**
+ * A line's: it has no base to stand on and no bottom edge to bow, so it casts
+ * its stroke and nothing else.
+ */
+private val LINE_SHADOW_KINDS: List<Pair<ShadowKind?, String>> = SHAPE_SHADOW_KINDS.take(2)
+
+/** The alpha the colour well keeps: the opacity is a dial of its own. */
+private const val ShadowBlack: Long = 0xFF000000
+
+/** Where the dials stop, Keynote's. */
+private const val MaxShadowBlur: Float = 100f
+private const val MaxShadowOffset: Float = 100f
+private const val MaxShadowPerspective: Float = 45f
+
+/** How near flat a curve snaps to flat. */
+private const val CurveDetent: Float = 0.05f
 
 /** The five stroke styles as one segmented row, each segment a drawn sample of itself. */
 @Composable

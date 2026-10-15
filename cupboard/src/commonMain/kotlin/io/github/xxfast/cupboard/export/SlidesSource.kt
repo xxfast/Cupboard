@@ -14,6 +14,7 @@ import io.github.xxfast.cupboard.document.EquationElement
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.GalleryElement
 import io.github.xxfast.cupboard.document.GalleryImage
+import io.github.xxfast.cupboard.document.GradientKind
 import io.github.xxfast.cupboard.document.GroupElement
 import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.ListStyle
@@ -293,10 +294,14 @@ private fun SourceWriter.shape(element: ShapeElement) {
     }
 
     val shape: String = shapeLiteral(element)
+    val size = "${element.frame.width.literal()}, ${element.frame.height.literal()}"
     val fill: String = element.gradient?.let { gradient ->
-        "gradientBrush(${gradient.start.colorLiteral()}, ${gradient.end.colorLiteral()}, " +
-            "${gradient.angle.literal()}, ${element.frame.width.literal()}, " +
-            "${element.frame.height.literal()})"
+        val stops = "${gradient.start.colorLiteral()}, ${gradient.end.colorLiteral()}"
+        when (gradient.kind) {
+            GradientKind.Linear -> "gradientBrush($stops, ${gradient.angle.literal()}, $size)"
+            GradientKind.Radial -> "radialGradientBrush($stops, ${gradient.centerX.literal()}, " +
+                "${gradient.centerY.literal()}, ${gradient.radius.literal()}, $size)"
+        }
     } ?: "${element.fill.colorLiteral()}.argb()"
 
     line("Box(")

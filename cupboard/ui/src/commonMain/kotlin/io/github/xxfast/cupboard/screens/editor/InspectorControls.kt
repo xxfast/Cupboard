@@ -80,11 +80,15 @@ import io.github.xxfast.cupboard.canvas.rememberAssetImage
 import io.github.xxfast.cupboard.document.ColourPalette
 import io.github.xxfast.cupboard.document.ElementDefaults
 import io.github.xxfast.cupboard.document.ImageFillMode
+import io.github.xxfast.cupboard.document.ShadowKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.dx
+import io.github.xxfast.cupboard.document.dy
 import io.github.xxfast.cupboard.document.palette
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
@@ -301,7 +305,15 @@ internal fun BorderSummary(color: Long, width: Float) {
     }
 }
 
-/** A shadow as a summary: a lip of it under a plate, or the "none" well. */
+/**
+ * A shadow as a summary, Keynote's header swatch: a plate with the shadow cast
+ * under it the way this one falls, along its angle or as the ellipse a contact
+ * shadow stands the plate on, or the struck "none" well when there is none.
+ *
+ * The step is the direction alone, a lip's worth, since an offset of any length
+ * has to fit the swatch. The opacity is floored so a faint shadow still reads as
+ * on.
+ */
 @Composable
 internal fun ShadowSummary(shadow: ShapeShadow?) {
     val tokens: ChromeTokens = LocalChromeTokens.current
@@ -313,16 +325,25 @@ internal fun ShadowSummary(shadow: ShapeShadow?) {
     Canvas(Modifier.size(width = SummaryWidth, height = SummaryHeight)) {
         val corner = CornerRadius(SummaryCorner.toPx())
         val lip: Float = 3.dp.toPx()
-        val plate = Size(size.width, size.height - lip)
-        drawRoundRect(
-            color = Color(shadow.color),
-            topLeft = Offset(lip, lip),
-            size = Size(size.width - lip * 2, plate.height),
-            cornerRadius = corner,
-        )
-        drawRoundRect(color = tokens.track, size = plate, cornerRadius = corner)
+        val plate = Size(size.width - lip * 2, size.height - lip * 2)
+        val origin = Offset(lip, lip)
+        val cast: Color = Color(shadow.color).copy(alpha = shadow.opacity.coerceIn(0.3f, 1f))
+
+        if (shadow.kind == ShadowKind.Contact) drawOval(
+            color = cast,
+            topLeft = Offset(lip, size.height - lip * 2),
+            size = Size(plate.width, lip * 2),
+        ) else {
+            val length: Float = hypot(shadow.dx, shadow.dy)
+            val step: Offset =
+                if (length == 0f) Offset.Zero
+                else Offset(shadow.dx / length * lip, shadow.dy / length * lip)
+            drawRoundRect(cast, topLeft = origin + step, size = plate, cornerRadius = corner)
+        }
+        drawRoundRect(color = tokens.track, topLeft = origin, size = plate, cornerRadius = corner)
         drawRoundRect(
             color = tokens.outline,
+            topLeft = origin,
             size = plate,
             cornerRadius = corner,
             style = Stroke(1.dp.toPx()),

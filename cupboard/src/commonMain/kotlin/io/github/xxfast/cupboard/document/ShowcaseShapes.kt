@@ -191,15 +191,15 @@ private fun strokesSlide(): Slide {
     )
 }
 
-/** The drop shadow, which is off by default and has four dials when it is on. */
+/** Keynote's three shadows, which are off by default, and the dials that set them apart. */
 private fun shadowsSlide(): Slide {
     val shadows: List<Pair<String, ShapeShadow?>> = listOf(
         "no shadow" to null,
-        "default" to ShapeShadow(),
-        "blur 40" to ShapeShadow(blur = 40f),
-        "dy 24" to ShapeShadow(blur = 16f, dy = 24f),
-        "dx -20, dy -12" to ShapeShadow(blur = 16f, dx = -20f, dy = -12f),
-        "tinted, opaque" to ShapeShadow(color = 0xCC7F52FF, blur = 30f, dy = 10f),
+        "drop" to ShapeShadow(),
+        "drop, 16 at 315" to ShapeShadow(blur = 16f, offset = 16f, angle = 315f),
+        "contact" to ShadowKind.Contact.shadow(),
+        "curved inwards" to ShadowKind.Curved.shadow().copy(curve = -1f),
+        "tinted, opaque" to ShapeShadow(color = 0xFF7F52FF, blur = 30f, offset = 10f, opacity = 0.8f),
     )
 
     val cast: List<Element> = shadows.flatMapIndexed { index, (label, shadow) ->
@@ -210,12 +210,12 @@ private fun shadowsSlide(): Slide {
 
     return featureSlide(
         title = "Shadows",
-        subtitle = "ShapeShadow: colour, blur and offset under the same rectangle",
+        subtitle = "ShapeShadow: drop, contact and curved under the same rectangle",
         elements = cast,
-        notes = "Look for: the first box sitting flat and the other five lifted off the " +
-            "slide. The Compose canvas draws an elevation shadow, which carries its own " +
-            "offset, so the dx and dy boxes may all cast downwards: the document keeps " +
-            "the intent even where the toolkit rounds it off.",
+        notes = "Look for: the first box sitting flat. A drop shadow just under the second, " +
+            "a longer one falling down and to the right under the third. A flat ellipse " +
+            "the fourth stands on, two dark lips at the fifth's bottom corners, and a " +
+            "violet glow under the last.",
     )
 }
 

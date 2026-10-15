@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.Cupboard
 import io.github.xxfast.cupboard.MoveResult
 import io.github.xxfast.cupboard.OpenResult
+import io.github.xxfast.cupboard.document.GradientKind
+import io.github.xxfast.cupboard.document.ShadowKind
+import io.github.xxfast.cupboard.document.withKind
 import io.github.xxfast.cupboard.forgetRecent
 import io.github.xxfast.cupboard.move
 import io.github.xxfast.cupboard.newDocument
@@ -788,15 +791,16 @@ class ShapeProps(
     val gradientEnd: Long,
     /** CSS degrees: 0 points up and the angle turns clockwise. */
     val gradientAngle: Float,
+    /** Out from the centre rather than along [gradientAngle], which it then ignores. */
+    val gradientRadial: Boolean,
     /** How the picture is laid in, a place in `imageFillModeTitles()`; Scale to Fill with none. */
     val imageFillMode: Int,
     val strokeColor: Long,
     val strokeWidth: Float,
     /** How the border is dashed, spelled the way [StrokeStyle] spells it, one of `strokeStyleNames()`. */
     val strokeStyle: String,
-    val hasShadow: Boolean,
-    val shadowColor: Long,
-    val shadowBlur: Float,
+    /** Null is No Shadow, the one way the model spells it. */
+    val shadow: ShadowProps?,
     val label: String,
     val labelSize: Float,
 )
@@ -825,10 +829,41 @@ class LineProps(
     val strokeStyle: String,
     val startEnd: String,
     val endEnd: String,
-    val hasShadow: Boolean,
-    val shadowColor: Long,
-    val shadowBlur: Float,
+    /** Null is No Shadow, the one way the model spells it. */
+    val shadow: ShadowProps?,
     val locked: Boolean,
+)
+
+/**
+ * A shape's or a line's shadow, flattened for the native inspector's Shadow
+ * section: every dial, whichever the kind reads, so switching the popup back
+ * shows numbers rather than blanks. [kindName] is [ShadowKind]'s spelling, one
+ * of `shadowKindNames()`.
+ *
+ * [angle] is Keynote's dial in degrees, 0 right, 90 up, 270 straight down.
+ * [opacity] is a fraction, the colour's alpha left at FF beside it.
+ */
+class ShadowProps(
+    val kindName: String,
+    /** Packed ARGB, the document model's color format. */
+    val color: Long,
+    val blur: Float,
+    val offset: Float,
+    val angle: Float,
+    val opacity: Float,
+    val perspective: Float,
+    val curve: Float,
+)
+
+private fun ShapeShadow.props(): ShadowProps = ShadowProps(
+    kindName = kind.name,
+    color = color,
+    blur = blur,
+    offset = offset,
+    angle = angle,
+    opacity = opacity,
+    perspective = perspective,
+    curve = curve,
 )
 
 /**
@@ -3230,14 +3265,14 @@ class EditorHost(
      * is not a shape. Read off the primary alone; the setters below write to
      * every unlocked shape in the selection, the way the text ones do.
      *
-     * A shape wearing no gradient and no shadow still answers with both, filled
-     * in with what turning them on would commit: the stops start where the solid
-     * fill is, so switching kinds changes nothing the eye can see until a stop
-     * moves.
+     * A shape wearing no gradient still answers with one, filled in with what
+     * turning it on would commit: the stops start where the solid fill is, so
+     * switching kinds changes nothing the eye can see until a stop moves. A
+     * shadow needs no such stand-in, since picking a kind brings its own
+     * defaults (see [setSelectedShapeShadowKind]).
      */
     fun selectedShape(): ShapeProps? = (state.primaryElement as? ShapeElement)?.let { shape ->
         val gradient: ShapeGradient = shape.gradient ?: ShapeGradient(shape.fill, shape.fill)
-        val shadow: ShapeShadow = shape.shadow ?: ShapeShadow()
         ShapeProps(
             kindName = shape.kind.name,
             isRectangle = shape.kind == ShapeKind.Rectangle,
@@ -3248,13 +3283,12 @@ class EditorHost(
             gradientStart = gradient.start,
             gradientEnd = gradient.end,
             gradientAngle = gradient.angle,
+            gradientRadial = gradient.kind == GradientKind.Radial,
             imageFillMode = (shape.imageFill?.mode ?: ImageFillMode.ScaleToFill).ordinal,
             strokeColor = shape.strokeColor,
             strokeWidth = shape.strokeWidth,
             strokeStyle = shape.strokeStyle.name,
-            hasShadow = shape.shadow != null,
-            shadowColor = shadow.color,
-            shadowBlur = shadow.blur,
+            shadow = shape.shadow?.props(),
             label = shape.label,
             labelSize = shape.labelSize,
         )
@@ -3273,9 +3307,22 @@ class EditorHost(
         formatShapes { it.copy(fill = argb) }
     }
 
-    /** Paints instead of the fill, from [start] to [end] along [angle] CSS degrees. The picture goes. */
+    /**
+     * Paints instead of the fill, from [start] to [end] along [angle] CSS degrees.
+     * The picture goes. A shape already wearing a gradient keeps its kind and its
+     * centre; one without starts linear.
+     */
     fun setSelectedShapeGradient(start: Long, end: Long, angle: Float) {
-        formatShapes { it.withGradient(ShapeGradient(start, end, angle)) }
+        formatShapes { shape ->
+            val gradient: ShapeGradient = shape.gradient ?: ShapeGradient(start, end)
+            shape.withGradient(gradient.copy(start = start, end = end, angle = angle))
+        }
+    }
+
+    /** Linear or [radial], for the shapes already wearing a gradient: the rest have no stops to run. */
+    fun setSelectedShapeGradientKind(radial: Boolean) {
+        val kind: GradientKind = if (radial) GradientKind.Radial else GradientKind.Linear
+        formatShapes { it.copy(gradient = it.gradient?.copy(kind = kind)) }
     }
 
     /** Back to the solid fill, which the shape was carrying all along: the gradient and the picture go. */
@@ -3340,19 +3387,43 @@ class EditorHost(
         formatShapes { it.copy(strokeStyle = style) }
     }
 
+    /** What the Shadow kind popups offer after No Shadow, in [ShadowKind]'s order, Keynote's. */
+    fun shadowKindNames(): List<String> = ShadowKind.entries.map { it.name }
+
     /**
-     * [enabled] false drops the shadow rather than clearing its numbers, so the
-     * document says "no shadow" the one way the model spells it. On, a shape that
-     * already had one keeps its offset: the panel has no control for that, and
-     * losing it to a toggle would be a change nobody asked for.
+     * The selection's shadows as the kind named, by [ShadowKind]'s spelling, or
+     * none for a name that isn't one (the shell's No Shadow sends ""). See
+     * [withKind]: a new kind lands on its defaults, the same kind stays as is.
      */
-    fun setSelectedShapeShadow(enabled: Boolean, color: Long, blur: Float) {
-        formatShapes { shape ->
-            val shadow: ShapeShadow? = if (!enabled) null else {
-                (shape.shadow ?: ShapeShadow()).copy(color = color, blur = blur.coerceAtLeast(0f))
-            }
-            return@formatShapes shape.copy(shadow = shadow)
+    fun setSelectedShapeShadowKind(name: String) {
+        val kind: ShadowKind? = ShadowKind.entries.firstOrNull { it.name == name }
+        formatShapes { it.copy(shadow = it.shadow.withKind(kind)) }
+    }
+
+    /**
+     * Every dial of the selection's shadows at once, the way the panel sends
+     * them: each shape keeps its own kind, and one with no shadow stays without.
+     * [commit] false is a slider still under the thumb, exactly as it is for
+     * opacity; true is the release or a typed number, one undo entry.
+     */
+    fun setSelectedShapeShadow(
+        color: Long,
+        blur: Float,
+        offset: Float,
+        angle: Float,
+        opacity: Float,
+        perspective: Float,
+        curve: Float,
+        commit: Boolean,
+    ) {
+        val dial: (ShapeShadow) -> ShapeShadow =
+            dialed(color, blur, offset, angle, opacity, perspective, curve)
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is ShapeElement || element.locked) return@mapNotNull null
+            element.shadow?.let { element.copy(shadow = dial(it)) }
         }
+        if (edits.isEmpty()) return
+        if (commit) viewModel.onUpdateElements(edits) else viewModel.onPreviewElements(edits)
     }
 
     /** Rectangles only; every other kind stores it and ignores it. */
@@ -3394,11 +3465,9 @@ class EditorHost(
      * a line. Read off the primary alone; the setters below write to every
      * unlocked line in the selection, the way the shape ones do.
      *
-     * A line with no shadow still answers with one, filled in with what turning
-     * it on would commit, the way [selectedShape] does.
+     * Its shadow is null for none, the way [selectedShape]'s is.
      */
     fun selectedLine(): LineProps? = (state.primaryElement as? LineElement)?.let { line ->
-        val shadow: ShapeShadow = line.shadow ?: ShapeShadow()
         LineProps(
             startX = line.start.x,
             startY = line.start.y,
@@ -3411,9 +3480,7 @@ class EditorHost(
             strokeStyle = line.strokeStyle.name,
             startEnd = line.startEnd.name,
             endEnd = line.endEnd.name,
-            hasShadow = line.shadow != null,
-            shadowColor = shadow.color,
-            shadowBlur = shadow.blur,
+            shadow = line.shadow?.props(),
             locked = line.locked,
         )
     }
@@ -3443,14 +3510,55 @@ class EditorHost(
         }
     }
 
-    /** [setSelectedShapeShadow]'s line half, with its deal: off drops it, on keeps the offset. */
-    fun setSelectedLineShadow(enabled: Boolean, color: Long, blur: Float) {
-        formatLines { line ->
-            val shadow: ShapeShadow? = if (!enabled) null else {
-                (line.shadow ?: ShapeShadow()).copy(color = color, blur = blur.coerceAtLeast(0f))
-            }
-            return@formatLines line.copy(shadow = shadow)
+    /** [setSelectedShapeShadowKind]'s line half. The panel only offers a line Drop Shadow. */
+    fun setSelectedLineShadowKind(name: String) {
+        val kind: ShadowKind? = ShadowKind.entries.firstOrNull { it.name == name }
+        formatLines { it.copy(shadow = it.shadow.withKind(kind)) }
+    }
+
+    /** [setSelectedShapeShadow]'s line half, with its deal: a line with no shadow stays without. */
+    fun setSelectedLineShadow(
+        color: Long,
+        blur: Float,
+        offset: Float,
+        angle: Float,
+        opacity: Float,
+        perspective: Float,
+        curve: Float,
+        commit: Boolean,
+    ) {
+        val dial: (ShapeShadow) -> ShapeShadow =
+            dialed(color, blur, offset, angle, opacity, perspective, curve)
+        val edits: List<Element> = state.selectedElements.mapNotNull { element ->
+            if (element !is LineElement || element.locked) return@mapNotNull null
+            element.shadow?.let { element.copy(shadow = dial(it)) }
         }
+        if (edits.isEmpty()) return
+        if (commit) viewModel.onUpdateElements(edits) else viewModel.onPreviewElements(edits)
+    }
+
+    // What both shadow setters write, kept in range: the colour opaque (the
+    // opacity is its own dial), the angle on the dial, the curve within its two
+    // ends, the perspective short of standing the ellipse up. The kind is each
+    // shadow's own.
+    private fun dialed(
+        color: Long,
+        blur: Float,
+        offset: Float,
+        angle: Float,
+        opacity: Float,
+        perspective: Float,
+        curve: Float,
+    ): (ShapeShadow) -> ShapeShadow = { shadow ->
+        shadow.copy(
+            color = color or 0xFF000000,
+            blur = blur.coerceAtLeast(0f),
+            offset = offset.coerceAtLeast(0f),
+            angle = (angle % 360f + 360f) % 360f,
+            opacity = opacity.coerceIn(0f, 1f),
+            perspective = perspective.coerceIn(0f, 45f),
+            curve = curve.coerceIn(-1f, 1f),
+        )
     }
 
     /**

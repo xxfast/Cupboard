@@ -587,12 +587,11 @@ extension EditorView {
                 .font(.system(size: Inspect.text))
                 .foregroundStyle(palette.subtle)
         } else if shape.fillKind == .gradient {
-            previewWell {
-                LinearGradient(
-                    colors: [Color(argb: shape.gradientStart), Color(argb: shape.gradientEnd)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
+            let colors = [Color(argb: shape.gradientStart), Color(argb: shape.gradientEnd)]
+            if shape.gradientRadial {
+                previewWell { RadialGradient(colors: colors, center: .center, startRadius: 0, endRadius: 14) }
+            } else {
+                previewWell { LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing) }
             }
         } else if shape.fill == 0 {
             nonePreview
@@ -635,34 +634,61 @@ extension EditorView {
         }
     }
 
-    /// What the Shadow header shows: a square dropping one, or none.
+    /// What the Shadow header shows: a square casting it the way it falls, a
+    /// contact shadow as the ellipse the square stands on, or none.
     @ViewBuilder func shadowPreview(_ shape: ShapeFormat) -> some View {
-        if shape.hasShadow {
+        if let shadow = shape.shadow {
+            let cast = Self.previewCast(shadow)
+            let contact = shadow.kind == "Contact"
             previewWell { palette.inspectorControl }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(Color(argb: shape.fill))
-                        .frame(width: 18, height: 10)
-                        .shadow(color: Color(argb: shape.shadowColor).opacity(0.7), radius: 2, y: 1)
+                    ZStack {
+                        if contact {
+                            Ellipse()
+                                .fill(cast)
+                                .frame(width: 22, height: 4)
+                                .blur(radius: 1)
+                                .offset(y: 5)
+                        }
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(Color(argb: shape.fill))
+                            .frame(width: 18, height: 10)
+                            .shadow(
+                                color: contact ? .clear : cast,
+                                radius: 1.5,
+                                x: shadow.direction.dx * 2,
+                                y: shadow.direction.dy * 2
+                            )
+                    }
                 }
         } else {
             nonePreview
         }
     }
 
-    /// What a line's Shadow header shows: a short stroke of it dropping one, or none.
+    /// What a line's Shadow header shows: a short stroke of it casting one, or none.
     @ViewBuilder func lineShadowPreview(_ line: LineFormat) -> some View {
-        if line.hasShadow {
+        if let shadow = line.shadow {
             previewWell { palette.inspectorControl }
                 .overlay {
                     Capsule()
                         .fill(Color(argb: line.strokeColor))
                         .frame(width: 22, height: 2)
-                        .shadow(color: Color(argb: line.shadowColor).opacity(0.7), radius: 2, y: 1)
+                        .shadow(
+                            color: Self.previewCast(shadow),
+                            radius: 1.5,
+                            x: shadow.direction.dx * 2,
+                            y: shadow.direction.dy * 2
+                        )
                 }
         } else {
             nonePreview
         }
+    }
+
+    /// The shadow's colour at its opacity, floored so a faint one still reads as on.
+    static func previewCast(_ shadow: ShadowFormat) -> Color {
+        Color(argb: shadow.color).opacity(max(shadow.opacity, 0.3))
     }
 
     /// The grey well with a red diagonal Keynote draws for "none".

@@ -354,9 +354,19 @@ enum class LineEnd {
     Bar,
 }
 
+/** How a [ShapeGradient] runs: along a line, or out from a centre. */
+enum class GradientKind { Linear, Radial }
+
 /**
- * A two-stop fill along a line at [angle], in CSS degrees like
+ * A two-stop fill, [start] to [end].
+ *
+ * [GradientKind.Linear] runs along a line at [angle], in CSS degrees like
  * [SlideBackground.Gradient]: 0 points up and the angle turns clockwise.
+ * [GradientKind.Radial] runs from [start] at the centre out to [end] at the
+ * edge of a circle: [centerX] and [centerY] are fractions of the frame from its
+ * top left, and [radius] a fraction of its longer side, so the defaults put the
+ * centre in the middle and reach the edges the long way. Each kind ignores the
+ * other's numbers and keeps them, so switching back finds them where they were.
  *
  * Set on a shape it paints instead of [ShapeElement.fill] rather than over it,
  * so switching back to a solid is a matter of dropping this rather than of
@@ -367,23 +377,117 @@ data class ShapeGradient(
     val start: Long,
     val end: Long,
     val angle: Float = 140f,
+    val kind: GradientKind = GradientKind.Linear,
+    val centerX: Float = 0.5f,
+    val centerY: Float = 0.5f,
+    val radius: Float = 0.5f,
 )
 
 /**
- * The drop shadow under a shape. Colors are packed ARGB like everywhere else,
- * and [blur], [dx] and [dy] are document units.
+ * Keynote's three shadows. "No Shadow" is no kind of its own: it is a null
+ * [ShapeShadow], the one way the model spells it.
  *
- * [dx] and [dy] are stored whether or not a given renderer honours them: Compose
- * draws an elevation shadow, which has an offset of its own, so the document
- * keeps the intent and the canvas gets as close to it as its toolkit allows.
+ * [Drop] is the outline itself, cast along an angle. [Contact] is a flattened
+ * ellipse under the base, as if the shape stood on a surface seen at
+ * [ShapeShadow.perspective] degrees. [Curved] is the bottom edge bowed by
+ * [ShapeShadow.curve], the shadow a sheet casts when its middle lifts or sags.
+ */
+enum class ShadowKind { Drop, Contact, Curved }
+
+/**
+ * The shadow under a shape or a line, Keynote's: a [kind] and the dials that
+ * kind reads. Every distance is in document units.
+ *
+ * [angle] is Keynote's dial, in degrees: 0 points right, 90 up and 270 straight
+ * down, which is where the shadow falls rather than where the light is. It
+ * stays on the slide's dial whichever way the shape turns, the way a light that
+ * doesn't move with the shape would.
+ *
+ * [opacity] is kept apart from [color] because Keynote edits it apart: the
+ * editor leaves the colour's own alpha at FF and dims through this. A colour with
+ * alpha of its own still draws, both multiplied.
+ *
+ * Every kind carries every number, so switching back and forth is the editor's
+ * choice of defaults (see [ShadowKind.shadow]) rather than the model's. [Drop]
+ * reads [blur], [offset], [angle] and [opacity]. [Contact] reads [blur], [offset]
+ * (straight down), [opacity] and [perspective]. [Curved] reads [curve], from -1
+ * inwards to 1 outwards, [blur], [offset], [angle] and [opacity].
+ *
+ * Format version 2 and earlier stored `dx` and `dy` and folded the opacity into
+ * the colour; reading one rewrites it (see [migrateLegacyShadows]).
  */
 @Serializable
 data class ShapeShadow(
-    val color: Long = 0x80000000,
-    val blur: Float = 12f,
-    val dx: Float = 0f,
-    val dy: Float = 6f,
+    val kind: ShadowKind = ShadowKind.Drop,
+    val color: Long = 0xFF000000,
+    val blur: Float = 5f,
+    val offset: Float = 2f,
+    val angle: Float = 270f,
+    val opacity: Float = 0.5f,
+    val perspective: Float = 10f,
+    val curve: Float = 0f,
 )
+
+/**
+ * A fresh shadow of this kind in [color], on Keynote's defaults for it: what
+ * picking the kind off the popup lands on.
+ *
+ * Keynote's curved shadow has no blur control of its own, so it takes a soft
+ * one that is not on any dial.
+ */
+fun ShadowKind.shadow(color: Long = 0xFF000000): ShapeShadow = when (this) {
+    ShadowKind.Drop -> ShapeShadow(color = color)
+
+    ShadowKind.Contact -> ShapeShadow(
+        kind = this,
+        color = color,
+        blur = 28f,
+        offset = 0f,
+        opacity = 0.75f,
+        perspective = 10f,
+    )
+
+    ShadowKind.Curved -> ShapeShadow(
+        kind = this,
+        color = color,
+        blur = 4f,
+        offset = 1f,
+        angle = 270f,
+        opacity = 1f,
+    )
+}
+
+/**
+ * This shadow as [kind], what the kind popup does in either shell: null drops
+ * it, the kind it already is keeps every number, and any other kind lands on
+ * that kind's defaults in the colour it had.
+ */
+fun ShapeShadow?.withKind(kind: ShadowKind?): ShapeShadow? = when {
+    kind == null -> null
+    this?.kind == kind -> this
+    else -> kind.shadow(this?.color ?: 0xFF000000)
+}
+
+/** [ShapeShadow.offset] along [ShapeShadow.angle], across the slide: positive is right. */
+val ShapeShadow.dx: Float get() = offset * cos(angle * PI.toFloat() / 180f)
+
+/** [ShapeShadow.offset] along [ShapeShadow.angle], down the slide: positive is down. */
+val ShapeShadow.dy: Float get() = -offset * sin(angle * PI.toFloat() / 180f)
+
+/**
+ * The offset and the angle, in that order, that step [dx] right and [dy] down
+ * the slide: what a format 2 shadow and an SVG filter both store. No step at all
+ * keeps Keynote's straight down, so the dial has somewhere to start from.
+ */
+internal fun shadowOffsetAngle(dx: Float, dy: Float): Pair<Float, Float> {
+    val offset: Float = hypot(dx, dy)
+    if (offset == 0f) return 0f to 270f
+
+    // The dial turns counterclockwise from right with y up, so the screen's
+    // downward y goes in negated.
+    val degrees: Float = atan2(-dy, dx) * 180f / PI.toFloat()
+    return offset to (degrees + 360f) % 360f
+}
 
 /**
  * A shape on a slide.

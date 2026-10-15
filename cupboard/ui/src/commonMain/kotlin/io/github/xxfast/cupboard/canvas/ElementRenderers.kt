@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -35,29 +36,29 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.PathMeasure
-import androidx.compose.ui.graphics.Shader
-import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -105,8 +106,8 @@ import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.Point
+import io.github.xxfast.cupboard.document.ShadowKind
 import io.github.xxfast.cupboard.document.ShapeElement
-import io.github.xxfast.cupboard.document.ShapeGradient
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapePath
 import io.github.xxfast.cupboard.document.ShapeShadow
@@ -116,6 +117,8 @@ import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.VideoElement
 import io.github.xxfast.cupboard.document.colorMatrix
+import io.github.xxfast.cupboard.document.dx
+import io.github.xxfast.cupboard.document.dy
 import io.github.xxfast.cupboard.document.imageSourceRect
 import io.github.xxfast.cupboard.document.listBody
 import io.github.xxfast.cupboard.document.listIndentLevel
@@ -123,9 +126,14 @@ import io.github.xxfast.cupboard.document.listMarkers
 import io.github.xxfast.cupboard.document.pieces
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.sourceRect
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.math.tan
 
 fun Long.toComposeColor(): Color = Color(this)
 
@@ -267,39 +275,150 @@ internal fun Modifier.outset(by: Dp): Modifier = layout { measurable, constraint
     layout(constraints.maxWidth, constraints.maxHeight) { placeable.place(-reach, -reach) }
 }
 
-/** How high Compose hangs the light an elevation shadow is cast by, and how wide it is. */
-private const val ShadowLightHeight: Float = 600f
-private const val ShadowLightRadius: Float = 800f
-
-/** How far above the layer's top edge that light sits. */
-private const val ShadowLightRise: Float = 300f
-
 /**
  * How far past its frame the element's shadow can reach, in document units: zero
  * for everything that casts none.
  *
- * An elevation shadow is the outline projected from a light above the top edge,
- * so it is both blurred and pushed away from that light, further the bigger the
- * shape. A group reaches as far as the furthest of its children, since theirs is
- * the shadow its own layer would cut.
+ * A shadow reaches by its offset, by its blur's fall-off, and by whatever its
+ * kind spreads past the outline (see [ShapeShadow.reach]). A group reaches as far
+ * as the furthest of its children, since theirs is the shadow its own layer
+ * would cut.
  *
- * A line casts none, but its frame is as thin as 1pt and its stroke and heads
- * hang off it on every side, so it reaches by those instead.
+ * A line's frame is as thin as 1pt and its stroke and heads hang off it on every
+ * side, so it reaches by those on top of its shadow's.
  */
 internal fun Element.shadowBleed(): Float = when (this) {
-    is LineElement -> ceil(strokeWidth / 2 + lineHeadSize(strokeWidth))
+    is LineElement ->
+        ceil(strokeWidth / 2 + lineHeadSize(strokeWidth) + (shadow?.reach(frame) ?: 0f))
 
-    is ShapeElement -> {
-        val elevation: Float = shadow?.blur ?: 0f
-        val ratio: Float =
-            (elevation / (ShadowLightHeight - elevation)).coerceIn(0f, 0.95f)
-        val blur: Float = ShadowLightRadius * ratio
-        val push: Float = ratio * (maxOf(frame.width, frame.height) + ShadowLightRise)
-        if (ratio == 0f) 0f else ceil(blur + push)
-    }
-
+    is ShapeElement -> shadow?.let { ceil(it.reach(frame)) } ?: 0f
     is GroupElement -> children.filterNot { it.hidden }.maxOfOrNull { it.shadowBleed() } ?: 0f
     else -> 0f
+}
+
+/**
+ * How many blur radii out a blurred edge still shows. Compose's radius is about
+ * 1.7 standard deviations, and three of those is where the tail is gone.
+ */
+private const val BlurReach: Float = 2.5f
+
+/** How deep a [ShadowKind.Curved] shadow bows at full curve, against the shape's width. */
+private const val CurveDepth: Float = 0.08f
+
+/** Where a [ShadowKind.Contact] ellipse stops flattening, so it never stands taller than wide. */
+private const val MaxPerspective: Float = 45f
+
+/** How far past a [frame] this shadow paints, on any side. */
+private fun ShapeShadow.reach(frame: Frame): Float {
+    val spread: Float = offset + blur * BlurReach
+    return when (kind) {
+        ShadowKind.Drop -> spread
+        ShadowKind.Contact -> spread + contactHeight(frame.width) / 2
+        ShadowKind.Curved -> spread + abs(curveDepth(frame.width))
+    }
+}
+
+/** How tall the ellipse a contact shadow lays under a [width]-wide base is. */
+private fun ShapeShadow.contactHeight(width: Float): Float =
+    width * tan(perspective.coerceIn(0f, MaxPerspective) * PI.toFloat() / 180f)
+
+/** How far below the bottom edge a curved shadow's middle sits: negative is above it. */
+private fun ShapeShadow.curveDepth(width: Float): Float =
+    curve.coerceIn(-1f, 1f) * width * CurveDepth
+
+/**
+ * Where the shadow sits against the element, in the element's own space and
+ * document units.
+ *
+ * The dial is the slide's, so the step is turned back by the element's rotation
+ * and mirrored by its flips: drawn inside the element's layer, which turns and
+ * flips it again, it lands where the dial says however the shape is turned. A
+ * contact shadow lies on the shape's own base, so it drops straight down that.
+ */
+private fun Element.shadowStep(shadow: ShapeShadow): Offset {
+    if (shadow.kind == ShadowKind.Contact) return Offset(0f, shadow.offset)
+
+    val radians: Float = rotation * PI.toFloat() / 180f
+    val x: Float = shadow.dx * cos(radians) + shadow.dy * sin(radians)
+    val y: Float = -shadow.dx * sin(radians) + shadow.dy * cos(radians)
+    return Offset(
+        x = if (flippedHorizontally) -x else x,
+        y = if (flippedVertically) -y else y,
+    )
+}
+
+/**
+ * [shadow] under the element whose box this sits in, on a layer of its own:
+ * [draw] paints the shadow's shape in its colour into a box the element's size,
+ * and the layer moves it by the [step], dims it by the opacity and blurs it.
+ *
+ * Its own layer because a blur is a layer's effect, and the element's would blur
+ * the element with it. The layer overhangs the box by [reach] on every side, so
+ * the blur has room to fall off before the layer's edge cuts it; the element's
+ * own layer has made the same room (see [shadowBleed]).
+ */
+@Composable
+private fun BoxScope.ShadowLayer(
+    shadow: ShapeShadow,
+    step: Offset,
+    reach: Float,
+    draw: DrawScope.(box: Size, color: Color) -> Unit,
+) {
+    Canvas(
+        Modifier
+            .matchParentSize()
+            .outset(reach.dp)
+            .graphicsLayer {
+                alpha = shadow.opacity.coerceIn(0f, 1f)
+                val radius: Float = shadow.blur.dp.toPx()
+                // A zero radius is no blur rather than a filter that does nothing.
+                renderEffect =
+                    if (radius <= 0f) null else BlurEffect(radius, radius, TileMode.Decal)
+            },
+    ) {
+        val inset: Float = reach.dp.toPx()
+        val box = Size(size.width - inset * 2, size.height - inset * 2)
+        translate(inset + step.x.dp.toPx(), inset + step.y.dp.toPx()) {
+            draw(box, shadow.color.toComposeColor())
+        }
+    }
+}
+
+/**
+ * A shape's shadow, by its kind: a [ShadowKind.Drop] is the outline itself, a
+ * [ShadowKind.Contact] a flattened ellipse centred on the base, and a
+ * [ShadowKind.Curved] the lower half of the box with its bottom edge bowed, so
+ * inwards it peeks out at the two corners and outwards it bellies in the middle.
+ */
+@Composable
+private fun BoxScope.ShapeShadowLayer(element: ShapeElement, shadow: ShapeShadow, shape: Shape) {
+    ShadowLayer(shadow, element.shadowStep(shadow), element.shadowBleed()) { box, color ->
+        when (shadow.kind) {
+            ShadowKind.Drop -> drawOutline(shape.createOutline(box, layoutDirection, this), color)
+
+            ShadowKind.Contact -> {
+                val height: Float = shadow.contactHeight(element.frame.width).dp.toPx()
+                drawOval(
+                    color = color,
+                    topLeft = Offset(0f, box.height - height / 2),
+                    size = Size(box.width, height),
+                )
+            }
+
+            ShadowKind.Curved -> {
+                val depth: Float = shadow.curveDepth(element.frame.width).dp.toPx()
+                val edge = Path().apply {
+                    moveTo(0f, box.height / 2)
+                    lineTo(0f, box.height)
+                    // A quadratic's middle is halfway to its control point.
+                    quadraticTo(box.width / 2, box.height + depth * 2, box.width, box.height)
+                    lineTo(box.width, box.height / 2)
+                    close()
+                }
+                drawPath(edge, color)
+            }
+        }
+    }
 }
 
 /** The white a text box starts in, and the only colour a link is allowed to take over. */
@@ -501,25 +620,11 @@ private class LaidOutText {
 }
 
 /** The fill a shape paints: its gradient when it has one, its solid colour otherwise. */
-private fun ShapeElement.brush(): Brush {
-    val gradient: ShapeGradient = gradient ?: return SolidColor(fill.toComposeColor())
-
-    // A shader brush rather than Brush.linearGradient: the angle's endpoints are
-    // a function of the box, and the box isn't known until the fill is drawn.
-    return object : ShaderBrush() {
-        override fun createShader(size: Size): Shader = LinearGradientShader(
-            from = gradientStop(size, gradient.angle, -1f),
-            to = gradientStop(size, gradient.angle, 1f),
-            colors = listOf(
-                gradient.start.toComposeColor(),
-                gradient.end.toComposeColor(),
-            ),
-        )
-    }
-}
+private fun ShapeElement.brush(): Brush = gradient?.brush() ?: SolidColor(fill.toComposeColor())
 
 /**
- * A shape: its outline filled, bordered and shadowed, its label in the middle.
+ * A shape: its shadow under it, then its outline filled and bordered and its
+ * label in the middle.
  *
  * A picture fill paints over the solid rather than in place of it, clipped to the
  * outline: the solid is what shows around a fit, and the gradient or solid is
@@ -533,73 +638,66 @@ private fun ShapeElementView(element: ShapeElement) {
     val brush: Brush =
         if (image != null) SolidColor(element.fill.toComposeColor()) else element.brush()
 
-    Box(
-        modifier = Modifier
-            .size(element.frame.width.dp, element.frame.height.dp)
-            .let { base ->
-                val shadow: ShapeShadow = element.shadow ?: return@let base
-                // Compose draws an elevation shadow, which carries its own
-                // offset: the document's dx/dy are kept but not honoured here.
-                base.shadow(
-                    elevation = shadow.blur.dp,
-                    shape = shape,
-                    clip = false,
-                    ambientColor = shadow.color.toComposeColor(),
-                    spotColor = shadow.color.toComposeColor(),
-                )
-            }
-            .background(brush, shape)
-            .let { base ->
-                if (image == null || imageFill == null) return@let base
-                base.drawBehind {
-                    val outline = Path().apply {
-                        addOutline(shape.createOutline(size, layoutDirection, this@drawBehind))
+    val shadow: ShapeShadow? = element.shadow
+
+    Box(Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
+        if (shadow != null) ShapeShadowLayer(element, shadow, shape)
+        Box(
+            modifier = Modifier
+                .size(element.frame.width.dp, element.frame.height.dp)
+                .background(brush, shape)
+                .let { base ->
+                    if (image == null || imageFill == null) return@let base
+                    base.drawBehind {
+                        val outline = Path().apply {
+                            addOutline(shape.createOutline(size, layoutDirection, this@drawBehind))
+                        }
+                        clipPath(outline) { drawImageFill(image, imageFill.mode) }
                     }
-                    clipPath(outline) { drawImageFill(image, imageFill.mode) }
                 }
-            }
-            .let { base ->
-                // Compose insets a border and draws none on an open path, while an
-                // SVG stroke is centred on the outline and stroke-only icons are
-                // common: a path strokes its own outline instead.
-                val path: ShapePath? = element.path.takeIf { element.kind == ShapeKind.Path }
-                val style: StrokeStyle = element.strokeStyle
-                if (path == null && style == StrokeStyle.Solid) return@let base.border(
-                    element.strokeWidth.dp,
-                    element.strokeColor.toComposeColor(),
-                    shape,
-                )
-                if (element.strokeWidth <= 0f) return@let base
-                // A border can't dash, so a patterned one is drawn by hand, inset
-                // the way the border would have been.
-                if (path == null) return@let base.drawBehind {
-                    drawStyledOutline(
-                        outline = { inner ->
-                            Path().apply {
-                                addOutline(shape.createOutline(inner, layoutDirection, this@drawBehind))
-                            }
-                        },
-                        style = style,
-                        color = element.strokeColor.toComposeColor(),
-                        weight = element.strokeWidth.dp.toPx(),
+                .let { base ->
+                    // Compose insets a border and draws none on an open path, while an
+                    // SVG stroke is centred on the outline and stroke-only icons are
+                    // common: a path strokes its own outline instead.
+                    val path: ShapePath? = element.path.takeIf { element.kind == ShapeKind.Path }
+                    val style: StrokeStyle = element.strokeStyle
+                    if (path == null && style == StrokeStyle.Solid) return@let base.border(
+                        element.strokeWidth.dp,
+                        element.strokeColor.toComposeColor(),
+                        shape,
                     )
-                }
-                base.drawBehind {
-                    val weight: Float = element.strokeWidth.dp.toPx()
-                    drawPath(
-                        path = path.toComposePath(size),
-                        color = element.strokeColor.toComposeColor(),
-                        style = Stroke(
-                            width = weight,
-                            cap = style.cap,
-                            pathEffect = style.pathEffect(weight),
-                        ),
-                    )
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        ShapeLabel(element)
+                    if (element.strokeWidth <= 0f) return@let base
+                    // A border can't dash, so a patterned one is drawn by hand, inset
+                    // the way the border would have been.
+                    if (path == null) return@let base.drawBehind {
+                        drawStyledOutline(
+                            outline = { inner ->
+                                Path().apply {
+                                    addOutline(shape.createOutline(inner, layoutDirection, this@drawBehind))
+                                }
+                            },
+                            style = style,
+                            color = element.strokeColor.toComposeColor(),
+                            weight = element.strokeWidth.dp.toPx(),
+                        )
+                    }
+                    base.drawBehind {
+                        val weight: Float = element.strokeWidth.dp.toPx()
+                        drawPath(
+                            path = path.toComposePath(size),
+                            color = element.strokeColor.toComposeColor(),
+                            style = Stroke(
+                                width = weight,
+                                cap = style.cap,
+                                pathEffect = style.pathEffect(weight),
+                            ),
+                        )
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            ShapeLabel(element)
+        }
     }
 }
 
@@ -614,7 +712,8 @@ private const val ArrowHeadScale: Float = 4f
  *
  * The stroke stops short under each head ([LineEnd.inset]), measured along the
  * path, so a dash never pokes through a filled head and a hollow one stays
- * hollow. The shadow is not drawn yet, as the old line didn't draw one either.
+ * hollow. Its shadow is the same stroke and heads cast under it, offset, dimmed
+ * and blurred.
  *
  * [entry] is read for [BuildEffect.LineDraw] alone: the stroke then grows over
  * the build's duration, per [Build.lineDraw]. A head at a growing tip rides it
@@ -637,69 +736,92 @@ private fun LineElementView(element: LineElement, entry: Build? = null) {
         )
     }
 
-    Canvas(Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
-        val frame: Frame = element.frame
-        val color: Color = element.strokeColor.toComposeColor()
-        val weight: Float = element.strokeWidth.dp.toPx()
-        val head: Float = lineHeadSize(element.strokeWidth).dp.toPx()
-        fun placed(point: Point): Offset =
-            Offset((point.x - frame.x).dp.toPx(), (point.y - frame.y).dp.toPx())
+    val shadow: ShapeShadow? = element.shadow
 
-        val start: Offset = placed(element.start)
-        val end: Offset = placed(element.end)
-        val control: Offset? = element.control?.let { placed(it) }
-        val path: Path = Path().apply {
-            moveTo(start.x, start.y)
-            if (control == null) lineTo(end.x, end.y)
-            else quadraticTo(control.x, control.y, end.x, end.y)
+    Box(Modifier.size(element.frame.width.dp, element.frame.height.dp)) {
+        // The shadow is the stroke and heads themselves, cast: a line has no
+        // outline to fill, so whatever kind it carries falls as a drop shadow.
+        if (shadow != null) {
+            ShadowLayer(shadow, element.shadowStep(shadow), element.shadowBleed()) { _, color ->
+                drawLineStroke(element, progress.value, options, color)
+            }
         }
-        val measure: PathMeasure = PathMeasure().apply { setPath(path, forceClosed = false) }
-        val length: Float = measure.length
-        if (length == 0f) return@Canvas
-
-        // The stretch of the path showing, in distance along it, and which of its
-        // two ends are still on the move.
-        val shown: Float = progress.value
-        val whole: Boolean = shown >= 1f
-        val (from: Float, to: Float) = when {
-            whole -> 0f to length
-            options.direction == LineDrawDirection.StartToEnd -> 0f to shown * length
-            options.direction == LineDrawDirection.EndToStart -> (1 - shown) * length to length
-            else -> (length - shown * length) / 2 to (length + shown * length) / 2
+        Canvas(Modifier.matchParentSize()) {
+            drawLineStroke(element, progress.value, options, element.strokeColor.toComposeColor())
         }
-        val startMoving: Boolean = !whole && options.direction != LineDrawDirection.StartToEnd
-        val endMoving: Boolean = !whole && options.direction != LineDrawDirection.EndToStart
-        val startHead: LineEnd =
-            if (startMoving && !options.includeEnds) LineEnd.None else element.startEnd
-        val endHead: LineEnd =
-            if (endMoving && !options.includeEnds) LineEnd.None else element.endEnd
-
-        // Heads longer than the line between them leave no stroke to draw.
-        val strokeFrom: Float = from + startHead.inset(head, weight)
-        val strokeTo: Float = to - endHead.inset(head, weight)
-        if (strokeFrom < strokeTo) {
-            val stroke = Path()
-            measure.getSegment(strokeFrom, strokeTo, stroke, startWithMoveTo = true)
-            drawPath(
-                path = stroke,
-                color = color,
-                style = Stroke(
-                    width = weight,
-                    cap = element.strokeStyle.cap,
-                    pathEffect = element.strokeStyle.pathEffect(weight),
-                ),
-            )
-        }
-
-        // Each head on the path's own tangent where it sits, so a curve's heads
-        // lean the way the curve leaves its ends.
-        val startTip: Offset = measure.getPosition(from)
-        val endTip: Offset = measure.getPosition(to)
-        val startFrom: Offset = startTip + measure.getTangent(from)
-        val endFrom: Offset = endTip - measure.getTangent(to)
-        drawLineEnd(startHead, color, startTip, startFrom, weight, head)
-        drawLineEnd(endHead, color, endTip, endFrom, weight, head)
     }
+}
+
+/**
+ * [element]'s stroke and heads in [color], [shown] of the way along under its
+ * [options], drawn in the frame's own space. What [LineElementView] draws, once
+ * for the line and once more for its shadow.
+ */
+private fun DrawScope.drawLineStroke(
+    element: LineElement,
+    shown: Float,
+    options: LineDraw,
+    color: Color,
+) {
+    val frame: Frame = element.frame
+    val weight: Float = element.strokeWidth.dp.toPx()
+    val head: Float = lineHeadSize(element.strokeWidth).dp.toPx()
+    fun placed(point: Point): Offset =
+        Offset((point.x - frame.x).dp.toPx(), (point.y - frame.y).dp.toPx())
+
+    val start: Offset = placed(element.start)
+    val end: Offset = placed(element.end)
+    val control: Offset? = element.control?.let { placed(it) }
+    val path: Path = Path().apply {
+        moveTo(start.x, start.y)
+        if (control == null) lineTo(end.x, end.y)
+        else quadraticTo(control.x, control.y, end.x, end.y)
+    }
+    val measure: PathMeasure = PathMeasure().apply { setPath(path, forceClosed = false) }
+    val length: Float = measure.length
+    if (length == 0f) return
+
+    // The stretch of the path showing, in distance along it, and which of its
+    // two ends are still on the move.
+    val whole: Boolean = shown >= 1f
+    val (from: Float, to: Float) = when {
+        whole -> 0f to length
+        options.direction == LineDrawDirection.StartToEnd -> 0f to shown * length
+        options.direction == LineDrawDirection.EndToStart -> (1 - shown) * length to length
+        else -> (length - shown * length) / 2 to (length + shown * length) / 2
+    }
+    val startMoving: Boolean = !whole && options.direction != LineDrawDirection.StartToEnd
+    val endMoving: Boolean = !whole && options.direction != LineDrawDirection.EndToStart
+    val startHead: LineEnd =
+        if (startMoving && !options.includeEnds) LineEnd.None else element.startEnd
+    val endHead: LineEnd =
+        if (endMoving && !options.includeEnds) LineEnd.None else element.endEnd
+
+    // Heads longer than the line between them leave no stroke to draw.
+    val strokeFrom: Float = from + startHead.inset(head, weight)
+    val strokeTo: Float = to - endHead.inset(head, weight)
+    if (strokeFrom < strokeTo) {
+        val stroke = Path()
+        measure.getSegment(strokeFrom, strokeTo, stroke, startWithMoveTo = true)
+        drawPath(
+            path = stroke,
+            color = color,
+            style = Stroke(
+                width = weight,
+                cap = element.strokeStyle.cap,
+                pathEffect = element.strokeStyle.pathEffect(weight),
+            ),
+        )
+    }
+
+    // Each head on the path's own tangent where it sits, so a curve's heads
+    // lean the way the curve leaves its ends.
+    val startTip: Offset = measure.getPosition(from)
+    val endTip: Offset = measure.getPosition(to)
+    val startFrom: Offset = startTip + measure.getTangent(from)
+    val endFrom: Offset = endTip - measure.getTangent(to)
+    drawLineEnd(startHead, color, startTip, startFrom, weight, head)
+    drawLineEnd(endHead, color, endTip, endFrom, weight, head)
 }
 
 /**

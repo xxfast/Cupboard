@@ -522,21 +522,201 @@ class SvgTest {
     }
 
     @Test
-    fun aRadialOrMissingGradientFallsBackToASolid() {
-        val radial: ShapeElement = shapeOf(
+    fun aRadialGradientKeepsItsCentreAndItsEnds() {
+        fun gradient(attributes: String): ShapeGradient = assertNotNull(
+            shapeOf(
+                """
+                <radialGradient id="r" $attributes>
+                  <stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
+                </radialGradient>
+                <rect width="100" height="50" fill="url(#r)"/>
+                """.trimIndent(),
+            ).gradient,
+        )
+
+        val offCentre: ShapeGradient = gradient("""cx="0.25" cy="75%" r="0.4"""")
+        assertEquals(GradientKind.Radial, offCentre.kind)
+        assertEquals(0xFFFF0000, offCentre.start)
+        assertEquals(0xFF0000FF, offCentre.end)
+        assertEquals(0.25f, offCentre.centerX, 0.001f)
+        assertEquals(0.75f, offCentre.centerY, 0.001f)
+        assertEquals(0.4f, offCentre.radius, 0.001f)
+
+        // SVG's defaults fill the box from its middle, which are the document's.
+        assertEquals(ShapeGradient(0xFFFF0000, 0xFF0000FF, kind = GradientKind.Radial), gradient(""))
+    }
+
+    /**
+     * In user space the circle is measured against the box it fills, through the
+     * `gradientTransform` that is how design tools place one: a unit circle at
+     * the origin, moved and scaled into place.
+     */
+    @Test
+    fun aRadialGradientInUserSpaceIsMeasuredAgainstItsBox() {
+        val shape: ShapeElement = shapeOf(
             """
-            <radialGradient id="r">
-              <stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
+            <radialGradient id="r" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+              gradientTransform="translate(60 45) scale(25)">
+              <stop stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/>
             </radialGradient>
-            <rect width="9" height="9" fill="url(#r)"/>
+            <rect x="10" y="20" width="100" height="50" fill="url(#r)"/>
             """.trimIndent(),
         )
-        assertNull(radial.gradient)
-        assertEquals(0xFFFF0000, radial.fill)
 
+        val gradient: ShapeGradient = assertNotNull(shape.gradient)
+        assertEquals(GradientKind.Radial, gradient.kind)
+        assertEquals(0.5f, gradient.centerX, 0.001f)
+        assertEquals(0.5f, gradient.centerY, 0.001f)
+        // A fraction of the longer side.
+        assertEquals(0.25f, gradient.radius, 0.001f)
+    }
+
+    @Test
+    fun aMissingGradientFallsBackToASolid() {
         val missing: ShapeElement = shapeOf("""<rect width="9" height="9" fill="url(#nowhere)"/>""")
         assertNull(missing.gradient)
         assertEquals(0xFF000000, missing.fill)
+    }
+
+    // Shadows
+
+    /**
+     * Figma's export, the shape of kotlin-native-nuget's icon: two paths in a
+     * group wearing a drop shadow spelled the long way, the flag filled with a
+     * radial gradient placed in user space. Each shape casts the group's shadow.
+     */
+    private val flag: String = """
+        <svg width="291" height="292" viewBox="0 0 291 292" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g filter="url(#filter0_d_1_2)">
+            <path d="M40 20 H60 V280 H40 Z" fill="#7F52FF"/>
+            <path d="M60 20 H250 L200 90 L250 160 H60 Z" fill="url(#paint0_radial_1_2)"/>
+          </g>
+          <defs>
+            <filter id="filter0_d_1_2" x="0" y="0" width="291" height="292"
+              filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+              <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+              <feColorMatrix in="SourceAlpha" type="matrix"
+                values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+              <feOffset dy="4"/>
+              <feGaussianBlur stdDeviation="2"/>
+              <feComposite in2="hardAlpha" operator="out"/>
+              <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.25 0"/>
+              <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_2"/>
+              <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_2" result="shape"/>
+            </filter>
+            <radialGradient id="paint0_radial_1_2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse"
+              gradientTransform="translate(155 90) rotate(90) scale(95)">
+              <stop stop-color="#E44857"/>
+              <stop offset="1" stop-color="#7F52FF"/>
+            </radialGradient>
+          </defs>
+        </svg>
+    """.trimIndent()
+
+    @Test
+    fun aGroupsDropShadowIsCastByEveryShapeInIt() {
+        val group: GroupElement = assertIs(svgElement(flag, roomy, roomy))
+        val (pole: ShapeElement, banner: ShapeElement) = group.children.map { assertIs<ShapeElement>(it) }
+
+        for (shape in listOf(pole, banner)) {
+            val shadow: ShapeShadow = assertNotNull(shape.shadow, shape.toString())
+            assertEquals(ShadowKind.Drop, shadow.kind)
+            assertEquals(0xFF000000, shadow.color)
+            assertEquals(4f, shadow.offset, 0.001f)
+            assertEquals(270f, shadow.angle, 0.001f)
+            // A standard deviation of 2 is a blur 4 across.
+            assertEquals(4f, shadow.blur, 0.001f)
+            assertEquals(0.25f, shadow.opacity, 0.001f)
+        }
+
+        val gradient: ShapeGradient = assertNotNull(banner.gradient)
+        assertEquals(GradientKind.Radial, gradient.kind)
+        assertEquals(0xFFE44857, gradient.start)
+        assertEquals(0xFF7F52FF, gradient.end)
+        assertEquals(0.5f, gradient.centerX, 0.001f)
+        assertEquals(0.5f, gradient.centerY, 0.001f)
+        assertEquals(0.5f, gradient.radius, 0.001f)
+    }
+
+    /** Fit to half its size, the shadow shrinks with the drawing it falls from. */
+    @Test
+    fun aShadowScalesWithTheFit() {
+        val group: GroupElement = assertIs(svgElement(flag, 145.5f, 146f))
+        val shadow: ShapeShadow = assertNotNull((group.children.first() as ShapeElement).shadow)
+
+        assertEquals(2f, shadow.offset, 0.001f)
+        assertEquals(2f, shadow.blur, 0.001f)
+    }
+
+    @Test
+    fun aDropShadowPrimitiveSaysItAllInOne() {
+        val shape: ShapeElement = shapeOf(
+            """
+            <filter id="d">
+              <feDropShadow dx="3" dy="-3" stdDeviation="1.5" flood-color="#ff0000" flood-opacity="0.5"/>
+            </filter>
+            <rect width="40" height="40" filter="url(#d)"/>
+            """.trimIndent(),
+        )
+
+        val shadow: ShapeShadow = assertNotNull(shape.shadow)
+        assertEquals(0xFFFF0000, shadow.color)
+        assertEquals(0.5f, shadow.opacity, 0.001f)
+        // Up and to the right, on Keynote's dial.
+        assertEquals(45f, shadow.angle, 0.001f)
+        assertEquals(4.243f, shadow.offset, 0.001f)
+        assertEquals(3f, shadow.blur, 0.001f)
+    }
+
+    @Test
+    fun aFloodMergedUnderTheSourceIsAShadowInThatColour() {
+        val shape: ShapeElement = shapeOf(
+            """
+            <filter id="m">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+              <feOffset dx="0" dy="5" result="o"/>
+              <feFlood flood-color="#00ff00" flood-opacity="0.6"/>
+              <feComposite in2="o" operator="in"/>
+              <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+            </filter>
+            <rect width="40" height="40" filter="url(#m)"/>
+            """.trimIndent(),
+        )
+
+        assertEquals(
+            ShapeShadow(color = 0xFF00FF00, blur = 6f, offset = 5f, angle = 270f, opacity = 0.6f),
+            shape.shadow,
+        )
+    }
+
+    /** A filter that does something other than cast a shadow still imports what it was on. */
+    @Test
+    fun aFilterThatIsNoShadowImportsWithout() {
+        fun filtered(filter: String): ShapeElement = shapeOf(
+            """
+            <filter id="f">$filter</filter>
+            <rect width="40" height="40" filter="url(#f)"/>
+            """.trimIndent(),
+        )
+
+        // A blur of the shape itself: nothing puts the source back over it.
+        assertNull(filtered("""<feGaussianBlur stdDeviation="2"/>""").shadow)
+        assertNull(filtered("""<feTurbulence baseFrequency="0.05"/>""").shadow)
+        // An inner shadow cuts itself out of the shape with an arithmetic composite.
+        val inner: ShapeElement = filtered(
+            """
+            <feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+            <feOffset dy="4"/>
+            <feGaussianBlur stdDeviation="2"/>
+            <feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"/>
+            <feBlend in2="shape"/>
+            """.trimIndent(),
+        )
+        assertNull(inner.shadow)
+        assertEquals("M0 0 L40 0 L40 40 L0 40 Z", inner.path?.data)
+
+        val nowhere: ShapeElement = shapeOf("""<rect width="40" height="40" filter="url(#nowhere)"/>""")
+        assertNull(nowhere.shadow)
     }
 
     // One shape or several

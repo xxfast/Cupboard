@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -120,6 +121,25 @@ fun linearGradient(
 /** Two stops of packed ARGB along [angle], for a shape that carries a gradient fill. */
 fun gradientBrush(start: Long, end: Long, angle: Float, width: Float, height: Float): Brush =
     linearGradient(angle, width, height, 0f to start.argb(), 1f to end.argb())
+
+/**
+ * Two stops of packed ARGB out from a centre at [centerX], [centerY] (fractions
+ * of the box) to a [radius] that is a fraction of its longer side, for a shape
+ * that carries a radial gradient fill.
+ */
+fun radialGradientBrush(
+    start: Long,
+    end: Long,
+    centerX: Float,
+    centerY: Float,
+    radius: Float,
+    width: Float,
+    height: Float,
+): Brush = Brush.radialGradient(
+    colors = listOf(start.argb(), end.argb()),
+    center = Offset(width * centerX, height * centerY),
+    radius = max(max(width, height) * radius, 0.5f),
+)
 
 /**
  * The board a slide draws on: the deck's own [BoardWidth] by [BoardHeight] box

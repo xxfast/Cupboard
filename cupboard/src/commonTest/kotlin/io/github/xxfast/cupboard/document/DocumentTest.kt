@@ -864,7 +864,7 @@ class DocumentTest {
                             frame = Frame(0f, 0f, 240f, 160f),
                             kind = ShapeKind.Star,
                             gradient = ShapeGradient(start = 0xFF7F52FF, end = 0xFF101223, angle = 40f),
-                            shadow = ShapeShadow(color = 0x66000000, blur = 20f, dx = 4f, dy = 8f),
+                            shadow = ShapeShadow(blur = 20f, offset = 8f, angle = 300f, opacity = 0.4f),
                         ),
                         LineElement(
                             start = Point(0f, 120f),
@@ -884,7 +884,7 @@ class DocumentTest {
 
         val star = decoded.slides.single().elements[0] as ShapeElement
         assertEquals(40f, star.gradient?.angle)
-        assertEquals(8f, star.shadow?.dy)
+        assertEquals(300f, star.shadow?.angle)
 
         val line = decoded.slides.single().elements[1] as LineElement
         assertEquals(Point(0f, 120f), line.start)

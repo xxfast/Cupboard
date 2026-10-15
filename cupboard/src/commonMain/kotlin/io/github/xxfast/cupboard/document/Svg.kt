@@ -36,15 +36,20 @@ import kotlin.math.tan
  *
  * What is read: `path`, `rect`, `circle`, `ellipse`, `line`, `polyline` and
  * `polygon`, under `g` and nested `svg`, with `transform`, the fill and stroke
- * properties (as attributes, in `style`, and from `<style>` class rules) and
- * linear gradients. Everything else is skipped with its subtree: text, images,
- * `use`, clipping, masks, patterns, markers and filters.
+ * properties (as attributes, in `style`, and from `<style>` class rules), linear
+ * and radial gradients, and a `filter` that is a drop shadow (see
+ * [SvgSheet.shadow]). Everything else is skipped with its subtree: text, images,
+ * `use`, clipping, masks, patterns and markers. A filter that is anything but a
+ * drop shadow (a blur, a glow, an inner shadow, a turbulence) is skipped too,
+ * and what it was on draws as if it had none.
  *
  * Merging contours from separate elements under one nonzero fill can differ from
  * the SVG where they overlap with opposite winding: the overlap comes out as a
  * hole. Known simplification, as are a group `opacity` multiplied into each
- * shape rather than composited once, and a gradient kept as its first and last
- * stop along an angle read off its unit box.
+ * shape rather than composited once, a group's shadow cast by each shape under
+ * it rather than by the group as one, and a gradient kept as its first and last
+ * stop: along an angle read off its unit box for a linear one, as a circle with
+ * no focal point for a radial one.
  */
 fun svgElement(svg: String, maxWidth: Float, maxHeight: Float): Element? {
     val root: SvgNode = parseXml(svg).firstNamed("svg") ?: return null
@@ -53,6 +58,10 @@ fun svgElement(svg: String, maxWidth: Float, maxHeight: Float): Element? {
         rules = nodes.filter { it.name == "style" }.flatMap { cssRules(it.text.toString()) },
         gradients = nodes
             .filter { it.name == "linearGradient" || it.name == "radialGradient" }
+            .mapNotNull { node -> node.attributes["id"]?.let { id -> id to node } }
+            .toMap(),
+        filters = nodes
+            .filter { it.name == "filter" }
             .mapNotNull { node -> node.attributes["id"]?.let { id -> id to node } }
             .toMap(),
     )
@@ -111,7 +120,7 @@ fun svgElement(svg: String, maxWidth: Float, maxHeight: Float): Element? {
             gradient = shape.look.gradient,
             strokeColor = shape.look.strokeColor,
             strokeWidth = shape.look.strokeWidth * strokeScale,
-            shadow = null,
+            shadow = shape.look.shadow?.cast(scaleX, scaleY, strokeScale),
             label = "",
             path = ShapePath(shape.outline.toPathData(), box, shape.look.evenOdd),
         )
@@ -130,8 +139,12 @@ private fun fitting(limit: Float, size: Float): Float =
 /** One drawn element: its outline in the root's user space, and what it is painted with. */
 private class SvgDrawn(val outline: MutableList<PathCommand>, val look: SvgLook)
 
-/** What the walk reads besides the tree itself: class rules, and gradients by id. */
-private class SvgSheet(val rules: List<SvgRule>, val gradients: Map<String, SvgNode>)
+/** What the walk reads besides the tree itself: class rules, and gradients and filters by id. */
+private class SvgSheet(
+    val rules: List<SvgRule>,
+    val gradients: Map<String, SvgNode>,
+    val filters: Map<String, SvgNode>,
+)
 
 /** Elements that draw nothing this reader can keep, skipped with everything under them. */
 private val SkippedElements: Set<String> = setOf(
@@ -158,7 +171,6 @@ private fun SvgNode.draw(
     if (properties["display"] == "none") return
     if (properties["visibility"] == "hidden" || properties["visibility"] == "collapse") return
 
-    val style: SvgStyle = inherited.with(properties)
     var matrix: SvgMatrix = parent * svgTransform(attributes["transform"])
 
     // A nested `svg` is a viewport of its own. The outermost one's is applied to
@@ -169,6 +181,14 @@ private fun SvgNode.draw(
             SvgMatrix(e = length("x"), f = length("y")) *
             SvgMatrix(a = viewport.scaleX, d = viewport.scaleY) *
             SvgMatrix(e = -viewport.originX, f = -viewport.originY)
+    }
+
+    // A filter is not inherited: SVG draws the whole subtree through it. The
+    // nearest a list of shapes comes is every shape under it casting the shadow
+    // itself. One that is no shadow this can read leaves whatever was cast above.
+    val style: SvgStyle = inherited.with(properties).let { style ->
+        val shadow: SvgShadow? = properties["filter"]?.let { sheet.shadow(it, matrix) }
+        if (shadow == null) style else style.copy(shadow = shadow)
     }
 
     val outline: List<PathCommand> = when (name) {
@@ -204,8 +224,11 @@ private fun SvgNode.draw(
     if (outline.isEmpty()) return
 
     // A line has no inside, so SVG's default black fill has nothing to paint.
-    val look: SvgLook = style.look(sheet, matrix, filled = name != "line") ?: return
-    into += SvgDrawn(outline.mapTo(mutableListOf()) { it.transformed(matrix) }, look)
+    val placed: MutableList<PathCommand> =
+        outline.mapTo(mutableListOf()) { it.transformed(matrix) }
+    val look: SvgLook =
+        style.look(sheet, matrix, filled = name != "line", bounds = placed.tightBounds()) ?: return
+    into += SvgDrawn(placed, look)
 }
 
 private fun SvgNode.length(name: String): Float = attributes[name]?.let(::svgLength) ?: 0f
@@ -681,7 +704,8 @@ private sealed interface SvgPaint {
  *
  * [opacity] is the odd one out. SVG does not inherit it, it composites the whole
  * subtree at that alpha, and the nearest thing a flat list of shapes has is the
- * product of every `opacity` on the way down.
+ * product of every `opacity` on the way down. [shadow] is the other, for the same
+ * reason: the nearest filter above, cast by each shape under it.
  */
 private data class SvgStyle(
     val fill: SvgPaint = SvgPaint.Solid(SvgBlack),
@@ -691,6 +715,7 @@ private data class SvgStyle(
     val strokeOpacity: Float = 1f,
     val opacity: Float = 1f,
     val evenOdd: Boolean = false,
+    val shadow: SvgShadow? = null,
 )
 
 /** A value this can't read leaves the inherited one standing, as an absent one does. */
@@ -720,14 +745,21 @@ private data class SvgLook(
     val strokeWidth: Float,
     val opacity: Float,
     val evenOdd: Boolean,
+    val shadow: SvgShadow?,
 )
 
 /**
  * This style as a look, null for one that shows nothing at all. [matrix] is the
  * element's, for the stroke it scales; [filled] is false for an element with no
- * inside to fill.
+ * inside to fill; [bounds] is its outline's box in the root's user space, what a
+ * radial gradient in user space is measured against.
  */
-private fun SvgStyle.look(sheet: SvgSheet, matrix: SvgMatrix, filled: Boolean): SvgLook? {
+private fun SvgStyle.look(
+    sheet: SvgSheet,
+    matrix: SvgMatrix,
+    filled: Boolean,
+    bounds: Frame,
+): SvgLook? {
     if (opacity <= 0f) return null
 
     var fillColor: Long = SvgClear
@@ -736,15 +768,18 @@ private fun SvgStyle.look(sheet: SvgSheet, matrix: SvgMatrix, filled: Boolean): 
         SvgPaint.None -> Unit
         is SvgPaint.Solid -> fillColor = paint.color.faded(fillOpacity)
 
-        // A linear gradient with two ends to it is a gradient here too. A radial
-        // one, a single stop or an id that names nothing is its first colour, or
-        // black: something visible to restyle rather than a shape that vanished.
+        // A gradient with two ends to it is a gradient here too. A single stop
+        // or an id that names nothing is its first colour, or black: something
+        // visible to restyle rather than a shape that vanished.
         is SvgPaint.Reference -> {
             val found: SvgGradient? = sheet.gradient(paint.id)
             val first: Long = (found?.stops?.firstOrNull() ?: SvgBlack).faded(fillOpacity)
             fillColor = first
-            if (found != null && found.linear && found.stops.size > 1) {
-                gradient = ShapeGradient(first, found.stops.last().faded(fillOpacity), found.angle)
+            if (found != null && found.stops.size > 1) {
+                val last: Long = found.stops.last().faded(fillOpacity)
+                gradient =
+                    if (found.linear) ShapeGradient(first, last, found.angle)
+                    else found.radial(first, last, matrix, bounds)
             }
         }
     }
@@ -770,6 +805,7 @@ private fun SvgStyle.look(sheet: SvgSheet, matrix: SvgMatrix, filled: Boolean): 
         strokeWidth = if (stroked) width else 0f,
         opacity = opacity,
         evenOdd = evenOdd,
+        shadow = shadow,
     )
 }
 
@@ -905,8 +941,47 @@ private fun svgNumbers(text: String): List<Float> {
     return generateSequence { scanner.number() }.toList()
 }
 
-/** A gradient boiled down to what a [ShapeGradient] can keep. */
-private class SvgGradient(val linear: Boolean, val stops: List<Long>, val angle: Float)
+/**
+ * A gradient boiled down to what a [ShapeGradient] can keep. [angle] is a linear
+ * one's; [centerX], [centerY] and [radius] are a radial one's circle through its
+ * `gradientTransform`, in the unit box or, when [userSpace], the user space of
+ * the element it fills.
+ */
+private class SvgGradient(
+    val linear: Boolean,
+    val stops: List<Long>,
+    val angle: Float,
+    val centerX: Float,
+    val centerY: Float,
+    val radius: Float,
+    val userSpace: Boolean,
+)
+
+/**
+ * This radial gradient from [start] to [end] over [bounds], the filled outline's
+ * box in the root's user space. In the unit box its circle is already in
+ * fractions of the box; in user space it goes through [matrix], the element's,
+ * and is measured against the box.
+ *
+ * The radius is a fraction of the box's longer side, the most a circular fill
+ * can say of the ellipse SVG stretches a unit box circle into.
+ */
+private fun SvgGradient.radial(
+    start: Long,
+    end: Long,
+    matrix: SvgMatrix,
+    bounds: Frame,
+): ShapeGradient {
+    val circle = ShapeGradient(start, end, kind = GradientKind.Radial)
+    if (!userSpace) return circle.copy(centerX = centerX, centerY = centerY, radius = radius)
+    if (bounds.width <= 0f || bounds.height <= 0f) return circle
+
+    return circle.copy(
+        centerX = (matrix.x(centerX, centerY) - bounds.x) / bounds.width,
+        centerY = (matrix.y(centerX, centerY) - bounds.y) / bounds.height,
+        radius = radius * matrix.scale / max(bounds.width, bounds.height),
+    )
+}
 
 /**
  * The gradient [id] names, null when nothing does.
@@ -931,6 +1006,7 @@ private fun SvgSheet.gradient(id: String): SvgGradient? {
     val stops: List<Long> = node.stops().ifEmpty { shared?.stops().orEmpty() }
 
     // In the unit box by default, left to right: a percentage is a fraction of it.
+    // In user space a percentage would be of the viewport, which nothing exports.
     fun coordinate(name: String, default: Float): Float {
         val value: String = node.attributes[name] ?: return default
         if (value.endsWith("%")) return PathScanner(value).number()?.div(100f) ?: default
@@ -944,11 +1020,156 @@ private fun SvgSheet.gradient(id: String): SvgGradient? {
     val dy: Float = turn.b * alongX + turn.d * alongY
     val degrees: Float = atan2(dx, -dy) * 180f / PI.toFloat()
 
+    // A radial one's circle, which defaults to filling the unit box.
+    val cx: Float = coordinate("cx", 0.5f)
+    val cy: Float = coordinate("cy", 0.5f)
+
     return SvgGradient(
         linear = node.name == "linearGradient",
         stops = stops,
         angle = (degrees + 360f) % 360f,
+        centerX = turn.x(cx, cy),
+        centerY = turn.y(cx, cy),
+        radius = coordinate("r", 0.5f) * turn.scale,
+        userSpace = node.attributes["gradientUnits"] == "userSpaceOnUse",
     )
+}
+
+/**
+ * A drop shadow read off a filter, in the root's user space: the step it falls
+ * by, its blur's standard deviation, and its colour with the opacity apart.
+ */
+private data class SvgShadow(
+    val dx: Float,
+    val dy: Float,
+    val deviation: Float,
+    val color: Long,
+    val opacity: Float,
+)
+
+/**
+ * This shadow on a slide, the walk's [scaleX] and [scaleY] to the natural size
+ * and fit applied, [strokeScale] for the blur. A standard deviation is half a
+ * blur radius, CSS's own reading of the two; an alpha in the colour folds into
+ * the opacity, which is where the editor keeps it.
+ */
+private fun SvgShadow.cast(scaleX: Float, scaleY: Float, strokeScale: Float): ShapeShadow {
+    val (offset: Float, angle: Float) = shadowOffsetAngle(dx * scaleX, dy * scaleY)
+    return ShapeShadow(
+        kind = ShadowKind.Drop,
+        color = color or SvgBlack,
+        blur = deviation * 2f * strokeScale,
+        offset = offset,
+        angle = angle,
+        opacity = (opacity * color.alpha / 255f).coerceIn(0f, 1f),
+    )
+}
+
+/**
+ * The drop shadow the `filter` [value] names, in the root's user space: [matrix]
+ * is the filtered element's, which its numbers are in. Null for a filter that
+ * names nothing or is not a drop shadow this can read.
+ *
+ * Two spellings are read. `feDropShadow`, which says it all in one. And the
+ * recipe from before it, which design tools still export: the source's alpha
+ * stepped by `feOffset` and blurred by `feGaussianBlur`, coloured by an `feFlood`
+ * or by an `feColorMatrix` that throws the source's colour away (Figma's), then
+ * put back under `SourceGraphic` with `feMerge`, `feBlend` or `feComposite`.
+ *
+ * A filter that never puts the source back over what it made is doing something
+ * to the shape itself, a blur or a glow, and an arithmetic composite is how an
+ * inner shadow cuts itself out: neither is a drop shadow.
+ */
+private fun SvgSheet.shadow(value: String, matrix: SvgMatrix): SvgShadow? {
+    val id: String = (svgPaint(value) as? SvgPaint.Reference)?.id ?: return null
+    val primitives: List<SvgNode> = filters[id]?.children ?: return null
+
+    fun SvgNode.number(name: String, default: Float): Float =
+        attributes[name]?.let(::svgLength) ?: default
+
+    // One deviation or two, along x then y; two are as near as one blur gets by
+    // their mean.
+    fun SvgNode.deviation(default: Float): Float {
+        val given: List<Float> = svgNumbers(attributes["stdDeviation"].orEmpty())
+        return if (given.isEmpty()) default else given.take(2).average().toFloat()
+    }
+
+    fun SvgNode.flood(): Pair<Long, Float> {
+        val flood: Map<String, String> = properties(rules)
+        val color: Long = flood["flood-color"]?.let(::svgColor) ?: SvgBlack
+        return color to (flood["flood-opacity"]?.let(::svgFraction) ?: 1f)
+    }
+
+    val drop: SvgNode? = primitives.firstOrNull { it.name == "feDropShadow" }
+    val shadow: SvgShadow = if (drop != null) {
+        val (color: Long, opacity: Float) = drop.flood()
+        SvgShadow(drop.number("dx", 2f), drop.number("dy", 2f), drop.deviation(2f), color, opacity)
+    } else {
+        val offset: SvgNode? = primitives.firstOrNull { it.name == "feOffset" }
+        val blur: SvgNode? = primitives.firstOrNull { it.name == "feGaussianBlur" }
+        if (offset == null && blur == null) return null
+
+        val restored: Boolean = primitives.any { node ->
+            when (node.name) {
+                "feMerge" -> node.children.any { it.attributes["in"] == "SourceGraphic" }
+                "feBlend", "feComposite" -> node.attributes["in"] == "SourceGraphic" ||
+                    node.attributes["in2"] == "SourceGraphic"
+                else -> false
+            }
+        }
+        val cutOut: Boolean = primitives.any {
+            it.name == "feComposite" && it.attributes["operator"] == "arithmetic"
+        }
+        if (!restored || cutOut) return null
+
+        // The last recolouring wins: Figma's first colour matrix only pulls the
+        // alpha out, the one after the blur is the shadow's. A flood of nothing
+        // is a backdrop being cleared rather than a colour.
+        val recoloured: Pair<Long, Float>? = primitives
+            .filter { it.name == "feColorMatrix" }
+            .lastOrNull { (it.attributes["type"] ?: "matrix") == "matrix" }
+            ?.let { svgRecolour(it.attributes["values"].orEmpty()) }
+        val flooded: Pair<Long, Float>? = primitives
+            .filter { it.name == "feFlood" }
+            .map { it.flood() }
+            .lastOrNull { (_, opacity) -> opacity > 0f }
+        val (color: Long, opacity: Float) = recoloured ?: flooded ?: (SvgBlack to 1f)
+
+        SvgShadow(
+            dx = offset?.number("dx", 0f) ?: 0f,
+            dy = offset?.number("dy", 0f) ?: 0f,
+            deviation = blur?.deviation(0f) ?: 0f,
+            color = color,
+            opacity = opacity,
+        )
+    }
+
+    // Into the root's space: the step turns and stretches with the element, the
+    // blur grows with it.
+    return shadow.copy(
+        dx = matrix.a * shadow.dx + matrix.c * shadow.dy,
+        dy = matrix.b * shadow.dx + matrix.d * shadow.dy,
+        deviation = shadow.deviation * matrix.scale,
+    )
+}
+
+/**
+ * The colour and opacity an `feColorMatrix` [values] paints everything in, null
+ * for a matrix that keeps any of the source's colour, which is a tint rather than
+ * a shadow's colour. The colour is the RGB rows' constant column; the opacity is
+ * what the alpha row multiplies the source's alpha by.
+ */
+private fun svgRecolour(values: String): Pair<Long, Float>? {
+    val m: List<Float> = svgNumbers(values)
+    if (m.size != 20) return null
+
+    val keepsColour: Boolean =
+        (0..2).any { row -> (0..2).any { column -> m[row * 5 + column] != 0f } }
+    if (keepsColour) return null
+
+    fun channel(value: Float): Long = (value.coerceIn(0f, 1f) * 255f).roundToInt().toLong()
+    val color: Long = SvgBlack or (channel(m[4]) shl 16) or (channel(m[9]) shl 8) or channel(m[14])
+    return color to m[18].coerceIn(0f, 1f)
 }
 
 // endregion

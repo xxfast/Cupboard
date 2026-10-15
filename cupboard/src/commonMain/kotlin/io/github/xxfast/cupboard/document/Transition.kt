@@ -192,19 +192,28 @@ fun Element.travellingFrom(from: Element, fraction: Float): Element {
             cornerRadius = blend(from.cornerRadius, cornerRadius, t),
             fill = blendColor(from.fill, fill, t),
             // A gradient blends with a gradient; with a flat fill on either side
-            // there is nothing to blend it against, so it is the target's.
-            gradient = if (from.gradient == null || gradient == null) gradient else ShapeGradient(
+            // there is nothing to blend it against, so it is the target's. So is
+            // its kind, which has no in-between.
+            gradient = if (from.gradient == null || gradient == null) gradient else gradient.copy(
                 start = blendColor(from.gradient.start, gradient.start, t),
                 end = blendColor(from.gradient.end, gradient.end, t),
                 angle = blend(from.gradient.angle, gradient.angle, t),
+                centerX = blend(from.gradient.centerX, gradient.centerX, t),
+                centerY = blend(from.gradient.centerY, gradient.centerY, t),
+                radius = blend(from.gradient.radius, gradient.radius, t),
             ),
             strokeColor = blendColor(from.strokeColor, strokeColor, t),
             strokeWidth = blend(from.strokeWidth, strokeWidth, t),
-            shadow = if (from.shadow == null || shadow == null) shadow else ShapeShadow(
+            // Two shadows of different kinds have no in-between shape, so the
+            // kind is the target's and only the numbers travel.
+            shadow = if (from.shadow == null || shadow == null) shadow else shadow.copy(
                 color = blendColor(from.shadow.color, shadow.color, t),
                 blur = blend(from.shadow.blur, shadow.blur, t),
-                dx = blend(from.shadow.dx, shadow.dx, t),
-                dy = blend(from.shadow.dy, shadow.dy, t),
+                offset = blend(from.shadow.offset, shadow.offset, t),
+                angle = blendAngle(from.shadow.angle, shadow.angle, t),
+                opacity = blend(from.shadow.opacity, shadow.opacity, t),
+                perspective = blend(from.shadow.perspective, shadow.perspective, t),
+                curve = blend(from.shadow.curve, shadow.curve, t),
             ),
             labelSize = blend(from.labelSize, labelSize, t),
             labelColor = blendColor(from.labelColor, labelColor, t),
@@ -255,6 +264,12 @@ fun Element.travellingFrom(from: Element, fraction: Float): Element {
 }
 
 private fun blend(from: Float, to: Float, t: Float): Float = from + (to - from) * t
+
+/** Degrees on a dial, the short way round: 350 to 10 passes through 0, not 180. */
+private fun blendAngle(from: Float, to: Float, t: Float): Float {
+    val turn: Float = ((to - from) % 360f + 540f) % 360f - 180f
+    return ((from + turn * t) % 360f + 360f) % 360f
+}
 
 /** A packed ARGB colour [t] of the way from [from] to [to], channel by channel. */
 private fun blendColor(from: Long, to: Long, t: Float): Long {
