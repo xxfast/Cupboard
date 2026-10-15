@@ -401,6 +401,10 @@ data class SizeMark(val axis: Axis, val frame: Frame)
  *
  * [bending] is a curved line's bend handle in flight. Keynote marks nothing for
  * one: no guides, no arrows and no readout, only the end handles hiding.
+ *
+ * [cornerRadius] is a rounded rectangle's radius dot in flight, and the radius
+ * it has dragged to: the readout is that alone, with no guides or arrows, since
+ * the box itself stays put.
  */
 data class DragSample(
     val pointerX: Float,
@@ -408,6 +412,7 @@ data class DragSample(
     val resizing: Boolean,
     val line: LineElement? = null,
     val bending: Boolean = false,
+    val cornerRadius: Float? = null,
 )
 
 /**
@@ -569,7 +574,9 @@ fun alignmentOverlay(
     others: List<Frame>,
     drag: DragSample,
 ): AlignmentOverlay {
-    if (drag.bending) return AlignmentOverlay(frame, emptyList(), emptyList(), emptyList(), drag)
+    if (drag.bending || drag.cornerRadius != null) {
+        return AlignmentOverlay(frame, emptyList(), emptyList(), emptyList(), drag)
+    }
 
     val xs: List<Float> = listOf(frame.x, frame.centerX, frame.x + frame.width)
     val ys: List<Float> = listOf(frame.y, frame.centerY, frame.y + frame.height)

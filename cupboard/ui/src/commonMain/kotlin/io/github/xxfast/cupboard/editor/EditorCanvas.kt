@@ -125,6 +125,7 @@ import io.github.xxfast.cupboard.document.MinLineLength
 import io.github.xxfast.cupboard.document.ListStyle
 import io.github.xxfast.cupboard.document.PlaceholderRole
 import io.github.xxfast.cupboard.document.Point
+import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.TerminalElement
@@ -264,6 +265,13 @@ private sealed interface DragTarget {
      */
     data class Move(val draggedId: String) : DragTarget
     data class Resize(val elementId: String, val handle: Handle) : DragTarget
+    /**
+     * A rounded rectangle's green radius dot. [fromX] is where the radius had
+     * the dot, in doc units, before any inset off the corner: the drag moves it
+     * from there, so neither a press a little off its center nor the inset jumps
+     * the radius.
+     */
+    data class CornerRadius(val elementId: String, val fromX: Float) : DragTarget
     /** A sweep over empty slide space. [start] is in doc units. */
     data class Marquee(val start: Offset) : DragTarget
     /** A user guide on the move, [id] being the one it has in the document. */
@@ -681,6 +689,21 @@ fun EditorCanvas(
                 return hitTestHandle(element, localX, localY, tolerance / canvasScale)
             }
 
+            // A lone rectangle's radius dot under the pointer, the same square
+            // test [handleAt] makes. Only ever unrotated, so no mapping into the
+            // element's own space. The box handles are tested first and win where
+            // the two overlap, the way a line's ends win over its bend.
+            fun radiusHandleAt(position: Offset, tolerance: Float = 8f): ShapeElement? {
+                val shape: ShapeElement = soleSelected()
+                    ?.takeIf { !currentSlide.isLocked(it.id) } as? ShapeElement
+                    ?: return null
+                val dot: Point = shape.radiusHandle(RadiusDotInset / canvasScale) ?: return null
+                val p: Offset = toDoc(position)
+                val reach: Float = tolerance / canvasScale
+                val hit: Boolean = abs(p.x - dot.x) <= reach && abs(p.y - dot.y) <= reach
+                return shape.takeIf { hit }
+            }
+
             // The guide under the pointer, when guides are showing at all: a press
             // that lands on one grabs it, and only a handle outranks that. The
             // tolerance is screen dp, converted into doc units so the target is the
@@ -794,6 +817,9 @@ fun EditorCanvas(
                                         hovered = position
                                             ?.let { handleAt(it, tolerance = 12f) }
                                             ?.let { handle -> sole?.resizeDirection(handle) }
+                                            ?: position
+                                                ?.let { radiusHandleAt(it, tolerance = 12f) }
+                                                ?.let { ResizeDirection.Horizontal }
                                     }
 
                                     PointerEventType.Release -> {
@@ -1028,6 +1054,16 @@ fun EditorCanvas(
                             return listOf(element.update(frame = frame))
                         }
 
+                        // The radius dot slides along the top edge with the pointer,
+                        // clamped between square corners and the pill. Shift
+                        // settles on whichever of those two is nearer.
+                        fun rounded(t: DragTarget.CornerRadius): List<Element> {
+                            val shape: ShapeElement = currentSlide.elementById(t.elementId)
+                                as? ShapeElement
+                                ?: return emptyList()
+                            return listOf(shape.withCornerRadiusAt(t.fromX + totalDx, heldKeys.shift))
+                        }
+
                         detectDragGestures(
                             onDragStart = { position ->
                                 // The selection was already edited at press time, and
@@ -1038,6 +1074,7 @@ fun EditorCanvas(
                                 val p = toDoc(position)
                                 val sole: Element? = soleSelected()
                                 val handle: Handle? = handleAt(position)
+                                val rounding: ShapeElement? = radiusHandleAt(position)
                                 val hit: Element? = elementAt(p)
                                 val guide: Guide? = guideAt(p)
                                 target = when {
@@ -1047,6 +1084,11 @@ fun EditorCanvas(
                                         startLine = sole as? LineElement
                                         pointer = p
                                         DragTarget.Resize(sole.id, handle)
+                                    }
+
+                                    rounding != null -> {
+                                        val dot: Point? = rounding.radiusHandle()
+                                        DragTarget.CornerRadius(rounding.id, dot?.x ?: p.x)
                                     }
 
                                     // A guide outranks whatever is drawn under it,
@@ -1078,8 +1120,11 @@ fun EditorCanvas(
                                         else DragTarget.Move(hit.id)
                                     }
                                 }
-                                resizing = (target as? DragTarget.Resize)
-                                    ?.let { resize -> sole?.resizeDirection(resize.handle) }
+                                resizing = when (val t = target) {
+                                    is DragTarget.Resize -> sole?.resizeDirection(t.handle)
+                                    is DragTarget.CornerRadius -> ResizeDirection.Horizontal
+                                    else -> null
+                                }
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
@@ -1099,12 +1144,15 @@ fun EditorCanvas(
                                     val line: LineElement? = edited.singleOrNull() as? LineElement
                                     val bending: Boolean =
                                         (target as? DragTarget.Resize)?.handle == Handle.Bend
+                                    val rounded: ShapeElement? = (edited.singleOrNull() as? ShapeElement)
+                                        ?.takeIf { target is DragTarget.CornerRadius }
                                     return DragSample(
                                         pointerX = at.x,
                                         pointerY = at.y,
                                         resizing = resizing,
                                         line = line.takeIf { startLine != null && !bending },
                                         bending = bending,
+                                        cornerRadius = rounded?.cornerRadius,
                                     )
                                 }
                                 when (val t = target) {
@@ -1112,6 +1160,11 @@ fun EditorCanvas(
                                     is DragTarget.Resize -> {
                                         val edited: List<Element> = resized(t)
                                         currentOnPreviewDrag(edited, sample(resizing = true, edited = edited))
+                                    }
+
+                                    is DragTarget.CornerRadius -> {
+                                        val edited: List<Element> = rounded(t)
+                                        currentOnPreviewDrag(edited, sample(resizing = false, edited = edited))
                                     }
 
                                     is DragTarget.GuideMove ->
@@ -1137,6 +1190,7 @@ fun EditorCanvas(
                                 when (val t = target) {
                                     is DragTarget.Move -> onUpdateElements(moved())
                                     is DragTarget.Resize -> onUpdateElements(resized(t))
+                                    is DragTarget.CornerRadius -> onUpdateElements(rounded(t))
                                     // What a half-swept marquee caught, it keeps.
                                     is DragTarget.Marquee -> onEndMarquee()
 
@@ -2217,6 +2271,10 @@ internal class ListMarkerTransformation(
  * a lock means what it says. Ring and handles both ride the element's rotation,
  * the handles by sitting at their corner's drawn position and turning with it.
  *
+ * A rectangle adds Keynote's green radius dot over them, on its top edge where
+ * the corner's arc meets it, white-edged like a curve's bend. See [radiusHandle]
+ * for when it shows.
+ *
  * A line is drawn its own way (see [LineSelectionOverlay]), and [dragging] is only
  * for it: a drag in flight comes back through the loop as an alignment overlay.
  */
@@ -2253,6 +2311,15 @@ private fun SelectionOverlay(element: Element, scale: Float, handles: Boolean, d
                 .border((1.5f / scale).dp, Accent, RoundedCornerShape((2f / scale).dp))
         )
     }
+
+    val dot: Point = (element as? ShapeElement)?.radiusHandle(RadiusDotInset / scale) ?: return
+    Box(
+        Modifier
+            .offset((dot.x - handleSize / 2).dp, (dot.y - handleSize / 2).dp)
+            .size(handleSize.dp)
+            .background(ControlHandle, CircleShape)
+            .border((1f / scale).dp, Color.White, CircleShape)
+    )
 }
 
 /**
@@ -2296,7 +2363,7 @@ private fun LineSelectionOverlay(line: LineElement, scale: Float, dragging: Bool
         Modifier
             .offset((bend.x - handleSize / 2).dp, (bend.y - handleSize / 2).dp)
             .size(handleSize.dp)
-            .background(BendHandle, CircleShape)
+            .background(ControlHandle, CircleShape)
             .border((1f / scale).dp, Color.White, CircleShape)
     )
 }
@@ -2304,8 +2371,18 @@ private fun LineSelectionOverlay(line: LineElement, scale: Float, dragging: Bool
 /** A line's end handle outline: Keynote's dark square edge rather than the accent ring. */
 private val LineHandleOutline = Color(0xFF3C3C3C)
 
-/** A curve's bend handle: Keynote's green. */
-private val BendHandle = Color(0xFF34C759)
+/**
+ * Keynote's green, on the handles that shape an element rather than size it: a
+ * curve's bend and a rounded rectangle's radius dot.
+ */
+private val ControlHandle = Color(0xFF34C759)
+
+/**
+ * The nearest a radius dot comes to its corner, center to center, in screen dp:
+ * a resize handle's width and a couple more, so it never sits under the corner's
+ * handle at any zoom.
+ */
+private const val RadiusDotInset: Float = 11f
 
 /** The cross a locked line's ends wear. */
 private val LockedMark = Color(0xFF8E8E93)
@@ -2494,8 +2571,8 @@ private fun GuideLine(axis: GuideAxis, position: Float, scale: Float, alpha: Flo
  * yellow line across the slide for every guide the dragged box sits on, a
  * double-headed arrow across every gap it makes equal to its neighbours', one
  * over every element whose width or height a resize matches, and a dark pill
- * beside the pointer reading the box's position (or, mid-resize, its size) in
- * points. Screen space throughout, like every other editing affordance: lines,
+ * beside the pointer reading the box's position (or, mid-resize, its size, or
+ * mid radius drag, its corner radius) in points. Screen space throughout, like every other editing affordance: lines,
  * arrowheads and text hold their size at any zoom, positions stay in doc units.
  */
 @Composable
@@ -2530,9 +2607,12 @@ private fun AlignmentOverlayView(overlay: AlignmentOverlay, scale: Float) {
 
     val frame: Frame = overlay.frame
     val line: LineElement? = drag.line
+    val radius: Float? = drag.cornerRadius
     // A line's end reads as Keynote's does, angle and length, since its box is
-    // not what the drag is changing. The angle rounds 359.6 to 0, not 360.
+    // not what the drag is changing. The angle rounds 359.6 to 0, not 360. A
+    // radius dot reads the radius alone, for the same reason.
     val readout: String = when {
+        radius != null -> "Radius: ${radius.roundToInt()} pt"
         line != null -> "${line.angle.roundToInt() % 360}°  l: ${line.length.roundToInt()} pt"
         drag.resizing -> "w: ${frame.width.roundToInt()} pt  h: ${frame.height.roundToInt()} pt"
         else -> "x: ${frame.x.roundToInt()} pt  y: ${frame.y.roundToInt()} pt"
