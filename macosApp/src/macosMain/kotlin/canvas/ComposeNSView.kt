@@ -43,8 +43,6 @@ import kotlinx.cinterop.pointed
 import kotlinx.cinterop.useContents
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.Canvas
-import org.jetbrains.skiko.SkiaLayer
-import org.jetbrains.skiko.SkikoRenderDelegate
 import platform.AppKit.NSEvent
 import platform.AppKit.NSEventModifierFlagCommand
 import platform.AppKit.NSEventModifierFlagControl
@@ -150,11 +148,11 @@ private class MutableWindowInfo : WindowInfo {
  * Compose content as an embeddable NSView, for a SwiftUI host to place via
  * `NSViewRepresentable`.
  *
- * Host it at origin (0,0) in its superview. Skiko's MacOsMetalRedrawer.syncBounds()
- * copies our frame onto the metal layer verbatim, origin included, and that layer is
- * our own backing layer, so any offset shifts the canvas and leaves an unpainted band
- * behind it. The macOS shell hosts us as the full-bleed window content layer, edge to
- * edge under the glass panels, so the origin is (0,0) for free.
+ * Host it at origin (0,0) in its superview. MetalCanvas.syncBounds() copies our frame
+ * onto the metal layer verbatim, origin included, and that layer is our own backing
+ * layer, so any offset shifts the canvas and leaves an unpainted band behind it. The
+ * macOS shell hosts us as the full-bleed window content layer, edge to edge under the
+ * glass panels, so the origin is (0,0) for free.
  */
 class ComposeNSView(
     frame: CValue<NSRect> = NSMakeRect(0.0, 0.0, 640.0, 360.0),
@@ -177,26 +175,15 @@ class ComposeNSView(
             override val textInputService get() = this@ComposeNSView.textInputService
         }
 
-    // One per stay in a window, null between them. Skiko reads `nsView.window!!`
-    // under every frame it draws (SkiaLayer.contentScale) and a frame asked for
-    // in a window is still queued once we have left it, so the layer goes when
-    // the window does. A new one each time: skiko's will not attach twice.
-    private var skiaLayer: SkiaLayer? = null
+    // One per stay in a window, null between them. It draws at its window's scale
+    // and a frame asked for in a window is still queued once we have left it, so the
+    // canvas goes when the window does, and takes its Metal context with it (#37).
+    private var metal: MetalCanvas? = null
     private val scene = CanvasLayersComposeScene(
         coroutineContext = Dispatchers.Main,
         platformContext = platformContext,
-        invalidate = { skiaLayer?.needRender() },
+        invalidate = { metal?.needRender() },
     )
-
-    private val renderDelegate = object : SkikoRenderDelegate {
-        override fun onRender(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
-            if (isDisposed) return
-            val sizeInPx = IntSize(width, height)
-            windowInfo.containerSize = sizeInPx
-            scene.size = sizeInPx
-            scene.render(canvas.asComposeCanvas(), nanoTime)
-        }
-    }
 
     private var isDisposed = false
     private var trackingArea: NSTrackingArea? = null
@@ -211,21 +198,16 @@ class ComposeNSView(
     override fun wantsUpdateLayer() = true
     override fun acceptsFirstResponder() = true
 
-    // SkiaLayer needs a window-backed view; defer attach until AppKit gives us one.
+    // The Metal canvas needs a window-backed view; defer attach until AppKit gives us one.
     override fun viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if (isDisposed) return
         val window = this.window
-        if (window != null && skiaLayer == null) {
-            skiaLayer = SkiaLayer().also { layer ->
-                layer.renderDelegate = renderDelegate
-                layer.attachTo(this)
-            }
-        }
+        if (window != null && metal == null) metal = MetalCanvas(this, ::render)
         if (window != null) {
             scene.density = Density(window.backingScaleFactor.toFloat())
             window.makeFirstResponder(this)
-            // Back in a window, so skiko can safely hear about frames again. The
+            // Back in a window, so the canvas can safely hear about frames again. The
             // post is the catch-up for whatever it missed while we were detached.
             postsFrameChangedNotifications = true
             NSNotificationCenter.defaultCenter.postNotificationName(
@@ -244,17 +226,16 @@ class ComposeNSView(
     override fun layout() {
         super.layout()
         if (isDisposed) return
-        skiaLayer?.needRender()
+        metal?.needRender()
     }
 
     override fun viewWillMoveToWindow(newWindow: NSWindow?) {
         super.viewWillMoveToWindow(newWindow)
-        // Skiko's frame observer reads nsView.window!! (MacOsMetalRedrawer.syncContentScale),
-        // so a frame change while we sit between windows crashes it. SwiftUI does
-        // exactly that: re-hosting sets the frame before adding us back, which is
-        // what exiting play mode does. Go quiet until we have a window again.
+        // A frame change while we sit between windows has no window scale to draw at.
+        // SwiftUI does exactly that: re-hosting sets the frame before adding us back,
+        // which is what exiting play mode does. Go quiet until we have a window again.
         if (newWindow == null) postsFrameChangedNotifications = false
-        // Detaching disposes the redrawer, so a frame already queued is skipped
+        // Detaching disposes the canvas, so a frame already queued is skipped
         // and nothing can ask for another until viewDidMoveToWindow builds the next.
         if (newWindow !== window) detachLayer()
         updateTrackingAreas()
@@ -502,9 +483,17 @@ class ComposeNSView(
         scene.close()
     }
 
+    private fun render(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
+        if (isDisposed) return
+        val sizeInPx = IntSize(width, height)
+        windowInfo.containerSize = sizeInPx
+        scene.size = sizeInPx
+        scene.render(canvas.asComposeCanvas(), nanoTime)
+    }
+
     private fun detachLayer() {
-        skiaLayer?.detach()
-        skiaLayer = null
+        metal?.dispose()
+        metal = null
     }
 
     private fun onMouseEvent(event: NSEvent, eventType: PointerEventType, button: PointerButton? = null) {
