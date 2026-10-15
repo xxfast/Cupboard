@@ -60,9 +60,16 @@ data class SlideTransition(
  * the cut is the words on the box, so that is what is matched. Nothing about the
  * frame, the colour or the type is in the key: moving and restyling the element
  * is the whole point of the transition.
+ *
+ * A box's words are its words as typed, fields and all, never as a slide fills
+ * them in: a `{title}` breadcrumb is one box across the cut, its words changing
+ * on the way (see [travellingFrom]).
  */
 fun Element.matchKey(): String = when (this) {
-    is TextElement -> "text:$text"
+    // The slide number is the same box on every slide whatever it reads, and
+    // whatever it is typed as: `5 / 89` going to `6 / 89` is one number counting
+    // on, not two texts.
+    is TextElement -> if (hasSlideNumber) "text:{slide number}" else "text:$text"
     is ShapeElement -> "shape:$kind:$label"
     // A line says nothing, so what it is capped with is the nearest it has to content.
     is LineElement -> "line:$startEnd:$endEnd"
@@ -150,8 +157,13 @@ private val Element.givenName: String?
  * sides are the same kind of element, its look travels too: type size and weight,
  * colours, strokes, corners, shadows, all blended, so a title turning into a
  * subtitle shrinks and recolours as it goes rather than switching on landing.
- * What has no in-between (words, fonts, alignment, an image) is the arriving
- * element's throughout, so at 1 this is `this`.
+ * What has no in-between (fonts, alignment, an image) is the arriving element's
+ * throughout, so at 1 this is `this`.
+ *
+ * Words are the leaving box's for the first half and the arriving one's after.
+ * Two boxes paired by their words have the same ones on both sides, so that is
+ * only ever a box whose fields read differently on the two slides: a slide
+ * number counting on, one box moving, rather than two texts crossfading.
  */
 fun Element.travellingFrom(from: Element, fraction: Float): Element {
     val t: Float = fraction.coerceIn(0f, 1f)
@@ -167,6 +179,8 @@ fun Element.travellingFrom(from: Element, fraction: Float): Element {
     return when (this) {
         is TextElement -> if (from !is TextElement) copy(frame = frame) else copy(
             frame = frame,
+            text = if (t < 0.5f) from.text else text,
+            links = if (t < 0.5f) from.links else links,
             fontSize = blend(from.fontSize, fontSize, t),
             fontWeight = blend(from.fontWeight.toFloat(), fontWeight.toFloat(), t).roundToInt(),
             lineHeight = blend(from.lineHeight, lineHeight, t),

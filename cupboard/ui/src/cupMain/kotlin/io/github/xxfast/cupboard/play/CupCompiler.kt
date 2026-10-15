@@ -6,8 +6,9 @@ import androidx.compose.ui.unit.LayoutDirection
 import io.github.xxfast.cupboard.canvas.SlideView
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.layoutOf
-import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.stepCount
 import net.kodein.cup.SlideSpecs
 import net.kodein.cup.TransitionSet
@@ -17,7 +18,7 @@ import net.kodein.cup.Slide as CupSlide
  * Compiles the document into CuP runtime slides. Slide names are our slide ids,
  * so CuP's name-based position restore stays stable across recompiles.
  *
- * Every slide carries the number it will show, and the pair of transition sets
+ * Every slide carries what its fields will read, and the pair of transition sets
  * CuP animates it with. A transition belongs to the slide it plays on the way
  * out of, so a slide's own is its `endTransitions` and the previous slide's is
  * its `startTransitions`: the two slides of a change then agree on the animation
@@ -30,8 +31,8 @@ import net.kodein.cup.Slide as CupSlide
 internal fun Document.toCupSlides(
     layoutDirection: LayoutDirection = LayoutDirection.Ltr,
 ): List<CupSlide> {
-    val numbers: Map<String, Int?> =
-        slides.zip(presentationNumbers()).associate { (slide, number) -> slide.id to number }
+    val fields: Map<String, SlideFields> =
+        slides.indices.associate { index -> slides[index].id to slideFields(index) }
     val playing: List<Slide> = playOrder()
 
     // One set per slide, shared with the slide behind it rather than built twice:
@@ -55,7 +56,7 @@ internal fun Document.toCupSlides(
                 layout = layoutOf(slide),
                 modifier = Modifier.fillMaxSize(),
                 step = step,
-                number = numbers[slide.id],
+                fields = fields[slide.id],
                 background = background,
                 slideWidth = slideWidth,
                 slideHeight = slideHeight,

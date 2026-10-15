@@ -87,7 +87,6 @@ import io.github.xxfast.cupboard.canvas.CodeLineHeight
 import io.github.xxfast.cupboard.canvas.ElementView
 import io.github.xxfast.cupboard.canvas.LocalCanvasScale
 import io.github.xxfast.cupboard.canvas.LocalDeckFonts
-import io.github.xxfast.cupboard.canvas.SlideNumberView
 import io.github.xxfast.cupboard.canvas.SlideSurface
 import io.github.xxfast.cupboard.canvas.TextRun
 import io.github.xxfast.cupboard.canvas.linkSpanStyle
@@ -128,6 +127,7 @@ import io.github.xxfast.cupboard.document.Point
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TextElement
 import io.github.xxfast.cupboard.document.TextLink
@@ -137,6 +137,7 @@ import io.github.xxfast.cupboard.document.boundingFrame
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.indentLine
 import io.github.xxfast.cupboard.document.elementById
+import io.github.xxfast.cupboard.document.hidesNumberIn
 import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isLocked
 import io.github.xxfast.cupboard.document.lineIndexOf
@@ -147,6 +148,7 @@ import io.github.xxfast.cupboard.document.outdentLine
 import io.github.xxfast.cupboard.document.placeholderRole
 import io.github.xxfast.cupboard.document.sourceAt
 import io.github.xxfast.cupboard.document.takesCaret
+import io.github.xxfast.cupboard.document.withFields
 import io.github.xxfast.cupboard.document.withSource
 import io.github.xxfast.cupboard.screens.editor.GuideDrag
 import io.github.xxfast.cupboard.theme.ChromeTokens
@@ -427,8 +429,12 @@ fun EditorCanvas(
      */
     slideWidth: Float = Document.SLIDE_WIDTH,
     slideHeight: Float = Document.SLIDE_HEIGHT,
-    /** The slide's place in the presentation, drawn only when the slide asks for it. */
-    number: Int? = null,
+    /**
+     * What the slide's text fields read, `EditorState.slideFields`: every box is
+     * drawn filled in, while the one under the caret edits the fields as typed.
+     * Null is a layout being edited, which shows what each field is.
+     */
+    fields: SlideFields? = null,
     /** The deck's user guides. Document-owned and shared by every slide. */
     guides: List<Guide> = emptyList(),
     /** The strips around the slide, and whether [guides] draw and can be grabbed. */
@@ -581,8 +587,12 @@ fun EditorCanvas(
         ) {
             // Behind everything the slide owns, and out of every hit test below:
             // the gesture code only ever looks at `slide.elements`.
+            // A box holding the number, on a slide with its number switched
+            // off, draws nothing, the same as it will in the show.
             for (element in slide.inheritedElements(layout)) {
-                if (!element.hidden) ElementView(element)
+                if (element.hidden) continue
+                if (fields != null && slide.hidesNumberIn(element)) continue
+                ElementView(element.withFields(fields))
             }
 
             // The element under the caret keeps its place in the layout but paints
@@ -597,16 +607,19 @@ fun EditorCanvas(
                 // Hidden stays in the document and in the Object List, but not on
                 // the canvas. Its selection ring below still draws, to show where it sits.
                 if (element.hidden) continue
+                if (fields != null && slide.hidesNumberIn(element)) continue
                 ElementView(
                     // A grouped element under the caret is left out of its group.
-                    element = element.without(editing?.id).atShownVersion(shownCodeVersion),
+                    element = element
+                        .without(editing?.id)
+                        .atShownVersion(shownCodeVersion)
+                        .withFields(fields),
                     // The block above is already the shown version, written into
                     // its first source, so the step is pointed at that one.
                     codeStep = (element as? CodeElement)?.let(shownCodeStep)?.copy(version = 0),
                     diagramStep = (element as? DiagramElement)?.let(shownDiagramStep),
                 )
             }
-            if (slide.showsSlideNumber && number != null) SlideNumberView(number)
 
             // Editing affordances hold constant screen size at any zoom: authored
             // sizes are divided by the canvas scale, positions stay in doc units.

@@ -801,7 +801,7 @@ fun EditorView(
                                 onPan = onPanCanvas,
                                 slideWidth = state.document.slideWidth,
                                 slideHeight = state.document.slideHeight,
-                                number = state.slideNumber(selectedSlide.id),
+                                fields = state.slideFields(selectedSlide.id),
                                 guides = state.document.guides,
                                 showRulers = state.showRulers,
                                 showGuides = state.showGuides,

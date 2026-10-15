@@ -3,6 +3,7 @@ package io.github.xxfast.cupboard.canvas
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.renderComposeScene
 import io.github.xxfast.cupboard.document.BuiltInThemes
+import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Frame
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
@@ -10,6 +11,7 @@ import io.github.xxfast.cupboard.document.allSlides
 import io.github.xxfast.cupboard.document.codeBoxElement
 import io.github.xxfast.cupboard.document.sampleDocument
 import io.github.xxfast.cupboard.document.shapeElement
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.stepCount
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
@@ -42,9 +44,10 @@ class RenderSnapshotTest {
         val directory = File(System.getProperty("snapshots.out") ?: "build/snapshots")
         directory.mkdirs()
 
-        for ((index, slide) in sampleDocument().allSlides().withIndex()) {
+        val document: Document = sampleDocument()
+        for ((index, slide) in document.allSlides().withIndex()) {
             val image = renderComposeScene(1920, 1080) {
-                SlideView(slide, step = slide.stepCount() - 1, number = index + 1)
+                SlideView(slide, step = slide.stepCount() - 1, fields = document.slideFields(index))
             }
             val png = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
             val out = File(directory, "${index.toString().padStart(2, '0')}-${slide.slug()}.png")
@@ -66,13 +69,14 @@ class RenderSnapshotTest {
         val directory = File(System.getProperty("snapshots.out") ?: "build/snapshots")
         directory.mkdirs()
 
-        val slides: List<Slide> = sampleDocument().allSlides()
+        val document: Document = sampleDocument()
+        val slides: List<Slide> = document.allSlides()
         val index: Int = slides.indexOfFirst { it.title == "Rendering Pipeline" }
         val slide: Slide = slides[index]
 
         for (step in 0 until slide.stepCount()) {
             val image = renderComposeScene(1920, 1080) {
-                SlideView(slide, step = step, number = index + 1)
+                SlideView(slide, step = step, fields = document.slideFields(index))
             }
             val png = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
             val name = "${index.toString().padStart(2, '0')}-${slide.slug()}-step$step.png"

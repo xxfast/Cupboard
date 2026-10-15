@@ -46,6 +46,7 @@ import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TransitionTrigger
 import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.stepCount
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -304,6 +305,7 @@ private fun Player(
                     transition = governing,
                     fromBackground = from.effectiveBackground(fromLayout, document.background),
                     fromLayout = fromLayout,
+                    fromFields = document.slideFields(from.id),
                 )
             }
 

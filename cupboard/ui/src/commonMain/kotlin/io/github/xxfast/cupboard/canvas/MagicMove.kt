@@ -7,6 +7,7 @@ import androidx.compose.ui.util.lerp
 import io.github.xxfast.cupboard.document.Element
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.TextElement
 
@@ -36,6 +37,10 @@ val LocalPlayTransition = compositionLocalOf<PlayTransition?> { null }
  * [fromLayout] is the layout the leaving slide is built on, for the same reason:
  * the objects it draws behind that slide travel to the arriving layout's, and the
  * arriving slide is the one that draws them.
+ *
+ * [fromFields] is what the leaving slide's text fields read (`Document.slideFields`),
+ * again for the arriving slide to draw with: its number box reads the number it
+ * is leaving until the box is halfway to the next one.
  */
 data class PlayTransition(
     val fromSlide: Slide?,
@@ -44,6 +49,7 @@ data class PlayTransition(
     val transition: SlideTransition,
     val fromBackground: SlideBackground? = null,
     val fromLayout: Slide? = null,
+    val fromFields: SlideFields? = null,
 )
 
 /**

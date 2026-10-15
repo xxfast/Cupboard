@@ -40,8 +40,9 @@ import io.github.xxfast.cupboard.canvas.ProvideDeckFonts
 import io.github.xxfast.cupboard.canvas.SlideView
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.layoutOf
-import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.stepCount
 
 /**
@@ -118,9 +119,8 @@ private fun Display(
     modifier: Modifier,
 ) {
     val order: List<Slide> = remember(document) { document.playOrder() }
-    val numbers: Map<String, Int?> = remember(document) {
-        document.slides.zip(document.presentationNumbers())
-            .associate { (slide, number) -> slide.id to number }
+    val fields: Map<String, SlideFields> = remember(document) {
+        document.slides.indices.associate { document.slides[it].id to document.slideFields(it) }
     }
 
     val current: Slide? = order.getOrNull(position.slideIndex)
@@ -156,7 +156,7 @@ private fun Display(
                         document = document,
                         slide = current,
                         step = position.step,
-                        numbers = numbers,
+                        fields = fields,
                         modifier = Modifier.weight(1.7f).fillMaxHeight(),
                     )
                     SlidePane(
@@ -164,7 +164,7 @@ private fun Display(
                         document = document,
                         slide = nextSlide,
                         step = next?.step ?: 0,
-                        numbers = numbers,
+                        fields = fields,
                         modifier = Modifier.weight(1f).fillMaxHeight(),
                     )
                 }
@@ -176,7 +176,7 @@ private fun Display(
                         document = document,
                         slide = current,
                         step = position.step,
-                        numbers = numbers,
+                        fields = fields,
                         modifier = Modifier.weight(1.7f).fillMaxHeight(),
                     )
                     NotesPane(
@@ -192,7 +192,7 @@ private fun Display(
                         document = document,
                         slide = nextSlide,
                         step = next?.step ?: 0,
-                        numbers = numbers,
+                        fields = fields,
                         modifier = Modifier.weight(1.7f).fillMaxHeight(),
                     )
                     NotesPane(
@@ -350,7 +350,7 @@ private fun SlidePane(
     document: Document,
     slide: Slide?,
     step: Int,
-    numbers: Map<String, Int?>,
+    fields: Map<String, SlideFields>,
     modifier: Modifier = Modifier,
     live: Boolean = false,
 ) {
@@ -385,7 +385,7 @@ private fun SlidePane(
                     slide = slide,
                     layout = document.layoutOf(slide),
                     step = step,
-                    number = numbers[slide.id],
+                    fields = fields[slide.id],
                     background = document.background,
                     slideWidth = document.slideWidth,
                     slideHeight = document.slideHeight,

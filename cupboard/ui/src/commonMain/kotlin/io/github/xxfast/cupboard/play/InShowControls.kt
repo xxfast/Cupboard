@@ -40,6 +40,7 @@ import io.github.xxfast.cupboard.canvas.SlideThumbnail
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.slideFields
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -214,6 +215,7 @@ private fun SwitcherSlide(
                 slide = slide,
                 width = 180.dp,
                 layout = document.layoutOf(slide),
+                fields = document.slideFields(slide.id),
                 background = document.background,
                 slideWidth = document.slideWidth,
                 slideHeight = document.slideHeight,

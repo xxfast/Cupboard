@@ -6,6 +6,7 @@ internal fun slideSlides(layouts: List<Slide>): List<Slide> =
         backgroundColorSlide(),
         backgroundGradientSlide(),
         backgroundImageSlide(),
+        slideNumberFieldSlide(),
         slideNumberSlide(),
         skippedSlide(),
     ) + layoutSlides(layouts)
@@ -94,24 +95,66 @@ private fun backgroundImageSlide(): Slide {
     )
 }
 
-/** [Slide.showsSlideNumber], Keynote's per-slide switch. */
+/**
+ * The number as a text box, typed once in the top right and drawn in the box's
+ * own type. Written into the slide here; a deck puts it on its layout instead,
+ * and every slide on that layout shows it.
+ *
+ * None of the words explaining it can spell a field out: they would be filled in.
+ */
+private fun slideNumberFieldSlide(): Slide = featureSlide(
+    title = "Slide Number Field",
+    subtitle = "number, total and title fields in a text box, filled in per slide",
+    elements = listOf(
+        slideNumberBox(),
+        TextElement(
+            frame = Frame(ShowcaseMargin, ShowcaseStage.y + 160f, ShowcaseWidth, 300f),
+            text = "The top right is a text box holding the number and total fields.\n" +
+                "Typed once, it reads this slide's own number wherever the slide sits.\n" +
+                "This line ends with the title field: {title}",
+            fontSize = 44f,
+            lineHeight = 1.5f,
+            color = ShowcaseDefaults.bodyColor,
+        ),
+    ),
+    notes = "Look for: \"N / M\" in the top right, right-aligned in the box's own type, " +
+        "where N is this slide's place in the show and M the number of slides shown. The " +
+        "skipped slide two along counts towards neither. The last line ends in this " +
+        "slide's title.\n\n" +
+        "Double-click the top-right box: the field comes up as typed, braces and all, " +
+        "and reads as a number again once the edit is done.",
+)
+
+/** [Slide.showsSlideNumber], Keynote's per-slide switch, turned off. */
 private fun slideNumberSlide(): Slide = featureSlide(
-    title = "Slide Numbers",
+    title = "Slide Number Switched Off",
     subtitle = "showsSlideNumber, which is per slide rather than per deck",
     elements = listOf(
+        slideNumberBox(),
         TextElement(
             frame = Frame(ShowcaseMargin, ShowcaseStage.y + 200f, ShowcaseWidth, 200f),
-            text = "This slide asks for its number.\nThe ones around it do not.",
+            text = "This slide holds the same number box as the one before.\n" +
+                "Its number is switched off, so the box draws nothing.",
             fontSize = 48f,
             lineHeight = 1.5f,
             color = ShowcaseDefaults.bodyColor,
         ),
     ),
-    notes = "Look for: a number in the bottom corner of this slide and of no other. It " +
-        "counts the slides that will actually be shown, so the skipped slide two along " +
-        "from here does not add to it: compare this number against the navigator's row " +
-        "count and expect them to differ by one.",
-).copy(showsSlideNumber = true)
+    notes = "Look for: nothing in the top right. The box is still in the Object List.\n\n" +
+        "Turn Slide Number on in the inspector: \"N / M\" appears in the top right, one " +
+        "on from the slide before. That is the switch a title card turns off to hide the " +
+        "number its layout puts on every other slide.",
+).copy(showsSlideNumber = false)
+
+/** The box both slide number slides hold, top right, level with the header. */
+private fun slideNumberBox(): TextElement = TextElement(
+    frame = Frame(ShowcaseMargin + ShowcaseWidth - 360f, 84f, 360f, 50f),
+    text = "{number} / {total}",
+    fontSize = 32f,
+    align = TextAlign.End,
+    color = ShowcaseDefaults.bodyColor,
+    name = "Slide number",
+)
 
 /** [Slide.skipped]: in the deck, out of the presentation. */
 private fun skippedSlide(): Slide = featureSlide(

@@ -15,6 +15,7 @@ import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.InMemoryAssetStore
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.slideFields
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
@@ -96,6 +97,7 @@ class SlideRasterizer(
                     slide = slide,
                     layout = document.layoutOf(slide),
                     step = step,
+                    fields = document.slideFields(slideIndex),
                     background = document.background,
                     slideWidth = document.slideWidth,
                     slideHeight = document.slideHeight,

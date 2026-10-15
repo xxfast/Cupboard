@@ -51,6 +51,8 @@ import io.github.xxfast.cupboard.document.kindName
 import io.github.xxfast.cupboard.document.layoutOf
 import io.github.xxfast.cupboard.document.parseDiagram
 import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.SlideFields
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.reorderElements
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.document.sourceAt
@@ -1000,6 +1002,12 @@ data class EditorState(
         val index: Int = document.slides.indexOfFirst { it.id == id }
         return if (index == -1) null else document.presentationNumbers()[index]
     }
+
+    /**
+     * What the slide with [id] fills its text fields in with, `Document.slideFields`.
+     * Null for a layout, which shows what each field is rather than what it reads.
+     */
+    fun slideFields(id: String): SlideFields? = document.slideFields(id)
 
     /**
      * Navigator rows, collapse rules already applied: a collapsed slide hides the

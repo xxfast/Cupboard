@@ -8,11 +8,9 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,11 +20,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.ActionState
 import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.CodeElement
@@ -38,6 +33,7 @@ import io.github.xxfast.cupboard.document.LinkTarget
 import io.github.xxfast.cupboard.document.PieceReveal
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.TransitionKind
 import io.github.xxfast.cupboard.document.actionBuildAt
 import io.github.xxfast.cupboard.document.actionStateAt
@@ -49,6 +45,8 @@ import io.github.xxfast.cupboard.document.effectiveBackground
 import io.github.xxfast.cupboard.document.entryBuildAt
 import io.github.xxfast.cupboard.document.exitBuildAt
 import io.github.xxfast.cupboard.document.galleryImageAt
+import io.github.xxfast.cupboard.document.hidesNumberIn
+import io.github.xxfast.cupboard.document.withFields
 import io.github.xxfast.cupboard.document.travellingFrom
 import io.github.xxfast.cupboard.document.inheritedElements
 import io.github.xxfast.cupboard.document.isVisibleAt
@@ -57,21 +55,18 @@ import io.github.xxfast.cupboard.document.pieceRevealAt
 import io.github.xxfast.cupboard.document.resolvedLink
 import io.github.xxfast.cupboard.document.stepCount
 
-/** How far the slide number sits off the slide's right and bottom edges, in doc units. */
-private const val SlideNumberInset: Float = 64f
-
-/** The slide number's size in doc units, and its ink: white, well under half opacity. */
-private const val SlideNumberSize: Float = 30f
-private const val SlideNumberColor: Long = 0x99FFFFFF
-
 /**
  * Renders a slide's elements. [step] limits visibility per the build order, and
  * puts every stepped code block and diagram in the state its builds have reached;
  * null (the editor default) shows everything, whole.
  *
- * [number] is this slide's place in the presentation, which only a slide that
- * asks for it draws. Passed in rather than worked out here: what counts as a
- * number is the document's business, and a skipped slide has none.
+ * [fields] is what this slide's text fields read (`Document.slideFields`): its
+ * place in the presentation, the count of places, its title. Every box is drawn
+ * with its fields filled in, its layout's too, and a box holding the number draws
+ * only while the slide shows its number: a box is the one way a number is drawn.
+ * Passed in rather than worked out here: what counts as a number is the
+ * document's business, and a skipped slide has none. Null is a slide with no place to read from, a layout or a template, which
+ * shows what each field is and every box it holds.
  *
  * [layout] is the layout the slide is built on, which the caller resolves the
  * same way (`Document.layoutOf`). Its static objects draw behind the slide's own
@@ -100,7 +95,7 @@ fun SlideView(
     modifier: Modifier = Modifier,
     layout: Slide? = null,
     step: Int? = null,
-    number: Int? = null,
+    fields: SlideFields? = null,
     background: SlideBackground? = null,
     /** The deck's slide size, `Document.slideWidth` and `Document.slideHeight`. */
     slideWidth: Float = Document.SLIDE_WIDTH,
@@ -122,19 +117,35 @@ fun SlideView(
         return
     }
 
-    val travelling: List<Pair<Element, Element>> = remember(magic) {
+    // What the leaving slide's fields read, for its boxes to keep reading until
+    // they are gone, or halfway to the arriving ones.
+    val fromFields: SlideFields? = arrival?.fromFields
+
+    // A box holding the number, on a slide that has its number switched off, is
+    // not there to draw, nor to travel anywhere. Only a slide drawn knowing where
+    // it sits answers to the switch; drawn with no fields, it is a template.
+    fun Slide.drawable(elements: List<Element>, fields: SlideFields?): List<Element> =
+        if (fields == null) elements else elements.filterNot { hidesNumberIn(it) }
+
+    // Paired as typed, never as filled in: a number box is the same box on both
+    // sides of the cut whatever number it reads (see `Element.matchKey`).
+    val travelling: List<Pair<Element, Element>> = remember(magic, fields) {
         val from: Slide = magic?.fromSlide ?: return@remember emptyList()
-        magicMovePairs(from, magic.toSlide)
+        magicMovePairs(
+            from.drawable(from.elements, magic.fromFields),
+            magic.toSlide.drawable(magic.toSlide.elements, fields),
+        )
     }
 
     // The two layouts' own objects pair off among themselves, the same way: an
     // island both layouts draw is one island to the audience, wherever each puts
     // it. Two slides on one layout pair every object with itself, which is a
     // journey of no distance.
-    val inherited: List<Element> = slide.inheritedElements(layout)
-    val leavingInherited: List<Element> =
-        arrival?.fromSlide?.inheritedElements(arrival.fromLayout).orEmpty()
-    val travellingInherited: List<Pair<Element, Element>> = remember(magic, layout) {
+    val inherited: List<Element> = slide.drawable(slide.inheritedElements(layout), fields)
+    val leavingInherited: List<Element> = arrival?.fromSlide
+        ?.let { from -> from.drawable(from.inheritedElements(arrival.fromLayout), fromFields) }
+        .orEmpty()
+    val travellingInherited: List<Pair<Element, Element>> = remember(magic, layout, fields) {
         magicMovePairs(leavingInherited, inherited)
     }
 
@@ -161,14 +172,18 @@ fun SlideView(
             if (element.hidden) continue
             if (travellingInherited.any { (origin, _) -> origin.id == element.id }) continue
 
-            ElementView(element, transform = element.fadingTransform(1f - progress.value))
+            ElementView(
+                element = element.withFields(fromFields),
+                transform = element.fadingTransform(1f - progress.value),
+            )
         }
 
         for (element in inherited) {
             if (element.hidden) continue
 
+            val shown: Element = element.withFields(fields)
             if (!arriving) {
-                ElementView(element)
+                ElementView(shown)
                 continue
             }
 
@@ -176,12 +191,12 @@ fun SlideView(
                 travellingInherited.firstOrNull { (_, to) -> to.id == element.id }?.first
 
             if (origin == null) {
-                ElementView(element, transform = element.fadingTransform(progress.value))
+                ElementView(shown, transform = element.fadingTransform(progress.value))
                 continue
             }
 
             ElementView(
-                element = element.travellingFrom(origin, progress.value),
+                element = shown.travellingFrom(origin.withFields(fromFields), progress.value),
                 transform = magicMoveTransform(origin, element, progress.value),
                 alignment = travellingAlignment(origin, element, progress.value),
             )
@@ -195,16 +210,19 @@ fun SlideView(
         if (arrival != null && from != null) {
             val fromStep: Int = if (arrival.forward) from.stepCount() - 1 else 0
 
-            for (element in from.elements) {
+            for (element in from.drawable(from.elements, fromFields)) {
                 if (element.hidden) continue
                 if (travelling.any { (origin, _) -> origin.id == element.id }) continue
                 if (!from.isVisibleAt(element.id, fromStep)) continue
 
-                ElementView(element, transform = element.fadingTransform(1f - progress.value))
+                ElementView(
+                    element = element.withFields(fromFields),
+                    transform = element.fadingTransform(1f - progress.value),
+                )
             }
         }
 
-        for (element in slide.elements) {
+        for (element in slide.drawable(slide.elements, fields)) {
             if (element.hidden) continue
 
             val origin: Element? =
@@ -218,11 +236,14 @@ fun SlideView(
                 else -> null
             }
 
-            // What is drawn this frame: the element part-way along its journey
-            // (box and type both), or the element itself. Everything keyed or
-            // looked up by id below stays on [element]; only the drawing moves.
-            val drawn: Element =
-                if (origin != null) element.travellingFrom(origin, progress.value) else element
+            // What is drawn this frame: the element with its fields filled in,
+            // part-way along its journey (box and type both) or at rest.
+            // Everything keyed or looked up by id below stays on [element]; only
+            // the drawing moves.
+            val shown: Element = element.withFields(fields)
+            val drawn: Element = origin
+                ?.let { shown.travellingFrom(it.withFields(fromFields), progress.value) }
+                ?: shown
             val alignment: Alignment? =
                 origin?.let { travellingAlignment(it, element, progress.value) }
 
@@ -304,7 +325,6 @@ fun SlideView(
                 }
             }
         }
-        if (slide.showsSlideNumber && number != null) SlideNumberView(number)
     }
 }
 
@@ -349,26 +369,5 @@ private fun actionTransform(
         scaleY = (base?.scaleY ?: 1f) * scale,
         rotation = (base?.rotation ?: element.rotation) + rotation,
         opacity = (base?.opacity ?: element.opacity) * opacity,
-    )
-}
-
-/**
- * The slide number in its corner, over everything the slide draws.
- *
- * Internal rather than private: the editor canvas renders its elements itself
- * and still has to put the same number in the same place.
- */
-@Composable
-internal fun BoxScope.SlideNumberView(number: Int) {
-    Text(
-        text = number.toString(),
-        style = TextStyle(
-            color = SlideNumberColor.toComposeColor(),
-            fontSize = SlideNumberSize.sp,
-            textAlign = TextAlign.End,
-        ),
-        modifier = Modifier
-            .align(Alignment.BottomEnd)
-            .padding(end = SlideNumberInset.dp, bottom = SlideNumberInset.dp),
     )
 }

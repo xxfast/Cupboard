@@ -151,8 +151,14 @@ data class Slide(
      * the numbering closes up over it, per [Document.presentationNumbers].
      */
     val skipped: Boolean = false,
-    /** Whether the slide draws its own presentation number, Keynote's per-slide switch. */
-    val showsSlideNumber: Boolean = false,
+    /**
+     * Whether the slide draws its own presentation number, Keynote's per-slide
+     * switch. The number is a text box holding `{number}` (see `TextFields.kt`),
+     * put on a layout once, so this is on unless switched off: it is the odd
+     * slide, a title card, that turns it off. Off, a box like that draws nothing,
+     * its own or its layout's.
+     */
+    val showsSlideNumber: Boolean = true,
     /** What the slide paints behind its elements; null is the app's dark gradient. */
     val background: SlideBackground? = null,
     /**

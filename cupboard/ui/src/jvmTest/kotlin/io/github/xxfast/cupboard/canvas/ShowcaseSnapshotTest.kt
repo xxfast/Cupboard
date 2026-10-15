@@ -11,9 +11,10 @@ import io.github.xxfast.cupboard.document.ShowcaseNightId
 import io.github.xxfast.cupboard.document.ShowcasePictureId
 import io.github.xxfast.cupboard.document.ShowcaseTileId
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.Theme
 import io.github.xxfast.cupboard.document.layoutOf
-import io.github.xxfast.cupboard.document.presentationNumbers
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.showcaseAssets
 import io.github.xxfast.cupboard.document.showcaseDocument
 import io.github.xxfast.cupboard.document.stepCount
@@ -53,10 +54,8 @@ class ShowcaseSnapshotTest {
     fun renderEveryShowcaseSlideToPng() {
         directory.mkdirs()
         val document: Document = showcaseDocument()
-        val numbers: List<Int?> = document.presentationNumbers()
-
         for ((index, slide) in document.slides.withIndex()) {
-            val image: Image = document.render(slide, slide.stepCount() - 1, numbers[index])
+            val image: Image = document.render(slide, slide.stepCount() - 1, document.slideFields(index))
             val png: ByteArray = image.encodeToData(EncodedImageFormat.PNG)!!.bytes
             val out = File(directory, "${index.toString().padStart(2, '0')}-${slide.slug()}.png")
             out.writeBytes(png)
@@ -140,7 +139,7 @@ private val ShowcaseImages: AssetImageCache = AssetImageCache().apply {
 
 /** One slide of this deck at [step], drawn on its own layout and background. */
 @OptIn(ExperimentalComposeUiApi::class)
-private fun Document.render(slide: Slide, step: Int, number: Int?): Image =
+private fun Document.render(slide: Slide, step: Int, fields: SlideFields?): Image =
     renderComposeScene(1920, 1080) {
         CompositionLocalProvider(
             LocalAssetStore provides ShowcaseStore,
@@ -150,7 +149,7 @@ private fun Document.render(slide: Slide, step: Int, number: Int?): Image =
                 slide = slide,
                 layout = layoutOf(slide),
                 step = step,
-                number = number,
+                fields = fields,
                 background = background,
                 slideWidth = slideWidth,
                 slideHeight = slideHeight,

@@ -6,11 +6,15 @@ import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.TextAlign
 import io.github.xxfast.cupboard.document.TextElement
+import io.github.xxfast.cupboard.document.hidesNumberIn
 import io.github.xxfast.cupboard.document.isBold
 import io.github.xxfast.cupboard.document.isVisibleAt
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.stepCount
+import io.github.xxfast.cupboard.document.withFields
 
 /**
  * The deck as a `.pptx`, best-effort and openly so.
@@ -57,7 +61,11 @@ fun exportPptx(document: Document, rasterizer: Rasterizer): ByteArray {
             "ppt/media/slide$number.png",
             encodePng(rasterizer.frame(index, step)),
         )
-        entries += ZipEntry("ppt/slides/slide$number.xml", slideXml(slide, step, width, height).part())
+        val fields: SlideFields = document.slideFields(index)
+        entries += ZipEntry(
+            "ppt/slides/slide$number.xml",
+            slideXml(slide, step, fields, width, height).part(),
+        )
         entries += ZipEntry("ppt/slides/_rels/slide$number.xml.rels", slideRels(number).part())
     }
 
@@ -226,8 +234,17 @@ private val Theme: String = buildString {
     append("</a:fmtScheme></a:themeElements></a:theme>")
 }
 
-/** One slide: the picture of it, then whatever of it PowerPoint can hold as objects. */
-private fun slideXml(slide: Slide, step: Int, width: Long, height: Long): String = buildString {
+/**
+ * One slide: the picture of it, then whatever of it PowerPoint can hold as
+ * objects, every text box with its [fields] filled in.
+ */
+private fun slideXml(
+    slide: Slide,
+    step: Int,
+    fields: SlideFields,
+    width: Long,
+    height: Long,
+): String = buildString {
     append("""<p:sld $PartNamespaces><p:cSld><p:spTree>""")
     append("""<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>""")
     append("<p:grpSpPr><a:xfrm>")
@@ -244,8 +261,9 @@ private fun slideXml(slide: Slide, step: Int, width: Long, height: Long): String
     var id = 3
     for (element in slide.elements) {
         if (element.hidden || !slide.isVisibleAt(element.id, step)) continue
+        if (slide.hidesNumberIn(element)) continue
         val shape: String? = when (element) {
-            is TextElement -> textBox(element, id)
+            is TextElement -> textBox(element.withFields(fields), id)
             is ShapeElement -> shapeBox(element, id)
             // The raster still covers it. A real connector export is a later item.
             is LineElement -> null

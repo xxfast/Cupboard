@@ -67,8 +67,10 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.canvas.SlideThumbnail
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.Slide
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.SlideBackground
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.slideFields
 import io.github.xxfast.cupboard.document.slideById
 import io.github.xxfast.cupboard.theme.ChromeTokens
 import io.github.xxfast.cupboard.theme.LocalChromeTokens
@@ -201,6 +203,8 @@ fun EditorNavigator(
                     // Null on a layout, and for free: a layout is on no layout, so
                     // its thumbnail draws itself and nothing behind it.
                     layout = document.layoutOf(slide),
+                    // Null in layout mode too, which shows what each field is.
+                    fields = if (isEditingLayouts) null else document.slideFields(entry.slideIndex),
                     background = document.background,
                     slideWidth = document.slideWidth,
                     slideHeight = document.slideHeight,
@@ -312,6 +316,8 @@ private fun draggedRun(entries: List<OutlineEntry>, slideId: String?): Set<Strin
 private fun NavigatorRow(
     slide: Slide,
     layout: Slide?,
+    /** What the slide's text fields read, null for a layout. */
+    fields: SlideFields?,
     /** The deck's background, which is what a slide on this layout will sit on. */
     background: SlideBackground?,
     /** The deck's slide size, and so the shape every thumbnail in the panel takes. */
@@ -487,6 +493,7 @@ private fun NavigatorRow(
                 SlideThumbnail(
                     slide = slide,
                     layout = layout,
+                    fields = fields,
                     background = background,
                     slideWidth = slideWidth,
                     slideHeight = slideHeight,

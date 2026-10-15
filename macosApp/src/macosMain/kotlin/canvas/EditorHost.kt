@@ -94,6 +94,7 @@ import io.github.xxfast.cupboard.document.ShapeKind
 import io.github.xxfast.cupboard.document.ShapeShadow
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.SlideBackground
+import io.github.xxfast.cupboard.document.SlideFields
 import io.github.xxfast.cupboard.document.SlideSizePreset
 import io.github.xxfast.cupboard.document.SlideTransition
 import io.github.xxfast.cupboard.document.StrokeStyle
@@ -146,6 +147,7 @@ import io.github.xxfast.cupboard.document.withFont
 import io.github.xxfast.cupboard.document.withGenericFont
 import io.github.xxfast.cupboard.screens.editor.addDeckFont
 import io.github.xxfast.cupboard.document.layoutOf
+import io.github.xxfast.cupboard.document.readsFields
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.parseLineRanges
 import io.github.xxfast.cupboard.document.parseScrollTo
@@ -1517,7 +1519,7 @@ class EditorHost(
      * are the same flow, so an edit made in Compose shows up here too. */
     private val state: EditorState get() = viewModel.states.value
 
-    // The number is part of the cache key, not just the slide: skipping an
+    // The fields are part of the cache key, not just the slide: skipping an
     // earlier slide renumbers every row after it without touching one of them.
     // So is the layout it resolved against: a slide draws what it inherits, so
     // editing a layout changes every thumbnail on it without touching a slide.
@@ -1529,7 +1531,7 @@ class EditorHost(
     private data class ThumbnailInputs(
         val slide: Slide,
         val layout: Slide?,
-        val number: Int?,
+        val fields: SlideFields?,
         val background: SlideBackground?,
         val slideWidth: Float,
         val slideHeight: Float,
@@ -1765,10 +1767,10 @@ class EditorHost(
                     onPan = viewModel::onPanCanvas,
                     slideWidth = state.document.slideWidth,
                     slideHeight = state.document.slideHeight,
-                    // What the slide draws on itself, when it asks to: its place
-                    // in the presentation is the document's to work out, not the
-                    // canvas's.
-                    number = state.slideNumber(state.selectedSlide.id),
+                    // What the slide's text fields read: its place in the
+                    // presentation is the document's to work out, not the
+                    // canvas's. Null on a layout, which shows what each field is.
+                    fields = state.slideFields(state.selectedSlide.id),
                     // Rulers, the user's guides and what a drag snaps to: all
                     // view state the loop holds, the Compose shell's wiring exactly.
                     guides = state.document.guides,
@@ -5511,13 +5513,15 @@ class EditorHost(
         val document: Document = state.document
         // Asked for its side effect: this is what turns the generation over.
         assetImages()
+        val layout: Slide? = if (isLayout) null else document.layoutOf(slide)
         return ThumbnailInputs(
             slide = slide,
-            layout = if (isLayout) null else document.layoutOf(slide),
-            // Only where it is drawn: a slide that shows no number looks the
-            // same wherever it sits, and keying on its place would redraw every
-            // row after an insert.
-            number = if (isLayout || !slide.showsSlideNumber) null else state.slideNumber(slide.id),
+            layout = layout,
+            // Only where they are read: a slide with no field and no number looks
+            // the same wherever it sits, and keying on its place would redraw
+            // every row after an insert. A layout has none to read either way.
+            fields = if (isLayout || !slide.readsFields(layout)) null
+            else state.slideFields(slide.id),
             background = document.background,
             slideWidth = document.slideWidth,
             slideHeight = document.slideHeight,
@@ -5583,7 +5587,7 @@ class EditorHost(
                         SlideView(
                             slide = slide,
                             layout = inputs.layout,
-                            number = inputs.number,
+                            fields = inputs.fields,
                             background = inputs.background,
                             slideWidth = inputs.slideWidth,
                             slideHeight = inputs.slideHeight,

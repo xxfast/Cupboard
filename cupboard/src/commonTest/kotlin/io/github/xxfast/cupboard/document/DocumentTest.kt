@@ -778,7 +778,9 @@ class DocumentTest {
 
         val slide = loadedDocument(json).slides.single()
         assertFalse(slide.skipped)
-        assertFalse(slide.showsSlideNumber)
+        // The default, which went to on once the number could sit on a layout:
+        // see `TextFields.kt`.
+        assertTrue(slide.showsSlideNumber)
         assertEquals(null, slide.background)
     }
 
