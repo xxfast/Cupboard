@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.TerminalElement
+import io.github.xxfast.cupboard.document.TypingRhythm
 
 /** Which half of a session a line is: what was asked, or what came back. */
 internal enum class TerminalLineKind { Command, Output }
@@ -83,7 +84,8 @@ private fun TerminalLine.typedCost(): Int =
 private fun List<TerminalLine>.commandCharCount(): Int = sumOf { it.typedCost() }
 
 /**
- * [lines] as far as they have been typed at [fraction] of the way through.
+ * [lines] as far as they have been typed at [fraction] of the way through, the
+ * keys falling as [rhythm] says.
  *
  * The clock runs over the command characters alone: commands type out in order,
  * one character at a time, and a block of output lands whole the moment the
@@ -95,9 +97,14 @@ private fun List<TerminalLine>.commandCharCount(): Int = sumOf { it.typedCost() 
  * being typed, which is there with its partial count: that is the line the caret
  * sits on.
  */
-internal fun typewriter(lines: List<TerminalLine>, fraction: Float): List<TypedLine> {
-    val total: Int = lines.commandCharCount()
-    var budget: Int = (fraction.coerceIn(0f, 1f) * total).toInt().coerceIn(0, total)
+internal fun typewriter(
+    lines: List<TerminalLine>,
+    fraction: Float,
+    rhythm: TypingRhythm,
+): List<TypedLine> {
+    // Every command line is a run: its first key is the slow one after a return.
+    val paces: List<Float> = keyPaces(lines.map { it.typedCost() }, rhythm)
+    var budget: Int = landed(fraction, paces)
 
     val typed = mutableListOf<TypedLine>()
     for (line in lines) {
@@ -206,7 +213,7 @@ internal fun TerminalElementView(
 
     val typed: List<TypedLine> =
         if (typing == null) lines.map { TypedLine(it, it.text.length) }
-        else typewriter(lines, progress.value)
+        else typewriter(lines, progress.value, typing.typing)
 
     Box(
         modifier = Modifier

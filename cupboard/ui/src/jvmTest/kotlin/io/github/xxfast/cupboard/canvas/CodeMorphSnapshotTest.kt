@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.renderComposeScene
 import androidx.compose.ui.unit.dp
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.TypingRhythm
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.allSlides
@@ -161,7 +162,7 @@ class CodeMorphSnapshotTest {
         for (index in 1 until element.steps.size) {
             val from: CodeStep = element.steps[index - 1]
             val to: CodeStep = element.steps[index]
-            val typing: TypewriterTimeline = element.typewriterTimeline(from, to, durationMs = 0)
+            val typing: TypewriterTimeline = element.typewriterTimeline(from, to, durationMs = 0, rhythm = TypingRhythm.Steady)
 
             val morphEnd: ByteArray = pixels {
                 MorphedCodeLines(element, from, to, remember { Animatable(1f) })

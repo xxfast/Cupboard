@@ -166,6 +166,8 @@ struct Chrome {
     let buildTriggers: [String]
     /// Which way a Line Draw may grow its line, in Kotlin's order.
     let lineDrawDirections: [String]
+    /// How a Typewriter may pace its keys, in Kotlin's order.
+    let typingRhythms: [String]
     let actionKinds: [String]
     /// How a code block's step build may play, "Magic Move" then "Typewriter".
     /// A row with `codeStep` picks from these instead of `actionKinds`.
@@ -243,6 +245,7 @@ struct Chrome {
         buildEffects = host.buildEffectTitles()
         buildTriggers = host.buildTriggerTitles()
         lineDrawDirections = host.lineDrawDirectionTitles()
+        typingRhythms = host.typingRhythmTitles()
         actionKinds = host.actionKindTitles()
         codeStepEffects = host.codeStepEffectTitles()
     }
@@ -484,6 +487,8 @@ struct BuildEntry: Identifiable, Equatable {
     /// and whether the heads ride along. Filled in whatever the effect.
     let lineDrawDirectionIndex: Int
     let lineDrawIncludeEnds: Bool
+    /// How a Typewriter paces its keys, a place in `Chrome.typingRhythms`.
+    let typingIndex: Int
     /// The build moves a code block onto one of its steps, so it plays Magic
     /// Move or Typewriter rather than an action: `codeStepEffects` is its popup.
     let codeStep: Bool
@@ -516,6 +521,7 @@ struct BuildEntry: Identifiable, Equatable {
         deliveryTitles = row.deliveryTitles
         lineDrawDirectionIndex = Int(row.lineDrawDirectionIndex)
         lineDrawIncludeEnds = row.lineDrawIncludeEnds
+        typingIndex = Int(row.typingIndex)
         codeStep = row.codeStep
         codeStepEffectIndex = Int(row.codeStepEffectIndex)
     }

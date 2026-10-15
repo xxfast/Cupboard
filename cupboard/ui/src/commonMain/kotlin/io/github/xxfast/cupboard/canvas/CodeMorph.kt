@@ -47,6 +47,7 @@ import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.CodeToken
 import io.github.xxfast.cupboard.document.CodeTokenKind
 import io.github.xxfast.cupboard.document.TokenEdit
+import io.github.xxfast.cupboard.document.TypingRhythm
 import io.github.xxfast.cupboard.document.diffTokens
 import io.github.xxfast.cupboard.document.sourceAt
 import io.github.xxfast.cupboard.document.tokenizeCode
@@ -612,7 +613,7 @@ private fun DrawScope.drawMorphMark(
 
 /**
  * The [TypewriterTimeline] for this block typing its way from [from] to [to], a
- * [durationMs] build asking for its length.
+ * [durationMs] build asking for its length and [rhythm] for how its keys fall.
  *
  * Worked out on [gridPlacements], so the clock can be set the moment the step
  * changes rather than a frame later, once something has been laid out. The runs
@@ -625,6 +626,7 @@ internal fun CodeElement.typewriterTimeline(
     from: CodeStep,
     to: CodeStep,
     durationMs: Int,
+    rhythm: TypingRhythm,
 ): TypewriterTimeline {
     val was: MorphSide = morphSide(from)
     val now: MorphSide = morphSide(to)
@@ -645,6 +647,7 @@ internal fun CodeElement.typewriterTimeline(
         arriving = order.arriving.map { runs[it].text.drawnCount() },
         moves = shifts || from.scrollTo != to.scrollTo,
         durationMs = durationMs,
+        rhythm = rhythm,
     )
 }
 

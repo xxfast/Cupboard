@@ -1,6 +1,7 @@
 package io.github.xxfast.cupboard.canvas
 
 import io.github.xxfast.cupboard.document.Build
+import io.github.xxfast.cupboard.document.TypingRhythm
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -16,7 +17,7 @@ class TerminalTest {
     private val lines: List<TerminalLine> = terminalLines(transcript, "$")
 
     private fun shown(fraction: Float): List<Pair<TerminalLineKind, String>> =
-        typewriter(lines, fraction).map { it.line.kind to it.line.text.take(it.shown) }
+        typewriter(lines, fraction, TypingRhythm.Steady).map { it.line.kind to it.line.text.take(it.shown) }
 
     @Test
     fun aLineIsACommandOnlyWhenThePromptAndASpaceStartIt() {
@@ -85,13 +86,13 @@ class TerminalTest {
     fun theWholeTranscriptIsOutAtTheEnd() {
         assertEquals(lines.map { it.kind to it.text }, shown(1f))
         assertEquals(lines.map { it.kind to it.text }, shown(2f))
-        assertTrue(typewriter(lines, 1f).none { it.stillTypingItsOwnLine() })
+        assertTrue(typewriter(lines, 1f, TypingRhythm.Steady).none { it.stillTypingItsOwnLine() })
     }
 
     @Test
     fun outputWithNoCommandAboveItNeverWaits() {
         val plain: List<TerminalLine> = terminalLines("one\ntwo", "$")
-        assertEquals(2, typewriter(plain, 0f).size)
+        assertEquals(2, typewriter(plain, 0f, TypingRhythm.Steady).size)
     }
 
     @Test

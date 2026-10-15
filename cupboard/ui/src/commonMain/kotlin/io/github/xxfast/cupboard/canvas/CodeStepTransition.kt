@@ -222,7 +222,7 @@ internal fun AnimatedCodeLines(
         to = step
         landed = landing
         typing = if (!typed || landing == null) null
-        else element.typewriterTimeline(from, to, landing.build.durationMs)
+        else element.typewriterTimeline(from, to, landing.build.durationMs, landing.build.typing)
         progress.snapTo(0f)
 
         val timeline: TypewriterTimeline? = typing
@@ -230,7 +230,7 @@ internal fun AnimatedCodeLines(
             progress.animateTo(1f, tween(CodeStepDuration, easing = FastOutSlowInEasing))
         } else {
             // Linear over the whole of it: the move phase eases itself inside
-            // its own slice, and a keyboard's keys land at an even pace.
+            // its own slice, and the keys pace themselves along theirs.
             val durationMs: Int = ceil(timeline.totalMs).toInt()
             progress.animateTo(1f, tween(durationMs, easing = LinearEasing))
         }

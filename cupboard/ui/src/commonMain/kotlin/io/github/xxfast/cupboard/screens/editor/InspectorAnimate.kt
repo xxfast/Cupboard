@@ -60,6 +60,7 @@ import io.github.xxfast.cupboard.document.ImageElement
 import io.github.xxfast.cupboard.document.LineDraw
 import io.github.xxfast.cupboard.document.LineDrawDirection
 import io.github.xxfast.cupboard.document.LineDrawDurationMs
+import io.github.xxfast.cupboard.document.TypingRhythm
 import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.ShapeElement
 import io.github.xxfast.cupboard.document.Slide
@@ -526,6 +527,18 @@ private fun BuildControls(
         )
     }
 
+    // How a Typewriter's keys fall, whether it types a terminal in or a code step on.
+    if (build.effect == BuildEffect.Typewriter && (build.kind != BuildKind.Action || build.isCodeStep(element))) {
+        DropdownField(
+            label = "Rhythm",
+            value = build.typing,
+            options = TYPING_RHYTHMS,
+            enabled = true,
+            onPick = { rhythm -> edit { it.copy(typing = rhythm) } },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+
     SegmentedRow(Modifier.fillMaxWidth()) {
         BUILD_TRIGGERS.forEachIndexed { at, (trigger, title) ->
             val selected: Boolean = build.trigger == trigger
@@ -934,6 +947,12 @@ private val LINE_DRAW_DIRECTIONS: List<Pair<LineDrawDirection, String>> = listOf
     LineDrawDirection.StartToEnd to "Start to End",
     LineDrawDirection.EndToStart to "End to Start",
     LineDrawDirection.MiddleToEnds to "Middle to Ends",
+)
+
+/** Typewriter's Rhythm popup, the person first since that is what a fresh build does. */
+private val TYPING_RHYTHMS: List<Pair<TypingRhythm, String>> = listOf(
+    TypingRhythm.Natural to "Natural",
+    TypingRhythm.Steady to "Steady",
 )
 
 private const val MIN_DURATION_MS: Int = 100

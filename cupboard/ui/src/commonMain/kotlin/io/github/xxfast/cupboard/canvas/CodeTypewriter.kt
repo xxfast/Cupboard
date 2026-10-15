@@ -2,7 +2,9 @@ package io.github.xxfast.cupboard.canvas
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.geometry.Offset
+import io.github.xxfast.cupboard.document.TypingRhythm
 import kotlin.math.floor
+import kotlin.math.pow
 
 /**
  * How long one character takes to backspace out: twice the typing pace, which is
@@ -37,6 +39,65 @@ internal fun String.drawnPrefix(drawn: Int): Int {
 internal fun spend(costs: List<Int>, budget: Int): List<Int> {
     var left: Int = budget.coerceAtLeast(0)
     return costs.map { cost -> minOf(cost, left).also { left -= it } }
+}
+
+/**
+ * How long each key of a typed phase takes, as shares of the phase that average
+ * 1 over the [runs]' inked characters in order. The phase's length is the
+ * character count times the pace whatever the rhythm; this is only where along
+ * it each key lands.
+ *
+ * [TypingRhythm.Steady] is 1 everywhere. [TypingRhythm.Natural] is what hands
+ * do: every gap jittered about the mean on a rough bell, the first key of every
+ * run slower (a new token is a new word to find), and now and then a hesitation.
+ * A function of the key's place alone, so a frame drawn twice is the same frame
+ * and a test can ask for one.
+ */
+internal fun keyPaces(runs: List<Int>, rhythm: TypingRhythm): List<Float> {
+    val total: Int = runs.sum()
+    if (rhythm == TypingRhythm.Steady || total == 0) return List(total) { 1f }
+
+    val raw = ArrayList<Float>(total)
+    var index = 0
+    for (run in runs) {
+        for (key in 0 until run) {
+            val jitter: Float = 2f.pow((noise(index, 1) + noise(index, 2) - 1f) * 1.2f)
+            val start: Float = if (key == 0) 1.8f else 1f
+            val hesitation: Float = if (noise(index, 3) < 0.05f) 3f else 1f
+            raw += jitter * start * hesitation
+            index += 1
+        }
+    }
+    val mean: Float = raw.sum() / total
+    return raw.map { it / mean }
+}
+
+/** A fixed 0..1 for a key's [index] under a [salt], an integer hash's low bits. */
+private fun noise(index: Int, salt: Int): Float {
+    var x: Int = index * 0x9E3779B1.toInt() + salt * 0x6A09E667
+    x = x xor (x ushr 16)
+    x *= 0x7FEB352D
+    x = x xor (x ushr 15)
+    x *= 0x846CA68B.toInt()
+    x = x xor (x ushr 16)
+    return (x ushr 8) / 16777216f
+}
+
+/**
+ * How many keys of [paces] have landed [local] of the way through their phase:
+ * the leading ones whose shares, added up, the time so far covers. All paces 1
+ * is a plain count, which is what a steady phase reads.
+ */
+internal fun landed(local: Float, paces: List<Float>): Int {
+    val budget: Float = local.coerceIn(0f, 1f) * paces.sum() + 1e-4f
+    var spent = 0f
+    var count = 0
+    for (pace in paces) {
+        spent += pace
+        if (spent > budget) break
+        count += 1
+    }
+    return count
 }
 
 /**
@@ -81,9 +142,10 @@ internal data class TypewriterCaret(val departing: Boolean, val run: Int, val dr
  * [departing] and [arriving] are the inked character counts of the runs the old
  * step loses and the new one gains, both in reading order. Erasing walks the
  * departing ones from the back, a held backspace from the end of the last of
- * them; typing walks the arriving ones from the front. In between, everything
- * both steps show slides and recolours, the block scrolls and the gutter
- * crossfades, over [moveMs].
+ * them, at a key repeat's even pace; typing walks the arriving ones from the
+ * front, each key taking its share of [paces]. In between, everything both
+ * steps show slides and recolours, the block scrolls and the gutter crossfades,
+ * over [moveMs].
  *
  * Everything here reads a fraction of the whole clock, so the one [progress]
  * the block already runs is enough: each phase is a slice of it.
@@ -94,6 +156,8 @@ internal data class TypewriterTimeline(
     val eraseMs: Float,
     val moveMs: Float,
     val typeMs: Float,
+    /** One per arriving inked character, in order: see [keyPaces]. */
+    val paces: List<Float>,
 ) {
     val totalMs: Float get() = eraseMs + moveMs + typeMs
 
@@ -121,7 +185,7 @@ internal data class TypewriterTimeline(
 
     /** Each arriving run's inked characters typed by [fraction]. */
     fun arrivingAt(fraction: Float): List<Int> {
-        val typed: Int = count(local(fraction, eraseMs + moveMs, typeMs), arriving.sum())
+        val typed: Int = landed(local(fraction, eraseMs + moveMs, typeMs), paces)
         return spend(arriving, typed)
     }
 
@@ -155,7 +219,8 @@ internal data class TypewriterTimeline(
 
 /**
  * The timeline for erasing [departing] and typing [arriving] inked characters,
- * [moves] being whether anything both steps show changes place or colour.
+ * [moves] being whether anything both steps show changes place or colour, and
+ * [rhythm] how the typing's keys fall.
  *
  * Its natural length is the three phases at their own paces: [TypewriterEraseMsPerChar]
  * a character out, [CodeStepDuration] to move, [TypewriterMsPerChar] a character
@@ -169,6 +234,7 @@ internal fun typewriterTimeline(
     arriving: List<Int>,
     moves: Boolean,
     durationMs: Int,
+    rhythm: TypingRhythm,
 ): TypewriterTimeline {
     val erase: Float = departing.sum() * TypewriterEraseMsPerChar
     val move: Float = if (moves) CodeStepDuration.toFloat() else 0f
@@ -181,5 +247,6 @@ internal fun typewriterTimeline(
         eraseMs = erase * stretch,
         moveMs = move * stretch,
         typeMs = type * stretch,
+        paces = keyPaces(arriving, rhythm),
     )
 }

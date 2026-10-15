@@ -78,6 +78,7 @@ import io.github.xxfast.cupboard.document.ImageMask
 import io.github.xxfast.cupboard.document.LineDraw
 import io.github.xxfast.cupboard.document.LineDrawDirection
 import io.github.xxfast.cupboard.document.LineDrawDurationMs
+import io.github.xxfast.cupboard.document.TypingRhythm
 import io.github.xxfast.cupboard.document.LineElement
 import io.github.xxfast.cupboard.document.LineEnd
 import io.github.xxfast.cupboard.document.LinkTarget
@@ -441,6 +442,9 @@ private val BuildEffectTitles: List<String> =
 /** Which way a Line Draw grows its line, in [LineDrawDirection]'s order. Same protocol. */
 private val LineDrawDirectionTitles: List<String> =
     listOf("Start to End", "End to Start", "Middle to Ends")
+
+/** How a Typewriter paces its keys, in [TypingRhythm]'s order. Same protocol. */
+private val TypingRhythmTitles: List<String> = listOf("Natural", "Steady")
 
 /** The triggers, in [BuildTrigger]'s order. Same protocol as the effects. */
 private val BuildTriggerTitles: List<String> = listOf("On Click", "With Previous", "After Previous")
@@ -1244,6 +1248,8 @@ class BuildRow(
      */
     val lineDrawDirectionIndex: Int,
     val lineDrawIncludeEnds: Boolean,
+    /** How a Typewriter paces its keys, a place in `typingRhythmTitles()`. Filled in whatever the effect. */
+    val typingIndex: Int,
     /**
      * The build moves a code block onto one of its steps, so it plays a morph or
      * types the change rather than an action: its popup is
@@ -4821,6 +4827,7 @@ class EditorHost(
                 deliveryTitles = deliveries.map { BuildDeliveryTitles[it.ordinal] },
                 lineDrawDirectionIndex = lineDraw.direction.ordinal,
                 lineDrawIncludeEnds = lineDraw.includeEnds,
+                typingIndex = build.typing.ordinal,
                 codeStep = codeStep,
                 codeStepEffectIndex = CodeStepEffectNames.indexOfFirst { (effect, _) -> effect == build.effect }
                     .coerceAtLeast(0),
@@ -4833,6 +4840,9 @@ class EditorHost(
 
     /** Which way a Line Draw may grow its line, in the same protocol. */
     fun lineDrawDirectionTitles(): List<String> = LineDrawDirectionTitles
+
+    /** How a Typewriter may pace its keys, in the same protocol. */
+    fun typingRhythmTitles(): List<String> = TypingRhythmTitles
 
     /** What may start a build, in the same protocol. */
     fun buildTriggerTitles(): List<String> = BuildTriggerTitles
@@ -4936,8 +4946,9 @@ class EditorHost(
      * a build plays is edited, what it plays on is not. [actionKindIndex] -1
      * clears the action, and a build that is not an action carries none whatever
      * the index says. The Line Draw pair writes only while the effect is Line
-     * Draw, and any other effect leaves the build's own as it was. An index the
-     * slide has no build at is a no-op.
+     * Draw, and any other effect leaves the build's own as it was; the typing
+     * rhythm goes the same way under Typewriter. An index the slide has no build
+     * at is a no-op.
      */
     fun updateBuild(
         index: Int,
@@ -4955,10 +4966,14 @@ class EditorHost(
         scale: Float,
         lineDrawDirectionIndex: Int,
         lineDrawIncludeEnds: Boolean,
+        typingIndex: Int,
     ) {
         val slide: Slide = state.selectedSlide
         val build: Build = slide.builds.getOrNull(index) ?: return
         val effect: BuildEffect = BuildEffect.entries.getOrNull(effectIndex) ?: build.effect
+        val typing: TypingRhythm =
+            if (effect != BuildEffect.Typewriter) build.typing
+            else TypingRhythm.entries.getOrNull(typingIndex) ?: build.typing
         val lineDraw: LineDraw? =
             if (effect != BuildEffect.LineDraw) build.lineDraw
             else LineDraw(
@@ -4991,6 +5006,7 @@ class EditorHost(
                 elementStep = elementStep.takeIf { it >= 0 },
                 action = action,
                 lineDraw = lineDraw,
+                typing = typing,
             ),
         )
     }

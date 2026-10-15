@@ -2758,6 +2758,7 @@ extension EditorView {
             }
 
             lineDrawFields(entry, ui)
+            typewriterFields(entry, ui)
 
             sectionLabel("Trigger")
 
@@ -2868,7 +2869,8 @@ extension EditorView {
         rotation: Double? = nil,
         scale: Double? = nil,
         lineDrawDirectionIndex: Int? = nil,
-        lineDrawIncludeEnds: Bool? = nil
+        lineDrawIncludeEnds: Bool? = nil,
+        typingIndex: Int? = nil
     ) {
         host.updateBuild(
             index: Int32(entry.index),
@@ -2885,7 +2887,8 @@ extension EditorView {
             rotation: Float(rotation ?? entry.rotation),
             scale: Float(scale ?? entry.scale),
             lineDrawDirectionIndex: Int32(lineDrawDirectionIndex ?? entry.lineDrawDirectionIndex),
-            lineDrawIncludeEnds: lineDrawIncludeEnds ?? entry.lineDrawIncludeEnds
+            lineDrawIncludeEnds: lineDrawIncludeEnds ?? entry.lineDrawIncludeEnds,
+            typingIndex: Int32(typingIndex ?? entry.typingIndex)
         )
     }
 

@@ -249,6 +249,19 @@ extension EditorView {
         }
     }
 
+    /// How a Typewriter's keys fall, whether it types a terminal in or a code
+    /// step on: the one popup, under the Duration it shares a section with.
+    /// Nothing for any other effect.
+    @ViewBuilder func typewriterFields(_ entry: BuildEntry, _ ui: Chrome) -> some View {
+        if Self.effectName(entry, ui) == "Typewriter" {
+            sectionLabel("Rhythm")
+
+            stylePopup(ui.typingRhythms, selected: entry.typingIndex) {
+                commitBuild(entry, typingIndex: $0)
+            }
+        }
+    }
+
     /// The build order, with the way back at its foot. The list itself is the
     /// same one the panel has always drawn.
     func buildOrderPanel(_ ui: Chrome) -> some View {

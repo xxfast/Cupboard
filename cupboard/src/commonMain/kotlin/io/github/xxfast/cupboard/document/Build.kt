@@ -41,6 +41,16 @@ enum class BuildEffect {
     LineDraw,
 }
 
+/**
+ * How a [BuildEffect.Typewriter] paces its keys.
+ *
+ * [Natural] is a person at the keyboard: no two gaps alike, a longer one at the
+ * start of every token while the hands find it, and the odd hesitation. [Steady]
+ * is a machine's, every key the same gap apart. Both get through the same text
+ * in the same time; only where the keys land along it differs.
+ */
+enum class TypingRhythm { Natural, Steady }
+
 /** Which way a [BuildEffect.LineDraw] grows the line, Keynote's Direction popup. */
 enum class LineDrawDirection { StartToEnd, EndToStart, MiddleToEnds }
 
@@ -162,6 +172,11 @@ data class Build(
      * any other effect. Null reads as [LineDraw]'s defaults.
      */
     val lineDraw: LineDraw? = null,
+    /**
+     * How a [BuildEffect.Typewriter] paces its keys, and nothing at all for any
+     * other effect. A deck saved before there was a choice types naturally.
+     */
+    val typing: TypingRhythm = TypingRhythm.Natural,
 ) {
     companion object
 }
