@@ -170,8 +170,11 @@ private data class MorphSide(
     val numbers: AnnotatedString,
 )
 
-/** A run with its glyphs measured once, so a frame of the morph is only drawing. */
-private data class MorphRun(val glyph: GlyphRun, val layout: TextLayoutResult)
+/**
+ * A run with its glyphs measured once, so a frame of the morph is only drawing.
+ * Null [layout] for a run that never comes into view, which is never measured.
+ */
+private data class MorphRun(val glyph: GlyphRun, val layout: TextLayoutResult?)
 
 /**
  * Where a block with more code than room rests on each side of a morph, in pixels
@@ -303,9 +306,15 @@ internal fun MorphedCodeLines(
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val width: Int = with(LocalDensity.current) { maxWidth.roundToPx() }
             val viewport: Int = constraints.maxHeight
-            val plan: MorphPlan = remember(was, now, width, viewport, element.wrap, style, em) {
-                morphPlan(element, was, now, style, messageStyle, measurer, width, viewport, em)
-            }
+            // Code slides under the block's padding before its edge cuts it.
+            val margin: Float = with(LocalDensity.current) { CodePadding.toPx() }
+            val plan: MorphPlan =
+                remember(was, now, width, viewport, margin, element.wrap, style, em) {
+                    morphPlan(
+                        element, was, now, style, messageStyle, measurer,
+                        width, viewport, margin, em,
+                    )
+                }
             SideEffect { scroll = plan.scroll }
 
             val keys: TypedKeys? = remember(plan, typing != null, style) {
@@ -316,8 +325,6 @@ internal fun MorphedCodeLines(
                 val fraction: Float = progress.value
                 val slide: Float = plan.rowHeight * CodeStepSlide
                 val scrolled: Float = plan.scroll.at(travel(fraction))
-                // Code slides under the block's padding before its edge cuts it.
-                val margin: Float = CodePadding.toPx()
                 val visible: ClosedFloatingPointRange<Float> =
                     scrolled - margin..scrolled + size.height + margin
                 translate(top = -scrolled) {
@@ -395,7 +402,9 @@ private fun CodeElement.morphSide(step: CodeStep): MorphSide {
  * render gives it. Every run is then measured on its own, so a frame costs one
  * [drawText] per run rather than a fresh layout.
  *
- * The same two layouts say where each side rests in [viewport] pixels of height.
+ * The same two layouts say where each side rests in [viewport] pixels of height,
+ * and so which runs never come within [margin] of it on the way: those are left
+ * unmeasured, which on a long block is most of them.
  */
 private fun morphPlan(
     element: CodeElement,
@@ -406,6 +415,7 @@ private fun morphPlan(
     measurer: TextMeasurer,
     width: Int,
     viewport: Int,
+    margin: Float,
     em: Float,
 ): MorphPlan {
     val chrome: CodeChrome = element.theme.chrome
@@ -489,16 +499,38 @@ private fun morphPlan(
             }
         }
 
+    val rowHeight: Float = currentLayout.getLineBottom(0) - currentLayout.getLineTop(0)
+    val scroll = MorphScroll(
+        from = codeScroll(previous.step, previous.rows(previousLayout), viewport),
+        to = codeScroll(current.step, current.rows(currentLayout), viewport),
+    )
+
+    // Whether a run is ever in view. Every frame, morphed or typed, has a run on
+    // the straight line between where it sits against the scroll at either end,
+    // plus at most a slide down, so one with both ends above the band or both
+    // below it never shows. A row of slack covers a run set taller than its line.
+    val reach: Float = rowHeight * CodeStepSlide + 2 * rowHeight
+    fun shows(run: GlyphRun): Boolean {
+        val (start: Offset, end: Offset) = when (run) {
+            is GlyphRun.Moved -> run.from to run.to
+            is GlyphRun.Arrived -> run.position to run.position
+            is GlyphRun.Left -> run.position to run.position
+        }
+        val top: Float = start.y - scroll.from
+        val bottom: Float = end.y - scroll.to
+        return minOf(top, bottom) <= viewport + margin && maxOf(top, bottom) + reach >= -margin
+    }
+
     return MorphPlan(
         runs = runs.map { run ->
-            MorphRun(run, measurer.measure(AnnotatedString(run.text), style, softWrap = false))
+            val layout: TextLayoutResult? =
+                if (!shows(run)) null
+                else measurer.measure(AnnotatedString(run.text), style, softWrap = false)
+            MorphRun(run, layout)
         },
         marks = marks,
-        rowHeight = currentLayout.getLineBottom(0) - currentLayout.getLineTop(0),
-        scroll = MorphScroll(
-            from = codeScroll(previous.step, previous.rows(previousLayout), viewport),
-            to = codeScroll(current.step, current.rows(currentLayout), viewport),
-        ),
+        rowHeight = rowHeight,
+        scroll = scroll,
     )
 }
 
@@ -665,6 +697,7 @@ private fun DrawScope.drawGlyphRun(
     visible: ClosedFloatingPointRange<Float>,
 ) {
     val glyph: GlyphRun = run.glyph
+    val layout: TextLayoutResult = run.layout ?: return
     val topLeft: Offset = when (glyph) {
         is GlyphRun.Moved -> lerp(glyph.from, glyph.to, fraction)
         // Arrivals and departures travel the same way a whole line does in the
@@ -672,24 +705,24 @@ private fun DrawScope.drawGlyphRun(
         is GlyphRun.Arrived -> glyph.position + Offset(0f, (1f - fraction) * slide)
         is GlyphRun.Left -> glyph.position + Offset(0f, fraction * slide)
     }
-    if (topLeft.y > visible.endInclusive || topLeft.y + run.layout.size.height < visible.start) return
+    if (topLeft.y > visible.endInclusive || topLeft.y + layout.size.height < visible.start) return
 
     when (glyph) {
         is GlyphRun.Moved -> drawText(
-            textLayoutResult = run.layout,
+            textLayoutResult = layout,
             color = lerp(glyph.fromColor, glyph.toColor, fraction),
             topLeft = topLeft,
         )
 
         is GlyphRun.Arrived -> drawText(
-            textLayoutResult = run.layout,
+            textLayoutResult = layout,
             color = glyph.color,
             topLeft = topLeft,
             alpha = fraction,
         )
 
         is GlyphRun.Left -> drawText(
-            textLayoutResult = run.layout,
+            textLayoutResult = layout,
             color = glyph.color,
             topLeft = topLeft,
             alpha = 1f - fraction,
@@ -744,9 +777,10 @@ private fun DrawScope.drawTypedRuns(
     for ((index, run) in plan.runs.withIndex()) {
         when (val glyph: GlyphRun = run.glyph) {
             is GlyphRun.Moved -> {
+                val layout: TextLayoutResult = run.layout ?: continue
                 val topLeft: Offset = lerp(glyph.from, glyph.to, move)
                 if (!run.isVisibleAt(topLeft, visible)) continue
-                drawText(run.layout, lerp(glyph.fromColor, glyph.toColor, move), topLeft)
+                drawText(layout, lerp(glyph.fromColor, glyph.toColor, move), topLeft)
             }
 
             is GlyphRun.Left -> drawTypedRun(
@@ -775,7 +809,7 @@ private fun DrawScope.drawTypedRuns(
         is GlyphRun.Arrived -> glyph.position
         is GlyphRun.Moved -> return
     }
-    val x: Float = run.layout.getHorizontalPosition(
+    val x: Float = (run.layout ?: return).getHorizontalPosition(
         offset = run.glyph.text.drawnPrefix(caret.drawn),
         usePrimaryDirection = true,
     )
@@ -795,24 +829,27 @@ private fun DrawScope.drawTypedRun(
     visible: ClosedFloatingPointRange<Float>,
 ) {
     val text: String = run.glyph.text
+    val layout: TextLayoutResult = run.layout ?: return
     val shown: Int = text.drawnPrefix(drawn)
     if (shown <= 0 || !run.isVisibleAt(position, visible)) return
     if (shown >= text.length) {
-        drawText(run.layout, color, position)
+        drawText(layout, color, position)
         return
     }
 
-    val edge: Float = run.layout.getHorizontalPosition(shown, usePrimaryDirection = true)
+    val edge: Float = layout.getHorizontalPosition(shown, usePrimaryDirection = true)
     clipRect(
         left = 0f,
         top = position.y,
         right = position.x + edge,
-        bottom = position.y + run.layout.size.height,
+        bottom = position.y + layout.size.height,
     ) {
-        drawText(run.layout, color, position)
+        drawText(layout, color, position)
     }
 }
 
 /** Whether a run set at [topLeft] reaches into the [visible] band at all. */
-private fun MorphRun.isVisibleAt(topLeft: Offset, visible: ClosedFloatingPointRange<Float>): Boolean =
-    topLeft.y <= visible.endInclusive && topLeft.y + layout.size.height >= visible.start
+private fun MorphRun.isVisibleAt(topLeft: Offset, visible: ClosedFloatingPointRange<Float>): Boolean {
+    val height: Int = layout?.size?.height ?: return false
+    return topLeft.y <= visible.endInclusive && topLeft.y + height >= visible.start
+}

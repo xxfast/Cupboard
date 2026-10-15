@@ -281,6 +281,7 @@ class CodeTypewriterTest {
         assertTrue(rewrite.eraseMs > 0f)
         assertTrue(rewrite.moveMs > 0f)
         assertTrue(rewrite.typeMs > 0f)
+        assertFalse(rewrite.typesNothing)
 
         // A reveal within one version: nothing to erase, the closing brace
         // dropping a row to make room, and the new line typed in.
@@ -292,6 +293,7 @@ class CodeTypewriterTest {
             "returnif(loud)greeting.uppercase()elsegreeting".length * TypewriterMsPerChar.toFloat(),
             reveal.typeMs,
         )
+        assertFalse(reveal.typesNothing)
 
         // A spotlight moving: the dim is a recolour, so it is all move.
         val spotlight: TypewriterTimeline =
@@ -299,5 +301,7 @@ class CodeTypewriterTest {
         assertEquals(0f, spotlight.eraseMs)
         assertEquals(CodeStepDuration.toFloat(), spotlight.moveMs)
         assertEquals(0f, spotlight.typeMs)
+        // No key to press, so the block plays it on the line path instead.
+        assertTrue(spotlight.typesNothing)
     }
 }

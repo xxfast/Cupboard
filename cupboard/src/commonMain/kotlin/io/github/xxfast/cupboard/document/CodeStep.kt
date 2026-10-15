@@ -65,7 +65,8 @@ enum class DiagnosticSeverity { Error, Warning }
 
 /**
  * One error or warning on a code step: a squiggle under columns [startColumn]
- * to [endColumn] of [line], and [message] drawn after the line's end.
+ * to [endColumn] of [line], and [message] drawn after the line's end, or under
+ * the squiggle when the line leaves it no room.
  *
  * All three are 1-based and inclusive, the way an IDE reports `3:5` and the way
  * [LineRange] and [CodeStep.scrollTo] count, so the inspector's fields read what

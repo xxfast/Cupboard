@@ -161,6 +161,9 @@ internal data class TypewriterTimeline(
 ) {
     val totalMs: Float get() = eraseMs + moveMs + typeMs
 
+    /** Whether there is no key to press at all: nothing to erase and nothing to type. */
+    val typesNothing: Boolean get() = departing.sum() == 0 && arriving.sum() == 0
+
     private fun elapsed(fraction: Float): Float = fraction.coerceIn(0f, 1f) * totalMs
 
     /** How far through a phase starting [start] ms in and lasting [length] the clock is. */

@@ -5,8 +5,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.ImageComposeScene
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -17,9 +21,11 @@ import io.github.xxfast.cupboard.document.CodeDiagnostic
 import io.github.xxfast.cupboard.document.CodeElement
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.Frame
+import io.github.xxfast.cupboard.document.LineRange
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.Image
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -84,9 +90,67 @@ class CodeDiagnosticsRenderTest {
         assertTrue(start < middle && middle < end, "$start, $middle, $end")
     }
 
+    /**
+     * A step that differs from the one before only in its diagnostics shows the
+     * same lines the same way, which is no reason to land without its squiggle.
+     */
+    @Test
+    fun aStepThatOnlyAddsADiagnosticLandsWithIt() {
+        val pointed = CodeStep(diagnostics = listOf(unresolved(line = 2)))
+        val rest: Bitmap = render(pointed)
+        var step: CodeStep by mutableStateOf(CodeStep())
+
+        val scene = ImageComposeScene(width = WIDTH, height = HEIGHT, density = Density(1f))
+        scene.setContent { OnSlide { ElementView(element, codeStep = step) } }
+
+        try {
+            scene.render(0)
+            step = pointed
+            val settled: Bitmap = (1..SETTLED_FRAME)
+                .map { frame -> scene.render(frame * FRAME_NANOS) }
+                .last()
+                .pixels()
+            assertContentEquals(rest.readPixels(), settled.readPixels())
+        } finally {
+            scene.close()
+        }
+    }
+
+    /**
+     * A message too long to follow its line drops under its squiggle, into the
+     * row below, and is pulled left to stay inside the block rather than run off
+     * its edge. On a dimmed line too, whose row is drawn through a translucent
+     * layer that must not cut the message off at the row's own bounds.
+     */
+    @Test
+    fun aMessageWithNoRoomAfterItsLineDropsUnderItAndStaysInTheBlock() {
+        val long = CodeDiagnostic(
+            line = 2, startColumn = 13, endColumn = 17,
+            message = "Unresolved reference: answr. Did you mean",
+        )
+        val rowBelow: IntRange = (viewportTop + 2 * ROW)..(viewportTop + 3 * ROW)
+        val right: Int = (frame.x + frame.width - CodePadding.value).toInt()
+
+        for (highlight in listOf(emptyList(), listOf(LineRange(1, 1)))) {
+            val plain: Bitmap = render(CodeStep(highlight = highlight))
+            val pointed: Bitmap =
+                render(CodeStep(highlight = highlight, diagnostics = listOf(long)))
+
+            val ink: List<Int> = pointed.rowsDifferingFrom(plain)
+            assertTrue(ink.any { it in rowBelow }, "nothing dropped below the line: $ink")
+            val columns: List<Int> = pointed.columnsDifferingFrom(plain)
+            assertTrue(columns.max() <= right, "ran past the block's edge at ${columns.max()}")
+        }
+    }
+
     private fun Bitmap.rowsDifferingFrom(other: Bitmap): List<Int> = (0 until height).filter { y ->
         (0 until width).any { x -> getColor(x, y) != other.getColor(x, y) }
     }
+
+    private fun Bitmap.columnsDifferingFrom(other: Bitmap): List<Int> =
+        (0 until width).filter { x ->
+            (0 until height).any { y -> getColor(x, y) != other.getColor(x, y) }
+        }
 
     private fun Bitmap.anyPixelNear(argb: Int): Boolean {
         val target = Color(argb)
@@ -140,5 +204,10 @@ class CodeDiagnosticsRenderTest {
 
         /** One line of code at 14 points, in pixels at a density of one. */
         const val ROW: Int = 21
+
+        const val FRAME_NANOS: Long = 16_000_000
+
+        /** Past the end of a step change, with a few frames to spare. */
+        const val SETTLED_FRAME: Int = 32
     }
 }

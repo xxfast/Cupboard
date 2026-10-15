@@ -7,6 +7,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalDensity
@@ -128,7 +129,8 @@ private data class RowMarks(val from: List<DiagnosticMark>, val to: List<Diagnos
  * One both steps hold stays at full strength, its message sliding to where the
  * new step sets it; one only the old step holds fades out and one only the new
  * holds fades in. A row only one step shows is already fading as a whole, so its
- * diagnostics ride that fade rather than doubling it.
+ * diagnostics ride that fade rather than doubling it. All of it at the row's own
+ * strength, so a diagnostic dims and fades with the code it is on.
  */
 private fun DrawScope.drawRowDiagnostics(
     row: CodeRow,
@@ -137,8 +139,9 @@ private fun DrawScope.drawRowDiagnostics(
     chrome: CodeChrome,
     em: Float,
 ) {
-    val fromAlpha: Float = if (row.transition.toRow == null) 1f else 1f - fraction
-    val toAlpha: Float = if (row.transition.fromRow == null) 1f else fraction
+    val strength: Float = row.alphaAt(fraction)
+    val fromAlpha: Float = strength * if (row.transition.toRow == null) 1f else 1f - fraction
+    val toAlpha: Float = strength * if (row.transition.fromRow == null) 1f else fraction
 
     val leaving: MutableList<DiagnosticMark> = marks.from.toMutableList()
     for (mark in marks.to) {
@@ -149,7 +152,8 @@ private fun DrawScope.drawRowDiagnostics(
         }
 
         val was: DiagnosticMark = leaving.removeAt(kept)
-        drawDiagnostic(mark, chrome, em, 1f, messageAt = lerp(was.messageAt, mark.messageAt, fraction))
+        val messageAt: Offset = lerp(was.messageAt, mark.messageAt, fraction)
+        drawDiagnostic(mark, chrome, em, strength, messageAt = messageAt)
     }
     for (mark in leaving) drawDiagnostic(mark, chrome, em, fromAlpha)
 }
@@ -191,7 +195,8 @@ private fun SteppedLine?.strength(): Float = if (this?.dimmed == true) CodeDimAl
  * [BuildEffect.Typewriter] types the change instead ([typesOnto]): it goes the
  * token path whatever the two versions are, and plays it as a keyboard
  * ([TypewriterTimeline]) on the same clock, run out over however long the typing
- * takes. Backwards, or onto any other effect, is everything above, unchanged.
+ * takes. A step that keeps its version and has nothing to type is everything
+ * above, as is going backwards, or onto any other effect.
  */
 @Composable
 internal fun AnimatedCodeLines(
@@ -223,6 +228,12 @@ internal fun AnimatedCodeLines(
         landed = landing
         typing = if (!typed || landing == null) null
         else element.typewriterTimeline(from, to, landing.build.durationMs, landing.build.typing)
+
+        // No key to press within one version is only lines lighting, dimming or
+        // scrolling, which the line path plays on its own clock: the token path
+        // would measure every token of a long block to show nothing being typed.
+        val oneVersion: Boolean = element.sourceAt(from.version) == element.sourceAt(to.version)
+        if (oneVersion && typing?.typesNothing == true) typing = null
         progress.snapTo(0f)
 
         val timeline: TypewriterTimeline? = typing
@@ -274,7 +285,10 @@ internal fun AnimatedCodeLines(
             steppedLines(toSource, element.language, element.theme, to)
         }
 
-    val rows: List<CodeRow> = remember(was, now) {
+    // Keyed on the diagnostics as well as the lines: two steps can show the same
+    // lines the same way and differ only in what they point at, and the rows are
+    // what carry each end's squiggles.
+    val rows: List<CodeRow> = remember(was, now, from.diagnostics, to.diagnostics) {
         val before: Map<Int, SteppedLine> = was.associateBy { it.number }
         val after: Map<Int, SteppedLine> = now.associateBy { it.number }
         lineTransitions(was.map { it.number }, now.map { it.number }).map { transition ->
@@ -317,7 +331,11 @@ internal fun AnimatedCodeLines(
 
                     // Laid out by the row's own text, so a squiggle sits under
                     // the glyphs it means however the row wrapped, and is drawn
-                    // in the row's layer: it moves, scrolls and dims with it.
+                    // with the row: it moves, scrolls and dims with it. Over the
+                    // row's layer rather than in it, at the row's alpha, since a
+                    // translucent layer is cut at the row's bounds and a message
+                    // runs past them: after the line's last glyph, or dropped
+                    // onto the row below.
                     var marks: RowMarks by remember(row) {
                         mutableStateOf(RowMarks(emptyList(), emptyList()))
                     }
@@ -350,11 +368,11 @@ internal fun AnimatedCodeLines(
                             marks = RowMarks(marksOf(row.fromDiagnostics), marksOf(row.toDiagnostics))
                         },
                         modifier = Modifier
-                            .graphicsLayer { alpha = row.alphaAt(progress.value) }
                             .drawWithContent {
                                 drawContent()
                                 drawRowDiagnostics(row, marks, progress.value, chrome, em)
-                            },
+                            }
+                            .graphicsLayer { alpha = row.alphaAt(progress.value) },
                     )
                 }
             }
@@ -442,8 +460,14 @@ internal fun AnimatedCodeLines(
                     LineMotion.Removed -> fromTops[index] + fraction * slide
                 }
 
+                // A row with something to say draws after the rows below it,
+                // which a message dropped under its line lies across.
+                val row: CodeRow = rows[index]
+                val pointed: Boolean =
+                    row.fromDiagnostics.isNotEmpty() || row.toDiagnostics.isNotEmpty()
                 gutters?.get(index)?.place(0, (y - scrolled).roundToInt())
-                bodies[index].place(left, (y - scrolled).roundToInt())
+                val z: Float = if (pointed) 1f else 0f
+                bodies[index].place(left, (y - scrolled).roundToInt(), zIndex = z)
             }
         }
     }
