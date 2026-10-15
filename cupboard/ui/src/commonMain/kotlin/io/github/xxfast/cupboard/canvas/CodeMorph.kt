@@ -297,8 +297,13 @@ internal fun MorphedCodeLines(
             Canvas(Modifier.fillMaxSize()) {
                 val fraction: Float = progress.value
                 val slide: Float = plan.rowHeight * CodeStepSlide
-                translate(top = -plan.scroll.at(fraction)) {
-                    for (run in plan.runs) drawGlyphRun(run, fraction, slide)
+                val scrolled: Float = plan.scroll.at(fraction)
+                // Code slides under the block's padding before its edge cuts it.
+                val margin: Float = CodePadding.toPx()
+                val visible: ClosedFloatingPointRange<Float> =
+                    scrolled - margin..scrolled + size.height + margin
+                translate(top = -scrolled) {
+                    for (run in plan.runs) drawGlyphRun(run, fraction, slide, visible)
                     for (mark in plan.marks) drawMorphMark(mark, fraction, slide, chrome, em)
                 }
             }
@@ -565,28 +570,47 @@ private fun DrawScope.drawMorphMark(
     drawDiagnostic(mark.mark, chrome, em, alpha = (1f - moved) * mark.strength, shift = shift)
 }
 
-/** One run at [fraction] of the way through the change, [slide] being a row's travel. */
-private fun DrawScope.drawGlyphRun(run: MorphRun, fraction: Float, slide: Float) {
-    when (val glyph: GlyphRun = run.glyph) {
+/**
+ * One run at [fraction] of the way through the change, [slide] being a row's travel.
+ *
+ * A run wholly outside the [visible] band of the block is skipped: a long block
+ * holds far more tokens than its frame shows, and the clip would only throw their
+ * ink away after paying for it.
+ */
+private fun DrawScope.drawGlyphRun(
+    run: MorphRun,
+    fraction: Float,
+    slide: Float,
+    visible: ClosedFloatingPointRange<Float>,
+) {
+    val glyph: GlyphRun = run.glyph
+    val topLeft: Offset = when (glyph) {
+        is GlyphRun.Moved -> lerp(glyph.from, glyph.to, fraction)
+        // Arrivals and departures travel the same way a whole line does in the
+        // line path, so a version change and a reveal read as one language.
+        is GlyphRun.Arrived -> glyph.position + Offset(0f, (1f - fraction) * slide)
+        is GlyphRun.Left -> glyph.position + Offset(0f, fraction * slide)
+    }
+    if (topLeft.y > visible.endInclusive || topLeft.y + run.layout.size.height < visible.start) return
+
+    when (glyph) {
         is GlyphRun.Moved -> drawText(
             textLayoutResult = run.layout,
             color = lerp(glyph.fromColor, glyph.toColor, fraction),
-            topLeft = lerp(glyph.from, glyph.to, fraction),
+            topLeft = topLeft,
         )
 
-        // Arrivals and departures travel the same way a whole line does in the
-        // line path, so a version change and a reveal read as one language.
         is GlyphRun.Arrived -> drawText(
             textLayoutResult = run.layout,
             color = glyph.color,
-            topLeft = glyph.position + Offset(0f, (1f - fraction) * slide),
+            topLeft = topLeft,
             alpha = fraction,
         )
 
         is GlyphRun.Left -> drawText(
             textLayoutResult = run.layout,
             color = glyph.color,
-            topLeft = glyph.position + Offset(0f, fraction * slide),
+            topLeft = topLeft,
             alpha = 1f - fraction,
         )
     }
