@@ -2234,6 +2234,16 @@ extension EditorView {
         }
         .buttonStyle(.plain)
         .help(help)
+        // An image-only label has no text to name it, so the tooltip is the name
+        // VoiceOver and UI scripting get, and the identifier is the stable handle
+        // for the latter ("inspector.step.addStep").
+        .accessibilityLabel(help)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier(
+            "inspector.step." + help.split(separator: " ").enumerated()
+                .map { $0.offset == 0 ? $0.element.lowercased() : $0.element.capitalized }
+                .joined()
+        )
     }
 
     /// One correction, previewed. The other two go back as they were: the three
