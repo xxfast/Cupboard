@@ -54,12 +54,14 @@ private val CodeToken.key: TokenKey get() = TokenKey(content, kind, depth)
  * How [previous] becomes [current], token by token: Heckel's diff, which finds
  * the tokens both sides agree on and calls everything else an insert or a delete.
  *
- * Four passes, with the start and end of both texts counting as anchors. The first pairs up tokens that appear exactly once on each side,
+ * Four passes. The first pairs up tokens that appear exactly once on each side,
  * which are the anchors nothing else can be confused with. The second and third
  * march forwards and backwards out of every anchor, picking up the neighbours
  * that agree, which is what carries a whole unchanged line along with the one
- * identifier in it that happened to be unique. The fourth turns whatever is left
- * into deletes (on the previous side) and inserts (on the current side).
+ * identifier in it that happened to be unique. The start and end of both texts
+ * then count as anchors too, for whatever the marches left, and the marches run
+ * again out of them. The fourth turns whatever is left into deletes (on the
+ * previous side) and inserts (on the current side).
  *
  * The returned script is in the order a renderer wants to walk it: deletes sit
  * next to the tokens they were between, and contiguous deletes come out as one
@@ -97,9 +99,50 @@ fun diffTokens(previous: List<CodeToken>, current: List<CodeToken>): List<TokenE
         if (frequencyC[key] == 1 && frequencyP[key] == 1) match(context.index, index)
     }
 
+    // Phases 2 and 3: forwards out of every anchor while both sides keep
+    // agreeing, then the same march backwards.
+    fun march() {
+        for (index in 0 until editsC.size - 1) {
+            val edit: TokenEdit? = editsC[index]
+            if (edit !is TokenEdit.Match) continue
+
+            val nextIndex: Int = index + 1
+            val nextPreviousIndex: Int = edit.previousIndex + 1
+            val next: CodeToken = current[nextIndex]
+            val nextPrevious: CodeToken = previous.getOrNull(nextPreviousIndex) ?: continue
+            if (next.key == nextPrevious.key &&
+                editsC[nextIndex] == null &&
+                editsP[nextPreviousIndex] == null
+            ) {
+                match(nextPreviousIndex, nextIndex)
+            }
+        }
+
+        for (index in editsC.size - 1 downTo 1) {
+            val edit: TokenEdit? = editsC[index]
+            if (edit !is TokenEdit.Match) continue
+
+            val priorIndex: Int = index - 1
+            val priorPreviousIndex: Int = edit.previousIndex - 1
+            val prior: CodeToken = current[priorIndex]
+            val priorPrevious: CodeToken = previous.getOrNull(priorPreviousIndex) ?: continue
+            if (prior.key == priorPrevious.key &&
+                editsC[priorIndex] == null &&
+                editsP[priorPreviousIndex] == null
+            ) {
+                match(priorPreviousIndex, priorIndex)
+            }
+        }
+    }
+
+    march()
+
     // Heckel's sentinels: the start and end of both texts are matched anchors
-    // too, so the marches below reach a first or last line whose tokens all
-    // repeat elsewhere, which phase 1 can never pin down.
+    // too, so a first or last line whose tokens all repeat elsewhere, which
+    // phase 1 can never pin down, still gets a march of its own. Only after
+    // the first march, and only on what it left: on tokens rather than lines
+    // the last ones nearly always agree (a `;`, a `}`), and pinned first they
+    // would steal the token an unchanged line was about to carry along.
     if (previous.isNotEmpty() && current.isNotEmpty()) {
         if (current.first().key == previous.first().key &&
             editsC.first() == null &&
@@ -116,39 +159,7 @@ fun diffTokens(previous: List<CodeToken>, current: List<CodeToken>): List<TokenE
         }
     }
 
-    // Phase 2: forwards out of every anchor, while both sides keep agreeing.
-    for (index in 0 until editsC.size - 1) {
-        val edit: TokenEdit? = editsC[index]
-        if (edit !is TokenEdit.Match) continue
-
-        val nextIndex: Int = index + 1
-        val nextPreviousIndex: Int = edit.previousIndex + 1
-        val next: CodeToken = current[nextIndex]
-        val nextPrevious: CodeToken = previous.getOrNull(nextPreviousIndex) ?: continue
-        if (next.key == nextPrevious.key &&
-            editsC[nextIndex] == null &&
-            editsP[nextPreviousIndex] == null
-        ) {
-            match(nextPreviousIndex, nextIndex)
-        }
-    }
-
-    // Phase 3: the same march backwards.
-    for (index in editsC.size - 1 downTo 1) {
-        val edit: TokenEdit? = editsC[index]
-        if (edit !is TokenEdit.Match) continue
-
-        val priorIndex: Int = index - 1
-        val priorPreviousIndex: Int = edit.previousIndex - 1
-        val prior: CodeToken = current[priorIndex]
-        val priorPrevious: CodeToken = previous.getOrNull(priorPreviousIndex) ?: continue
-        if (prior.key == priorPrevious.key &&
-            editsC[priorIndex] == null &&
-            editsP[priorPreviousIndex] == null
-        ) {
-            match(priorPreviousIndex, priorIndex)
-        }
-    }
+    march()
 
     // Phase 4: everything still unmatched is a delete on one side, an insert on
     // the other, woven together into one script.

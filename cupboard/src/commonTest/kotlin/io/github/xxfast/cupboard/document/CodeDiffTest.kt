@@ -157,4 +157,31 @@ class CodeDiffTest {
         assertTrue("y" in deleted(edits))
         assertTrue(edits.first() is TokenEdit.Match)
     }
+
+    @Test
+    fun aLineTypedOntoTheEndKeepsTheSemicolonAboveIt() {
+        val previous = "using System.Runtime.InteropServices;\n\n" +
+            "[DllImport(\"shared\")]\nstatic extern nint shared_symbols();"
+        val current = "$previous\n\nvar api = (nint*)shared_symbols();"
+        val edits: List<TokenEdit> = diffCode(previous, current, "csharp")
+
+        val semicolons: List<TokenEdit.Match> = edits.filterIsInstance<TokenEdit.Match>()
+            .filter { it.current.content == ";" }
+        assertTrue(semicolons.all { it.previous.line == it.current.line }, "moved $semicolons")
+        assertEquals(listOf(";"), inserted(edits).filter { it == ";" })
+        assertTrue(deleted(edits).isEmpty(), "deleted ${deleted(edits)}")
+    }
+
+    @Test
+    fun aBlockTypedOntoTheEndKeepsTheBraceAboveIt() {
+        val previous = "unsafe {\n  run();\n}"
+        val current = "$previous\n\nstruct Point {\n  int x;\n}"
+        val edits: List<TokenEdit> = diffCode(previous, current, "csharp")
+
+        val braces: List<TokenEdit.Match> = edits.filterIsInstance<TokenEdit.Match>()
+            .filter { it.current.content == "}" }
+        assertEquals(1, braces.size)
+        assertEquals(braces.single().previous.line, braces.single().current.line)
+        assertTrue(deleted(edits).isEmpty(), "deleted ${deleted(edits)}")
+    }
 }
