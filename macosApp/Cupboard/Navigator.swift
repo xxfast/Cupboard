@@ -196,6 +196,7 @@ extension EditorView {
                     bottom: 16,
                     trailing: NavigatorMetrics.listPadding
                 ))
+                .scrollTargetLayout()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .coordinateSpace(name: NavigatorSpace.name)
                 .onPreferenceChange(RowFrames.self) { frames in rowFrames = frames }
@@ -211,6 +212,16 @@ extension EditorView {
                 )
             }
             .scrollContentBackground(.hidden)
+            // Kept on the model, which outlives the view: a show in the window
+            // rebuilds the editor, and the list would come back at the top.
+            // The binding only tracks it, since a new scroll view ignores the
+            // position it starts with, so coming back scrolls there itself, a
+            // pass later, once the rows are laid out.
+            .scrollPosition(id: Binding(get: { model.navigatorTop }, set: { model.navigatorTop = $0 }))
+            .onAppear {
+                guard let top = model.navigatorTop else { return }
+                DispatchQueue.main.async { scroller.scrollTo(top, anchor: .top) }
+            }
             // The arrow keys can walk the selection out of sight.
             .onChange(of: selectedId) { _, id in
                 guard let id else { return }

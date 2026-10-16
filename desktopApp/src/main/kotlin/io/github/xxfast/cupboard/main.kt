@@ -17,6 +17,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -550,6 +552,7 @@ private fun EditorWindow(
     onExit: () -> Unit,
 ) {
     var playing by remember { mutableStateOf<PlayRequest?>(null) }
+    val editorState: SaveableStateHolder = rememberSaveableStateHolder()
 
     // Whether a show also puts up the presenter display. This shell's own
     // preference rather than the editor's: it is about the windows on this
@@ -1461,59 +1464,63 @@ private fun EditorWindow(
                     ),
             ) {
                 CompositionLocalProvider(LocalAssetImages provides images) {
-                    EditorScreen(
-                        viewModel = viewModel,
-                        onPlay = playSlideshow,
-                        onPlayPreview = previewSlide,
-                        onShowContextMenu = nativeMenu?.let { menu ->
-                            { elementId, positionInWindow ->
-                                showNativeMenu(
-                                    popup = menu,
-                                    parent = window.contentPane,
-                                    density = density,
-                                    positionInWindow = positionInWindow,
-                                    sections = canvasContextSections(state, viewModel, elementId),
-                                )
-                            }
-                        },
-                        // The same popup: two menus can't be open at once anyway, and
-                        // the row's verbs carry its id, so nothing here has to guess
-                        // what the click did to the selection.
-                        onShowSlideContextMenu = nativeMenu?.let { menu ->
-                            { slideId, positionInWindow, onRename ->
-                                showNativeMenu(
-                                    popup = menu,
-                                    parent = window.contentPane,
-                                    density = density,
-                                    positionInWindow = positionInWindow,
-                                    // In layout mode the row is a layout, so the verbs
-                                    // are the layout ones. Rename's dialog belongs to
-                                    // the editor view, which hands its opener in.
-                                    sections = if (state.isEditingLayouts) {
-                                        layoutSections(viewModel, slideId, onRename)
-                                    } else {
-                                        slideSections(
-                                            state = state,
-                                            viewModel = viewModel,
-                                            slideId = slideId,
-                                            includePaste = true,
-                                        )
-                                    },
-                                )
-                            }
-                        },
-                        onInsertImage = insertImage,
-                        onReplaceImage = replaceImage,
-                        onInsertGallery = insertGalleryFiles,
-                        onAddGalleryImages = addGalleryImages,
-                        onInsertMovie = insertMovie,
-                        onInsertAudio = insertAudio,
-                        onInsertWebVideo = insertWebVideo,
-                        onReplaceMedia = replaceMedia,
-                        onChoosePoster = choosePoster,
-                        onChooseImage = chooseFillImage,
-                        onAddFontFile = addFontFile,
-                    )
+                    // Saveable state kept across an in-window show, which takes the
+                    // editor down: the navigator comes back scrolled where it was.
+                    editorState.SaveableStateProvider("editor") {
+                        EditorScreen(
+                            viewModel = viewModel,
+                            onPlay = playSlideshow,
+                            onPlayPreview = previewSlide,
+                            onShowContextMenu = nativeMenu?.let { menu ->
+                                { elementId, positionInWindow ->
+                                    showNativeMenu(
+                                        popup = menu,
+                                        parent = window.contentPane,
+                                        density = density,
+                                        positionInWindow = positionInWindow,
+                                        sections = canvasContextSections(state, viewModel, elementId),
+                                    )
+                                }
+                            },
+                            // The same popup: two menus can't be open at once anyway, and
+                            // the row's verbs carry its id, so nothing here has to guess
+                            // what the click did to the selection.
+                            onShowSlideContextMenu = nativeMenu?.let { menu ->
+                                { slideId, positionInWindow, onRename ->
+                                    showNativeMenu(
+                                        popup = menu,
+                                        parent = window.contentPane,
+                                        density = density,
+                                        positionInWindow = positionInWindow,
+                                        // In layout mode the row is a layout, so the verbs
+                                        // are the layout ones. Rename's dialog belongs to
+                                        // the editor view, which hands its opener in.
+                                        sections = if (state.isEditingLayouts) {
+                                            layoutSections(viewModel, slideId, onRename)
+                                        } else {
+                                            slideSections(
+                                                state = state,
+                                                viewModel = viewModel,
+                                                slideId = slideId,
+                                                includePaste = true,
+                                            )
+                                        },
+                                    )
+                                }
+                            },
+                            onInsertImage = insertImage,
+                            onReplaceImage = replaceImage,
+                            onInsertGallery = insertGalleryFiles,
+                            onAddGalleryImages = addGalleryImages,
+                            onInsertMovie = insertMovie,
+                            onInsertAudio = insertAudio,
+                            onInsertWebVideo = insertWebVideo,
+                            onReplaceMedia = replaceMedia,
+                            onChoosePoster = choosePoster,
+                            onChooseImage = chooseFillImage,
+                            onAddFontFile = addFontFile,
+                        )
+                    }
                 }
             }
         }

@@ -380,6 +380,11 @@ final class EditorModel {
     /// the view for the same reason: Play is a toolbar button and Preview Slide
     /// is a menu item, and one of them is not in the window.
     var show: Show?
+    /// The slide at the top of the navigator. A show in the window takes the
+    /// editor down and builds a new one after, and this is what brings the list
+    /// back where it was. Ignored, since the list writes it on every row that
+    /// scrolls past and nothing needs to redraw for that.
+    @ObservationIgnored var navigatorTop: String?
     /// Shared so the window setup and the editor view drive the same buttons.
     @ObservationIgnored let lights = TrafficLights()
     /// The show's windows. One arrangement per window, settled when its show
