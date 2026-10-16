@@ -16,6 +16,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import io.github.xxfast.cupboard.editor.LocalResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import kotlin.math.roundToInt
@@ -87,11 +88,13 @@ enum class PresenterLayout { CurrentAndNext, CurrentAndNotes, NextAndNotes, Note
  * index: the host folds it into the document, and an edit that lands while the
  * deck is being reordered still finds its slide.
  *
- * [layout] and [split] are held by the caller rather than here, for the same
- * reason [position] is: this draws what it is told to. [split] is the left
- * pane's share of a two-pane arrangement, dragged by the divider between them.
- * [onLayoutChange], [onSplitChange] and [onResetTimer] default to nothing so a
- * host that gives the presenter no say over them still gets a display.
+ * [layout], [split] and [notesSize] are held by the caller rather than here,
+ * for the same reason [position] is: this draws what it is told to. [split] is
+ * the left pane's share of a two-pane arrangement, dragged by the divider
+ * between them. [notesSize] is the notes' type size in sp, stepped along
+ * [PresenterNotesSizes] by the buttons over them. [onLayoutChange],
+ * [onSplitChange], [onNotesSizeChange] and [onResetTimer] default to nothing so
+ * a host that gives the presenter no say over them still gets a display.
  *
  * [LocalMediaPlayer] around the display is the show's own player. The current
  * slide draws the pictures of the movies it is playing, and nothing here starts
@@ -109,8 +112,10 @@ fun PresenterDisplay(
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     split: Float = PresenterDefaultSplit,
+    notesSize: Float = PresenterDefaultNotesSize,
     onLayoutChange: (PresenterLayout) -> Unit = {},
     onSplitChange: (Float) -> Unit = {},
+    onNotesSizeChange: (Float) -> Unit = {},
     onResetTimer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -118,7 +123,8 @@ fun PresenterDisplay(
     ProvideDeckFonts(document.fonts) {
         Display(
             document, position, layout, elapsedMs, clock, onNotesChange,
-            onNext, onPrevious, split, onLayoutChange, onSplitChange, onResetTimer, modifier,
+            onNext, onPrevious, split, notesSize, onLayoutChange, onSplitChange, onNotesSizeChange,
+            onResetTimer, modifier,
         )
     }
 }
@@ -134,8 +140,10 @@ private fun Display(
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     split: Float,
+    notesSize: Float,
     onLayoutChange: (PresenterLayout) -> Unit,
     onSplitChange: (Float) -> Unit,
+    onNotesSizeChange: (Float) -> Unit,
     onResetTimer: () -> Unit,
     modifier: Modifier,
 ) {
@@ -198,7 +206,7 @@ private fun Display(
                     fields = fields,
                     modifier = left,
                 )
-                NotesPane(slide = current, onNotesChange = onNotesChange, modifier = right)
+                NotesPane(current, notesSize, onNotesChange, onNotesSizeChange, modifier = right)
             }
 
             PresenterLayout.NextAndNotes -> SplitPanes(split, onSplitChange, panes) { left, right ->
@@ -210,17 +218,30 @@ private fun Display(
                     fields = fields,
                     modifier = left,
                 )
-                NotesPane(slide = current, onNotesChange = onNotesChange, modifier = right)
+                NotesPane(current, notesSize, onNotesChange, onNotesSizeChange, modifier = right)
             }
 
             PresenterLayout.NotesOnly -> NotesPane(
-                slide = current,
-                onNotesChange = onNotesChange,
-                modifier = panes,
+                current, notesSize, onNotesChange, onNotesSizeChange, modifier = panes,
             )
         }
     }
 }
+
+/**
+ * The sizes the notes step through, in sp: small enough to fit a long script,
+ * big enough to read from a step back off the lectern.
+ */
+val PresenterNotesSizes: List<Float> = listOf(11f, 13.5f, 16f, 19f, 23f, 28f, 34f, 40f)
+
+/** The notes' size before anyone changes it. */
+const val PresenterDefaultNotesSize: Float = 13.5f
+
+/** The next size up the ladder from [size], or [size] at the top. */
+internal fun biggerNotes(size: Float): Float = PresenterNotesSizes.firstOrNull { it > size } ?: size
+
+/** The next size down the ladder from [size], or [size] at the bottom. */
+internal fun smallerNotes(size: Float): Float = PresenterNotesSizes.lastOrNull { it < size } ?: size
 
 /** The left pane's share of the room, before anyone drags the divider. */
 const val PresenterDefaultSplit: Float = 1.7f / 2.7f
@@ -501,7 +522,9 @@ private fun SlidePane(
 @Composable
 private fun NotesPane(
     slide: Slide?,
+    size: Float,
     onNotesChange: (slideId: String, notes: String) -> Unit,
+    onSizeChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(6.dp)
@@ -514,13 +537,24 @@ private fun NotesPane(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = "SPEAKER NOTES",
-            color = PresenterFaint,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "SPEAKER NOTES",
+                color = PresenterFaint,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.2.sp,
+                modifier = Modifier.weight(1f),
+            )
+            // Keynote's pair: a small A and a big one, each greyed at its end
+            // of the ladder.
+            NotesSizeButton(glyph = 10.sp, enabled = smallerNotes(size) != size) {
+                onSizeChange(smallerNotes(size))
+            }
+            NotesSizeButton(glyph = 15.sp, enabled = biggerNotes(size) != size) {
+                onSizeChange(biggerNotes(size))
+            }
+        }
 
         if (slide == null) return@Column
 
@@ -536,11 +570,30 @@ private fun NotesPane(
             // into, in a dark room, at arm's length.
             textStyle = TextStyle(
                 color = PresenterText,
-                fontSize = 13.5.sp,
-                lineHeight = 20.25.sp,
+                fontSize = size.sp,
+                lineHeight = (size * 1.5f).sp,
             ),
             cursorBrush = SolidColor(PresenterAccent),
             modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+/** One of the notes' size buttons: an A at [glyph], which says which way it goes. */
+@Composable
+private fun NotesSizeButton(glyph: TextUnit, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(24.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "A",
+            color = if (enabled) PresenterText else PresenterFaint,
+            fontSize = glyph,
+            fontWeight = FontWeight.Medium,
         )
     }
 }

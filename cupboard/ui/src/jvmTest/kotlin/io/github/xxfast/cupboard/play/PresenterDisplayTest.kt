@@ -51,6 +51,14 @@ class PresenterDisplayTest {
         assertEquals("2:03:20", elapsed(7_400_000))
         assertEquals("0:00:00", elapsed(-1))
     }
+
+    @Test
+    fun theNotesStepAlongTheLadderAndStopAtItsEnds() {
+        assertEquals(16f, biggerNotes(PresenterDefaultNotesSize))
+        assertEquals(11f, smallerNotes(PresenterDefaultNotesSize))
+        assertEquals(PresenterNotesSizes.last(), biggerNotes(PresenterNotesSizes.last()))
+        assertEquals(PresenterNotesSizes.first(), smallerNotes(PresenterNotesSizes.first()))
+    }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)

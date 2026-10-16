@@ -52,7 +52,7 @@ public fun rememberPresenterClock(): PresenterClock = remember { PresenterClock(
  *
  * [onNotesChange] is the host's to fold into its document, per keystroke.
  *
- * The arrangement and the split between its panes are this view's own state
+ * The arrangement, the split between its panes and the notes' size are this view's own state
  * rather than parameters: they are lectern preferences, changed from the
  * display itself mid-show, and no host has anything to say about them.
  */
@@ -69,6 +69,7 @@ public fun PresenterView(
     // notes are the thing you can't get back if the display isn't showing them.
     var layout: PresenterLayout by remember { mutableStateOf(PresenterLayout.CurrentAndNotes) }
     var split: Float by remember { mutableStateOf(PresenterDefaultSplit) }
+    var notesSize: Float by remember { mutableStateOf(PresenterDefaultNotesSize) }
 
     LaunchedEffect(presenterClock, presenterClock.resets) {
         val started = TimeSource.Monotonic.markNow()
@@ -93,8 +94,10 @@ public fun PresenterView(
         onNext = { controller.next() },
         onPrevious = { controller.previous() },
         split = split,
+        notesSize = notesSize,
         onLayoutChange = { layout = it },
         onSplitChange = { split = it },
+        onNotesSizeChange = { notesSize = it },
         onResetTimer = presenterClock::resetTimer,
         modifier = modifier,
     )
