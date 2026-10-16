@@ -129,11 +129,18 @@ fun SlideView(
 
     // Paired as typed, never as filled in: a number box is the same box on both
     // sides of the cut whatever number it reads (see `Element.matchKey`).
+    // Only what is on screen either side of the cut: the leaving slide at the
+    // step it was left on, the arriving one at the step it arrives on. An
+    // element a build hasn't brought in yet is not there to travel from, and
+    // pairing it had its partner set off from it, in its colours, for the
+    // length of the move.
     val travelling: List<Pair<Element, Element>> = remember(magic, fields) {
         val from: Slide = magic?.fromSlide ?: return@remember emptyList()
+        val fromStep: Int = if (magic.forward) from.stepCount() - 1 else 0
+        val toStep: Int = step ?: 0
         magicMovePairs(
-            from.drawable(from.elements, magic.fromFields),
-            magic.toSlide.drawable(magic.toSlide.elements, fields),
+            from.drawable(from.elements, magic.fromFields).filter { from.isVisibleAt(it.id, fromStep) },
+            magic.toSlide.drawable(magic.toSlide.elements, fields).filter { magic.toSlide.isVisibleAt(it.id, toStep) },
         )
     }
 
