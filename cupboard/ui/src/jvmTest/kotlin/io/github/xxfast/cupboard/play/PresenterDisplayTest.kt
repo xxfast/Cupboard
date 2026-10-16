@@ -54,8 +54,8 @@ class PresenterDisplayTest {
 
     @Test
     fun theNotesStepAlongTheLadderAndStopAtItsEnds() {
-        assertEquals(16f, biggerNotes(PresenterDefaultNotesSize))
-        assertEquals(11f, smallerNotes(PresenterDefaultNotesSize))
+        assertEquals(19f, biggerNotes(PresenterDefaultNotesSize))
+        assertEquals(13.5f, smallerNotes(PresenterDefaultNotesSize))
         assertEquals(PresenterNotesSizes.last(), biggerNotes(PresenterNotesSizes.last()))
         assertEquals(PresenterNotesSizes.first(), smallerNotes(PresenterNotesSizes.first()))
     }

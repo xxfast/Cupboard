@@ -249,10 +249,10 @@ private fun Display(
  * The sizes the notes step through, in sp: small enough to fit a long script,
  * big enough to read from a step back off the lectern.
  */
-val PresenterNotesSizes: List<Float> = listOf(11f, 13.5f, 16f, 19f, 23f, 28f, 34f, 40f)
+val PresenterNotesSizes: List<Float> = listOf(11f, 13.5f, 15.5f, 19f, 23f, 28f, 34f, 40f)
 
 /** The notes' size before anyone changes it. */
-const val PresenterDefaultNotesSize: Float = 13.5f
+const val PresenterDefaultNotesSize: Float = 15.5f
 
 /** The next size up the ladder from [size], or [size] at the top. */
 internal fun biggerNotes(size: Float): Float = PresenterNotesSizes.firstOrNull { it > size } ?: size
