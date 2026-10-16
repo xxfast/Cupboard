@@ -225,4 +225,78 @@ class BuildTimelineTest {
         assertEquals(BuildTrigger.OnClick, build.trigger)
         assertEquals(0, build.delayMs)
     }
+
+
+    /** A block whose second version types sixty characters on: 1.5s of keys at [TypewriterMsPerChar]. */
+    private val typed = CodeElement(
+        id = "typed",
+        frame = frame,
+        code = "a",
+        versions = listOf("a\n" + "x".repeat(60)),
+        steps = listOf(CodeStep(version = 0), CodeStep(version = 1)),
+    )
+
+    private fun typingSlide(vararg builds: Build): Slide =
+        Slide(id = "slide", elements = listOf(body, block, typed), builds = builds.toList())
+
+    @Test
+    fun anAfterPreviousBuildWaitsOutTheTypingNotTheTypewritersDuration() {
+        val slide: Slide = typingSlide(
+            Build("typed"),
+            Build("typed", kind = BuildKind.Action, effect = BuildEffect.Typewriter, elementStep = 1),
+            Build("body", trigger = BuildTrigger.AfterPrevious),
+            Build("code", trigger = BuildTrigger.WithPrevious),
+            Build("code", kind = BuildKind.Out, trigger = BuildTrigger.AfterPrevious, delayMs = 100),
+        )
+        val typing: Int = 60 * TypewriterMsPerChar
+        assertEquals(typing, typed.typingMs(typed.steps[0], typed.steps[1], durationMs = 400))
+
+        // Typing lands at 1.5s, not at the build's 400ms floor, and the build
+        // riding along with the one behind it starts there too. The chain behind
+        // them goes on counting from there, the ordinary way.
+        val timeline: List<BuildAt> = slide.buildTimeline()
+        assertEquals(listOf(0, 0, typing, typing, typing + 400 + 100), timeline.map { it.delayMs })
+    }
+
+    @Test
+    fun aTypewriterStepBuildThatTypesNothingKeepsItsOwnLength() {
+        // Joining the step build before it, it never types: its duration it is.
+        val joined: Slide = typingSlide(
+            Build("typed", kind = BuildKind.Action, elementStep = 0),
+            Build("typed", kind = BuildKind.Action, effect = BuildEffect.Typewriter, trigger = BuildTrigger.WithPrevious, elementStep = 1),
+            Build("body", trigger = BuildTrigger.AfterPrevious),
+        )
+        assertEquals(400, joined.buildTimeline().last().delayMs)
+
+        // A spotlight moving within one version has no key to press, and plays
+        // as a plain step change.
+        val lit: CodeElement = typed.copy(
+            steps = listOf(CodeStep(version = 1, highlight = listOf(LineRange(1, 1))), CodeStep(version = 1)),
+        )
+        val spotlight = Slide(
+            id = "slide",
+            elements = listOf(body, lit),
+            builds = listOf(
+                Build("typed", kind = BuildKind.Action, effect = BuildEffect.Typewriter, durationMs = 1000, elementStep = 1),
+                Build("body", trigger = BuildTrigger.AfterPrevious),
+            ),
+        )
+        assertEquals(CodeStepDuration, spotlight.buildTimeline().last().delayMs)
+    }
+
+    @Test
+    fun anAfterPreviousBuildWaitsOutATerminalsTyping() {
+        val terminal = TerminalElement(id = "term", frame = frame, text = "$ ${"x".repeat(40)}\nok")
+        fun slide(effect: BuildEffect): Slide = Slide(
+            id = "slide",
+            elements = listOf(body, terminal),
+            builds = listOf(
+                Build("term", effect = effect, durationMs = 400),
+                Build("body", trigger = BuildTrigger.AfterPrevious),
+            ),
+        )
+
+        assertEquals(40 * TypewriterMsPerChar, slide(BuildEffect.Typewriter).buildTimeline().last().delayMs)
+        assertEquals(400, slide(BuildEffect.Dissolve).buildTimeline().last().delayMs)
+    }
 }

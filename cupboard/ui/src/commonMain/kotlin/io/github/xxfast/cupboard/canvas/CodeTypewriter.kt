@@ -2,15 +2,11 @@ package io.github.xxfast.cupboard.canvas
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.geometry.Offset
+import io.github.xxfast.cupboard.document.TypingPhases
 import io.github.xxfast.cupboard.document.TypingRhythm
+import io.github.xxfast.cupboard.document.typingPhases
 import kotlin.math.floor
 import kotlin.math.pow
-
-/**
- * How long one character takes to backspace out: twice the typing pace, which is
- * what a held backspace does next to someone typing.
- */
-internal const val TypewriterEraseMsPerChar: Float = TypewriterMsPerChar / 2f
 
 /** How many of this run's characters put ink down: the only ones typing costs. */
 internal fun String.drawnCount(): Int = count { !it.isWhitespace() }
@@ -225,12 +221,12 @@ internal data class TypewriterTimeline(
  * [moves] being whether anything both steps show changes place or colour, and
  * [rhythm] how the typing's keys fall.
  *
- * Its natural length is the three phases at their own paces: [TypewriterEraseMsPerChar]
- * a character out, [CodeStepDuration] to move, [TypewriterMsPerChar] a character
- * in. An empty phase takes no time at all. A build asking for longer ([durationMs])
- * stretches all three by the same factor; one asking for less gets the natural
- * length anyway, the floor [typewriterDurationMs] holds a terminal to: a long
- * rewrite typed inside a short build reads as a blur.
+ * How long each phase runs is the core's [typingPhases], so the length played
+ * here is the one [io.github.xxfast.cupboard.document.buildTimeline] has a build
+ * queued after this one wait out: each phase at its own pace, stretched when the
+ * build asks for longer ([durationMs]), and never squeezed below that natural
+ * length when it asks for less, a long rewrite typed inside a short build reading
+ * as a blur.
  */
 internal fun typewriterTimeline(
     departing: List<Int>,
@@ -239,17 +235,13 @@ internal fun typewriterTimeline(
     durationMs: Int,
     rhythm: TypingRhythm,
 ): TypewriterTimeline {
-    val erase: Float = departing.sum() * TypewriterEraseMsPerChar
-    val move: Float = if (moves) CodeStepDuration.toFloat() else 0f
-    val type: Float = arriving.sum() * TypewriterMsPerChar.toFloat()
-    val natural: Float = erase + move + type
-    val stretch: Float = if (natural > 0f) maxOf(1f, durationMs / natural) else 1f
+    val phases: TypingPhases = typingPhases(departing.sum(), arriving.sum(), moves, durationMs)
     return TypewriterTimeline(
         departing = departing,
         arriving = arriving,
-        eraseMs = erase * stretch,
-        moveMs = move * stretch,
-        typeMs = type * stretch,
+        eraseMs = phases.eraseMs,
+        moveMs = phases.moveMs,
+        typeMs = phases.typeMs,
         paces = keyPaces(arriving, rhythm),
     )
 }

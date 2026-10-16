@@ -6,7 +6,10 @@ import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeStepDuration
 import io.github.xxfast.cupboard.document.CodeToken
+import io.github.xxfast.cupboard.document.TypewriterEraseMsPerChar
+import io.github.xxfast.cupboard.document.TypewriterMsPerChar
 import io.github.xxfast.cupboard.document.TypingRhythm
 import io.github.xxfast.cupboard.document.Slide
 import io.github.xxfast.cupboard.document.allSlides

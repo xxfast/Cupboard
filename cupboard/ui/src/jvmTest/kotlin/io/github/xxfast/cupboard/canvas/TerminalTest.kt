@@ -2,6 +2,7 @@ package io.github.xxfast.cupboard.canvas
 
 import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.TypingRhythm
+import io.github.xxfast.cupboard.document.terminalCommandChars
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -106,6 +107,22 @@ class TerminalTest {
 
         // An empty command still costs a beat, so nothing types in no time at all.
         assertEquals(25, typewriterDurationMs(terminalLines("$", "$"), Build("term", durationMs = 0)))
+    }
+
+    @Test
+    fun theCoreCountsTheSameCommandCharactersTheTypewriterTypes() {
+        // The build timeline counts from the raw text, the renderer from these
+        // lines: an AfterPrevious build behind a terminal waits on the first.
+        val transcripts: List<Pair<String, String>> = listOf(
+            transcript to "$",
+            "$\n\$x\n$ " to "$",
+            "$ ab\nok" to "",
+            "> run it\n>\n>> no\nout" to ">",
+            "" to "$",
+        )
+        for ((text, prompt) in transcripts) {
+            assertEquals(terminalLines(text, prompt).commandCharCount(), terminalCommandChars(text, prompt), text)
+        }
     }
 
     private fun TypedLine.stillTypingItsOwnLine(): Boolean = shown < line.text.length

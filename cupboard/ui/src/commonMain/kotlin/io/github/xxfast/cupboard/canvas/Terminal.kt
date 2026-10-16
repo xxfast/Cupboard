@@ -36,6 +36,7 @@ import io.github.xxfast.cupboard.document.Build
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.TerminalElement
 import io.github.xxfast.cupboard.document.TypingRhythm
+import io.github.xxfast.cupboard.document.terminalTypingMs
 
 /** Which half of a session a line is: what was asked, or what came back. */
 internal enum class TerminalLineKind { Command, Output }
@@ -80,8 +81,12 @@ internal data class TypedLine(val line: TerminalLine, val shown: Int)
 private fun TerminalLine.typedCost(): Int =
     if (kind == TerminalLineKind.Output) 0 else maxOf(1, text.length)
 
-/** Every character the typewriter has to get through, output excluded. */
-private fun List<TerminalLine>.commandCharCount(): Int = sumOf { it.typedCost() }
+/**
+ * Every character the typewriter has to get through, output excluded. The core's
+ * [io.github.xxfast.cupboard.document.terminalCommandChars] counts the same from
+ * the raw text, for the build timeline; `TerminalTest` holds the two together.
+ */
+internal fun List<TerminalLine>.commandCharCount(): Int = sumOf { it.typedCost() }
 
 /**
  * [lines] as far as they have been typed at [fraction] of the way through, the
@@ -128,20 +133,11 @@ internal fun List<TypedLine>.stillTyping(lines: List<TerminalLine>): Boolean =
     size < lines.size || lastOrNull()?.let { it.shown < it.line.text.length } == true
 
 /**
- * How long the typewriter runs for: the build's own duration, unless that would
- * outrun the text. A long transcript typed inside a short build reads as a blur,
- * so the floor holds the pace at [TypewriterMsPerChar] a character and lets the
- * build take as long as it takes.
+ * How long the typewriter runs for: the core's [terminalTypingMs] over [lines]'
+ * command characters, the same length a build queued after this one waits out.
  */
 internal fun typewriterDurationMs(lines: List<TerminalLine>, build: Build): Int =
-    maxOf(build.durationMs, TypewriterMsPerChar * lines.commandCharCount())
-
-/**
- * The pace a command types at, which is about as fast as a person does. Internal
- * because a code block typing its way onto a step types at the same pace
- * ([typewriterTimeline]): one keyboard, whichever element it is typing into.
- */
-internal const val TypewriterMsPerChar: Int = 25
+    terminalTypingMs(lines.commandCharCount(), build.durationMs)
 
 /**
  * The chrome, and the half of it that is internal rather than private for the

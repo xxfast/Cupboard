@@ -38,16 +38,11 @@ import androidx.compose.ui.util.lerp
 import io.github.xxfast.cupboard.document.BuildAt
 import io.github.xxfast.cupboard.document.BuildEffect
 import io.github.xxfast.cupboard.document.CodeElement
+import io.github.xxfast.cupboard.document.CodeStepDuration
 import io.github.xxfast.cupboard.document.CodeStep
 import io.github.xxfast.cupboard.document.sourceAt
 import kotlin.math.ceil
 import kotlin.math.roundToInt
-
-/**
- * How long a block takes to walk from one step to the next, and how long a typed
- * step change spends moving what both steps show ([typewriterTimeline]).
- */
-internal const val CodeStepDuration: Int = 350
 
 /**
  * How far, in rows, a line arrives from and leaves towards. Shared with

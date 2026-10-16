@@ -22,11 +22,13 @@ enum class BuildEffect {
     /**
      * Types the element in rather than bringing it in whole. Two builds honour
      * it. A [TerminalElement]'s entry: its command lines type out character by
-     * character over the build's duration, and each block of output lands the
-     * moment the command above it has finished. And a [CodeElement]'s step build
+     * character over the build's duration (or longer, when that would outrun the
+     * text), and each block of output lands the moment the command above it has
+     * finished. And a [CodeElement]'s step build
      * (one with a [Build.elementStep]): moving forward onto it, what the old step
      * showed and the new one doesn't is backspaced out, what both show slides
-     * into place, and what only the new one shows is typed in. Everything else,
+     * into place, and what only the new one shows is typed in, taking as long as
+     * that takes when the build's duration is shorter. Everything else,
      * diagrams and galleries included, treats it as [Dissolve], so an effect set
      * on the wrong element or build still reveals it.
      */
@@ -325,9 +327,10 @@ private fun String.wordRanges(): List<IntRange> {
  * An [BuildTrigger.OnClick] build opens the next step and holds one step per
  * piece. A [BuildTrigger.WithPrevious] build joins the step the one before it
  * opened, and an [BuildTrigger.AfterPrevious] build the step the one before it
- * ended, waiting out that build's delay and duration before it starts. Both ride
- * their anchor's step whatever their delivery says: pieces cost clicks, and
- * those two triggers are exactly the ones that don't take one.
+ * ended, waiting out that build's delay and how long it actually plays
+ * ([playedMs]) before it starts. Both ride their anchor's step whatever their
+ * delivery says: pieces cost clicks, and those two triggers are exactly the ones
+ * that don't take one.
  */
 fun Slide.buildTimeline(): List<BuildAt> {
     val timeline = mutableListOf<BuildAt>()
@@ -351,12 +354,58 @@ fun Slide.buildTimeline(): List<BuildAt> {
             BuildTrigger.AfterPrevious -> {
                 val step: Int = previous?.lastStep ?: 0
                 val waited: Int =
-                    if (previous == null) 0 else previous.delayMs + previous.build.durationMs
+                    if (previous == null) 0 else previous.delayMs + playedMs(previous, timeline)
                 BuildAt(index, build, step, step, waited + build.delayMs)
             }
         }
     }
     return timeline
+}
+
+/**
+ * How long [at] plays once it starts, [placed] being every build placed so far
+ * ([at] included): what an [BuildTrigger.AfterPrevious] build behind it waits.
+ *
+ * [Build.durationMs] for nearly everything. A [BuildEffect.Typewriter] build is
+ * the exception, since its duration is only a floor: a terminal's entry runs as
+ * long as its commands take to type ([TerminalElement.typingMs]), and a code
+ * block's step build as long as typing from the step before it onto its own
+ * takes ([CodeElement.typingMs]). The step before it is the one the last earlier
+ * step build for the block landed it on, or its first step when none has. A step
+ * build on the same step as that earlier one doesn't type at all, and neither
+ * does a change that keeps its version and has no key to press: the renderer
+ * plays those as a plain step change ([CodeStepDuration]), and the first keeps
+ * its own duration here.
+ */
+private fun Slide.playedMs(at: BuildAt, placed: List<BuildAt>): Int {
+    val build: Build = at.build
+    if (build.effect != BuildEffect.Typewriter) return build.durationMs
+
+    return when (val element: Element? = elementById(build.elementId)) {
+        is TerminalElement ->
+            if (build.kind == BuildKind.In) element.typingMs(build.durationMs) else build.durationMs
+
+        is CodeElement -> {
+            val index: Int = build.elementStep ?: return build.durationMs
+            if (element.steps.isEmpty()) return build.durationMs
+
+            val earlier: BuildAt? = placed.lastOrNull { other ->
+                other.index < at.index &&
+                    other.build.elementId == build.elementId &&
+                    other.build.elementStep != null
+            }
+            if (earlier != null && earlier.firstStep == at.firstStep) return build.durationMs
+
+            val fromIndex: Int = earlier?.build?.elementStep ?: 0
+            val from: CodeStep = element.steps[fromIndex.coerceIn(element.steps.indices)]
+            val to: CodeStep = element.steps[index.coerceIn(element.steps.indices)]
+            val oneVersion: Boolean = element.sourceAt(from.version) == element.sourceAt(to.version)
+            if (from != to && oneVersion && element.typingWork(from, to).typesNothing) return CodeStepDuration
+            element.typingMs(from, to, build.durationMs)
+        }
+
+        else -> build.durationMs
+    }
 }
 
 /**
