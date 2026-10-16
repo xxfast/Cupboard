@@ -6,12 +6,18 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -26,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import io.github.xxfast.cupboard.document.Document
 import io.github.xxfast.cupboard.document.SlideBackground
+import kotlinx.coroutines.delay
 import kotlin.math.min
 
 /** The scale factor SlideSurface applied: screen px per document unit, over base density. */
@@ -80,10 +87,18 @@ fun SlideSurface(
 
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         val density = LocalDensity.current
-        val scale = (zoom ?: min(
+        val fit: Float = (zoom ?: min(
             maxWidth.value / slideWidth,
             maxHeight.value / slideHeight,
         )).coerceAtLeast(0.01f)
+        // The scale goes into the density, so a new one lays every element out
+        // again, text measured afresh at its new size. Fitting a container that
+        // is being resized (a window, the presenter display's split) would do
+        // that every frame, so the slide stays laid out at the scale it settled
+        // on and a layer stretches it the rest of the way until the size holds
+        // still. A zoom is the editor's, which asks for exactly what it says.
+        val scale: Float = if (zoom != null) fit else settledScale(fit)
+        val stretch: Float = fit / scale
         CompositionLocalProvider(
             LocalDensity provides Density(density.density * scale, density.fontScale),
             LocalCanvasScale provides scale,
@@ -94,6 +109,10 @@ fun SlideSurface(
             Box(
                 modifier = Modifier
                     .requiredSize(slideWidth.dp, slideHeight.dp)
+                    .then(
+                        if (stretch == 1f) Modifier
+                        else Modifier.graphicsLayer { scaleX = stretch; scaleY = stretch },
+                    )
                     .clip(RoundedCornerShape(4.dp))
                     .let {
                         if (background) it.drawBehind {
@@ -106,6 +125,25 @@ fun SlideSurface(
             )
         }
     }
+}
+
+/** How long a fitted slide's size has to hold still before it is laid out at it. */
+private const val ScaleSettleMs: Long = 150
+
+/**
+ * [target], once it has stopped changing for [ScaleSettleMs]: the scale a fitted
+ * slide is laid out at. The first one is taken as it comes, so a slide that
+ * never resizes never waits.
+ */
+@Composable
+private fun settledScale(target: Float): Float {
+    var settled: Float by remember { mutableFloatStateOf(target) }
+    LaunchedEffect(target) {
+        if (target == settled) return@LaunchedEffect
+        delay(ScaleSettleMs)
+        settled = target
+    }
+    return settled
 }
 
 /**
