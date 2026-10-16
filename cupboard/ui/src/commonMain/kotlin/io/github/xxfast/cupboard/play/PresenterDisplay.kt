@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
@@ -13,7 +14,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.State
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.focus.FocusManager
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
@@ -156,7 +164,16 @@ private fun Display(
     val next: PlayPosition? = remember(document, position) { document.nextPosition(position) }
     val nextSlide: Slide? = next?.let { order.getOrNull(it.slideIndex) }
 
-    Column(modifier.fillMaxSize().background(PresenterBackground)) {
+    val focus: FocusManager = LocalFocusManager.current
+
+    // A click anywhere the notes aren't puts their caret down, and with it the
+    // keys go back to driving the show.
+    Column(
+        modifier
+            .fillMaxSize()
+            .background(PresenterBackground)
+            .pointerInput(focus) { detectTapGestures { focus.clearFocus() } },
+    ) {
         PresenterTopBar(
             position = position,
             slideCount = order.size,
@@ -518,6 +535,9 @@ private fun SlidePane(
  * keystroke, and rendering that back into the field would fight the cursor. The
  * local copy is re-seeded when the slide changes, which is the only time the
  * document is the better authority.
+ *
+ * Editing takes the keyboard off the show, so Escape, or a click outside the
+ * field, hands it back.
  */
 @Composable
 private fun NotesPane(
@@ -559,6 +579,7 @@ private fun NotesPane(
         if (slide == null) return@Column
 
         var text: String by remember(slide.id) { mutableStateOf(slide.notes) }
+        val focus: FocusManager = LocalFocusManager.current
 
         BasicTextField(
             value = text,
@@ -574,7 +595,16 @@ private fun NotesPane(
                 lineHeight = (size * 1.5f).sp,
             ),
             cursorBrush = SolidColor(PresenterAccent),
-            modifier = Modifier.fillMaxSize(),
+            // While the caret is in here the arrows and space are the field's,
+            // so Escape is the way out of it. Taken before the show's own
+            // handler, which would end the show instead.
+            modifier = Modifier
+                .fillMaxSize()
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown || event.key != Key.Escape) return@onPreviewKeyEvent false
+                    focus.clearFocus()
+                    true
+                },
         )
     }
 }
