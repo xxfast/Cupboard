@@ -78,6 +78,7 @@ import io.github.xxfast.cupboard.document.movingCodeStep
 import io.github.xxfast.cupboard.document.movingDiagramStep
 import io.github.xxfast.cupboard.document.newId
 import io.github.xxfast.cupboard.document.placeholderElement
+import io.github.xxfast.cupboard.document.presentationNumbers
 import io.github.xxfast.cupboard.document.putGuide
 import io.github.xxfast.cupboard.document.removeElements
 import io.github.xxfast.cupboard.document.removeGuide
@@ -242,6 +243,7 @@ import io.github.xxfast.cupboard.screens.editor.EditorEvent.SetSnap
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.StepSlideSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleCollapsed
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.RevealSlide
+import io.github.xxfast.cupboard.screens.editor.EditorEvent.GoToSlide
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleElementSelection
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleGuides
 import io.github.xxfast.cupboard.screens.editor.EditorEvent.ToggleInspector
@@ -719,7 +721,7 @@ private fun EditorState.targeting(
  * itself. Never a history entry either way.
  */
 private fun EditorEvent.focusing(): EditorPane? = when (this) {
-    is SelectSlide, is SelectSlideAt, is RevealSlide, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
+    is SelectSlide, is SelectSlideAt, is RevealSlide, is GoToSlide, is ToggleCollapsed, is AddSlide, is DuplicateSlide,
     is ExtendSlideSelection, is ToggleSlideSelection, is SelectAllSlides,
     is StepSlideSelection, is IndentSlides,
     is CutSlide, is CopySlide, is DeleteSlide, is MoveSlide, is SetSlideSkipped,
@@ -2013,6 +2015,11 @@ fun EditorPresenter(
             is RevealSlide ->
                 if (state.document.slideById(event.id) == null) state
                 else reduce(SelectSlide(event.id)).let { it.copy(document = it.document.reveal(event.id)) }
+
+            is GoToSlide -> {
+                val index: Int = state.document.presentationNumbers().indexOf(event.number)
+                if (index == -1) state else reduce(RevealSlide(state.document.slides[index].id))
+            }
 
             // The slide selection is left alone as long as it still
             // resolves, which is the common case. It can now fail to:

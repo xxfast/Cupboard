@@ -1992,6 +1992,17 @@ class EditorHost(
         viewModel.onSelectSlide(layout.id)
     }
 
+    /** The highest number Go to Slide takes: the slides a show plays, skipped ones left out. */
+    fun presentedSlideCount(): Int = state.presentedSlideCount
+
+    /**
+     * Go to Slide: [number] is the one a navigator row shows, from 1. The core
+     * ignores one out of range, and opens whatever group the slide is folded in.
+     */
+    fun goToSlide(number: Int) {
+        viewModel.onGoToSlide(number)
+    }
+
     /**
      * Panel visibility, straight off the shared state. The shell reads these
      * rather than keeping its own copies: chrome that a menu item, a click and

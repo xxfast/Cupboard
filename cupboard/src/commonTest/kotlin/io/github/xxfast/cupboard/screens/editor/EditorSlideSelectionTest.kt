@@ -62,6 +62,26 @@ class EditorSlideSelectionTest {
     }
 
     @Test
+    fun goingToASlideNumberRevealsTheSlideThatShowsIt() = runTest {
+        val viewModel = editor(document())
+
+        viewModel.onSetSlideSkipped("one", true)
+        viewModel.onToggleCollapsed("two")
+        val collapsed = viewModel.await { it.document.slides[0].skipped && it.document.slides[1].collapsed }
+        assertEquals(4, collapsed.presentedSlideCount)
+
+        // "One" is skipped, so number 3 is "Two B", hidden in the collapsed group.
+        viewModel.onGoToSlide(3)
+        val revealed = viewModel.await { it.selectedSlideId == "two-b" }
+        assertFalse(revealed.document.slides[1].collapsed)
+
+        // Past the end, or zero: nothing moves.
+        viewModel.onGoToSlide(5)
+        viewModel.onGoToSlide(0)
+        assertEquals("two-b", viewModel.states.value.selectedSlideId)
+    }
+
+    @Test
     fun aShiftClickSelectsTheRangeAndKeepsTheSlideOnTheCanvas() = runTest {
         val viewModel = editor(document())
 

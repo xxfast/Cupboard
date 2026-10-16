@@ -270,9 +270,10 @@ struct CupboardHostApp: App {
         }
     }
 
-    /// Acts on the slide as a whole rather than what is on it. No key equivalents:
-    /// Cmd+X/C/V belong to the elements on the canvas, and a slide-level clipboard
-    /// stealing them would make the common case unreachable.
+    /// Acts on the slide as a whole rather than what is on it. No key equivalents
+    /// on the verbs: Cmd+X/C/V belong to the elements on the canvas, and a
+    /// slide-level clipboard stealing them would make the common case
+    /// unreachable. Go to Slide's Cmd+L steals nothing.
     private var slideMenu: some Commands {
         CommandMenu("Slide") {
             // Reading generation is what keeps these acting on the slide that is
@@ -297,6 +298,14 @@ struct CupboardHostApp: App {
                 window.show = .preview(window.host.startPreview(onExit: { window.show = nil }))
             }
             .disabled(model == nil)
+
+            Divider()
+
+            // A toggle on the key, so Cmd+L again puts the bar away. Not in a
+            // show: the key would still reach here from one in the window.
+            Button("Go to Slide...") { model?.goingToSlide.toggle() }
+                .keyboardShortcut("l", modifiers: .command)
+                .disabled(model.map { $0.show != nil } ?? true)
         }
     }
 
@@ -555,6 +564,10 @@ struct EditorView: View {
             if !ui.sidebarOpen {
                 collapsedChrome
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+
+            if model.goingToSlide {
+                goToSlideBar(ui)
             }
         }
         // Wide enough that the toolbar, at its fixed ~1094pt, still leaves the

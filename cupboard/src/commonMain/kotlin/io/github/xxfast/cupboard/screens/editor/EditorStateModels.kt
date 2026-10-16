@@ -1042,6 +1042,9 @@ data class EditorState(
     /** Index of [selectedSlide] in presentation order, -1 when the document is empty. */
     fun selectedSlideIndex(): Int = document.allSlides().indexOfFirst { it.id == selectedSlide.id }
 
+    /** How many slides the presentation shows: the highest number Go to Slide takes. */
+    val presentedSlideCount: Int get() = document.slides.count { !it.skipped }
+
     /**
      * The number the slide with [id] draws on itself: its place in the
      * presentation, null when it is skipped or when the id doesn't resolve.
@@ -1800,6 +1803,12 @@ sealed interface EditorEvent {
      * started. Ignored for a slide not in the deck.
      */
     data class RevealSlide(val id: String) : EditorEvent
+    /**
+     * Go to Slide: reveals the slide whose navigator row shows [number]. Skipped
+     * slides have no number, so they can't be gone to; a number outside the
+     * presentation is ignored.
+     */
+    data class GoToSlide(val number: Int) : EditorEvent
     /**
      * Edit Slide Layouts: the navigator swaps its slides for the deck's layouts
      * and the canvas edits one of them, Keynote's master mode.

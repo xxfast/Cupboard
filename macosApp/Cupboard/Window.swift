@@ -376,6 +376,10 @@ final class EditorModel {
     /// menu bar and the popover is in the window, so the flag has to live where
     /// both can see it.
     var renaming = false
+    /// The Go to Slide bar, which is also Slide > Go to Slide. Here for the
+    /// reason `renaming` is: the command is in the menu bar, the bar in the
+    /// window. Presentation only, the jump itself is Kotlin's.
+    var goingToSlide = false
     /// What this window is playing, or nil for the editor. Here rather than in
     /// the view for the same reason: Play is a toolbar button and Preview Slide
     /// is a menu item, and one of them is not in the window.

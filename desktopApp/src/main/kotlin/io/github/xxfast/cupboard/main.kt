@@ -641,6 +641,10 @@ private fun EditorWindow(
     // editor view's, since the menu bar asks for it as well as the toolbar.
     var askingWebVideo: Boolean by remember { mutableStateOf(false) }
 
+    // Slide > Go to Slide's bar, up while this is. The shell's for the same
+    // reason: the menu bar opens it, though the editor view draws it.
+    var goingToSlide: Boolean by remember { mutableStateOf(false) }
+
     // What plays the show's movies and sounds, one per window: a show is this
     // deck's, and its sounds are too. Whatever a show started stops when it
     // ends, and the player goes with the window.
@@ -1158,6 +1162,19 @@ private fun EditorWindow(
                     enabled = previewSlide != null,
                     onClick = { previewSlide?.invoke() },
                 )
+
+                Separator()
+
+                // The one slide verb with an accelerator: it is a jump, not an
+                // edit, so it takes nothing from Edit. Pressed again it closes
+                // the bar, like the dismiss it is. Layouts have no numbers.
+                Item(
+                    text = "Go to Slide...",
+                    shortcut = editShortcut(Key.L),
+                    enabled = goingToSlide ||
+                        (!state.isEditingLayouts && state.presentedSlideCount > 0),
+                    onClick = { goingToSlide = !goingToSlide },
+                )
             }
 
             // Whole-box text styling, and Add Link for a run of it. Bold,
@@ -1524,6 +1541,8 @@ private fun EditorWindow(
                             onChoosePoster = choosePoster,
                             onChooseImage = chooseFillImage,
                             onAddFontFile = addFontFile,
+                            goingToSlide = goingToSlide,
+                            onCloseGoToSlide = { goingToSlide = false },
                         )
                     }
                 }

@@ -183,6 +183,13 @@ fun EditorScreen(
      * Null greys both, on a shell with no file dialog.
      */
     onAddFontFile: (() -> Unit)? = null,
+    /**
+     * Whether Go to Slide's bar is up, and what closes it without a jump. The
+     * shell's flag, like [WebVideoDialog]'s, since its menu bar opens it; a jump
+     * is `EditorViewModel.onGoToSlide`, and closes it too.
+     */
+    goingToSlide: Boolean = false,
+    onCloseGoToSlide: () -> Unit = {},
 ) {
     val state: EditorState by viewModel.states.collectAsState()
 
@@ -331,6 +338,12 @@ fun EditorScreen(
             onRemoveDiagramStep = viewModel::onRemoveDiagramStep,
             onMoveDiagramStep = viewModel::onMoveDiagramStep,
             onUpdateDiagramStep = viewModel::onUpdateDiagramStep,
+            goingToSlide = goingToSlide,
+            onGoToSlide = { number ->
+                viewModel.onGoToSlide(number)
+                onCloseGoToSlide()
+            },
+            onCloseGoToSlide = onCloseGoToSlide,
         )
     }
 }
@@ -539,6 +552,11 @@ fun EditorView(
         { _, _, _ -> },
     onMoveElement: (id: String, beforeId: String?) -> Unit = { _, _ -> },
     onEndObjectDrag: () -> Unit = {},
+    /** Go to Slide's bar: whether it is up, a number in range to jump to, and
+     * what closes it without one. The flag is the host's, the typing the bar's. */
+    goingToSlide: Boolean = false,
+    onGoToSlide: (number: Int) -> Unit = {},
+    onCloseGoToSlide: () -> Unit = {},
     theme: ChromeTheme = LinuxChrome,
     modifier: Modifier = Modifier,
 ) {
@@ -835,6 +853,16 @@ fun EditorView(
                                 onDismiss = { menuAt = null },
                                 modifier = Modifier.align(Alignment.TopStart),
                             )
+
+                            // Pinned to the top of the well's content box, so the
+                            // bar floats over the canvas rather than the toolbar.
+                            if (goingToSlide) Box(Modifier.align(Alignment.TopCenter)) {
+                                GoToSlideBar(
+                                    count = state.presentedSlideCount,
+                                    onGo = onGoToSlide,
+                                    onDismiss = onCloseGoToSlide,
+                                )
+                            }
                         }
 
                         if (state.showNotes) SpeakerNotes(
