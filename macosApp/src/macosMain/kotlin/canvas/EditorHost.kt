@@ -1542,6 +1542,7 @@ class PlaySession internal constructor(
                     LocalAssetStore provides assets,
                     LocalAssetImages provides images,
                     LocalMediaPlayer provides media,
+                    LocalResizeCursors provides AppKitResizeCursors,
                 ) {
                     PresenterView(
                         document = deck,

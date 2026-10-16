@@ -1630,6 +1630,7 @@ private fun EditorWindow(
             CompositionLocalProvider(
                 LocalAssetStore provides viewModel.assets,
                 LocalAssetImages provides images,
+                LocalResizeCursors provides AwtResizeCursors,
             ) {
                 // The show itself, playing at a pixel: the display follows a
                 // controller, and a controller has nothing to say until a

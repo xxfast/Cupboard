@@ -3,6 +3,22 @@ package io.github.xxfast.cupboard.play
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.State
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
+import io.github.xxfast.cupboard.editor.LocalResizeCursors
+import io.github.xxfast.cupboard.editor.ResizeDirection
+import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -71,10 +87,11 @@ enum class PresenterLayout { CurrentAndNext, CurrentAndNotes, NextAndNotes, Note
  * index: the host folds it into the document, and an edit that lands while the
  * deck is being reordered still finds its slide.
  *
- * [layout] is held by the caller rather than here, for the same reason
- * [position] is: this draws what it is told to. [onLayoutChange] and
- * [onResetTimer] default to nothing so a host that gives the presenter no say
- * over either still gets a display.
+ * [layout] and [split] are held by the caller rather than here, for the same
+ * reason [position] is: this draws what it is told to. [split] is the left
+ * pane's share of a two-pane arrangement, dragged by the divider between them.
+ * [onLayoutChange], [onSplitChange] and [onResetTimer] default to nothing so a
+ * host that gives the presenter no say over them still gets a display.
  *
  * [LocalMediaPlayer] around the display is the show's own player. The current
  * slide draws the pictures of the movies it is playing, and nothing here starts
@@ -91,7 +108,9 @@ fun PresenterDisplay(
     onNotesChange: (slideId: String, notes: String) -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    split: Float = PresenterDefaultSplit,
     onLayoutChange: (PresenterLayout) -> Unit = {},
+    onSplitChange: (Float) -> Unit = {},
     onResetTimer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -99,7 +118,7 @@ fun PresenterDisplay(
     ProvideDeckFonts(document.fonts) {
         Display(
             document, position, layout, elapsedMs, clock, onNotesChange,
-            onNext, onPrevious, onLayoutChange, onResetTimer, modifier,
+            onNext, onPrevious, split, onLayoutChange, onSplitChange, onResetTimer, modifier,
         )
     }
 }
@@ -114,7 +133,9 @@ private fun Display(
     onNotesChange: (slideId: String, notes: String) -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    split: Float,
     onLayoutChange: (PresenterLayout) -> Unit,
+    onSplitChange: (Float) -> Unit,
     onResetTimer: () -> Unit,
     modifier: Modifier,
 ) {
@@ -141,73 +162,135 @@ private fun Display(
             onPrevious = onPrevious,
         )
 
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            when (layout) {
-                PresenterLayout.CurrentAndNext -> {
-                    SlidePane(
-                        label = "CURRENT",
-                        live = true,
-                        document = document,
-                        slide = current,
-                        step = position.step,
-                        fields = fields,
-                        modifier = Modifier.weight(1.7f).fillMaxHeight(),
-                    )
-                    SlidePane(
-                        label = "NEXT",
-                        document = document,
-                        slide = nextSlide,
-                        step = next?.step ?: 0,
-                        fields = fields,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
+        val panes: Modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
 
-                PresenterLayout.CurrentAndNotes -> {
-                    SlidePane(
-                        label = "CURRENT",
-                        live = true,
-                        document = document,
-                        slide = current,
-                        step = position.step,
-                        fields = fields,
-                        modifier = Modifier.weight(1.7f).fillMaxHeight(),
-                    )
-                    NotesPane(
-                        slide = current,
-                        onNotesChange = onNotesChange,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
-
-                PresenterLayout.NextAndNotes -> {
-                    SlidePane(
-                        label = "NEXT",
-                        document = document,
-                        slide = nextSlide,
-                        step = next?.step ?: 0,
-                        fields = fields,
-                        modifier = Modifier.weight(1.7f).fillMaxHeight(),
-                    )
-                    NotesPane(
-                        slide = current,
-                        onNotesChange = onNotesChange,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
-
-                PresenterLayout.NotesOnly -> NotesPane(
+        when (layout) {
+            PresenterLayout.CurrentAndNext -> SplitPanes(split, onSplitChange, panes) { left, right ->
+                SlidePane(
+                    label = "CURRENT",
+                    live = true,
+                    document = document,
                     slide = current,
-                    onNotesChange = onNotesChange,
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    step = position.step,
+                    fields = fields,
+                    modifier = left,
+                )
+                SlidePane(
+                    label = "NEXT",
+                    document = document,
+                    slide = nextSlide,
+                    step = next?.step ?: 0,
+                    fields = fields,
+                    modifier = right,
                 )
             }
+
+            PresenterLayout.CurrentAndNotes -> SplitPanes(split, onSplitChange, panes) { left, right ->
+                SlidePane(
+                    label = "CURRENT",
+                    live = true,
+                    document = document,
+                    slide = current,
+                    step = position.step,
+                    fields = fields,
+                    modifier = left,
+                )
+                NotesPane(slide = current, onNotesChange = onNotesChange, modifier = right)
+            }
+
+            PresenterLayout.NextAndNotes -> SplitPanes(split, onSplitChange, panes) { left, right ->
+                SlidePane(
+                    label = "NEXT",
+                    document = document,
+                    slide = nextSlide,
+                    step = next?.step ?: 0,
+                    fields = fields,
+                    modifier = left,
+                )
+                NotesPane(slide = current, onNotesChange = onNotesChange, modifier = right)
+            }
+
+            PresenterLayout.NotesOnly -> NotesPane(
+                slide = current,
+                onNotesChange = onNotesChange,
+                modifier = panes,
+            )
+        }
+    }
+}
+
+/** The left pane's share of the room, before anyone drags the divider. */
+const val PresenterDefaultSplit: Float = 1.7f / 2.7f
+
+/** How far the divider goes either way: neither pane is ever dragged out of sight. */
+private const val SplitMin: Float = 0.2f
+private const val SplitMax: Float = 0.8f
+
+private val SplitGrip = 16.dp
+
+/**
+ * Two panes either side of a divider the presenter drags to trade one for the
+ * other. [split] is the left pane's share of the width either side of the grip.
+ *
+ * What the drag shows comes back as [split]: the gesture only does the sums,
+ * from where the divider stood when it began.
+ */
+@Composable
+private fun SplitPanes(
+    split: Float,
+    onSplitChange: (Float) -> Unit,
+    modifier: Modifier,
+    content: @Composable RowScope.(left: Modifier, right: Modifier) -> Unit,
+) {
+    val current: State<Float> = rememberUpdatedState(split)
+    val grip = remember { MutableInteractionSource() }
+    val hovered: Boolean by grip.collectIsHoveredAsState()
+
+    BoxWithConstraints(modifier) {
+        val room: Float = constraints.maxWidth - with(LocalDensity.current) { SplitGrip.toPx() }
+
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(SplitGrip)) {
+            content(
+                Modifier.weight(split).fillMaxHeight(),
+                Modifier.weight(1f - split).fillMaxHeight(),
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .offset { IntOffset((room * split).roundToInt(), 0) }
+                .width(SplitGrip)
+                .fillMaxHeight()
+                // Asked for null off the grip rather than left out, so a shell
+                // that sets the cursor on composition puts the arrow back.
+                .then(LocalResizeCursors.current?.cursor(ResizeDirection.Horizontal.takeIf { hovered }) ?: Modifier)
+                .hoverable(grip)
+                .pointerInput(room) {
+                    var start = 0f
+                    var dragged = 0f
+
+                    detectHorizontalDragGestures(
+                        onDragStart = {
+                            start = current.value
+                            dragged = 0f
+                        },
+                        onDragCancel = { onSplitChange(start) },
+                    ) { _, delta ->
+                        dragged += delta
+                        onSplitChange((start + dragged / room).coerceIn(SplitMin, SplitMax))
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(width = 4.dp, height = 36.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(if (hovered) PresenterDim else PresenterBorder),
+            )
         }
     }
 }
