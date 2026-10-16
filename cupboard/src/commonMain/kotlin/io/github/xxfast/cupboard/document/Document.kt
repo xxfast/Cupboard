@@ -175,7 +175,15 @@ data class Slide(
      * the one that plays on the way out of it.
      */
     val transition: SlideTransition? = null,
-)
+) {
+    /**
+     * [buildTimeline], worked out once per slide. Typing lengths diff whole code
+     * versions, and a renderer looks the timeline up per element per frame. Safe
+     * to keep since a slide never changes: an edit is a new one. Delegated, so it
+     * has no field to serialize or compare.
+     */
+    internal val timeline: List<BuildAt> by lazy { resolveTimeline() }
+}
 
 /**
  * A slide's own background, when it wants one other than the deck's default.

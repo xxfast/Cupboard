@@ -331,8 +331,14 @@ private fun String.wordRanges(): List<IntRange> {
  * ([playedMs]) before it starts. Both ride their anchor's step whatever their
  * delivery says: pieces cost clicks, and those two triggers are exactly the ones
  * that don't take one.
+ *
+ * Resolved once per slide and kept (see [Slide.timeline]), so callers can look
+ * it up as often as they like.
  */
-fun Slide.buildTimeline(): List<BuildAt> {
+fun Slide.buildTimeline(): List<BuildAt> = timeline
+
+/** [buildTimeline]'s actual work, which [Slide.timeline] runs once. */
+internal fun Slide.resolveTimeline(): List<BuildAt> {
     val timeline = mutableListOf<BuildAt>()
     for ((index, build) in builds.withIndex()) {
         val previous: BuildAt? = timeline.lastOrNull()
