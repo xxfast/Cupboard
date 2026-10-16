@@ -14,6 +14,9 @@ internal actual fun systemFontFamily(name: String): FontFamily? = null
 /** No way to list the system's families here, so the picker offers the deck's alone. */
 actual fun systemFontFamilies(): List<String> = emptyList()
 
+/** Android's text stack reads the variation selector itself, so nothing needs pointing at the emoji face. */
+internal actual fun emojiFontFamily(): FontFamily? = null
+
 /**
  * Not loaded here: an Android font from bytes wants a file on disk, which this
  * canvas has nowhere to put. Deck fonts fall back like missing ones.

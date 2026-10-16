@@ -14,6 +14,8 @@ import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 import org.jetbrains.skia.Data
 import org.jetbrains.skia.FontMgr
+import org.jetbrains.skia.Typeface
+import org.jetbrains.skia.FontStyle as SkiaFontStyle
 import androidx.compose.ui.text.platform.Font as BytesFont
 
 /**
@@ -53,6 +55,20 @@ actual fun systemFontFamilies(): List<String> {
         .distinctBy { it.lowercase() }
         .sortedWith(String.CASE_INSENSITIVE_ORDER)
 }
+
+/**
+ * Whichever face the font manager falls back to for an emoji-only character
+ * (Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji), found once. Asked by
+ * character rather than by name so every platform finds its own.
+ */
+private val emoji: FontFamily? by lazy {
+    val face: Typeface = FontMgr.default
+        .matchFamilyStyleCharacter(null, SkiaFontStyle.NORMAL, null, 0x1F600)
+        ?: return@lazy null
+    installed(face.familyName)
+}
+
+internal actual fun emojiFontFamily(): FontFamily? = emoji
 
 internal actual fun deckFontOf(font: DeckFont, bytes: ByteArray): Font? {
     // Made once up front to prove the bytes load: the text engine makes its own

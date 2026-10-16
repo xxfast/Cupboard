@@ -6,6 +6,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
@@ -172,8 +173,23 @@ internal fun fontFeatures(smallCaps: Boolean, ligatures: Boolean): String? = lis
  * Move, the show and the caret's field), each cutting it to the runs it draws
  * with [DrawnRun.styled], so one box reads the same in all of them. [deckFonts]
  * is [LocalDeckFonts] at the call site.
+ *
+ * Last come the characters that ask for their emoji form, set in the emoji face
+ * over whatever the box or a run set them in: later spans win where they
+ * overlap.
  */
-internal fun TextElement.spanStyles(deckFonts: DeckFontFamilies): List<AnnotatedString.Range<SpanStyle>> {
+internal fun TextElement.spanStyles(deckFonts: DeckFontFamilies): List<AnnotatedString.Range<SpanStyle>> =
+    styledSpans(deckFonts) + emojiSpans()
+
+/** Each stretch [emojiPresentationRanges] finds, in the emoji face, where this machine has one. */
+private fun TextElement.emojiSpans(): List<AnnotatedString.Range<SpanStyle>> {
+    val emoji: FontFamily = emojiFontFamily() ?: return emptyList()
+    return text.emojiPresentationRanges()
+        .map { range -> AnnotatedString.Range(SpanStyle(fontFamily = emoji), range.first, range.last + 1) }
+}
+
+/** [spanStyles]' runs and range links. */
+private fun TextElement.styledSpans(deckFonts: DeckFontFamilies): List<AnnotatedString.Range<SpanStyle>> {
     if (runs.isEmpty() && links.isEmpty()) return emptyList()
 
     val cuts: List<Int> = (runs.flatMap { listOf(it.start, it.end) } + links.flatMap { listOf(it.start, it.end) })

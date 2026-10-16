@@ -60,6 +60,13 @@ expect fun systemFontFamilies(): List<String>
 fun isFontAvailable(name: String, deckFamilies: List<String>): Boolean =
     deckFamilies.any { it.equals(name, ignoreCase = true) } || systemFontFamily(name) != null
 
+/**
+ * This machine's colour emoji face, null where it has none: what a character
+ * asking for its emoji form draws in (see [emojiPresentationRanges]), since a
+ * text face with its own glyph for it would otherwise win.
+ */
+internal expect fun emojiFontFamily(): FontFamily?
+
 /** The three generic families, which every platform has. */
 internal fun genericFontFamily(font: TextFont): FontFamily = when (font.generic) {
     TextFont.Serif -> FontFamily.Serif
