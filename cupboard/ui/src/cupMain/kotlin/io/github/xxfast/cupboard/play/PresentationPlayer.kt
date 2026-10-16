@@ -283,6 +283,14 @@ private fun Player(
             val transitions = remember { TransitionSet.moveHorizontal(layoutDirection) }
             val position: PresentationPosition = state.currentPosition
 
+            // Read every frame rather than captured, so a frame is put down to
+            // the place the show was at when it was drawn.
+            FrameMonitor {
+                val at: PresentationPosition = state.currentPosition
+                val title: String = playing.getOrNull(at.slideIndex)?.title.orEmpty()
+                "slide ${at.slideIndex + 1} \"$title\" step ${at.step}"
+            }
+
             // The change now on screen, for the slides that draw across it
             // rather than on one side of it. Worked out in composition rather
             // than in an effect, so the arriving slide has it on the very first

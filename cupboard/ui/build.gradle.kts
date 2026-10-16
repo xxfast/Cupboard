@@ -122,6 +122,8 @@ kotlin {
         jvmTest.dependencies {
             // skiko natives for offscreen render tests
             implementation(compose.desktop.currentOs)
+            // Paths, for the frame budget walking a real .cupboard bundle.
+            implementation(libs.kotlinx.io.core)
         }
     }
 }

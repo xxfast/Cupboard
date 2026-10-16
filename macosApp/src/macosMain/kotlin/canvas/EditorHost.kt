@@ -199,6 +199,7 @@ import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.export.ExportedFile
 import io.github.xxfast.cupboard.export.toCupProject
 import io.github.xxfast.cupboard.play.PlayerController
+import io.github.xxfast.cupboard.play.LocalFrameReporter
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.playIndexOf
@@ -1497,6 +1498,7 @@ class PlaySession internal constructor(
             LocalAssetStore provides assets,
             LocalAssetImages provides images,
             LocalMediaPlayer provides media,
+            LocalFrameReporter provides frameLog,
         ) {
             PresentationPlayer(
                 document = document,

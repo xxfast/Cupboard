@@ -72,6 +72,8 @@ import io.github.xxfast.cupboard.editor.ResizeCursors
 import io.github.xxfast.cupboard.editor.ResizeDirection
 import io.github.xxfast.cupboard.editor.SnapKind
 import io.github.xxfast.cupboard.play.PlayerController
+import io.github.xxfast.cupboard.play.FrameReporter
+import io.github.xxfast.cupboard.play.LocalFrameReporter
 import io.github.xxfast.cupboard.play.PresentationPlayer
 import io.github.xxfast.cupboard.play.PresenterView
 import io.github.xxfast.cupboard.play.playIndexOf
@@ -115,11 +117,13 @@ import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
 import java.io.File
 import java.net.URI
+import java.text.SimpleDateFormat
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import javax.swing.SwingUtilities
 import java.awt.Menu as AwtMenu
 import java.awt.MenuItem as AwtMenuItem
+import java.util.Date
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -1445,6 +1449,7 @@ private fun EditorWindow(
                     LocalAssetStore provides viewModel.assets,
                     LocalAssetImages provides images,
                     LocalMediaPlayer provides mediaPlayer,
+                    LocalFrameReporter provides frameLog,
                 ) {
                     PresentationPlayer(
                         document = playingHere.document,
@@ -1605,6 +1610,7 @@ private fun EditorWindow(
                 LocalAssetStore provides viewModel.assets,
                 LocalAssetImages provides images,
                 LocalMediaPlayer provides mediaPlayer,
+                LocalFrameReporter provides frameLog,
             ) {
                 PresentationPlayer(
                     document = request.document,
@@ -1647,7 +1653,7 @@ private fun EditorWindow(
                 // The media player is this one's alone: the previews draw their
                 // slides as the show does, and handed a player they would start
                 // the next slide's sound a slide early.
-                if (request.rehearse) CompositionLocalProvider(LocalMediaPlayer provides mediaPlayer) {
+                if (request.rehearse) CompositionLocalProvider(LocalMediaPlayer provides mediaPlayer, LocalFrameReporter provides frameLog) {
                     PresentationPlayer(
                         document = request.document,
                         startIndex = request.slideIndex,
@@ -1697,4 +1703,20 @@ internal fun openInBrowser(url: String) {
     } catch (error: Exception) {
         println("Cupboard: could not open $url ($error)")
     }
+}
+
+/**
+ * Where the show's frame reports go when this run was launched with
+ * `CUPBOARD_FRAMES` set, null otherwise: the same file the macOS app writes,
+ * `~/Library/Logs/Cupboard/frames.log`, or under the temp directory off a Mac.
+ */
+private val frameLog: FrameReporter? = System.getenv("CUPBOARD_FRAMES")?.let {
+    val home: File = File(System.getProperty("user.home"), "Library/Logs")
+    val file = File(if (home.isDirectory) File(home, "Cupboard") else File(System.getProperty("java.io.tmpdir"), "Cupboard"), "frames.log")
+    file.parentFile.mkdirs()
+    val stamp = SimpleDateFormat("HH:mm:ss.SSS")
+    // The default screen's rate, 60 where the platform won't say.
+    val refresh: Int = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice
+        .displayMode.refreshRate.takeIf { it > 0 } ?: 60
+    FrameReporter(refresh) { line -> file.appendText("${stamp.format(Date())} $line\n") }
 }
