@@ -54,10 +54,10 @@ jobs:
         # resource fallbacks. If Metal proves flaky on CI VMs, degrade this step
         # to `codesign --verify` + a binary-exists check.
         run: |
-          APP="$PWD/macosApp/build/DerivedData/Build/Products/Debug/Cupboard.app"
+          APP="$PWD/macosApp/build/DerivedData/Build/Products/Debug/Cupboard Dev.app"
           codesign --verify --deep --strict "$APP"
           cd /tmp
-          "$APP/Contents/MacOS/Cupboard" &
+          "$APP/Contents/MacOS/Cupboard Dev" &
           SMOKE_PID=$!
           sleep 5
           if ! kill -0 "$SMOKE_PID" 2>/dev/null; then
