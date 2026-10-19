@@ -22,7 +22,7 @@
     <ProjectReference Include="..\Shared\Shared.csproj" />
     <!-- Native DLL only: Interop.cs is compiled into Shared, so pulling the
          content files in here again would duplicate every generated type. -->
-    <PackageReference Include="Cupboard.Kotlin" Version="0.1.0">
+    <PackageReference Include="Cupboard.Kotlin" Version="0.2.0">
       <IncludeAssets>runtime;native;build;buildTransitive</IncludeAssets>
       <PrivateAssets>contentFiles;analyzers;build</PrivateAssets>
     </PackageReference>

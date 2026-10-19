@@ -2,9 +2,9 @@
 
 What we're building and in what order. See `GOALS.md` for the why, `design/README.md` for the UI spec. Detail on finished work lives in git history; this file stays forward-looking. Parity target: Keynote 15.3 for Mac (feature surface audited 2026-08 from the app's menu tree + the user guide), minus everything listed under Not planned.
 
-Organised as releases, not phases. Current version is 0.1.0. Each set below is one tagged release and has to be shippable on its own: shared core first, then its UI on each shell in parallel (the `/ship` flow). 1.0.0 is the first stable release; anything that doesn't gate it sits under After 1.0.
+Organised as releases, not phases. Current version is 0.2.0. Each set below is one tagged release and has to be shippable on its own: shared core first, then its UI on each shell in parallel (the `/ship` flow). 1.0.0 is the first stable release; anything that doesn't gate it sits under After 1.0.
 
-## 0.1.0 (current)
+## 0.1.0
 
 Everything built so far, summarised. Commit refs point at the detail.
 
@@ -19,7 +19,7 @@ Everything built so far, summarised. Commit refs point at the detail.
 
 Almost none of it has had a visual pass. That's 0.6.0.
 
-## 0.2.0: Finish what's half in
+## 0.2.0 (current): Finish what's half in
 
 Shipped cores whose surfaces never landed, mostly parked on the bundle format, which exists now.
 

@@ -2,7 +2,7 @@
   <PropertyGroup>
     <CupboardGradleExecutable Condition="$([MSBuild]::IsOSPlatform('windows'))">.\gradlew.bat</CupboardGradleExecutable>
     <CupboardGradleExecutable Condition="!$([MSBuild]::IsOSPlatform('windows'))">./gradlew</CupboardGradleExecutable>
-    <CupboardKotlinPackageCache>$([System.IO.Path]::Combine('$(RestorePackagesPath)', 'cupboard.kotlin', '0.1.0'))</CupboardKotlinPackageCache>
+    <CupboardKotlinPackageCache>$([System.IO.Path]::Combine('$(RestorePackagesPath)', 'cupboard.kotlin', '0.2.0'))</CupboardKotlinPackageCache>
     <CupboardProjectAssetsFile Condition="'$(ProjectAssetsFile)' != ''">$(ProjectAssetsFile)</CupboardProjectAssetsFile>
     <CupboardProjectAssetsFile Condition="'$(ProjectAssetsFile)' == ''">$(MSBuildProjectExtensionsPath)project.assets.json</CupboardProjectAssetsFile>
   </PropertyGroup>

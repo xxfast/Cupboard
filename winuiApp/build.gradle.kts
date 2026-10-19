@@ -40,7 +40,7 @@ kotlin {
 nuget {
     publish {
         packageId = "Cupboard.Kotlin"
-        version = "0.1.0"
+        version = "0.2.0"
         authors = "xxfast"
         description = "Cupboard shared editor core for .NET hosts"
         // The document model and editor state live under this root, so the

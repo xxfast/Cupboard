@@ -13,7 +13,7 @@
 
   <ItemGroup>
     <!-- Packed locally by :winuiApp:packNuget, see ../Directory.Build.targets. -->
-    <PackageReference Include="Cupboard.Kotlin" Version="0.1.0" />
+    <PackageReference Include="Cupboard.Kotlin" Version="0.2.0" />
   </ItemGroup>
 
 </Project>
