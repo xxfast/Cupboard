@@ -3,6 +3,7 @@
     x:Class="WinUiApp.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:WinUiApp"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
@@ -174,7 +175,7 @@
                     Background="{ThemeResource CupboardPanelBrush}"
                     BorderBrush="{ThemeResource CupboardBorderBrush}"
                     BorderThickness="1,0,0,0"
-                    Visibility="{x:Bind ViewModel.InspectorOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                    Visibility="{x:Bind local:Visible.When(ViewModel.InspectorOpen), Mode=OneWay}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -211,17 +212,17 @@
                                     <Grid Margin="0,0,0,9">
                                         <TextBlock Text="Format"
                                                    Style="{StaticResource InspectorTabTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                   Visibility="{x:Bind local:Visible.When(ViewModel.IsFormatTab), Mode=OneWay}" />
                                         <TextBlock Text="Format"
                                                    Style="{StaticResource InspectorInactiveTabTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                                   Visibility="{x:Bind local:Visible.Unless(ViewModel.IsFormatTab), Mode=OneWay}" />
                                     </Grid>
                                     <!-- The Grid holds the 2.5px whether or not the
                                          underline is in it, so labels do not jump
                                          as the selection moves. -->
                                     <Grid Height="2.5">
                                         <Border Background="{ThemeResource CupboardAccentBrush}"
-                                                Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                Visibility="{x:Bind local:Visible.When(ViewModel.IsFormatTab), Mode=OneWay}" />
                                     </Grid>
                                 </StackPanel>
                             </Button>
@@ -242,14 +243,14 @@
                                     <Grid Margin="0,0,0,9">
                                         <TextBlock Text="Animate"
                                                    Style="{StaticResource InspectorTabTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                   Visibility="{x:Bind local:Visible.When(ViewModel.IsAnimateTab), Mode=OneWay}" />
                                         <TextBlock Text="Animate"
                                                    Style="{StaticResource InspectorInactiveTabTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                                   Visibility="{x:Bind local:Visible.Unless(ViewModel.IsAnimateTab), Mode=OneWay}" />
                                     </Grid>
                                     <Grid Height="2.5">
                                         <Border Background="{ThemeResource CupboardAccentBrush}"
-                                                Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                Visibility="{x:Bind local:Visible.When(ViewModel.IsAnimateTab), Mode=OneWay}" />
                                     </Grid>
                                 </StackPanel>
                             </Button>
@@ -270,14 +271,14 @@
                                     <Grid Margin="0,0,0,9">
                                         <TextBlock Text="Slide"
                                                    Style="{StaticResource InspectorTabTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                   Visibility="{x:Bind local:Visible.When(ViewModel.IsSlideTab), Mode=OneWay}" />
                                         <TextBlock Text="Slide"
                                                    Style="{StaticResource InspectorInactiveTabTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                                   Visibility="{x:Bind local:Visible.Unless(ViewModel.IsSlideTab), Mode=OneWay}" />
                                     </Grid>
                                     <Grid Height="2.5">
                                         <Border Background="{ThemeResource CupboardAccentBrush}"
-                                                Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                                Visibility="{x:Bind local:Visible.When(ViewModel.IsSlideTab), Mode=OneWay}" />
                                     </Grid>
                                 </StackPanel>
                             </Button>
@@ -288,7 +289,7 @@
                     <ScrollViewer Grid.Row="1"
                                   Padding="16"
                                   VerticalScrollBarVisibility="Auto"
-                                  Visibility="{x:Bind ViewModel.IsFormatTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                  Visibility="{x:Bind local:Visible.When(ViewModel.IsFormatTab), Mode=OneWay}">
                         <StackPanel Spacing="16">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Font" Style="{StaticResource InspectorCaptionTextStyle}" />
@@ -423,7 +424,7 @@
                     <ScrollViewer Grid.Row="1"
                                   Padding="16"
                                   VerticalScrollBarVisibility="Auto"
-                                  Visibility="{x:Bind ViewModel.IsAnimateTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                  Visibility="{x:Bind local:Visible.When(ViewModel.IsAnimateTab), Mode=OneWay}">
                         <StackPanel Spacing="16">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Build in" Style="{StaticResource InspectorCaptionTextStyle}" />
@@ -526,7 +527,7 @@
                     <ScrollViewer Grid.Row="1"
                                   Padding="16"
                                   VerticalScrollBarVisibility="Auto"
-                                  Visibility="{x:Bind ViewModel.IsSlideTab, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                  Visibility="{x:Bind local:Visible.When(ViewModel.IsSlideTab), Mode=OneWay}">
                         <StackPanel Spacing="16">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="Slide" Style="{StaticResource InspectorCaptionTextStyle}" />

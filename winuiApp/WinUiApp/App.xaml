@@ -62,7 +62,6 @@
             <SolidColorBrush x:Key="CupboardCanvasWellBrush" Color="#17181C" />
 
             <local:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
-            <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
 
             <Style x:Key="StatusBarTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
                 <Setter Property="FontFamily" Value="Consolas" />
