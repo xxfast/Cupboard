@@ -167,7 +167,7 @@ data class ObjectDrag(
  *
  * View state, but it rides through the loop like the marquee and every other
  * gesture: a navigator that kept it locally would be writing snapshot state from
- * a pointer handler, which is what the drag-freeze bug was (see ROADMAP.md).
+ * a pointer handler, which is what the drag-freeze bug was (see `9bc97ce`).
  */
 data class SlideDrag(
     val slideId: String,
@@ -404,7 +404,7 @@ data class EditorState(
      * The marquee rectangle being dragged out, null when none is. View state,
      * but it rides through the loop like every other gesture: a canvas that kept
      * it locally would be writing snapshot state from a pointer handler, which
-     * is what the drag-freeze bug was (see ROADMAP.md).
+     * is what the drag-freeze bug was (see `9bc97ce`).
      *
      * Transient for the same reason as [isPreviewing].
      */
@@ -1282,7 +1282,7 @@ sealed interface EditorEvent {
      * It rides it for the same reason the marquee does: a canvas that answered a
      * right-click with a selection write of its own would be writing snapshot
      * state from a pointer handler, which is what the drag-freeze bug was (see
-     * ROADMAP.md).
+     * `9bc97ce`).
      */
     data class ContextClick(val elementId: String?) : EditorEvent
     /**

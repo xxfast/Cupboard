@@ -51,4 +51,4 @@ Versions live in `gradle/libs.versions.toml` (Kotlin 2.4.x, Compose Multiplatfor
 
 ### Troubleshooting
 
-- Lessons from the drag-freeze bug (`9bc97ce`, resolved note in ROADMAP.md): anything a gesture shows must come back through `states`, never from local snapshot state written in pointer handlers (those writes can silently skip repaint on desktop). And when the loop looks broken, root-cause it; bypassing it only masks the symptom.
+- Lessons from the drag-freeze bug (`9bc97ce`): anything a gesture shows must come back through `states`, never from local snapshot state written in pointer handlers (those writes can silently skip repaint on desktop). And when the loop looks broken, root-cause it; bypassing it only masks the symptom.

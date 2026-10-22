@@ -91,7 +91,7 @@ import io.github.xxfast.cupboard.theme.LocalChromeTokens
  * [slideDrag] alone: the gesture reports the spot it is over and how far it has
  * come through [onPreviewSlideDrag] and the answer arrives back through the
  * state, because a navigator that drew from its
- * own pointer-handler writes is exactly the drag-freeze bug (see ROADMAP.md).
+ * own pointer-handler writes is exactly the drag-freeze bug (see `9bc97ce`).
  */
 @Composable
 fun EditorNavigator(

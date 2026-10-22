@@ -1570,7 +1570,7 @@ private fun RulerStrip(
  * as it is typed, and the commit is whatever the last preview left, settled by
  * [onEndTextEdit].
  *
- * This is not the drag-freeze pattern (see ROADMAP.md). That was a pointer
+ * This is not the drag-freeze pattern (see `9bc97ce`). That was a pointer
  * handler writing snapshot state the canvas then drew from, where the
  * invalidation could go missing. This is a composable callback driven by key
  * events, on the same path any text field in Compose takes.

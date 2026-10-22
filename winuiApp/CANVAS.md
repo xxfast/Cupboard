@@ -112,7 +112,7 @@ second look only if `SetParent` fails on input.
 ### (c) Do nothing (the standing fallback)
 
 `:desktopApp` (Compose for Desktop) already runs on Windows and ships meanwhile;
-ROADMAP's fallback rule says a stalled native route ships the tokenized Compose
+The fallback rule (#73) says a stalled native route ships the tokenized Compose
 shell (Fluent tokens) without blocking other platforms. Zero risk, but concedes
 the product constraint on Windows, and "wait for native skiko" is not a plan
 (CMP-1923 says it isn't coming).
@@ -188,7 +188,7 @@ Smallest end-to-end proof first. Each step has a product on its own.
    snapping/min-size, canvas placeholder letterboxing.
 
 Kill criteria (any one triggers shipping (c), the tokenized Compose shell, per
-the ROADMAP fallback rule; the NuGet/view-model work is kept either way):
+the fallback rule in #73; the NuGet/view-model work is kept either way):
 
 - Step 3: keyboard focus between XAML and the canvas can't be made reliable
   inside the timebox, including the #9912 workaround.

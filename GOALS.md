@@ -39,3 +39,13 @@
 2. macOS `NSViewRepresentable` spike, then the SwiftUI app
 3. Linux app on Compose for Desktop (doubles as the fallback shell for all three platforms)
 4. Windows (WinUI 3 chrome, HWND/islands embedding)
+
+## Releases
+
+Planned as GitHub [milestones](https://github.com/xxfast/Cupboard/milestones), one per release, with an issue per item. 1.0.0's description holds the gates.
+
+## Not planned
+
+- All generative/AI features (image/shape generation, slide generation, auto notes, writing tools, super resolution, auto crop): explicitly cut.
+- 3D objects (USDZ), live camera-on-slide video, multi-presenter shows, FaceTime/Messages integration, iPhone/Watch remotes, Apple Pencil/touch input: not our audience's stage setup; revisit only on demand.
+- Keynote '09 compat, Box/iCloud storage integrations, Touch Bar.

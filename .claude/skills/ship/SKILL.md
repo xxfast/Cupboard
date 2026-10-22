@@ -1,16 +1,16 @@
 ---
 name: ship
-description: Deliver one ROADMAP.md item end to end in the Cupboard repo: inspect the design spec, lock the shared design in the main context, delegate the common Kotlin core (MVI screen layer in :cupboard) to a subagent, split shell UI work into parallel SwiftUI and Compose subagents, review + commit + tick the roadmap, and hand the user a visual-verification checklist. Use whenever the user says /ship, names a roadmap item to build ("let's do the navigator rows", "work on the inspector next"), or asks what to work on and then picks an item. Also use for roadmap-shaped features not yet in ROADMAP.md; add the item first.
+description: Deliver one milestone issue end to end in the Cupboard repo: inspect the design spec, lock the shared design in the main context, delegate the common Kotlin core (MVI screen layer in :cupboard) to a subagent, split shell UI work into parallel SwiftUI and Compose subagents, review + commit + close the issue, and hand the user a visual-verification checklist. Use whenever the user says /ship, names a milestone issue to build ("let's do the navigator rows", "work on the inspector next"), or asks what to work on and then picks an item. Also use for roadmap-shaped features with no issue yet; file the issue first.
 ---
 
-# Ship a roadmap item
+# Ship a milestone issue
 
-One item in, one delivery out: design inspected, shared core landed with tests, shells wired, commits made, roadmap ticked, and a checklist of what only human eyes can verify. The main context does the thinking and reviewing; subagents do the typing. Keep the main context free of file dumps.
+One item in, one delivery out: design inspected, shared core landed with tests, shells wired, commits made, issue closed, and a checklist of what only human eyes can verify. The main context does the thinking and reviewing; subagents do the typing. Keep the main context free of file dumps.
 
 ## 1. Understand the item
 
-- Take the item from the arguments, or if ambiguous, list the unticked `- [ ]` lines from ROADMAP.md and let the user pick. If the request is roadmap-shaped but not listed, add it to the right phase first (standing grant covers roadmap upkeep).
-- Read the item's line *and its phase header*; phase notes carry constraints (dependency chains, "needs a visual pass" annotations).
+- Take the item from the arguments, or if ambiguous, list the open issues of the earliest open milestone (`gh issue list --milestone <title>`) and let the user pick. If the request is roadmap-shaped but has no issue, file one in the right milestone first (standing grant covers roadmap upkeep). `gh` needs the xxfast token per command, see the repo memory.
+- Read the issue body *and its milestone's description*; they carry the spec and the constraints (dependency chains, what's out of scope).
 - Read the design spec for this item. `design/` is the source of truth for most shipped features:
   - `design/HANDOFF.md` is the written spec (measurements, behavior, platform differences).
   - `design/platform-theme.js` is the token source: complete per-OS palettes (macOS, Windows, ...) in dark and light, fonts, radii, as one `window.SlidesTheme` object. Take exact values from here, never eyeball colors off screenshots.
@@ -25,7 +25,7 @@ Do not delegate ambiguity; sharpen first, then delegate the mechanical part.
 
 - Decide the shared surface per constraint 6: which `EditorEvent`s (or a new screen's events) exist, what the reductions do, what enters the serializable state vs stays presenter-local vs stays view-local. Events carry intent-sized facts: continuous gestures keep in-flight state in the composable and commit once on release.
 - Decide the split: what lands in `:cupboard` commonMain, what each shell needs. Some items are single-shell (the layered glass window is SwiftUI-only); skip phantom work rather than inventing parity.
-- Genuine scope decisions the user must own (deleting things, product behavior with no convention, trade-offs that change the roadmap) go to the user via AskUserQuestion. Everything with a conventional answer: pick it, state it, proceed.
+- Genuine scope decisions the user must own (deleting things, product behavior with no convention, trade-offs that move issues between milestones) go to the user via AskUserQuestion. Everything with a conventional answer: pick it, state it, proceed.
 - Write down the verify battery for each stage before launching anything (see step 5).
 
 ## 3. Delegate the common core
@@ -68,7 +68,7 @@ A subagent that hits a wall reports it rather than working around it; if a repor
 ## 6. Review, commit, tick
 
 - Read the subagent summaries, then spot-check the load-bearing diffs yourself (`git diff <file>` on the presenter/adapter, not the whole tree). Trust but verify; the summaries are not user-visible, relay what matters in your own words.
-- Commit per roadmap item (standing grant in this repo): one commit for the delivery, then a small follow-up commit ticking ROADMAP.md with the sha. Body in the user's voice: short, plain, no em-dashes, session trailers per the harness rules.
+- Commit per issue (standing grant in this repo): one commit for the delivery with `Closes #<n>` in the body, then close the issue with a comment naming the sha and what still needs a visual pass. Gaps left behind become new issues in the right milestone. Body in the user's voice: short, plain, no em-dashes, session trailers per the harness rules.
 - Never push. Never rewrite history.
 
 ## 7. Human verification checklist
